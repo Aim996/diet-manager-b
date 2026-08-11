@@ -1,6 +1,6 @@
 # SH-MODEL-003 独立复核记录
 
-> 状态：第一轮 FAIL 已处置；第二轮待执行。
+> 状态：第二轮独立复核 PASS；P0=0、P1=0。
 >
 > 日期：2026-08-11
 
@@ -47,7 +47,27 @@ SH-MODEL-003-INDEPENDENT-REVIEW|FAIL|p0=0|p1=3|p2=3|cases=52/58|schema_mutations
 4. fixture 增加 `semantic_only_case_ids`，分开 Schema 结果与端到端语义结果。
 5. fixture 从 58 例扩展为 65 例，补充 void/restore 错误 lifecycle、目标/版本关系、mixed 双身份唯一性和 alias 不相等反例。
 6. validator 固定 65 个 case、10 个 semantic-only ID、10 个语义不变量和新的 Schema 结构门。
-7. 本地分层候选重新达到 `65/65 PASS`；尚未据此宣称独立 PASS。
+7. 本地分层候选重新达到 `65/65 PASS`；随后由第二轮独立复核重新实现并验证结构层与语义层。
+
+## 第二轮结论
+
+```text
+SH-MODEL-003-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=65|semantic_only=10|mutations=4
+```
+
+第二轮在 OpenClaw 的隔离 `/tmp/sh-model-003-r2` 目录中运行，不调用项目 PowerShell validator 生成期望。第一次长会话独立建立 reviewer 并完成所有检查，但在输出最终答复前达到上下文上限；因此另开精简会话，只读审计并重新执行同一 reviewer，得到上面的正式机器结论。
+
+复核证据：
+
+- reviewer 主脚本为 `/tmp/sh-model-003-r2/review.cjs`，重新执行 exit 0，输出与上一轮临时 `review.out` 逐行一致；
+- Ajv 8.20.0 使用 2020-12 入口；Hyperjump 1.17.8 以 `$id` 注册三份 Schema，并为 12 个定义创建独立包装 `$ref`；两者对 65 个解析实例交叉一致；
+- 65 个 case ID、10 个 `semantic_only_case_ids` 和 10 个 `x-semantic-contract` invariant 名称分别精确、唯一并完整覆盖；
+- 10 个 semantic-only 反例全部表现为 Schema-valid、semantic-invalid；没有额外结构/语义 mismatch；
+- 前三个 mutation 被结构层和语义层共同拒绝，mixed reorder 被独立语义层拒绝；
+- 25 个结构门全部通过，包括第一轮发现的 void/restore、单日/跨日别名和分层声明；
+- reviewer 未使用 `child_process`、`exec` 或 `spawn` 调用项目验证器，未修改项目文件，也未读取受保护 lease。
+
+OpenClaw 聊天输入会归一化空白，因此第二轮仍不把聊天转录的字节哈希作为身份依据。候选文件的精确 SHA-256 由本地冻结验证器、GitHub 对象和独立 clone 共同核验。
 
 ## Ajv 兼容性观察
 
@@ -64,4 +84,3 @@ SH-MODEL-003-INDEPENDENT-REVIEW|FAIL|p0=0|p1=3|p2=3|cases=52/58|schema_mutations
 ```text
 SH-MODEL-003-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=65|semantic_only=10|mutations=4
 ```
-

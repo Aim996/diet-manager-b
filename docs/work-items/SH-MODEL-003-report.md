@@ -1,10 +1,10 @@
 # SH-MODEL-003 实施报告
 
-> 状态：独立复核第一轮 FAIL 已完成处置；65 例分层候选已本地 GREEN，等待第二轮独立复核与 GitHub clone 复验。
+> 状态：第二轮独立复核 PASS；等待 GitHub 推送、独立 clone 复验和 EV-019 最终冻结。
 >
 > 日期：2026-08-11
 >
-> 候选基线提交：`e5002e3c4f499e8bc65f2e262c6fe08dd352edfe`；第一轮复核修复尚未形成完成提交。
+> 当前候选提交：`d41321a`（完整提交将在 GitHub/clone 复验后由 EV-019 冻结）。
 
 ## 1. 本任务解决什么问题
 
@@ -117,13 +117,11 @@ ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=1.0.0|cases=65|definitions=12|semant
 
 ## 7. 未完成与后续
 
-当前候选还不能称为 SH-MODEL-003 完成，剩余门：
+结构和语义开发已经通过独立复核，剩余交付门：
 
-1. 第二轮独立复核按“结构层 + 语义层”分别执行 65 例；
-2. 独立审查给出 P0/P1=0 的 PASS；
-3. 写 `EV-20260811-019` 并更新总计划；
-4. 推送私有 GitHub；
-5. 从独立 clone 重跑六项验证并确认 clean。
+1. 推送私有 GitHub；
+2. 从独立 clone 重跑六项验证并确认 clean；
+3. 写 `EV-20260811-019`、更新总计划并冻结最终提交身份。
 
 完成后进入 `SH-MAP-001`，再把共享模型映射到 B SQLite；当前不提前创建生产业务表。
 
@@ -140,3 +138,13 @@ ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=1.0.0|cases=65|definitions=12|semant
 5. mutation 结果分层陈述：前三项必须被 Schema 和语义层拒绝；mixed reorder 必须被语义层拒绝，不能虚称标准 Schema 能表达 `sequence == index`。
 
 第一轮还发现 Ajv 8.20.0 在本次加载方式下未正确执行 `prefixItems + items:false` 的 2020-12 语义；因此第二轮以通过该官方语义用例的实现为判定引擎，并把 Ajv 结果保留为兼容性观察，不拿错误引擎行为修改正确的上游 Nutrition Schema。
+
+## 9. 第二轮独立复核
+
+第二轮使用独立的 Node reviewer 解析模板和 mutation，并分别计算 Schema 结果与 10 项跨字段语义结果。正式结论：
+
+```text
+SH-MODEL-003-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=65|semantic_only=10|mutations=4
+```
+
+复核器重新执行 65 个 case、10 个 semantic-only case、10 个 invariant、4 个 mutation 和 25 个结构门；Ajv 2020-12 与 Hyperjump 对 Schema 结果交叉一致。第一轮三个 P1 均已关闭，没有新增 P0/P1。聊天转录不能证明候选字节身份，因此最终文件哈希仍交由本地 validator、GitHub 和独立 clone 复验。
