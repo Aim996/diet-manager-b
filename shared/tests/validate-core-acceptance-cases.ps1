@@ -81,6 +81,11 @@ function Get-Utf8Base64 {
     return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value))
 }
 
+function Copy-CaseJson {
+    param($Value)
+    return (($Value | ConvertTo-Json -Depth 64 -Compress) | ConvertFrom-Json)
+}
+
 function Get-CaseById {
     param($CaseSet, [string]$Id)
     $rows = @($CaseSet.cases | Where-Object { [string]$_.id -eq $Id })
@@ -318,9 +323,92 @@ function Test-CaseSetCandidate {
     }
 }
 
+function Invoke-CaseMutation {
+    param(
+        [string]$Name,
+        [scriptblock]$Mutate,
+        [string]$ExpectedErrorPrefix,
+        $CaseSet,
+        $Fixtures
+    )
+
+    $candidate = Copy-CaseJson $CaseSet
+    & $Mutate $candidate
+    $notRejected = "{0}:NOT_REJECTED" -f $Name
+    try {
+        Test-CaseSetCandidate $candidate $Fixtures
+        throw $notRejected
+    }
+    catch {
+        $message = [string]$_.Exception.Message
+        if ($message -eq $notRejected) {
+            throw $message
+        }
+        if (-not $message.StartsWith($ExpectedErrorPrefix, [StringComparison]::Ordinal)) {
+            throw ("{0}:WRONG_ERROR:{1}" -f $Name, $message)
+        }
+    }
+    "{0}|PASS" -f $Name
+}
+
 $caseSet = Read-CaseJson $CasesPath "CORE_CASE_SET_FILE_MISSING" "CORE_CASE_SET_JSON_INVALID"
 Assert-CaseSetRoot $caseSet
 $fixtures = Read-CaseJson $FixturesPath "CORE_CASE_FIXTURE_FILE_MISSING" "CORE_CASE_FIXTURE_JSON_INVALID"
 Test-CaseSetCandidate $caseSet $fixtures
 
-"CORE_ACCEPTANCE_CASES|PASS|version=1.0.0|cases=5|fixtures=3|mutations=0"
+Invoke-CaseMutation "MUT-CASE-DROP-REQUIRED-CASE" {
+    param($candidate)
+    $candidate.cases = @($candidate.cases | Where-Object { [string]$_.id -ne "CASE-MEAL-021" })
+} "CORE_CASE_IDS_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-ALLOW-ADAPTER-ORACLE-REWRITE" {
+    param($candidate)
+    $candidate.package_invariants.adapters_may_rewrite_oracle = $true
+} "CORE_CASE_ORACLE_AUTHORITY_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-MILK-AS-WATER" {
+    param($candidate)
+    $row = @($candidate.cases | Where-Object { [string]$_.id -eq "CASE-MEAL-001" })[0]
+    $row.oracle.fact_commit.meal_event.water_event_count = 1
+} "CORE_CASE_MILK_CLASSIFICATION_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-SINGLE-ITEM-ALT-SHAPE" {
+    param($candidate)
+    $row = @($candidate.cases | Where-Object { [string]$_.id -eq "CASE-MEAL-021" })[0]
+    $row.oracle.parsing = [pscustomobject][ordered]@{
+        single_item = $row.oracle.parsing.items[0]
+    }
+} "CORE_CASE_PARSING_INVALID:CASE-MEAL-021" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-EXPLICIT-WATER-ESTIMATED" {
+    param($candidate)
+    $row = @($candidate.cases | Where-Object { [string]$_.id -eq "CASE-WATER-001" })[0]
+    $row.oracle.fact_commit.water_event.estimated = $true
+} "CORE_CASE_WATER_EVIDENCE_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-RECEIPT-PROGRESS-NOT-LAST" {
+    param($candidate)
+    $row = @($candidate.cases | Where-Object { [string]$_.id -eq "CASE-RECEIPT-001" })[0]
+    $row.oracle.receipt.blocks = @("title", "progress", "item_lines")
+} "CORE_CASE_RECEIPT_BLOCKS_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-QUERY-ALLOWS-WRITE" {
+    param($candidate)
+    $row = @($candidate.cases | Where-Object { [string]$_.id -eq "CASE-QUERY-001" })[0]
+    $row.oracle.query.business_write_count = 1
+} "CORE_CASE_QUERY_WRITE_INVALID" $caseSet $fixtures
+
+Invoke-CaseMutation "MUT-CASE-FAILED-FACT-ALLOWS-MEAL" {
+    param($candidate)
+    $candidate.package_invariants.fact_commit_failure_forbidden_artifacts = @(
+        "inventory_change",
+        "nutrition_snapshot",
+        "issue",
+        "business_outbox",
+        "daily_progress",
+        "success_receipt",
+        "terminal_idempotency_result"
+    )
+} "CORE_CASE_FAILED_FACT_ARTIFACTS_INVALID" $caseSet $fixtures
+
+"CORE_ACCEPTANCE_CASES|PASS|version=1.0.0|cases=5|fixtures=3|mutations=8"
