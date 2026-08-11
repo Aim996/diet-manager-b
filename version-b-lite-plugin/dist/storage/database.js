@@ -67,7 +67,7 @@ function scalar(database, sql) {
 function expectedSchemaSql(statement) {
     return statement.endsWith(";") ? statement.slice(0, -1) : statement;
 }
-function validateSchema(database) {
+export function assertDietDatabaseIdentity(database) {
     if (scalar(database, "PRAGMA application_id") !== DIET_DATABASE_APPLICATION_ID) {
         return fail("STORAGE_IDENTITY_INVALID:application_id");
     }
@@ -84,7 +84,7 @@ function validateSchema(database) {
     if (foreignKeyProblems.length !== 0)
         return fail("STORAGE_INTEGRITY_INVALID:foreign_keys");
     const schemaRows = database
-        .prepare("SELECT type, name, sql FROM sqlite_schema WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' ORDER BY type, name")
+        .prepare("SELECT type, name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
         .all();
     const actual = new Map(schemaRows.map((row) => [`${row.type}:${row.name}`, row.sql]));
     for (let index = 0; index < MIGRATION_V1_TABLE_NAMES.length; index += 1) {
@@ -158,7 +158,7 @@ function createFreshDatabase(root, finalPath, options) {
             now: (options.now ?? (() => new Date().toISOString()))(),
             fault: options.migrationFault,
         });
-        validateSchema(database);
+        assertDietDatabaseIdentity(database);
         database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
         database.close();
         database = undefined;
@@ -181,7 +181,7 @@ function validateExistingReadOnly(databasePath) {
     let database;
     try {
         database = openConnection(databasePath, true);
-        validateSchema(database);
+        assertDietDatabaseIdentity(database);
     }
     finally {
         database?.close();
@@ -203,7 +203,7 @@ export function openDietDatabase(options) {
     const database = openConnection(databasePath);
     configureConnection(database);
     try {
-        validateSchema(database);
+        assertDietDatabaseIdentity(database);
     }
     catch (error) {
         database.close();

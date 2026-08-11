@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 293943,
-      "sha256": "7C5CF7473D5EEE29003696C08D93166814EA161990C860CD5D6515EE1A12ADD4"
+      "length": 294685,
+      "sha256": "3E0D4A5EB4C5F036CA90FA51378263ACE6EE07227F4A30F4E531FB07808B3637"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "AA4CA8780D4C2DDFDB421034C06FCDA280C3C79A2F453F564085B1B778AC469F"
+      "sha256": "A7A33653D1E9DFFF236A0918F063CBA1A95823DCF335C4E27B630E841F8F92B7"
     }
   },
   "counts": {
-    "evidence": 27,
-    "files_present": 25,
+    "evidence": 28,
+    "files_present": 26,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -484,6 +484,24 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "B-STOR-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-028",
+      "scope": "B-MERGE-C-001 服务端preview/state权威",
+      "result": "七字段HMAC preview绑定、BEGIN IMMEDIATE幂等预留、调用方状态不信任、陈旧/伪造/非法状态/非法migration零写入；27项focused、48项B测试与独立并发/篡改/rollback探针通过，复核P0=0/P1=0/P2=0",
+      "limitation": "关闭B写入前服务端权威与guard；不代表business repository、FactCommit、效果/最终器、安装、部署或G1/G2/G3完成",
+      "reference_ids": [
+        "B-MERGE-C-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-028-b-merge-c-001.md",
+        "length": 3234,
+        "sha256": "3DA15C063FEA4EF2903BC811C6DDDCEEC9E0DFBA370BB20BD53D9AC3953BCDB6"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-MERGE-C-001"
       ]
     }
   ]
