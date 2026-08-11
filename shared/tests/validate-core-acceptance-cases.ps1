@@ -161,7 +161,7 @@ function Test-CaseSetCandidate {
 
     Assert-CaseSetRoot $CaseSet
     Assert-CaseEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "CORE_CASE_SET_ID_INVALID"
-    Assert-CaseEqual "1.0.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
+    Assert-CaseEqual "1.1.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
     Assert-ExactProperties $CaseSet.contract @("contract_id", "contract_version") "CORE_CASE_CONTRACT_INVALID"
     Assert-CaseEqual "diet-manager/contract-v2" ([string]$CaseSet.contract.contract_id) "CORE_CASE_CONTRACT_ID_INVALID"
     Assert-CaseEqual 2 ([int]$CaseSet.contract.contract_version) "CORE_CASE_CONTRACT_VERSION_INVALID"
@@ -190,7 +190,11 @@ function Test-CaseSetCandidate {
     ) $CaseSet.package_invariants.fact_commit_failure_forbidden_artifacts "CORE_CASE_FAILED_FACT_ARTIFACTS_INVALID"
 
     Assert-CaseTrue ($CaseSet.cases -is [System.Array]) "CORE_CASE_SET_SHAPE_INVALID:cases"
-    $expectedIds = @("CASE-MEAL-001", "CASE-MEAL-021", "CASE-WATER-001", "CASE-RECEIPT-001", "CASE-QUERY-001")
+    $expectedIds = @(
+        "CASE-MEAL-001", "CASE-MEAL-021", "CASE-WATER-001", "CASE-RECEIPT-001", "CASE-QUERY-001",
+        "CASE-PURCHASE-001", "CASE-INVENTORY-003", "CASE-NUTR-001", "CASE-ISSUE-001", "CASE-CORR-001",
+        "CASE-MIXED-001", "CASE-EFFECT-001", "CASE-EFFECT-003", "CASE-STORAGE-007"
+    )
     $actualIds = @($CaseSet.cases | ForEach-Object { [string]$_.id })
     Assert-ExactStringArray $expectedIds $actualIds "CORE_CASE_IDS_INVALID"
     Assert-CaseEqual $actualIds.Count @($actualIds | Select-Object -Unique).Count "CORE_CASE_IDS_DUPLICATE"
@@ -282,9 +286,9 @@ function Test-CaseSetCandidate {
     Assert-CaseEqual 0 ([int]$query.oracle.query.business_write_count) "CORE_CASE_QUERY_WRITE_INVALID"
     Assert-ExactStringArray @("business_write", "superseded_record_returned", "voided_record_returned", "internal_id_in_output", "invented_example_data") $query.forbidden "CORE_CASE_FORBIDDEN_INVALID:CASE-QUERY-001"
 
-    Assert-ExactProperties $Fixtures @("fixture_catalog_id", "version", "environments", "goals", "query_views") "CORE_CASE_FIXTURE_SHAPE_INVALID:root"
+    Assert-ExactProperties $Fixtures @("fixture_catalog_id", "version", "environments", "goals", "query_views", "domain_scenarios") "CORE_CASE_FIXTURE_SHAPE_INVALID:root"
     Assert-CaseEqual "diet-manager/core-fixtures-v1" ([string]$Fixtures.fixture_catalog_id) "CORE_CASE_FIXTURE_ID_INVALID"
-    Assert-CaseEqual "1.0.0" ([string]$Fixtures.version) "CORE_CASE_FIXTURE_VERSION_INVALID"
+    Assert-CaseEqual "1.1.0" ([string]$Fixtures.version) "CORE_CASE_FIXTURE_VERSION_INVALID"
     Assert-CaseEqual 1 @($Fixtures.environments).Count "CORE_CASE_ENVIRONMENT_COUNT_INVALID"
     Assert-CaseEqual 1 @($Fixtures.goals).Count "CORE_CASE_GOALS_COUNT_INVALID"
     Assert-CaseEqual 1 @($Fixtures.query_views).Count "CORE_CASE_QUERY_VIEW_COUNT_INVALID"
@@ -430,4 +434,4 @@ Invoke-CaseMutation "MUT-CASE-FAILED-FACT-ALLOWS-MEAL" {
     )
 } "CORE_CASE_FAILED_FACT_ARTIFACTS_INVALID" $caseSet $fixtures
 
-"CORE_ACCEPTANCE_CASES|PASS|version=1.0.0|cases=5|fixtures=3|mutations=8"
+"CORE_ACCEPTANCE_CASES|PASS|version=1.1.0|cases=5|fixtures=3|mutations=8"

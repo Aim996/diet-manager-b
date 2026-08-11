@@ -1,6 +1,6 @@
 {
   "case_set_id": "diet-manager/core-acceptance-cases-v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "contract": {
     "contract_id": "diet-manager/contract-v2",
     "contract_version": 2
@@ -156,6 +156,248 @@
         }
       },
       "forbidden": ["business_write", "superseded_record_returned", "voided_record_returned", "internal_id_in_output", "invented_example_data"]
+    },
+    {
+      "id": "CASE-PURCHASE-001",
+      "requirement_ids": ["REQ-PURCHASE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了两箱牛奶，每箱12盒，每盒250ml。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-purchase-milk-2x12x250-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "fact_commit": {
+          "purchase_event": {"event_count": 1, "status": "committed", "product_id": "fixture-product-milk-whole-250"}
+        },
+        "effect_bundle": {
+          "inventory_batch": {"batch_count": 1, "stocked_quantity": 24, "stocked_unit": "carton"}
+        },
+        "quantity_equation": {
+          "outer_count": 2,
+          "inner_per_outer": 12,
+          "capacity_per_inner_ml": 250,
+          "total_inner": 24,
+          "total_ml": 6000,
+          "formula": "2*12*250=6000"
+        }
+      },
+      "forbidden": ["collapsed_package_quantities", "invented_expiry_date", "invented_user_fact"]
+    },
+    {
+      "id": "CASE-INVENTORY-003",
+      "requirement_ids": ["REQ-PANTRY-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐喝了一盒牛奶。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-inventory-multiple-products-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "fact_commit": {
+          "meal_event": {"event_count": 1, "status": "committed", "item_count": 1, "package_unit": "carton"}
+        },
+        "effect_bundle": {
+          "inventory_match": {"status": "skipped_multiple_candidates", "candidate_count": 2, "quantity_changed": false},
+          "issue": {"issue_count": 1, "code": "inventory_multiple_candidates", "issue_type": "non_blocking_business", "status": "open"}
+        }
+      },
+      "forbidden": ["automatic_inventory_selection", "negative_inventory", "fact_commit_rollback"]
+    },
+    {
+      "id": "CASE-NUTR-001",
+      "requirement_ids": ["REQ-NUTR-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了一盒这个牛奶。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-nutrition-label-milk-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "effect_bundle": {
+          "nutrition_profile": {
+            "source_type": "product_label",
+            "source_ref": "fixture-label-whole-milk-250-v1",
+            "profile_version": 1,
+            "applicable_product_id": "fixture-product-milk-whole-250",
+            "priority_rule": "exact_label_wins",
+            "missing_fields": ["fiber_g"]
+          },
+          "nutrition_snapshot": {"snapshot_count": 1, "profile_version": 1, "coverage": "partial"}
+        }
+      },
+      "forbidden": ["lower_tier_override", "unknown_field_filled_with_zero", "public_source_override"]
+    },
+    {
+      "id": "CASE-ISSUE-001",
+      "requirement_ids": ["REQ-ISSUE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了大概一碗麦片，用的是家里的牛奶。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-issue-amount-inventory-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "fact_commit": {
+          "meal_event": {"event_count": 1, "status": "committed_with_issues"}
+        },
+        "effect_bundle": {
+          "issues": [
+            {"sequence": 0, "code": "quantity_estimated", "issue_type": "non_blocking_business", "status": "open"},
+            {"sequence": 1, "code": "inventory_multiple_candidates", "issue_type": "non_blocking_business", "status": "open"}
+          ],
+          "inventory_match": {"status": "skipped_multiple_candidates"}
+        },
+        "presentation": {"prompt_policy": "consolidated_once", "prompt_count": 1}
+      },
+      "forbidden": ["serial_questionnaire", "meal_fact_rollback", "claimed_inventory_deduction"]
+    },
+    {
+      "id": "CASE-CORR-001",
+      "requirement_ids": ["REQ-CORR-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "刚才鸡蛋不是2个，是3个。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-correction-eggs-2-to-3-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "fact_commit": {
+          "correction_event": {"event_count": 1, "operation": "change_amount", "write_policy": "append_only", "effective_quantity": 3}
+        },
+        "effect_bundle": {
+          "nutrition_delta": {"egg_quantity_delta": 1},
+          "inventory_effect": {"additional_egg_count": 1, "batch_id": "fixture-batch-eggs-001"}
+        },
+        "finalization": {"affected_dates": ["2026-08-11"]},
+        "idempotency": {"same_child_key_duplicate_count": 0, "max_correction_events": 1, "max_inventory_effects": 1}
+      },
+      "forbidden": ["overwrite_original_meal", "physical_delete_original_meal", "duplicate_compensation"]
+    },
+    {
+      "id": "CASE-MIXED-001",
+      "requirement_ids": ["REQ-MIXED-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了一箱牛奶，又喝了一盒。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-mixed-purchase-drink-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "mixed": {
+          "operation_results": [
+            {"sequence": 0, "intent": "purchase", "status": "committed"},
+            {"sequence": 1, "intent": "meal", "status": "committed"}
+          ]
+        },
+        "effect_bundle": {"inventory_sequence": [0, 24, 23], "matched_product_id": "fixture-product-milk-whole-250"},
+        "finalization": {"envelope_finalize_count": 1, "later_child_failure_rolls_back_purchase": false}
+      },
+      "forbidden": ["child_reordering", "separate_envelope_finalization", "later_child_rollback_of_purchase"]
+    },
+    {
+      "id": "CASE-EFFECT-001",
+      "requirement_ids": ["REQ-SAFE-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了一个苹果。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-effect-nutrition-failure-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "failure": {
+          "expected_error_code": "nutrition_effect_write_failed",
+          "fact_commit_preserved": true,
+          "outbox_status": "retryable_failed",
+          "envelope_status": "effects_pending",
+          "effect_bundle_business_write_count": 0,
+          "success_receipt_visible": false,
+          "daily_progress_visible": false,
+          "terminal_idempotency_visible": false
+        },
+        "state_after_restart": {"meal_fact_preserved": true, "outbox_status": "retryable_failed", "envelope_status": "effects_pending"},
+        "same_key_retry": {"action": "retry_missing_effect_only", "nutrition_snapshot_writes": 1, "envelope_finalize_count": 1}
+      },
+      "forbidden": ["fact_commit_rollback", "half_effect_bundle", "premature_receipt", "premature_progress", "premature_terminal_idempotency"]
+    },
+    {
+      "id": "CASE-EFFECT-003",
+      "requirement_ids": ["REQ-SAFE-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了一个苹果。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-finalizer-failure-concurrent-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "failure": {
+          "expected_error_code": "envelope_finalize_write_failed",
+          "facts_and_effects_preserved": true,
+          "envelope_status": "effects_pending",
+          "success_receipt_visible": false,
+          "daily_progress_visible": false,
+          "terminal_idempotency_visible": false
+        },
+        "state_after_restart": {"meal_fact_preserved": true, "nutrition_snapshot_count": 1, "inventory_effect_count": 1, "envelope_status": "effects_pending"},
+        "same_key_retry": {
+          "action": "finalize_once",
+          "current_turn_increments": {"energy_kcal": 100},
+          "projection_before_concurrent_write": {"energy_kcal": 500},
+          "concurrent_contribution": {"energy_kcal": 50},
+          "committed_totals": {"energy_kcal": 650},
+          "envelope_finalize_count": 1
+        }
+      },
+      "forbidden": ["duplicate_fact", "duplicate_effect", "lost_concurrent_contribution", "premature_receipt", "premature_progress", "premature_terminal_idempotency"]
+    },
+    {
+      "id": "CASE-STORAGE-007",
+      "requirement_ids": ["REQ-SAFE-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了一个苹果。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-idempotency-conflict-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "idempotency": {
+          "original_key": "idem-fixed-001",
+          "conflicts": [
+            {"kind": "changed_digest", "status": "failed", "error_code": "idempotency_conflict", "business_write_count": 0, "returned_original_result": false},
+            {"kind": "changed_subject", "status": "failed", "error_code": "idempotency_conflict", "business_write_count": 0, "returned_original_result": false},
+            {"kind": "changed_command", "status": "failed", "error_code": "idempotency_conflict", "business_write_count": 0, "returned_original_result": false}
+          ],
+          "original_result_unchanged": true
+        }
+      },
+      "forbidden": ["business_write_on_conflict", "old_result_masquerades_as_new_result", "original_record_mutation"]
     }
   ]
 }
