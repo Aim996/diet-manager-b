@@ -24,6 +24,25 @@ function Assert-CaseTrue {
 
 function Assert-CaseEqual {
     param($Expected, $Actual, [string]$Code)
+    if (($Expected -is [string]) -and (-not ($Actual -is [string]))) {
+        throw ("{0}:type" -f $Code)
+    }
+    if (($Expected -is [bool]) -and (-not ($Actual -is [bool]))) {
+        throw ("{0}:type" -f $Code)
+    }
+    if ($Expected -is [int]) {
+        $integerTypes = @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64])
+        $isInteger = $false
+        foreach ($integerType in $integerTypes) {
+            if ($Actual -is $integerType) {
+                $isInteger = $true
+                break
+            }
+        }
+        if (-not $isInteger) {
+            throw ("{0}:type" -f $Code)
+        }
+    }
     if ($Expected -ne $Actual) {
         throw ("{0}:expected={1}:actual={2}" -f $Code, $Expected, $Actual)
     }
