@@ -766,7 +766,78 @@ if (-not $LibraryOnly) {
     Test-OpsSecurityCandidate $caseSet $fixtures
     $mutationCount = 0
     if (-not $SkipMutations) {
-        $mutationCount = 0
+        Invoke-OpsMutation "MUT-OPS-DROP-REQUIRED-CASE" {
+            param($casesCandidate, $fixturesCandidate)
+            $casesCandidate.cases = @($casesCandidate.cases | Where-Object { [string]$_.id -cne "CASE-PRIV-001" })
+        } "OPS_SECURITY_CASE_IDS_INVALID" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-LEAK-RAW-CONTEXT" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-privacy-public-nutrition-v1" })[0]
+            $scenario.outbound_request | Add-Member -NotePropertyName "raw_chat" -NotePropertyValue "fixture-raw-chat-secret"
+        } "OPS_SECURITY_PRIVACY_OUTBOUND_INVALID" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-LEAK-SECRET-TO-LOG" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-privacy-public-nutrition-v1" })[0]
+            $scenario.ordinary_log.secret_present = $true
+        } "OPS_SECURITY_PRIVACY_LOG_INVALID:secret" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-HIDE-OFFICIAL-SIDECAR-DIFF" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-foundation-zero-diff-v1" })[0]
+            $scenario.official_files_after = @($scenario.official_files_after[0])
+        } "OPS_SECURITY_FOUNDATION_MANIFEST_INVALID:after_count" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-SKIP-AFTER-SCAN-ON-FAILURE" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-foundation-zero-diff-v1" })[0]
+            $scenario.after_scan_completed = $false
+        } "OPS_SECURITY_FOUNDATION_FAILURE_INVALID:after_scan" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-INSTALL-SAMPLE-BUSINESS-RECORD" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-clean-install-b-v1" })[0]
+            $scenario.initialized_schema.business_record_count = 1
+        } "OPS_SECURITY_INSTALL_SCHEMA_INVALID:records" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-ACCEPT-PACKAGE-HASH-MISMATCH" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-clean-install-b-v1" })[0]
+            $scenario.package_manifest.package_files[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+        } "OPS_SECURITY_INSTALL_MANIFEST_INVALID:plugin:sha256" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-ADVANCE-VERSION-ON-MIGRATION-FAILURE" {
+            param($casesCandidate, $fixturesCandidate)
+            $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-OPS-003" })[0]
+            $case.oracle.migration_failure.schema_version_after = 2
+        } "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:schema" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-LOSE-OLD-STATE-ON-MIGRATION-FAILURE" {
+            param($casesCandidate, $fixturesCandidate)
+            $scenario = @($fixturesCandidate.ops_security_scenarios | Where-Object { [string]$_.fixture_id -ceq "ops-migration-interrupted-v1" })[0]
+            $scenario.old_state_after_failure.readable = $false
+        } "OPS_SECURITY_MIGRATION_OLD_STATE_INVALID:readable" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-PROMOTE-CHANGED-CANDIDATE" {
+            param($casesCandidate, $fixturesCandidate)
+            $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-OPS-010" })[0]
+            $case.oracle.release.promotion_allowed = $true
+        } "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:promotion" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-TREAT-EXPORT-AS-BACKUP" {
+            param($casesCandidate, $fixturesCandidate)
+            $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-EXPORT-004" })[0]
+            $case.oracle.export.restorable = $true
+        } "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:restorable" $caseSet $fixtures
+
+        Invoke-OpsMutation "MUT-OPS-DELETE-BEFORE-RESTORE-REJECTION" {
+            param($casesCandidate, $fixturesCandidate)
+            $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-EXPORT-004" })[0]
+            $case.oracle.official_state.deletion_count = 1
+        } "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:deletion" $caseSet $fixtures
+
+        $mutationCount = 12
     }
     "OPS_SECURITY_ACCEPTANCE_CASES|PASS|version=1.2.0|cases=6|scenarios=6|mutations={0}" -f $mutationCount
 }
