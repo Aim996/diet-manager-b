@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 294685,
-      "sha256": "3E0D4A5EB4C5F036CA90FA51378263ACE6EE07227F4A30F4E531FB07808B3637"
+      "length": 295085,
+      "sha256": "E8E113A76CD84F58F0FD1E9E95BB58C89BF37495EB143D6199AE04907F8B4DF9"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,14 +14,14 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "A7A33653D1E9DFFF236A0918F063CBA1A95823DCF335C4E27B630E841F8F92B7"
+      "sha256": "0A58C198161E5AD153C216891259C5E48E504A4E47253A08F19E670517949329"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 29,
-      "已完成": 21,
+      "未开始": 28,
+      "已完成": 22,
       "已取消": 8,
       "进行中": 1
     },
@@ -2838,13 +2838,15 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/effect/failure_preserves_fact_and_pending_work"
+          ]
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3031,7 +3033,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3072,9 +3074,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/inventory/current_projection_matches_committed_transactions"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -3084,7 +3088,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3159,9 +3163,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/inventory/insufficient_stock_zero_mutation"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -3171,7 +3177,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3269,9 +3275,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/inventory/deduction_never_negative"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -3281,7 +3289,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -4581,9 +4589,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/inventory/add_batch_projection"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -4593,7 +4603,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4777,9 +4787,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/query/projection_stable_after_restart"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -4789,7 +4801,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5121,9 +5133,12 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/fact_commit/exact_retry_one_fact",
+            "/effect/exact_retry_one_mutation"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -5133,7 +5148,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5168,13 +5183,16 @@
       "producers": [
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/fact_commit/precommit_fault_zero_business_rows",
+            "/fact_commit/technical_log_outside_database"
+          ]
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5242,7 +5260,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5283,7 +5301,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5342,9 +5360,12 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/recovery/response_loss_replays_authoritative_fact",
+            "/recovery/restart_pending_effect"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -5354,7 +5375,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5458,9 +5479,11 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/idempotency/same_key_changed_input_conflict_zero_write"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -5470,7 +5493,7 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -6974,14 +6997,50 @@
       "deliverables": "B repository+fault tests",
       "verification": "§26.4 B-only repository切片+故障/响应丢失/backup integrity；E-STOR+E-CASE",
       "roots": "ROOT-B",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 独立B安全复核待指派",
-      "status": "进行中",
-      "next_reopen": "dependencies complete through EV-20260812-028; next=brief/design+RED；Schema/事务变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "actual_evidence_ids": [
+        "EV-20260812-029"
+      ],
+      "owner_reviewer": "Codex /root / OpenClaw 02独立B repository复核",
+      "status": "已完成",
+      "next_reopen": "21项focused、69项B测试、真实worker并发/崩溃、失败日志与业务零半写入边界及复核P0=0/P1=0；repository/Schema/事务边界变化重开",
+      "brief_path": "docs/work-items/B-STOR-002-brief.md",
+      "case_assertion_paths": {
+        "CASE-STORAGE-001": [
+          "/fact_commit/exact_retry_one_fact",
+          "/effect/exact_retry_one_mutation"
+        ],
+        "CASE-STORAGE-002": [
+          "/fact_commit/precommit_fault_zero_business_rows",
+          "/fact_commit/technical_log_outside_database"
+        ],
+        "CASE-STORAGE-006": [
+          "/recovery/response_loss_replays_authoritative_fact",
+          "/recovery/restart_pending_effect"
+        ],
+        "CASE-STORAGE-007": [
+          "/idempotency/same_key_changed_input_conflict_zero_write"
+        ],
+        "CASE-EFFECT-003": [
+          "/effect/failure_preserves_fact_and_pending_work"
+        ],
+        "CASE-INVENTORY-007": [
+          "/inventory/deduction_never_negative"
+        ],
+        "CASE-PURCHASE-001": [
+          "/inventory/add_batch_projection"
+        ],
+        "CASE-QUERY-003": [
+          "/query/projection_stable_after_restart"
+        ],
+        "CASE-INVENTORY-001": [
+          "/inventory/current_projection_matches_committed_transactions"
+        ],
+        "CASE-INVENTORY-004": [
+          "/inventory/insufficient_stock_zero_mutation"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "C-STOR-001",
@@ -7090,10 +7149,10 @@
       "verification": "B独立通过§26.4全部硬门；不评分、不借A/C EV；E-GATE",
       "roots": "ROOT-SHARED",
       "actual_evidence_ids": [],
-      "owner_reviewer": "门主持人/至少两名复核",
-      "status": "未开始",
-      "next_reopen": "依赖齐前不得开始；next=未来新鲜EV后明确选择pass_b_safety或return_to_b_storage；证据/候选变化重开",
-      "brief_path": null,
+      "owner_reviewer": "Codex /root / 独立门复核待执行",
+      "status": "进行中",
+      "next_reopen": "dependencies complete through EV-20260812-029; brief/plan frozen；next=只核验现有B证据并明确选择pass_b_safety或return_to_b_storage；证据/候选变化重开",
+      "brief_path": "docs/work-items/X-GATE-001-brief.md",
       "case_assertion_paths": {},
       "full_case_set": null,
       "assertion_state": "brief_pending"
