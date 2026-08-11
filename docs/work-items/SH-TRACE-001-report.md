@@ -2,7 +2,7 @@
 
 ## Outcome
 
-The machine traceability implementation is ready for independent review at commit `423a2d067394606858895bd015cfcebc8f7b24bc`.
+The machine traceability implementation completed independent review at commit `423a2d067394606858895bd015cfcebc8f7b24bc`; the documentation/head supplement passed at `5986c64ade913bff210bc9055a73433ef2e60611`.
 
 The approved Markdown plan remains authoritative. One dependency-free Node 24 validator now regenerates four JSON mirrors and rejects byte drift, duplicate/orphan references, composite pseudo-IDs, status/evidence contradictions and selector changes.
 
@@ -10,21 +10,21 @@ The approved Markdown plan remains authoritative. One dependency-free Node 24 va
 
 | Deliverable | Bytes | SHA-256 |
 |---|---:|---|
-| `shared/tests/validate-traceability.mjs` | 37212 | `F5E60E7C133C233F31968366912E60BAD56B088F1A43139DF565370DB5FE38FA` |
-| `shared/traceability/requirements.json` | 79801 | `104E4DDEE62F6EEEA8F642B74DDC1589432C74E3F0B441A930913207021B21C0` |
-| `shared/traceability/tasks.json` | 221695 | `84FFE59AEB4B511F394323F81FF45CB52D121D764B262BD025DE7DCB74EF4DB8` |
-| `shared/traceability/decisions.json` | 34168 | `DBC2C8B4F733F0524CB7BCE17D47C74F5E275140BAD38CBB25631AAE14C5A467` |
-| `shared/traceability/evidence-index.json` | 18251 | `E6123DC7CE0DD6212879773855902F0D91344E2B1A7342D310A14860ADA39CB9` |
+| `shared/tests/validate-traceability.mjs` | 37212 | `3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC` |
+| `shared/traceability/requirements.json` | 79801 | `C35D8AB3B528AC0803885CE05C3BDBA04E618618106A0094F18F070CEBC6A469` |
+| `shared/traceability/tasks.json` | 221847 | `1C98209FCED4DD61E5678355D06D2956F08CBEAE9F00B59229E2C5836B718E30` |
+| `shared/traceability/decisions.json` | 34415 | `033A8A19B1B079BE56D9355105099E2F44A2E5448DEAEDB55D56AE6319CCD4E9` |
+| `shared/traceability/evidence-index.json` | 18987 | `F571A503BE460CB9B18AB570DE7C1C6B45A850B8F79AEE7DC170B4778C34250A` |
 
-Plan source at the candidate is 292749 bytes, SHA-256 `40AE54A9EE6DB1D89543E2085699C52C5540A3F9720B17F3874B9DCE8F293A2C`.
+Final Plan source is 293149 bytes, SHA-256 `FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857`.
 
 ## Registry results
 
 - requirements: 71 exact IDs;
 - cases: 144 exact IDs, with current shared catalog `1.4.0 / 27` represented only as static-Oracle availability;
-- tasks: 59 exact IDs: 18 completed, 1 in progress, 32 unstarted and 8 cancelled;
+- tasks: 59 exact IDs after closure: 19 completed, 0 in progress, 32 unstarted and 8 cancelled;
 - governance: DEC 28, Q 7, RISK 17, DEBT 7, CHG 4;
-- evidence: 25 registered IDs, 23 exact files and two explicit historical plan-only rows;
+- evidence: 26 registered IDs, 24 exact files and two explicit historical plan-only rows;
 - selector counts: G1 13, G2 17, release 0.1 121, cumulative release 0.2 143;
 - case producer matrix: 144 rows;
 - full-case responsibility matrix: 144 rows; only B-excluded `CASE-STORAGE-003` has no B full-case owner.
@@ -61,9 +61,12 @@ The seven in-memory mutations prove rejection of duplicate requirements, orphan 
 
 This work creates no SQLite database, business table, repository, business record, OpenClaw/MCP production adapter or installable Skill. It does not convert the 27 static shared Oracles into product PASS. B remains `backend_pending`; a failed future business write must still create zero dietary business rows, although a separate redacted technical log may exist.
 
-## Remaining before completion
+## Independent review and closure
 
-- one bounded independent governance review;
-- review disposition and EV-026;
-- Plan 0.3/progress completion update and mirror regeneration;
-- final local verification, GitHub push and draft PR.
+The full isolated review verified every implementation invariant. It first returned one process P1 because the PR head contained an unreviewed documentation-only preparation commit, plus one P2 for a machine-specific Node path in the brief. The portable-command fix and exact PR/head lock received a bounded supplemental PASS:
+
+```text
+SH_TRACE_001_SUPPLEMENT|PASS|P0=0|P1=0|P2=0|sha=5986c64ade913bff210bc9055a73433ef2e60611|cleanup=1
+```
+
+Closure adds `EV-20260812-026`, marks this task complete, regenerates the mirrors for 26 evidence rows and identifies `B-STOR-001` as the next approved product task. No product backend is claimed by this report.

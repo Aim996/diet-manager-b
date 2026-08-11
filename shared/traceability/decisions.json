@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 292749,
-      "sha256": "40AE54A9EE6DB1D89543E2085699C52C5540A3F9720B17F3874B9DCE8F293A2C"
+      "length": 293149,
+      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,7 +14,7 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "F5E60E7C133C233F31968366912E60BAD56B088F1A43139DF565370DB5FE38FA"
+      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
     }
   },
   "counts": {
@@ -638,13 +638,14 @@
       "id": "RISK-010",
       "kind": "RISK",
       "reference_ids": [
-        "SH-TRACE-001"
+        "SH-TRACE-001",
+        "EV-20260812-026"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
-      "status_owner": "open / 治理负责人",
+      "status_owner": "closed / 治理负责人",
       "task": "SH-TRACE-001",
       "mitigation": "机器追踪和新鲜度校验",
-      "evidence": "候选内容上追踪报告EV"
+      "evidence": "EV-20260812-026：确定性镜像、零孤儿、状态/证据一致和独立复核通过；计划结构变化即重开"
     },
     {
       "id": "RISK-011",
@@ -703,13 +704,14 @@
       "reference_ids": [
         "DOC-003-001",
         "SH-TRACE-001",
-        "EV-20260809-010"
+        "EV-20260809-010",
+        "EV-20260812-026"
       ],
       "risk": "0.3重复枚举/状态；高/DOC批准",
-      "status_owner": "mitigated / Codex",
+      "status_owner": "closed / Codex",
       "task": "DOC-003-001、SH-TRACE-001",
       "mitigation": "SSOT复核并让机器持续检查",
-      "evidence": "EV-20260809-010已缓解；SH-TRACE-001证据后关闭"
+      "evidence": "EV-20260809-010缓解历史重复；EV-20260812-026关闭机器镜像与一致性缺口"
     },
     {
       "id": "RISK-016",
@@ -768,12 +770,13 @@
       "id": "DEBT-003",
       "kind": "DEBT",
       "reference_ids": [
-        "SH-TRACE-001"
+        "SH-TRACE-001",
+        "EV-20260812-026"
       ],
       "debt": "机器需求/任务/决定/证据镜像未建立；M2",
-      "status_owner": "open / 治理负责人",
+      "status_owner": "closed / 治理负责人",
       "task": "SH-TRACE-001",
-      "exit_evidence": "生成镜像、Schema和零孤儿报告EV"
+      "exit_evidence": "EV-20260812-026：四份可重生成镜像、7项mutation和独立治理复核通过"
     },
     {
       "id": "DEBT-004",

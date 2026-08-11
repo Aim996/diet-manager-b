@@ -5,6 +5,7 @@
 - repository: `https://github.com/Aim996/diet-manager-b`
 - branch: `agent/sh-trace-001-machine-mirror`
 - implementation candidate: `423a2d067394606858895bd015cfcebc8f7b24bc`
+- supplemented review candidate: `5986c64ade913bff210bc9055a73433ef2e60611`
 - base: `945a0ecc3dbcb38769f63121beab2e140d8ac667`
 - product route: B only
 
@@ -36,9 +37,8 @@ Report `P0`, `P1` and optional `P2` findings with exact file/line evidence. PASS
 ## Reproduction
 
 ```powershell
-$node = 'C:\Users\10481\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
-& $node shared/tests/validate-traceability.mjs --self-test
-& $node shared/tests/validate-traceability.mjs
+node shared/tests/validate-traceability.mjs --self-test
+node shared/tests/validate-traceability.mjs
 git diff --check 945a0ecc3dbcb38769f63121beab2e140d8ac667..423a2d067394606858895bd015cfcebc8f7b24bc
 ```
 

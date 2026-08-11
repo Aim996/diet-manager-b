@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 292749,
-      "sha256": "40AE54A9EE6DB1D89543E2085699C52C5540A3F9720B17F3874B9DCE8F293A2C"
+      "length": 293149,
+      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,15 +14,14 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "F5E60E7C133C233F31968366912E60BAD56B088F1A43139DF565370DB5FE38FA"
+      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
       "未开始": 32,
-      "已完成": 18,
-      "进行中": 1,
+      "已完成": 19,
       "已取消": 8
     },
     "case_producer_rows": 144,
@@ -6730,10 +6729,12 @@
       "deliverables": "trace JSON镜像+validator",
       "verification": "ID唯一、引用存在、状态证据一致、无复合伪ID；E-DOC",
       "roots": "ROOT-DOC",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 独立治理复核待执行",
-      "status": "进行中",
-      "next_reopen": "正从§30/31生成首版镜像；台账结构变化重开",
+      "actual_evidence_ids": [
+        "EV-20260812-026"
+      ],
+      "owner_reviewer": "Codex /root / OpenClaw 02独立治理复核",
+      "status": "已完成",
+      "next_reopen": "71/144/59/63/26、7项mutation、确定性重生成和独立复核PASS；台账结构、选择器、证据或生成器变化重开",
       "brief_path": "docs/work-items/SH-TRACE-001-brief.md",
       "case_assertion_paths": {},
       "full_case_set": "none",
@@ -6835,9 +6836,9 @@
       "verification": "Node/OpenClaw/driver矩阵；E-STOR",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立B存储复核",
+      "owner_reviewer": "Codex /root / 独立B存储复核待指派",
       "status": "未开始",
-      "next_reopen": "Q-002；依赖齐前不得开始；next=临时库兼容spike；驱动变化重开",
+      "next_reopen": "依赖已齐；next=补齐brief并在隔离临时库执行兼容spike；驱动、固定文件名、migration或打包边界变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

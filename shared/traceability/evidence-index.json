@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 292749,
-      "sha256": "40AE54A9EE6DB1D89543E2085699C52C5540A3F9720B17F3874B9DCE8F293A2C"
+      "length": 293149,
+      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "F5E60E7C133C233F31968366912E60BAD56B088F1A43139DF565370DB5FE38FA"
+      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
     }
   },
   "counts": {
-    "evidence": 25,
-    "files_present": 23,
+    "evidence": 26,
+    "files_present": 24,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -448,6 +448,24 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "SH-HARNESS-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-026",
+      "scope": "SH-TRACE-001 机器追踪",
+      "result": "71 REQ、144 CASE、59 TASK、63 governance和26 EV可由唯一Markdown权威确定性生成；7项mutation、PS5.1回读和独立复核P0=0/P1=0/P2=0",
+      "limitation": "关闭M2追踪与零孤儿门；不代表SQLite、repository、业务写入、安装或G1/G2/G3完成",
+      "reference_ids": [
+        "SH-TRACE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-026-sh-trace-001.md",
+        "length": 2808,
+        "sha256": "C70477E9C5FE6479A674CFCC4B1148F968D775A657EDCD1E992B11F7C7427410"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-TRACE-001"
       ]
     }
   ]
