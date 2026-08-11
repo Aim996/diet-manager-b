@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295085,
-      "sha256": "E8E113A76CD84F58F0FD1E9E95BB58C89BF37495EB143D6199AE04907F8B4DF9"
+      "length": 295323,
+      "sha256": "F555300D07DA6397E55327CF196F34D665989C289559E98A40B3C6C1269566F9"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "0A58C198161E5AD153C216891259C5E48E504A4E47253A08F19E670517949329"
+      "sha256": "363D5D680ECAA6F578FDB3FC77C55A4A443F40499DD5C0745CC817350B7B4A96"
     }
   },
   "counts": {
-    "evidence": 29,
-    "files_present": 27,
+    "evidence": 30,
+    "files_present": 28,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -520,6 +520,25 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "B-STOR-002"
+      ]
+    },
+    {
+      "id": "EV-20260812-030",
+      "scope": "X-GATE-001 B-only存储安全门",
+      "result": "三项依赖提交/EV哈希精确，13项G1存储责任、7项检查、6项门变异、69项B测试、并发/崩溃、OpenClaw本地门与追踪均PASS；独立复核P0=0/P1=0/P2=2，决策=pass_b_safety",
+      "limitation": "只授权B-SLICE-001；不代表完整产品案例、G2/G3、安装、部署或Skill可用",
+      "reference_ids": [
+        "X-GATE-001",
+        "B-SLICE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-030-x-gate-001.md",
+        "length": 2444,
+        "sha256": "904F131D223A527614FBD0AE629DE88E4D16393D1CDBF8FCE157217197DB3E26"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "X-GATE-001"
       ]
     }
   ]

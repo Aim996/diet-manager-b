@@ -1,6 +1,6 @@
 # X-GATE-001 Gate Report
 
-## Decision candidate
+## Decision
 
 `pass_b_safety`
 
@@ -59,4 +59,12 @@ New test-owned residual: 0
 - Public Skill/OpenClaw entry remains non-writing.
 - No A/C result is borrowed and no `selected-route-map` is created.
 
-Subject to an independent P0/P1 review of the frozen matrix and decision logic, the correct gate outcome is `pass_b_safety`, with `B-SLICE-001` as the only authorized next implementation task.
+## Independent review
+
+OpenClaw 02 reproduced the frozen candidate in a fresh public clone and reported:
+
+```text
+X_GATE_001_REVIEW|PASS|P0=0|P1=0|P2=2|sha=443db4500fa5df37ea776e2f8449d9e5858f4dce|decision=pass_b_safety|cleanup=1
+```
+
+The gate outcome is therefore `pass_b_safety`, with `B-SLICE-001` as the only authorized next implementation task. The two P2 observations are recorded and deferred because they are documentation ergonomics, not safety evidence gaps.

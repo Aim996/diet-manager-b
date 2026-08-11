@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295085,
-      "sha256": "E8E113A76CD84F58F0FD1E9E95BB58C89BF37495EB143D6199AE04907F8B4DF9"
+      "length": 295323,
+      "sha256": "F555300D07DA6397E55327CF196F34D665989C289559E98A40B3C6C1269566F9"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,16 +14,15 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "0A58C198161E5AD153C216891259C5E48E504A4E47253A08F19E670517949329"
+      "sha256": "363D5D680ECAA6F578FDB3FC77C55A4A443F40499DD5C0745CC817350B7B4A96"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
       "未开始": 28,
-      "已完成": 22,
-      "已取消": 8,
-      "进行中": 1
+      "已完成": 23,
+      "已取消": 8
     },
     "case_producer_rows": 144,
     "full_case_responsibility_assignments": 5,
@@ -2846,9 +2845,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-EFFECT-003/pending_retry_and_exactly_once_effect"
+          ]
         },
         {
           "task_id": "A-FAULT-001",
@@ -3033,9 +3034,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-FOUNDATION-002/nonwriting_public_entry_and_zero_residual"
+          ]
         },
         {
           "task_id": "SEL-RELIABILITY-001",
@@ -3088,9 +3091,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-INVENTORY-001/add_deduct_projection"
+          ]
         },
         {
           "task_id": "SEL-PANTRY-001",
@@ -3177,9 +3182,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-INVENTORY-004/revision_bound_inventory_fact"
+          ]
         },
         {
           "task_id": "A-SLICE-001",
@@ -3289,9 +3296,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-INVENTORY-007/nonnegative_insufficient_stock"
+          ]
         }
       ]
     },
@@ -4603,9 +4612,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-PURCHASE-001/atomic_batch_add"
+          ]
         },
         {
           "task_id": "SEL-PANTRY-001",
@@ -4801,9 +4812,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-QUERY-003/reopen_projection_query"
+          ]
         },
         {
           "task_id": "SEL-QUERY-001",
@@ -5148,9 +5161,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-001/atomic_fact_and_idempotency"
+          ]
         },
         {
           "task_id": "A-SLICE-001",
@@ -5192,9 +5207,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-002/precommit_failure_zero_business_rows"
+          ]
         },
         {
           "task_id": "SEL-RELIABILITY-001",
@@ -5260,9 +5277,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-004/fixed_private_root_and_nonwriting_entry"
+          ]
         },
         {
           "task_id": "SEL-RELIABILITY-001",
@@ -5301,9 +5320,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-005/restart_migration_and_backup_integrity"
+          ]
         },
         {
           "task_id": "B-FAULT-001",
@@ -5375,9 +5396,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-006/response_loss_exact_replay"
+          ]
         },
         {
           "task_id": "A-FAULT-001",
@@ -5493,9 +5516,11 @@
         },
         {
           "task_id": "X-GATE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/cases/CASE-STORAGE-007/transition_and_finalizer_atomicity"
+          ]
         },
         {
           "task_id": "A-FAULT-001",
@@ -7148,14 +7173,56 @@
       "deliverables": "B-only G1硬安全报告与精确后继处置",
       "verification": "B独立通过§26.4全部硬门；不评分、不借A/C EV；E-GATE",
       "roots": "ROOT-SHARED",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 独立门复核待执行",
-      "status": "进行中",
-      "next_reopen": "dependencies complete through EV-20260812-029; brief/plan frozen；next=只核验现有B证据并明确选择pass_b_safety或return_to_b_storage；证据/候选变化重开",
+      "actual_evidence_ids": [
+        "EV-20260812-030"
+      ],
+      "owner_reviewer": "Codex /root / OpenClaw 02独立门复核",
+      "status": "已完成",
+      "next_reopen": "pass_b_safety；13项存储责任/7检查/69 B tests/并发崩溃和复核P0=0/P1=0；仅解锁B-SLICE-001，依赖证据或候选变化重开",
       "brief_path": "docs/work-items/X-GATE-001-brief.md",
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "case_assertion_paths": {
+        "CASE-STORAGE-001": [
+          "/cases/CASE-STORAGE-001/atomic_fact_and_idempotency"
+        ],
+        "CASE-STORAGE-002": [
+          "/cases/CASE-STORAGE-002/precommit_failure_zero_business_rows"
+        ],
+        "CASE-STORAGE-004": [
+          "/cases/CASE-STORAGE-004/fixed_private_root_and_nonwriting_entry"
+        ],
+        "CASE-STORAGE-005": [
+          "/cases/CASE-STORAGE-005/restart_migration_and_backup_integrity"
+        ],
+        "CASE-STORAGE-006": [
+          "/cases/CASE-STORAGE-006/response_loss_exact_replay"
+        ],
+        "CASE-STORAGE-007": [
+          "/cases/CASE-STORAGE-007/transition_and_finalizer_atomicity"
+        ],
+        "CASE-EFFECT-003": [
+          "/cases/CASE-EFFECT-003/pending_retry_and_exactly_once_effect"
+        ],
+        "CASE-FOUNDATION-002": [
+          "/cases/CASE-FOUNDATION-002/nonwriting_public_entry_and_zero_residual"
+        ],
+        "CASE-INVENTORY-007": [
+          "/cases/CASE-INVENTORY-007/nonnegative_insufficient_stock"
+        ],
+        "CASE-PURCHASE-001": [
+          "/cases/CASE-PURCHASE-001/atomic_batch_add"
+        ],
+        "CASE-QUERY-003": [
+          "/cases/CASE-QUERY-003/reopen_projection_query"
+        ],
+        "CASE-INVENTORY-001": [
+          "/cases/CASE-INVENTORY-001/add_deduct_projection"
+        ],
+        "CASE-INVENTORY-004": [
+          "/cases/CASE-INVENTORY-004/revision_bound_inventory_fact"
+        ]
+      },
+      "full_case_set": "G1_COMMON_B_ONLY",
+      "assertion_state": "declared"
     },
     {
       "id": "A-SLICE-001",
@@ -7247,9 +7314,9 @@
       "verification": "§26.5 B-only固定共同Oracle全通过；E-STOR+E-CASE",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立B纵切复核",
+      "owner_reviewer": "Codex /root待设计 / 独立B纵切复核待定",
       "status": "未开始",
-      "next_reopen": "X-GATE-001通过前不得开始；切片变化重开",
+      "next_reopen": "G1已通过；next=按已批准§26.5拆分首条可审查设计并取得确认，随后转进行中；切片或上游证据变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

@@ -5,12 +5,13 @@
 - task_id: `X-GATE-001`
 - milestone: `M3`
 - type: `B-only G1 storage safety gate`
-- status: `in_progress`
+- status: `complete`
 - product_line: `B only`
 - owner: `Codex /root as gate host`
-- reviewer: `one bounded independent gate review after local candidate freeze`
+- reviewer: `OpenClaw 02 bounded independent gate review`
 - dependencies: `B-STOR-001`, `B-MERGE-C-001`, `B-STOR-002`
 - evidence inputs: `EV-20260812-027`, `EV-20260812-028`, `EV-20260812-029`
+- completion evidence: `EV-20260812-030`
 - roots: `ROOT-SHARED`, `ROOT-B`
 
 ## Objective
@@ -51,3 +52,38 @@ It must produce exactly one outcome:
 ## Reopen conditions
 
 Reopen when any dependency implementation/evidence changes, a required G1 case loses fresh evidence, the protected/official-root boundary changes, or the gate decision is contradicted by a later deterministic test.
+
+## Final result
+
+`pass_b_safety`; only `B-SLICE-001` is authorized next. This does not claim G2/G3, installation or product readiness.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-STORAGE-001:
+    - /cases/CASE-STORAGE-001/atomic_fact_and_idempotency
+  CASE-STORAGE-002:
+    - /cases/CASE-STORAGE-002/precommit_failure_zero_business_rows
+  CASE-STORAGE-004:
+    - /cases/CASE-STORAGE-004/fixed_private_root_and_nonwriting_entry
+  CASE-STORAGE-005:
+    - /cases/CASE-STORAGE-005/restart_migration_and_backup_integrity
+  CASE-STORAGE-006:
+    - /cases/CASE-STORAGE-006/response_loss_exact_replay
+  CASE-STORAGE-007:
+    - /cases/CASE-STORAGE-007/transition_and_finalizer_atomicity
+  CASE-EFFECT-003:
+    - /cases/CASE-EFFECT-003/pending_retry_and_exactly_once_effect
+  CASE-FOUNDATION-002:
+    - /cases/CASE-FOUNDATION-002/nonwriting_public_entry_and_zero_residual
+  CASE-INVENTORY-007:
+    - /cases/CASE-INVENTORY-007/nonnegative_insufficient_stock
+  CASE-PURCHASE-001:
+    - /cases/CASE-PURCHASE-001/atomic_batch_add
+  CASE-QUERY-003:
+    - /cases/CASE-QUERY-003/reopen_projection_query
+  CASE-INVENTORY-001:
+    - /cases/CASE-INVENTORY-001/add_deduct_projection
+  CASE-INVENTORY-004:
+    - /cases/CASE-INVENTORY-004/revision_bound_inventory_fact
+full_case_set: G1_COMMON_B_ONLY
