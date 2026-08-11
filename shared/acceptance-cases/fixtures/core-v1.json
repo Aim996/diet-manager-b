@@ -1,6 +1,6 @@
 {
   "fixture_catalog_id": "diet-manager/core-fixtures-v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "environments": [
     {
       "fixture_id": "env-zh-cn-20260811",
@@ -60,6 +60,221 @@
           "summary": "voided"
         }
       ]
+    }
+  ],
+  "domain_scenarios": [
+    {
+      "fixture_id": "domain-purchase-milk-2x12x250-v1",
+      "scenario_type": "purchase_package",
+      "product": {
+        "product_id": "fixture-product-milk-whole-250",
+        "normalized_name": "milk",
+        "variant": "whole_milk_250ml"
+      },
+      "package": {
+        "outer_count": 2,
+        "outer_unit": "box",
+        "inner_per_outer": 12,
+        "inner_unit": "carton",
+        "capacity_per_inner": 250,
+        "capacity_unit": "ml",
+        "total_inner": 24,
+        "total_capacity": 6000,
+        "formula": "2*12*250=6000",
+        "expiry_date": null
+      }
+    },
+    {
+      "fixture_id": "domain-inventory-multiple-products-v1",
+      "scenario_type": "inventory_multiple_products",
+      "request": {
+        "normalized_name": "milk",
+        "quantity": 1,
+        "unit": "carton"
+      },
+      "candidates": [
+        {
+          "product_id": "fixture-product-milk-whole-250",
+          "variant": "whole_milk_250ml",
+          "batch_id": "fixture-batch-whole-001",
+          "before_quantity": 6,
+          "after_quantity": 6,
+          "unit": "carton"
+        },
+        {
+          "product_id": "fixture-product-milk-lowfat-250",
+          "variant": "lowfat_milk_250ml",
+          "batch_id": "fixture-batch-lowfat-001",
+          "before_quantity": 8,
+          "after_quantity": 8,
+          "unit": "carton"
+        }
+      ]
+    },
+    {
+      "fixture_id": "domain-nutrition-label-milk-v1",
+      "scenario_type": "exact_product_label",
+      "product": {
+        "product_id": "fixture-product-milk-whole-250",
+        "normalized_name": "milk",
+        "variant": "whole_milk_250ml",
+        "package_unit": "carton"
+      },
+      "label": {
+        "source_type": "product_label",
+        "source_ref": "fixture-label-whole-milk-250-v1",
+        "profile_version": 1,
+        "applicable_product_id": "fixture-product-milk-whole-250",
+        "coverage": "partial",
+        "raw_label": "每盒250ml；能量160kcal；蛋白质8g；脂肪8g；碳水化合物12g；钠120mg",
+        "parsed_values": {
+          "energy_kcal": 160,
+          "protein_g": 8,
+          "fat_g": 8,
+          "carbohydrate_g": 12,
+          "sodium_mg": 120
+        },
+        "missing_fields": ["fiber_g"]
+      }
+    },
+    {
+      "fixture_id": "domain-issue-amount-inventory-v1",
+      "scenario_type": "amount_and_inventory_ambiguity",
+      "quantity_estimate": {
+        "normalized_name": "oatmeal",
+        "quantity": 1,
+        "unit": "bowl",
+        "estimated": true
+      },
+      "inventory_candidates": [
+        "fixture-product-milk-whole-250",
+        "fixture-product-milk-lowfat-250"
+      ],
+      "issue_codes": ["quantity_estimated", "inventory_multiple_candidates"]
+    },
+    {
+      "fixture_id": "domain-correction-eggs-2-to-3-v1",
+      "scenario_type": "append_only_amount_correction",
+      "original_meal": {
+        "fixture_meal_id": "fixture-meal-eggs-two",
+        "normalized_name": "egg",
+        "quantity": 2,
+        "unit": "piece",
+        "affected_date": "2026-08-11"
+      },
+      "original_inventory": {
+        "batch_id": "fixture-batch-eggs-001",
+        "quantity_after_original": 10,
+        "unit": "piece"
+      },
+      "expected_delta": {
+        "effective_quantity": 3,
+        "quantity_delta": 1,
+        "nutrition_egg_delta": 1,
+        "inventory_egg_delta": 1
+      }
+    },
+    {
+      "fixture_id": "domain-mixed-purchase-drink-v1",
+      "scenario_type": "ordered_mixed_command",
+      "package": {
+        "product_id": "fixture-product-milk-whole-250",
+        "outer_count": 1,
+        "inner_per_outer": 24,
+        "unit": "carton"
+      },
+      "pre_inventory": {
+        "quantity": 0,
+        "unit": "carton"
+      },
+      "expected": {
+        "children": [
+          {"sequence": 0, "intent": "purchase", "quantity_delta": 24},
+          {"sequence": 1, "intent": "meal", "quantity_delta": -1}
+        ],
+        "final_quantity": 23,
+        "envelope_finalize_count": 1
+      }
+    },
+    {
+      "fixture_id": "domain-effect-nutrition-failure-v1",
+      "scenario_type": "effect_bundle_failure",
+      "failure_injection_point": "nutrition_snapshot_write",
+      "pre_state_vector": "meal_events=1|nutrition_snapshots=0|inventory_effects=0|issues=0|outbox=pending|envelope=fact_committed|receipt=0|daily_progress=0|terminal_idempotency=0",
+      "pre_state_hash": "389EA70606C4DE90C1E7821FC614DAC037E38E58522310A75A65416DA44D823A",
+      "expected_error_code": "nutrition_effect_write_failed",
+      "should_rollback": "effect_bundle_only",
+      "post_state_vector": "meal_events=1|nutrition_snapshots=0|inventory_effects=0|issues=0|outbox=retryable_failed|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0",
+      "post_state_hash": "6112F8CB61105FB25C41D0BE590A487CA514D673FE2C14BA9C6A2C4F70E6C47E",
+      "state_after_restart": {
+        "meal_fact_preserved": true,
+        "outbox_status": "retryable_failed",
+        "envelope_status": "effects_pending"
+      },
+      "same_key_retry_result": {
+        "action": "retry_missing_effect_only",
+        "nutrition_snapshot_writes": 1,
+        "envelope_finalize_count": 1
+      },
+      "official_business_data_diff": {
+        "meal_event_count_delta": 0,
+        "effect_bundle_business_write_count": 0,
+        "receipt_count": 0,
+        "daily_progress_count": 0,
+        "terminal_idempotency_count": 0
+      }
+    },
+    {
+      "fixture_id": "domain-finalizer-failure-concurrent-v1",
+      "scenario_type": "envelope_finalize_failure",
+      "failure_injection_point": "envelope_finalize_write",
+      "pre_state_vector": "meal_events=1|nutrition_snapshots=1|inventory_effects=1|issues=0|outbox=succeeded|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0|projection_energy=500",
+      "pre_state_hash": "885388007517BA51211C12727DA556612A656C7E61587C7D9C0EE8D5F2EFD259",
+      "expected_error_code": "envelope_finalize_write_failed",
+      "should_rollback": "envelope_finalize_only",
+      "post_state_vector": "meal_events=1|nutrition_snapshots=1|inventory_effects=1|issues=0|outbox=succeeded|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0|projection_energy=500",
+      "post_state_hash": "885388007517BA51211C12727DA556612A656C7E61587C7D9C0EE8D5F2EFD259",
+      "state_after_restart": {
+        "meal_fact_preserved": true,
+        "nutrition_snapshot_count": 1,
+        "inventory_effect_count": 1,
+        "envelope_status": "effects_pending"
+      },
+      "same_key_retry_result": {
+        "action": "finalize_once",
+        "current_turn_increments": {"energy_kcal": 100},
+        "projection_before_concurrent_write": {"energy_kcal": 500},
+        "concurrent_contribution": {"energy_kcal": 50},
+        "committed_totals": {"energy_kcal": 650},
+        "envelope_finalize_count": 1
+      },
+      "official_business_data_diff": {
+        "new_fact_count": 0,
+        "new_effect_count": 0,
+        "receipt_count_before_retry": 0,
+        "daily_progress_count_before_retry": 0,
+        "terminal_idempotency_count_before_retry": 0
+      }
+    },
+    {
+      "fixture_id": "domain-idempotency-conflict-v1",
+      "scenario_type": "idempotency_conflicts",
+      "original": {
+        "key": "idem-fixed-001",
+        "subject": "user:fixture",
+        "command": "record_meal",
+        "digest": "digest-apple-v1",
+        "result_ref": "fixture-result-apple-v1"
+      },
+      "conflicts": [
+        {"kind": "changed_digest", "key": "idem-fixed-001", "subject": "user:fixture", "command": "record_meal", "digest": "digest-apple-v2"},
+        {"kind": "changed_subject", "key": "idem-fixed-001", "subject": "user:other", "command": "record_meal", "digest": "digest-apple-v1"},
+        {"kind": "changed_command", "key": "idem-fixed-001", "subject": "user:fixture", "command": "record_water", "digest": "digest-apple-v1"}
+      ],
+      "pre_state_vector": "terminal_records=1|business_writes=0|frozen_key=idem-fixed-001|frozen_digest=digest-apple-v1|frozen_subject=user:fixture|frozen_command=record_meal",
+      "pre_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2",
+      "post_state_vector": "terminal_records=1|business_writes=0|frozen_key=idem-fixed-001|frozen_digest=digest-apple-v1|frozen_subject=user:fixture|frozen_command=record_meal",
+      "post_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2"
     }
   ]
 }
