@@ -81,8 +81,13 @@ export interface AuthorizedServerPreview {
 export interface AuthorizedRepositoryPreview {
   binding: PreviewBindingV1;
   idempotency_key: string;
-  envelope_state: "received" | "effects_pending";
-  result_status: "preview_ready" | "facts_committed_effects_pending";
+  envelope_state: "received" | "effects_pending" | "effects_stable" | "finalized";
+  result_status:
+    | "preview_ready"
+    | "facts_committed_effects_pending"
+    | "effects_stable"
+    | "committed"
+    | "committed_with_issues";
 }
 
 interface FrozenCreateInput {
@@ -526,8 +531,7 @@ export function authorizeRepositoryPreview(
   if (
     row.envelope_id !== row.operation_id ||
     row.envelope_idempotency_key !== row.idempotency_key ||
-    row.envelope_input_digest !== row.idempotency_input_digest ||
-    row.terminal_result_json !== null
+    row.envelope_input_digest !== row.idempotency_input_digest
   ) {
     return authorityInvalid("identity");
   }
@@ -536,14 +540,34 @@ export function authorizeRepositoryPreview(
     row.envelope_state === "received" &&
     row.result_status === "preview_ready" &&
     row.committed_at === null &&
-    row.idempotency_state === "preview_ready";
+    row.idempotency_state === "preview_ready" &&
+    row.terminal_result_json === null;
   const factsCommitted =
     row.envelope_state === "effects_pending" &&
     row.result_status === "facts_committed_effects_pending" &&
     typeof row.committed_at === "string" &&
     row.committed_at.length > 0 &&
-    row.idempotency_state === "effects_pending";
-  if (!previewReady && !factsCommitted) return authorityInvalid("state");
+    row.idempotency_state === "effects_pending" &&
+    row.terminal_result_json === null;
+  const effectsStable =
+    row.envelope_state === "effects_stable" &&
+    row.result_status === "effects_stable" &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "effects_stable" &&
+    row.terminal_result_json === null;
+  const finalized =
+    row.envelope_state === "finalized" &&
+    (row.result_status === "committed" ||
+      row.result_status === "committed_with_issues") &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "finalized" &&
+    typeof row.terminal_result_json === "string" &&
+    row.terminal_result_json.length > 0;
+  if (!previewReady && !factsCommitted && !effectsStable && !finalized) {
+    return authorityInvalid("state");
+  }
 
   const authoritativeBinding = storedBinding(row.payload_json);
   if (!bindingEquals(authoritativeBinding, tokenBinding)) {
@@ -556,9 +580,19 @@ export function authorizeRepositoryPreview(
   return Object.freeze({
     binding: authoritativeBinding,
     idempotency_key: row.idempotency_key,
-    envelope_state: previewReady ? "received" : "effects_pending",
+    envelope_state: previewReady
+      ? "received"
+      : finalized
+        ? "finalized"
+      : effectsStable
+        ? "effects_stable"
+        : "effects_pending",
     result_status: previewReady
       ? "preview_ready"
-      : "facts_committed_effects_pending",
+      : finalized
+        ? (row.result_status as "committed" | "committed_with_issues")
+      : effectsStable
+        ? "effects_stable"
+        : "facts_committed_effects_pending",
   });
 }

@@ -8,6 +8,7 @@ import {
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { computeRepositoryDataRevision } from "./revision.js";
 
 const INPUT_FIELDS = [
   "commandType",
@@ -101,7 +102,15 @@ export interface PreparedFactCommit {
   effects: PreparedEffectIntent[];
 }
 
-export type FactCommitFault = "before_commit" | "after_commit_before_reply";
+export type FactCommitFault =
+  | "after_event"
+  | "after_items"
+  | "after_effects"
+  | "after_facts_transition"
+  | "after_pending_transition"
+  | "after_idempotency"
+  | "before_commit"
+  | "after_commit_before_reply";
 
 export interface FactCommitFailureEntry {
   phase: "fact_commit";
@@ -245,8 +254,16 @@ function exactOptions(value: FactCommitOptions | undefined): Readonly<FactCommit
   const fault = descriptors.fault?.value;
   if (
     fault !== undefined &&
-    fault !== "before_commit" &&
-    fault !== "after_commit_before_reply"
+    ![
+      "after_event",
+      "after_items",
+      "after_effects",
+      "after_facts_transition",
+      "after_pending_transition",
+      "after_idempotency",
+      "before_commit",
+      "after_commit_before_reply",
+    ].includes(String(fault))
   ) {
     return requestInvalid("fault");
   }
@@ -258,6 +275,13 @@ function exactOptions(value: FactCommitOptions | undefined): Readonly<FactCommit
     ...(fault === undefined ? {} : { fault }),
     ...(failureSink === undefined ? {} : { failureSink }),
   });
+}
+
+function injectFault(
+  options: Readonly<FactCommitOptions>,
+  point: Exclude<FactCommitFault, "after_commit_before_reply">,
+): void {
+  if (options.fault === point) throw new Error(`FACT_COMMIT_FAILED:${point}`);
 }
 
 function ascii(value: unknown, field: string, maxLength = 256): string {
@@ -401,9 +425,11 @@ function freezeInput(value: PreparedFactCommit): FrozenFactCommit {
   const fields = exactDataProperties(value, INPUT_FIELDS);
   const event = freezeEvent(fields.event.value);
   const items = freezeItems(fields.items.value);
+  const effects = freezeEffects(fields.effects.value);
   if (event.eventType === "diet_meal" && items.length === 0) {
     return requestInvalid("items");
   }
+  if (effects.length === 0) return requestInvalid("effects");
   return Object.freeze({
     database: database(fields.database.value),
     secret: secret(fields.secret.value),
@@ -415,7 +441,7 @@ function freezeInput(value: PreparedFactCommit): FrozenFactCommit {
     traceId: ascii(fields.traceId.value, "trace_id"),
     event,
     items,
-    effects: freezeEffects(fields.effects.value),
+    effects,
   });
 }
 
@@ -507,11 +533,19 @@ function assertReplayRows(
         effectRow.effect_id === expected.effectId &&
         effectRow.effect_kind === expected.effectKind &&
         effectRow.previous_state === expected.previousState &&
-        effectRow.state === "pending" &&
-        effectRow.attempt_count === 0 &&
-        effectRow.reason === expected.reason &&
+        [
+          "pending",
+          "processing",
+          "succeeded",
+          "retryable_failed",
+          "permanent_business_skip",
+        ].includes(effectRow.state) &&
+        Number.isSafeInteger(effectRow.attempt_count) &&
+        effectRow.attempt_count >= 0 &&
+        (effectRow.state === "permanent_business_skip" ||
+          effectRow.reason === expected.reason) &&
         effectRow.created_at === event.committedAt &&
-        effectRow.updated_at === event.committedAt
+        typeof effectRow.updated_at === "string"
       );
     })
   ) {
@@ -573,7 +607,10 @@ export function commitPreparedFact(
       dataRevision: frozen.dataRevision,
     });
 
-    if (authority.envelope_state === "effects_pending") {
+    if (
+      authority.envelope_state === "effects_pending" ||
+      authority.envelope_state === "effects_stable"
+    ) {
       const replay = assertReplayRows(
         frozen,
         authority.binding.preview_id,
@@ -582,6 +619,9 @@ export function commitPreparedFact(
       frozen.database.exec("ROLLBACK");
       transactionOpen = false;
       return replay;
+    }
+    if (authority.binding.data_revision !== computeRepositoryDataRevision(frozen.database)) {
+      throw new Error("PREVIEW_STALE:data_revision");
     }
 
     const event = frozen.event;
@@ -611,6 +651,7 @@ export function commitPreparedFact(
         event.mealSlot,
         event.payloadJson,
       );
+    injectFault(frozenOptions, "after_event");
 
     const insertItem = frozen.database.prepare(
       `INSERT INTO meal_items(
@@ -627,6 +668,7 @@ export function commitPreparedFact(
         item.payloadJson,
       );
     }
+    injectFault(frozenOptions, "after_items");
 
     const insertEffect = frozen.database.prepare(
       `INSERT INTO effect_outbox(
@@ -647,6 +689,7 @@ export function commitPreparedFact(
         event.committedAt,
       );
     }
+    injectFault(frozenOptions, "after_effects");
 
     assertEnvelopeTransition("received", "facts_committed");
     frozen.database
@@ -659,6 +702,7 @@ export function commitPreparedFact(
     if (changed(frozen.database) !== 1) {
       throw new Error("FACT_COMMIT_AUTHORITY_INVALID:received_compare_and_set");
     }
+    injectFault(frozenOptions, "after_facts_transition");
 
     assertEnvelopeTransition("facts_committed", "effects_pending");
     frozen.database
@@ -671,6 +715,7 @@ export function commitPreparedFact(
     if (changed(frozen.database) !== 1) {
       throw new Error("FACT_COMMIT_AUTHORITY_INVALID:effects_compare_and_set");
     }
+    injectFault(frozenOptions, "after_pending_transition");
 
     frozen.database
       .prepare(
@@ -688,10 +733,8 @@ export function commitPreparedFact(
     if (changed(frozen.database) !== 1) {
       throw new Error("FACT_COMMIT_AUTHORITY_INVALID:idempotency_compare_and_set");
     }
-
-    if (frozenOptions.fault === "before_commit") {
-      throw new Error("FACT_COMMIT_FAILED:before_commit");
-    }
+    injectFault(frozenOptions, "after_idempotency");
+    injectFault(frozenOptions, "before_commit");
 
     frozen.database.exec("COMMIT");
     transactionOpen = false;

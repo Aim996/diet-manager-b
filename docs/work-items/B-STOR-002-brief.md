@@ -35,7 +35,7 @@ Use one internal B repository with the three transaction boundaries already froz
 
 1. `FactCommit` verifies the server preview inside `BEGIN IMMEDIATE`, inserts one event, its minimal meal items and durable effect outbox rows, advances the envelope through the legal states to `effects_pending`, and commits once.
 2. `EffectBundle` claims one pending effect and atomically applies the corresponding inventory mutation/projection or records a retryable/business-skip outcome. A failed effect never erases the committed fact.
-3. `EnvelopeFinalize` remains deferred to the later business slice because receipts, progress and mixed-item final results are not implemented in this storage milestone.
+3. `EnvelopeFinalize` atomically stores an already prepared frozen terminal result and advances terminal idempotency. Receipt rendering, progress computation and mixed-item business rules remain deferred.
 
 Repository inputs are strict prepared DTOs. They carry deterministic IDs and canonical payloads produced by a future domain service; they are not raw model output and cannot report their own envelope state or data revision.
 
@@ -83,6 +83,14 @@ Repository inputs are strict prepared DTOs. They carry deterministic IDs and can
 - retry after response loss or restart observes the committed effect and returns it without repeating inventory mutation;
 - projection queries read only committed projection rows and remain identical after closing/reopening the database.
 
+### EnvelopeFinalize
+
+- accepts only an already prepared canonical terminal payload after all effects are stable;
+- inserts one finalization row, updates the envelope and freezes the terminal idempotency result in one transaction;
+- a fault at any finalizer write point rolls the whole finalizer back while preserving the fact and stable effects;
+- response loss after finalizer commit replays the original frozen terminal result even after another request changes current projections;
+- this task does not compute receipt wording, nutrition, progress or mixed-item decisions.
+
 ### Recovery and concurrency
 
 - WAL plus `BEGIN IMMEDIATE` serializes competing commits;
@@ -101,7 +109,7 @@ Repository inputs are strict prepared DTOs. They carry deterministic IDs and can
 - same-key/different-input concurrency returns conflict with no mutation;
 - purchase projection survives restart; deduction cannot make quantity negative;
 - insufficient inventory produces no inventory transaction or projection mutation;
-- pending effect recovery is deterministic and exactly-once;
+- pending effect recovery and terminal finalization replay are deterministic and exactly-once;
 - all focused and existing B tests, TypeScript build and package build pass;
 - no protected path, official data root, credential or test-platform token is read, changed or committed.
 
@@ -110,7 +118,7 @@ Repository inputs are strict prepared DTOs. They carry deterministic IDs and can
 - parser/model-to-prepared-command conversion;
 - user-facing preview/confirmation conversation;
 - nutrition source lookup and nutrition snapshots;
-- correction, undo, daily progress, final receipts and mixed-item finalization;
+- correction, undo, daily-progress computation, receipt rendering and mixed-item decision logic;
 - OpenClaw/MCP/Skill runtime wiring;
 - backup/export product UX or migration v2;
 - any A/C product implementation.
