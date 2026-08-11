@@ -2,7 +2,7 @@
 
 饮食管家 B 是一个以 Skill 为智能体入口、SQLite 为唯一业务后端的饮食记录项目。OpenClaw、MCP 和其他智能体平台只提供薄适配层，不复制业务逻辑。
 
-> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。SQLite bootstrap/migration、服务端权威 preview/state guard 与原子 repository 已通过独立复核；当前进入 B-only 硬安全门，完整饮食纵向闭环尚未交付。
+> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。SQLite bootstrap/migration、服务端权威 preview/state guard、原子 repository 与 B-only 存储硬安全门均已通过独立复核；下一步是设计并实现最小饮食纵向闭环。
 
 ## 当前路线
 
@@ -15,6 +15,8 @@
 当前执行计划见 [总功能开发计划0.3.md](./总功能开发计划0.3.md)，简明进度见 [docs/开发进度.md](./docs/开发进度.md)。
 
 `B-STOR-002` 的实现报告、独立复核和证据分别见 [实现报告](./docs/work-items/B-STOR-002-report.md)、[复核报告](./docs/work-items/B-STOR-002-review.md) 与 [EV-20260812-029](./docs/evidence/EV-20260812-029-b-stor-002.md)。当前公开草稿 PR 为 [#8](https://github.com/Aim996/diet-manager-b/pull/8)。
+
+`X-GATE-001` 的门报告、复核和证据见 [门报告](./docs/work-items/X-GATE-001-report.md)、[复核报告](./docs/work-items/X-GATE-001-review.md) 与 [EV-20260812-030](./docs/evidence/EV-20260812-030-x-gate-001.md)；草稿 PR 为 [#9](https://github.com/Aim996/diet-manager-b/pull/9)。
 
 ## 从 GitHub 下载
 
@@ -66,7 +68,7 @@ pnpm build
 
 ## 下一步
 
-1. 执行 `X-GATE-001` B-only 存储硬安全门；该门只复核现有证据，不扩写新底座。
-2. 门通过后开始记录、查询、更正、撤销的真实纵向闭环。
+1. 按已批准的 Plan 0.3 把 `B-SLICE-001` 拆成可审查的最小饮食纵向闭环设计。
+2. 实现记录、库存、营养、纠正和查询的首条真实端到端路径。
 3. 完成故障矩阵与 B-only 路径绑定。
 4. 部署到专用 OpenClaw 环境；业务稳定后再增加 MCP 薄适配器。
