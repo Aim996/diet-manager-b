@@ -3,7 +3,7 @@
 ## Candidate identity
 
 - task: `SH-CASE-001`
-- status: local candidate GREEN; independent review pending
+- status: completed; independent review and clone reproduction PASS
 - product line: B-only shared Oracle
 - case catalog: `shared/acceptance-cases/cases.json`
 - fixture catalog: `shared/acceptance-cases/fixtures/core-v1.json`
@@ -94,9 +94,21 @@ ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=1.0.0|cases=65|definitions=12|semant
 - no OpenClaw/MCP production adapter;
 - no G1/G2/G3 or installability claim.
 
-## Pending completion gates
+## Independent review
 
-1. strict static/data hygiene gates;
-2. independent review with P0=0/P1=0;
-3. evidence `EV-20260811-021`;
-4. private GitHub push and independent-clone reproduction.
+OpenClaw verified the 151068-byte review ZIP, its SHA-256, all 12 entries, 10 declared file hashes, zero protected files and zero business-database payloads. It wrote an independent checker, did not execute the candidate validator to create expectations, and rejected 20/20 independent mutations.
+
+```text
+SH-CASE-001-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=5|fixtures=3|mutations=20
+```
+
+Two non-blocking P2 items are recorded in `SH-CASE-001-review.md`: the future explicit `nutritious_drink` to `nutrition_drink` adapter mapping, and centralized common output-forbidden checks in the future harness.
+
+## Completion gates
+
+1. strict static/data hygiene gates: PASS;
+2. independent review with P0=0/P1=0: PASS;
+3. evidence `EV-20260811-021`: written;
+4. private GitHub push and independent-clone reproduction: executed as the final delivery gate.
+
+The frozen candidate was pushed at `b37eaf66676fd01f25cc9ee530cae1e84f7f447d`. The independent clone fast-forwarded to that commit and reproduced all seven validators before the review/evidence closure commit was created.

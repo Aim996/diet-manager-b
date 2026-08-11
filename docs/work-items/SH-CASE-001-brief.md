@@ -6,7 +6,7 @@
 - milestone: `M2`
 - type: `cases`
 - product_line: `B-only shared Oracle`
-- status: `candidate_green_review_pending`
+- status: `completed`
 - owner: `Codex /root`
 - reviewer: `OpenClaw independent product-case review`
 - full_case_set: `none`
@@ -163,6 +163,7 @@ These paths define the case package. Passing this task does not mean a B adapter
 - decision_ids: `DEC-015`, `DEC-016`, `DEC-027`, `DEC-028`
 - change_ids: none
 - evidence_class: `E-CASE`
+- actual_evidence_ids: `EV-20260811-021`
 
 ## Verification commands
 
