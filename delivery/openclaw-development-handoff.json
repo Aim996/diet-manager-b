@@ -1,0 +1,35 @@
+{
+  "schema_version": "diet-manager-openclaw-development-handoff/v1",
+  "product_status": "foundation_development_only",
+  "repository": {
+    "url": "https://github.com/Aim996/diet-manager-b.git",
+    "default_branch": "main",
+    "private": true
+  },
+  "publication": {
+    "current_visibility": "private",
+    "future_open_source": true,
+    "license_status": "user_selection_required"
+  },
+  "package_root": "version-b-lite-plugin",
+  "runtime": {
+    "node": ">=24.15.0 <25",
+    "pnpm": ">=11 <12",
+    "openclaw": ">=2026.5.17"
+  },
+  "commands": {
+    "install_dependencies": "pnpm install --frozen-lockfile",
+    "test": "pnpm test",
+    "build": "pnpm build",
+    "validate_handoff": "pnpm handoff:validate",
+    "validate_plugin": "pnpm plugin:validate",
+    "install_plugin": "openclaw plugins install ./version-b-lite-plugin",
+    "install_skill": "openclaw skills install ./version-b-lite-plugin/skills/diet-manager-b --as diet-manager-b"
+  },
+  "safety": {
+    "production_ready": false,
+    "writes_business_data": false,
+    "expected_write_status": "foundation_not_implemented",
+    "expected_committed": false
+  }
+}

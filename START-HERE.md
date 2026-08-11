@@ -1,18 +1,32 @@
-# 饮食管家：当前计划入口
+# 饮食管家 B：从这里开始
 
-当前唯一计划入口是 `总功能开发计划0.3.md`。旧 `总功能开发计划0.2.md` 与 `总功能开发计划.md` 仅为历史输入，不再维护现行状态。
+B 是唯一产品主线。A/C 只保留在历史计划和决策证据中，不参与当前实现、安装或发布。
 
-所有路线都面向智能体提供 Skill 层：A 为纯 Skill；B/C 为 Skill 加确定性插件后端。插件、存储和领域服务只是供 Skill 调用的执行后端，不是独立产品。当前仍不可安装：PRODUCT-0.1/0.2 的业务、正式存储、安装与发布门均未完成。DOC-0.3批准链已由`EV-20260809-011`关闭；`SH-SAFE-BASE-001`现已启动并进入测试先行阶段，A/共享验证器/当前重验已因测试变化重开，等待本任务终态后复验。
+## 如果你是第一次接手的智能体
 
-本目录仍保留三版本基底，用于并行验证候选实现路线。三个版本解决同一件事：理解用户口语中的“吃了什么”与“买了什么”，查询或改变家庭库存，选择可追溯的营养资料，并把正式数据写入预先指定的位置。
+按以下顺序阅读：
 
-## 从哪里看起
+1. [README.md](./README.md)：当前能力、硬边界和快速验证。
+2. [docs/OPENCLAW-DEVELOPMENT-HANDOFF.md](./docs/OPENCLAW-DEVELOPMENT-HANDOFF.md)：GitHub 拉取、安装、验证、行为冒烟和清理。
+3. [docs/开发进度.md](./docs/开发进度.md)：已开发、待开发、发现问题和下一任务。
+4. [总功能开发计划0.3.md](./总功能开发计划0.3.md)：唯一完整产品计划和任务台账。
 
-1. `docs/0.1-foundation-design.md`：共同目的、范围和三个版本的差异。
-2. `shared/business-contract.md`：三个版本必须遵守的业务语义。
-3. `shared/acceptance-cases/cases.json`：后续公平比较使用的共同口语案例。
-4. `version-a-skill-only/`：纯 Skill 对照版本。
-5. `version-b-lite-plugin/`：小 Skill + 单一插件工具版本。
-6. `version-c-strict-plugin/`：Skill + 强约束插件版本。
+## 当前不可误解的结论
 
-当前阶段是“基底”：要求结构清楚、边界明确、测试入口可运行；不代表完整饮食记账能力已经实现，也不代表产品可安装。
+- 当前交付状态是 `foundation_development_only`，不是 PRODUCT-0.1。
+- 插件可以构建、验证和安装到专用测试环境，但真实业务 repository 尚未实现。
+- 当前写动作必须返回 `foundation_not_implemented`、`committed=false`，不得产生饮食数据。
+- GitHub 当前私有；未来计划开源，但许可证仍需项目所有者选择。
+
+## 最短验证命令
+
+```powershell
+Set-Location .\version-b-lite-plugin
+pnpm install --frozen-lockfile
+pnpm handoff:validate
+pnpm test
+pnpm build
+pnpm plugin:validate
+```
+
+不要跳过 `pnpm handoff:validate`，也不要把 foundation 安装成功解释成真实饮食记录产品已经完成。

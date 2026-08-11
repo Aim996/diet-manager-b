@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=24.14.0 <25"
+    "node": ">=24.15.0 <25"
   },
   "scripts": {
+    "handoff:validate": "node ../scripts/validate-openclaw-development-handoff.mjs",
     "test": "vitest run",
     "build": "tsc -p tsconfig.json",
     "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",
