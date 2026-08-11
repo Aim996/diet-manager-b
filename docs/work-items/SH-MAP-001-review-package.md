@@ -4,6 +4,8 @@
 
 Independently determine whether the candidate is an implementable and fail-closed B SQLite mapping for the frozen 34-definition shared model. Do not accept the candidate only because its own PowerShell validator passes.
 
+This is round 3. Round 1 returned `FAIL|p0=0|p1=7` for inventory direction, two nutrition profile-version affinities, Issue status, correction operation, EffectBundle stage and EnvelopeFinalize stage. Round 2 independently rejected 28/28 mutations but returned `FAIL|p0=0|p1=1` because `effect_bundle` left `command_envelopes` and `idempotency_records` unclassified; it also recorded the unclassified `goal_versions` table in `envelope_finalize` as P2. Re-check the complete candidate independently; do not assume either correction round is closed merely because the report says it was fixed.
+
 ## Frozen candidate inputs
 
 - `shared/contracts/storage-mapping.md`
@@ -12,6 +14,11 @@ Independently determine whether the candidate is an implementable and fail-close
 - `docs/superpowers/specs/2026-08-11-sh-map-001-design.md`
 - `docs/work-items/SH-MAP-001-brief.md`
 - `docs/work-items/SH-MAP-001-report.md`
+
+Candidate identities for this round:
+
+- mapping SHA-256: `6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47`
+- validator SHA-256: `5D17CAB033C9230960E39AAD510AB7C520F3EE217DA6936042DEDF644279E540`
 
 Do not read, hash, edit, track or execute the five protected lease files named in the brief.
 
@@ -39,6 +46,8 @@ Do not read, hash, edit, track or execute the five protected lease files named i
 - EnvelopeFinalize failure must roll back terminal rows and leave effects pending;
 - idempotency conflict and failed migration must be zero-write/version-stable;
 - technical logging must be physically and semantically outside the business database.
+- each of the four transaction boundaries must classify all 20 tables exactly once as writable or forbidden;
+- EffectBundle must be allowed to advance `command_envelopes` to `effects_stable`, must forbid `idempotency_records`, and EnvelopeFinalize must explicitly classify `goal_versions` as forbidden.
 
 ### 4. Route policy
 
@@ -60,6 +69,9 @@ At minimum mutate and reject:
 6. a technical log moved into the business DB;
 7. an idempotency uniqueness index removed;
 8. failed migration advancing `user_version`.
+9. any of the seven round-1 scalar affinity/enum/const corrections regressing to the old value.
+10. `command_envelopes` removed from EffectBundle or left unclassified.
+11. `idempotency_records` made writable by EffectBundle or any table omitted from a boundary partition.
 
 ## Required conclusion format
 

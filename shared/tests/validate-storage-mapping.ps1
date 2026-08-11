@@ -35,7 +35,34 @@ $ExpectedIndexes = @(
     'ux_correction_request', 'ux_envelope_idempotency_terminal',
     'ux_mixed_item_operation', 'ux_mixed_item_idempotency'
 )
-$ExpectedPhysicalContractSha256 = '9DD055F061A2BA2BE9FF7AA096C2D01A8F5F8AA1561C96AA1F12E601ADAC7F15'
+$ExpectedTransactionTables = [ordered]@{
+    fact_commit = [ordered]@{
+        allowed = @('command_envelopes','idempotency_records','event_records','meal_items','correction_events','effect_outbox')
+        forbidden = @('schema_migrations','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','daily_progress_snapshots','issues','issue_resolution_events','effect_bundle_commits','envelope_finalizations','mixed_item_results')
+    }
+    effect_bundle = [ordered]@{
+        allowed = @('command_envelopes','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','issues','issue_resolution_events','effect_outbox','effect_bundle_commits')
+        forbidden = @('schema_migrations','idempotency_records','event_records','meal_items','correction_events','goal_versions','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
+    }
+    envelope_finalize = [ordered]@{
+        allowed = @('command_envelopes','idempotency_records','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
+        forbidden = @('schema_migrations','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits')
+    }
+    migration = [ordered]@{
+        allowed = @('schema_migrations','command_envelopes','idempotency_records','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','daily_progress_snapshots','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits','envelope_finalizations','mixed_item_results')
+        forbidden = @()
+    }
+}
+$ExpectedPhysicalContractSha256 = '4D18C9EC30F6768930637B375C8F7F90F6299A3E399313B4F1B528DBE6D964B6'
+$ExpectedScalarStorageConstraints = @(
+    [pscustomobject]@{ table = 'inventory_transactions'; column = 'direction'; type = 'TEXT'; required_check = "direction IN ('in','out','neutral')"; forbidden_check = "direction IN ('increase','decrease','no_change')" }
+    [pscustomobject]@{ table = 'nutrition_profiles'; column = 'profile_version'; type = 'TEXT'; required_check = $null; forbidden_check = 'profile_version >= 1' }
+    [pscustomobject]@{ table = 'nutrition_snapshots'; column = 'profile_version'; type = 'TEXT'; required_check = $null; forbidden_check = 'profile_version >= 1' }
+    [pscustomobject]@{ table = 'issues'; column = 'status'; type = 'TEXT'; required_check = "status IN ('open','awaiting_user','resolved','dismissed')"; forbidden_check = "status IN ('open','deferred','resolved','dismissed')" }
+    [pscustomobject]@{ table = 'correction_events'; column = 'operation'; type = 'TEXT'; required_check = "operation IN ('change_amount','change_unit','change_time','change_meal_slot','change_item_name','change_food_type','change_components','add_item','remove_item','change_inventory_link','change_nutrition_source','void_event','restore_event')"; forbidden_check = "operation IN ('correct','void','restore')" }
+    [pscustomobject]@{ table = 'effect_bundle_commits'; column = 'stage'; type = 'TEXT'; required_check = "stage = 'EffectBundle'"; forbidden_check = "stage = 'effect_bundle'" }
+    [pscustomobject]@{ table = 'envelope_finalizations'; column = 'stage'; type = 'TEXT'; required_check = "stage = 'EnvelopeFinalize'"; forbidden_check = "stage = 'envelope_finalize'" }
+)
 
 function Fail([string]$Code, [string]$Detail) {
     throw "$Code`:$Detail"
@@ -174,6 +201,27 @@ function Get-TableColumnNames($Table, [string]$Label) {
     return $names
 }
 
+function Assert-ScalarStorageConstraints($TablesByName) {
+    foreach ($expected in $ExpectedScalarStorageConstraints) {
+        $tableName = [string]$expected.table
+        $columnName = [string]$expected.column
+        if (-not $TablesByName.ContainsKey($tableName)) {
+            Fail 'STORAGE_MAPPING_SCHEMA_CONSTRAINT_INVALID' "$tableName missing"
+        }
+        $columns = @($TablesByName[$tableName].columns | Where-Object { [string]$_.name -ceq $columnName })
+        if ($columns.Count -ne 1 -or [string]$columns[0].type -cne [string]$expected.type) {
+            Fail 'STORAGE_MAPPING_SCHEMA_CONSTRAINT_INVALID' "$tableName.$columnName type"
+        }
+        $checks = @($TablesByName[$tableName].checks)
+        if ($null -ne $expected.required_check -and [string]$expected.required_check -cnotin $checks) {
+            Fail 'STORAGE_MAPPING_SCHEMA_CONSTRAINT_INVALID' "$tableName.$columnName check"
+        }
+        if ($null -ne $expected.forbidden_check -and [string]$expected.forbidden_check -cin $checks) {
+            Fail 'STORAGE_MAPPING_SCHEMA_CONSTRAINT_INVALID' "$tableName.$columnName obsolete_check"
+        }
+    }
+}
+
 function Assert-Mapping($Mapping, $Inventory) {
     Assert-ExactProperties $Mapping @('mapping_id','version','database','route_policy','schema_sources','object_mappings','tables','indexes','transaction_boundaries','migrations','recovery','control_merge_points','technical_log_policy','invariants') 'root'
     if ([string]$Mapping.mapping_id -cne 'diet-manager/b-sqlite-mapping/v1' -or [string]$Mapping.version -cne '1.0.0') { Fail 'STORAGE_MAPPING_IDENTITY_INVALID' 'root' }
@@ -236,6 +284,7 @@ function Assert-Mapping($Mapping, $Inventory) {
         $tableNames += $name
     }
     Assert-Set $tableNames $ExpectedTables 'tables'
+    Assert-ScalarStorageConstraints $tablesByName
 
     foreach ($objectMapping in @($Mapping.object_mappings | Where-Object { $_.mode -ceq 'table' })) {
         $table = $tablesByName[[string]$objectMapping.table]
@@ -280,9 +329,14 @@ function Assert-Mapping($Mapping, $Inventory) {
     $transactionIds = @()
     foreach ($boundary in @($Mapping.transaction_boundaries)) {
         Assert-ExactProperties $boundary @('id','begin_mode','allowed_tables','forbidden_tables','success_state','failure_state') 'transaction_boundary'
-        [void](Assert-StringArray $boundary.allowed_tables "$($boundary.id) allowed")
-        [void](Assert-StringArray $boundary.forbidden_tables "$($boundary.id) forbidden")
-        $transactionIds += [string]$boundary.id
+        $boundaryId = [string]$boundary.id
+        $allowedTables = @(Assert-StringArray $boundary.allowed_tables "$boundaryId allowed")
+        $forbiddenTables = @(Assert-StringArray $boundary.forbidden_tables "$boundaryId forbidden")
+        if (-not $ExpectedTransactionTables.Contains($boundaryId)) { Fail 'STORAGE_MAPPING_TRANSACTION_INVALID' "$boundaryId unknown" }
+        Assert-Set $allowedTables @($ExpectedTransactionTables[$boundaryId].allowed) "$boundaryId allowed"
+        Assert-Set $forbiddenTables @($ExpectedTransactionTables[$boundaryId].forbidden) "$boundaryId forbidden"
+        Assert-Set @($allowedTables + $forbiddenTables) $ExpectedTables "$boundaryId partition"
+        $transactionIds += $boundaryId
     }
     Assert-Set $transactionIds @('fact_commit','effect_bundle','envelope_finalize','migration') 'transaction_boundaries'
     $fact = @($Mapping.transaction_boundaries | Where-Object { $_.id -ceq 'fact_commit' })[0]
@@ -321,7 +375,10 @@ function Assert-Mapping($Mapping, $Inventory) {
 
     $invariants = @(Assert-StringArray $Mapping.invariants 'invariants')
     Assert-Set $invariants @('all_fields_mapped_once','b_only_writer','a_read_only','c_no_independent_database','fact_commit_zero_business_rows_on_failure','effect_bundle_no_final_receipt','envelope_finalize_atomic','technical_log_outside_business_database','idempotency_conflict_zero_write','migration_version_changes_only_on_commit') 'invariants'
-    if ((Get-PhysicalContractSha256 $Mapping) -cne $ExpectedPhysicalContractSha256) { Fail 'STORAGE_MAPPING_PHYSICAL_CONTRACT_INVALID' 'sha256' }
+    $physicalContractSha256 = Get-PhysicalContractSha256 $Mapping
+    if ($physicalContractSha256 -cne $ExpectedPhysicalContractSha256) {
+        Fail 'STORAGE_MAPPING_PHYSICAL_CONTRACT_INVALID' "expected=$ExpectedPhysicalContractSha256 actual=$physicalContractSha256"
+    }
 }
 
 function Clone-Value($Value) {
@@ -361,6 +418,15 @@ $mutations = @(
     [pscustomobject]@{ id = 'MUT-MAP-WEAKEN-COLUMN-TYPE'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'event_records' })[0]; $column = @($table.columns | Where-Object { $_.name -ceq 'event_id' })[0]; $column.type = 'BLOB' } },
     [pscustomobject]@{ id = 'MUT-MAP-WEAKEN-NULLABILITY'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'meal_items' })[0]; $column = @($table.columns | Where-Object { $_.name -ceq 'event_id' })[0]; $column.not_null = $false } },
     [pscustomobject]@{ id = 'MUT-MAP-REDIRECT-FOREIGN-KEY'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'event_records' })[0]; $table.foreign_keys[0] = 'operation_id -> command_envelopes(operation_id) ON UPDATE RESTRICT ON DELETE RESTRICT' } }
+    [pscustomobject]@{ id = 'MUT-MAP-INVENTORY-DIRECTION-ENUM'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'inventory_transactions' })[0]; $table.checks[0] = "direction IN ('increase','decrease','no_change')" } }
+    [pscustomobject]@{ id = 'MUT-MAP-NUTRITION-PROFILE-VERSION-TYPE'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'nutrition_profiles' })[0]; $column = @($table.columns | Where-Object { $_.name -ceq 'profile_version' })[0]; $column.type = 'INTEGER' } }
+    [pscustomobject]@{ id = 'MUT-MAP-NUTRITION-SNAPSHOT-VERSION-TYPE'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'nutrition_snapshots' })[0]; $column = @($table.columns | Where-Object { $_.name -ceq 'profile_version' })[0]; $column.type = 'INTEGER' } }
+    [pscustomobject]@{ id = 'MUT-MAP-ISSUE-STATUS-ENUM'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'issues' })[0]; $table.checks[0] = "status IN ('open','deferred','resolved','dismissed')" } }
+    [pscustomobject]@{ id = 'MUT-MAP-CORRECTION-OPERATION-ENUM'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'correction_events' })[0]; $table.checks[1] = "operation IN ('correct','void','restore')" } }
+    [pscustomobject]@{ id = 'MUT-MAP-EFFECT-STAGE-CONST'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'effect_bundle_commits' })[0]; $table.checks[0] = "stage = 'effect_bundle'" } }
+    [pscustomobject]@{ id = 'MUT-MAP-FINALIZE-STAGE-CONST'; apply = { param($m) $table = @($m.tables | Where-Object { $_.name -ceq 'envelope_finalizations' })[0]; $table.checks[1] = "stage = 'envelope_finalize'" } }
+    [pscustomobject]@{ id = 'MUT-MAP-EFFECT-ENVELOPE-UNCLASSIFIED'; apply = { param($m) $boundary = @($m.transaction_boundaries | Where-Object { $_.id -ceq 'effect_bundle' })[0]; $boundary.allowed_tables = @($boundary.allowed_tables | Where-Object { $_ -cne 'command_envelopes' }) } }
+    [pscustomobject]@{ id = 'MUT-MAP-EFFECT-IDEMPOTENCY-WRITABLE'; apply = { param($m) $boundary = @($m.transaction_boundaries | Where-Object { $_.id -ceq 'effect_bundle' })[0]; $boundary.forbidden_tables = @($boundary.forbidden_tables | Where-Object { $_ -cne 'idempotency_records' }); $boundary.allowed_tables = @($boundary.allowed_tables) + 'idempotency_records' } }
 )
 
 foreach ($mutation in $mutations) {

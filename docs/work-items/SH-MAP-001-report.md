@@ -3,7 +3,7 @@
 ## Candidate identity
 
 - task: `SH-MAP-001`
-- status: candidate green, independent review pending
+- status: candidate green after round-2 correction, round-3 independent review pending
 - product line: B only
 - mapping: `shared/contracts/storage-mapping.md`
 - validator: `shared/tests/validate-storage-mapping.ps1`
@@ -16,7 +16,7 @@
 2. Covered all 34 upstream definitions and every resolved field exactly once.
 3. Defined 20 future SQLite tables with column name, affinity, nullability, default, primary key, checks and foreign-key intent.
 4. Defined 18 indexes for idempotency, event lookup, meal-item ordering, outbox dispatch, inventory ordering, nutrition versioning, goal/progress lookup, Issue lifecycle, correction requests and terminal mixed results.
-5. Defined four write boundaries: FactCommit, EffectBundle, EnvelopeFinalize and migration.
+5. Defined four write boundaries: FactCommit, EffectBundle, EnvelopeFinalize and migration; every boundary now classifies all 20 tables exactly once as writable or forbidden.
 6. Defined fresh install, successful upgrade, failed upgrade and recovery behavior.
 7. Defined normal open, WAL recovery, integrity failure and restore-candidate recovery checks.
 8. Defined five C-control merge points into B and explicitly prohibited A/C writers.
@@ -48,8 +48,41 @@ MUT-MAP-FAILED-MIGRATION-ADVANCES|PASS
 MUT-MAP-WEAKEN-COLUMN-TYPE|PASS
 MUT-MAP-WEAKEN-NULLABILITY|PASS
 MUT-MAP-REDIRECT-FOREIGN-KEY|PASS
-STORAGE_MAPPING|PASS|version=1.0.0|sources=4|definitions=34|tables=20|indexes=18|mutations=9
+MUT-MAP-INVENTORY-DIRECTION-ENUM|PASS
+MUT-MAP-NUTRITION-PROFILE-VERSION-TYPE|PASS
+MUT-MAP-NUTRITION-SNAPSHOT-VERSION-TYPE|PASS
+MUT-MAP-ISSUE-STATUS-ENUM|PASS
+MUT-MAP-CORRECTION-OPERATION-ENUM|PASS
+MUT-MAP-EFFECT-STAGE-CONST|PASS
+MUT-MAP-FINALIZE-STAGE-CONST|PASS
+MUT-MAP-EFFECT-ENVELOPE-UNCLASSIFIED|PASS
+MUT-MAP-EFFECT-IDEMPOTENCY-WRITABLE|PASS
+STORAGE_MAPPING|PASS|version=1.0.0|sources=4|definitions=34|tables=20|indexes=18|mutations=18
 ```
+
+### Independent review round 1 and correction RED
+
+The first independent review correctly returned `FAIL|p0=0|p1=7`. It found seven physical constraints that contradicted pinned Schema values: inventory direction, two nutrition profile-version affinities, Issue status, correction operation, EffectBundle stage and EnvelopeFinalize stage.
+
+Before changing the mapping, the strengthened validator rejected the old candidate with:
+
+```text
+STORAGE_MAPPING_SCHEMA_CONSTRAINT_INVALID:inventory_transactions.direction check
+```
+
+The seven mappings were then corrected and each now has a dedicated mutation. The first-review failure remains part of the audit history.
+
+### Independent review round 2 and transaction-boundary correction RED
+
+Round 2 independently revalidated 34 definitions, 20 tables, 18 indexes, 22 foreign keys and rejected 28/28 independent mutations, but correctly returned `FAIL|p0=0|p1=1`. The `effect_bundle` boundary did not classify `command_envelopes` or `idempotency_records`, so the declared `effects_pending -> effects_stable` transition had no permitted envelope write. The same review also recorded the unclassified `goal_versions` table in `envelope_finalize` as P2.
+
+Before changing the mapping, the strengthened validator rejected the candidate with:
+
+```text
+STORAGE_MAPPING_SET_INVALID:effect_bundle allowed
+```
+
+The four boundaries now partition all 20 tables into exact, non-overlapping writable/forbidden sets. `effect_bundle` may update `command_envelopes`, cannot update `idempotency_records`, and `envelope_finalize` explicitly forbids `goal_versions`. Two dedicated mutations prevent either EffectBundle regression. Completion still requires a fresh round-3 independent PASS.
 
 ## Upstream regression
 
@@ -66,8 +99,8 @@ ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=1.0.0|cases=65|definitions=12|semant
 
 ## Candidate hashes
 
-- mapping: `BF2BCE34C254C8510B689E93F1CB15BA1230548466E45FB10B7BE909D5F2BC33`
-- validator: `C9603E01A1149D244903370460FFCA42EDC27FD72888C894AB5D513B7EA00785`
+- mapping: `6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47`
+- validator: `5D17CAB033C9230960E39AAD510AB7C520F3EE217DA6936042DEDF644279E540`
 
 These hashes are candidate identities and must be refreshed if independent review causes any edit.
 
@@ -92,7 +125,7 @@ These hashes are candidate identities and must be refreshed if independent revie
 
 ## Pending completion gates
 
-1. independent storage-mapping review with P0=0/P1=0;
+1. round-3 independent storage-mapping review with P0=0/P1=0;
 2. evidence `EV-20260811-020`;
 3. private GitHub push and independent-clone reproduction;
 4. final source/origin/clone equality and clean status.
