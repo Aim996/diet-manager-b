@@ -300,7 +300,7 @@ function Assert-DomainCases {
     Assert-DomainCaseCommon $inventory "CASE-INVENTORY-003" @("REQ-PANTRY-002") "5pep6aSQ5Zad5LqG5LiA55uS54mb5aW244CC" "domain-inventory-multiple-products-v1"
     Assert-DomainExactProperties $inventory.oracle @("fact_commit", "effect_bundle") "DOMAIN_CASE_ORACLE_INVALID:CASE-INVENTORY-003"
     Assert-DomainEqual "committed" ([string]$inventory.oracle.fact_commit.meal_event.status) "DOMAIN_CASE_VALUE_INVALID:CASE-INVENTORY-003:fact"
-    Assert-DomainEqual "skipped_multiple_candidates" ([string]$inventory.oracle.effect_bundle.inventory_match.status) "DOMAIN_CASE_VALUE_INVALID:CASE-INVENTORY-003:inventory"
+    Assert-DomainEqual "skipped_ambiguous" ([string]$inventory.oracle.effect_bundle.inventory_match.status) "DOMAIN_CASE_VALUE_INVALID:CASE-INVENTORY-003:inventory"
     Assert-DomainEqual "inventory_multiple_candidates" ([string]$inventory.oracle.effect_bundle.issue.code) "DOMAIN_CASE_VALUE_INVALID:CASE-INVENTORY-003:issue"
 
     $nutrition = Get-DomainCaseById $CaseSet "CASE-NUTR-001"
@@ -315,6 +315,7 @@ function Assert-DomainCases {
     Assert-DomainExactProperties $issue.oracle @("fact_commit", "effect_bundle", "presentation") "DOMAIN_CASE_ORACLE_INVALID:CASE-ISSUE-001"
     Assert-DomainEqual "committed_with_issues" ([string]$issue.oracle.fact_commit.meal_event.status) "DOMAIN_CASE_VALUE_INVALID:CASE-ISSUE-001:fact"
     Assert-DomainExactStringArray @("quantity_estimated", "inventory_multiple_candidates") @($issue.oracle.effect_bundle.issues | ForEach-Object { [string]$_.code }) "DOMAIN_CASE_VALUE_INVALID:CASE-ISSUE-001:issues"
+    Assert-DomainEqual "skipped_ambiguous" ([string]$issue.oracle.effect_bundle.inventory_match.status) "DOMAIN_CASE_VALUE_INVALID:CASE-ISSUE-001:inventory"
     Assert-DomainEqual "consolidated_once" ([string]$issue.oracle.presentation.prompt_policy) "DOMAIN_CASE_VALUE_INVALID:CASE-ISSUE-001:presentation"
 
     $correction = Get-DomainCaseById $CaseSet "CASE-CORR-001"

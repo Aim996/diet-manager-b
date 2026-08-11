@@ -135,7 +135,7 @@ full_case_set: none
 - source: `早餐喝了一盒牛奶。`
 - two different products are plausible inventory candidates
 - meal fact commits with one packaged-product item
-- inventory result: `skipped_multiple_candidates`; before and after quantities equal
+- inventory result: `skipped_ambiguous`; matching result remains `multiple`, and before/after quantities are equal
 - one open non-blocking Issue with code `inventory_multiple_candidates`
 - no automatic product selection, no negative inventory and no failed FactCommit
 
@@ -153,6 +153,7 @@ full_case_set: none
 - source: `早餐吃了大概一碗麦片，用的是家里的牛奶。`
 - recognizable meal fact commits with status `committed_with_issues`
 - ordered Issue codes: `quantity_estimated`, `inventory_multiple_candidates`
+- inventory impact status: `skipped_ambiguous`
 - both Issues are `non_blocking_business`, `open` and presented once in one consolidated prompt
 - no serial questionnaire, no meal rollback and no claimed inventory deduction
 

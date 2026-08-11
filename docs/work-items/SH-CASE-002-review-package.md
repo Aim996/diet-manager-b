@@ -16,12 +16,12 @@ Return `FAIL` with concrete P0/P1 findings if a correct future B implementation 
 
 | File | SHA-256 |
 |---|---|
-| `shared/acceptance-cases/cases.json` | `FA0CEE85856E41EA632D1E8C536417846F73470BEA81771BE21A5D83BF065111` |
+| `shared/acceptance-cases/cases.json` | `0C15E7A74C754E1B4ACFEACABBA8D2CA988DF08C22B8F190625958E855231702` |
 | `shared/acceptance-cases/fixtures/core-v1.json` | `7FD8CD5C6F981152A74EFD5C74AFEA6FFD404E21E1FC9E028EAFA26EA4DEF39D` |
-| `shared/tests/validate-domain-acceptance-cases.ps1` | `E32615BA0CB14E1BC9FE2B2FB47785291C5B6BCCEB238A8559A270A2E4425775` |
+| `shared/tests/validate-domain-acceptance-cases.ps1` | `E090ED528025F3D7E1BD43DED5DCB863D31DEB5BF98C36471297D1D555BBC5A0` |
 | `shared/tests/validate-core-acceptance-cases.ps1` | `315980F2A4C4569AD5C383C9F9EF523C3AE4101ED4CAFA1F2B93E88C5AA292C9` |
-| `docs/superpowers/specs/2026-08-11-sh-case-002-design.md` | `F2F18D2D99D1EEF52067E944DB2617B12B618DABC9134C96F6093C5ADFD86F18` |
-| `docs/work-items/SH-CASE-002-brief.md` | `9AC29469C46A6F119EAA82D6A7F5D1670125DA68F17A897D035667CCB4C53165` |
+| `docs/superpowers/specs/2026-08-11-sh-case-002-design.md` | `12F4BEB068238227ADC077C7275E1CD01689FE10EF5EEF11CB0A9411DAAFA14B` |
+| `docs/work-items/SH-CASE-002-brief.md` | `B5651A7D1D183E85141FC21C3E6C0A93FA11BD90C127F6BA2932351C295E2189` |
 
 The five protected lease files are out of scope and must not be requested, read, hashed or executed.
 
@@ -32,7 +32,7 @@ The five protected lease files are out of scope and must not be requested, read,
 3. Confirm original five case values remain semantically unchanged and their original eight mutations still pass.
 4. Recompute the three frozen state-vector hashes independently from UTF-8 bytes.
 5. Check purchase values `2`, `12`, `250`, `24`, `6000` and formula; reject collapsed quantities or invented expiry.
-6. Check two distinct inventory candidates, unchanged before/after quantities, committed meal, skipped deduction and one open non-blocking Issue.
+6. Check two distinct inventory candidates, matching result `multiple`, exact inventory impact status `skipped_ambiguous`, unchanged before/after quantities, committed meal, and one open non-blocking Issue whose code remains `inventory_multiple_candidates`.
 7. Check nutrition `source_type=product_label`, exact product/profile binding, raw and parsed values, and unknown fiber without lower-tier override.
 8. Check ordered Issue codes and one consolidated prompt while preserving the meal fact.
 9. Check correction `change_amount`, append-only history, +1 nutrition/inventory compensation, affected date and retry uniqueness.

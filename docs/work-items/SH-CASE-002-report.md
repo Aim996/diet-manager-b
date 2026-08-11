@@ -60,7 +60,7 @@ DOMAIN_ACCEPTANCE_CASES|PASS|version=1.1.0|cases=9|scenarios=9|mutations=11
 ## Business behavior frozen by this package
 
 - `2 boxes * 12 cartons * 250 ml` remains four separate facts and totals 6000 ml; no expiry is invented.
-- A meal can commit while inventory deduction is skipped when two different products are plausible; one non-blocking Issue remains open.
+- A meal can commit while two different products remain plausible: matching is `multiple`, inventory impact is exactly `skipped_ambiguous`, and one `inventory_multiple_candidates` Issue remains open.
 - Exact product-label nutrition uses `source_type=product_label`; the label outranks lower sources and missing fiber remains unknown.
 - Quantity and inventory ambiguity create two ordered Issues but one consolidated prompt, without rolling back the recognizable meal fact.
 - Corrections append a `change_amount` event; they do not overwrite or delete the original meal and retry does not duplicate compensation.
@@ -90,17 +90,18 @@ The five protected lease files were not read, hashed, edited or executed.
 
 | File | SHA-256 |
 |---|---|
-| `shared/acceptance-cases/cases.json` | `FA0CEE85856E41EA632D1E8C536417846F73470BEA81771BE21A5D83BF065111` |
+| `shared/acceptance-cases/cases.json` | `0C15E7A74C754E1B4ACFEACABBA8D2CA988DF08C22B8F190625958E855231702` |
 | `shared/acceptance-cases/fixtures/core-v1.json` | `7FD8CD5C6F981152A74EFD5C74AFEA6FFD404E21E1FC9E028EAFA26EA4DEF39D` |
-| `shared/tests/validate-domain-acceptance-cases.ps1` | `E32615BA0CB14E1BC9FE2B2FB47785291C5B6BCCEB238A8559A270A2E4425775` |
+| `shared/tests/validate-domain-acceptance-cases.ps1` | `E090ED528025F3D7E1BD43DED5DCB863D31DEB5BF98C36471297D1D555BBC5A0` |
 | `shared/tests/validate-core-acceptance-cases.ps1` | `315980F2A4C4569AD5C383C9F9EF523C3AE4101ED4CAFA1F2B93E88C5AA292C9` |
-| `docs/superpowers/specs/2026-08-11-sh-case-002-design.md` | `F2F18D2D99D1EEF52067E944DB2617B12B618DABC9134C96F6093C5ADFD86F18` |
+| `docs/superpowers/specs/2026-08-11-sh-case-002-design.md` | `12F4BEB068238227ADC077C7275E1CD01689FE10EF5EEF11CB0A9411DAAFA14B` |
 | `docs/superpowers/plans/2026-08-11-sh-case-002-plan.md` | `361169AA128FEE1C43E937DBF2DFFF1AA2791C53895D85B757C5ABC732A7CC92` |
-| `docs/work-items/SH-CASE-002-brief.md` | `9AC29469C46A6F119EAA82D6A7F5D1670125DA68F17A897D035667CCB4C53165` |
+| `docs/work-items/SH-CASE-002-brief.md` | `B5651A7D1D183E85141FC21C3E6C0A93FA11BD90C127F6BA2932351C295E2189` |
 
 ## Discovered and corrected
 
 - The first brief draft used `package_label`; the frozen nutrition Schema uses `product_label`. The brief and implementation were corrected before fixture data was written.
+- Independent review round 1 found an inventory-status token drift: the candidate used `skipped_multiple_candidates`, while the frozen contract requires `skipped_ambiguous`. A focused RED reproduced the mismatch, both affected cases and their independent assertions were corrected, and the Issue code remains `inventory_multiple_candidates`.
 - The selected cumulative-catalog design avoids a second domain Oracle and keeps the original core validator responsible for the first five cases.
 
 ## Pending before completion

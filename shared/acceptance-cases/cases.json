@@ -204,7 +204,7 @@
           "meal_event": {"event_count": 1, "status": "committed", "item_count": 1, "package_unit": "carton"}
         },
         "effect_bundle": {
-          "inventory_match": {"status": "skipped_multiple_candidates", "candidate_count": 2, "quantity_changed": false},
+          "inventory_match": {"status": "skipped_ambiguous", "candidate_count": 2, "quantity_changed": false},
           "issue": {"issue_count": 1, "code": "inventory_multiple_candidates", "issue_type": "non_blocking_business", "status": "open"}
         }
       },
@@ -258,7 +258,7 @@
             {"sequence": 0, "code": "quantity_estimated", "issue_type": "non_blocking_business", "status": "open"},
             {"sequence": 1, "code": "inventory_multiple_candidates", "issue_type": "non_blocking_business", "status": "open"}
           ],
-          "inventory_match": {"status": "skipped_multiple_candidates"}
+          "inventory_match": {"status": "skipped_ambiguous"}
         },
         "presentation": {"prompt_policy": "consolidated_once", "prompt_count": 1}
       },

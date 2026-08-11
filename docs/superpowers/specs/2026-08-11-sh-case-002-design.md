@@ -76,13 +76,13 @@ Each scenario owns only test data: product/package facts, active inventory rows,
 
 `CASE-PURCHASE-001` records two boxes, twelve cartons per box and 250 ml per carton as four independent facts: outer count `2 box`, inner count `24 carton`, total capacity `6000 ml` and formula `2*12*250`. It creates one inventory-stocked event and one batch. The implementation may not collapse the values into only one total or invent an expiry date.
 
-`CASE-INVENTORY-003` starts with two different milk products that are both plausible matches. The occurred meal fact still commits, inventory deduction is skipped with `multiple_candidates`, quantities remain unchanged and one `inventory_multiple_candidates` Issue is created. The system may not choose either product automatically, create negative inventory or turn the ambiguity into a failed FactCommit.
+`CASE-INVENTORY-003` starts with two different milk products that are both plausible matches. The matching result is `multiple`, the occurred meal fact still commits, and the inventory impact is `skipped_ambiguous`; quantities remain unchanged and one `inventory_multiple_candidates` Issue is created. The system may not choose either product automatically, create negative inventory or turn the ambiguity into a failed FactCommit.
 
 ### Nutrition and Issue
 
 `CASE-NUTR-001` binds an exact package label to one product variant. The label tier wins; raw label values, parsed values, profile version, source identity and applicable product are retained. The resulting intake snapshot references that frozen profile version. No public database may override the exact label and unknown label fields remain unknown rather than zero.
 
-`CASE-ISSUE-001` combines a bounded quantity estimate with multiple inventory candidates. The recognizable meal fact commits with `committed_with_issues`; `quantity_estimated` and `inventory_multiple_candidates` are stored as two ordered, non-blocking Issues and presented once in one consolidated prompt. The adapter may not ask a serial questionnaire, discard the meal or claim the inventory was deducted.
+`CASE-ISSUE-001` combines a bounded quantity estimate with multiple inventory candidates. The recognizable meal fact commits with `committed_with_issues`; the inventory impact is `skipped_ambiguous`; `quantity_estimated` and `inventory_multiple_candidates` are stored as two ordered, non-blocking Issues and presented once in one consolidated prompt. The adapter may not ask a serial questionnaire, discard the meal or claim the inventory was deducted.
 
 ### Correction and mixed operation
 
