@@ -47,7 +47,7 @@ All dependencies are complete and current at task start.
 
 - filename: `diet-manager-b.sqlite3`
 - driver: `node:sqlite`
-- Node: `>=24.14.0 <25`
+- Node: `>=24.15.0 <25`
 - mapping: `diet-manager/b-sqlite-mapping/v1`, 44461 bytes, SHA-256 `19A74F1FB131CDCC1799653043EE707F6CC765369F4997811E62815ABED99D2F`
 - SQLite application ID: `0x444D4231` (`1145913905`)
 - user version: `1`

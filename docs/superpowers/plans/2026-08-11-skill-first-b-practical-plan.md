@@ -91,7 +91,7 @@ export interface DietManagerOutcome {
 
 **Entry gate:** Do not start this task until the plan-0.3 prerequisites `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` have current accepted outputs. The Task 2 SQLite compatibility spike is allowed before this gate; production tables and migrations are not.
 
-**Current gate status (2026-08-12):** `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` are complete through `EV-20260812-026`. `B-STOR-001` is now the sole WIP and remains limited to the fixed SQLite leaf, initial migration, constraints and packaging. Repository transactions in this Task 3 stay pending until the narrower `B-STOR-001` bootstrap closes.
+**Current gate status (2026-08-12):** `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` are complete through `EV-20260812-026`. `B-STOR-001` is the sole WIP: its fixed SQLite leaf, migration 0001, exact mapping checks, failure cleanup and local package/OpenClaw gates are implemented and locally green; independent review/evidence closure is still pending. Repository transactions below must not start until that narrower bootstrap closes.
 
 **Files:**
 
@@ -148,7 +148,7 @@ interface DietRepository {
 
 - [ ] Add adapter tests proving OpenClaw inputs map to the portable contract without changing business semantics.
 - [ ] Build and validate the plugin locally.
-- [ ] Install or load the plugin only on the dedicated test platform at `http://192.168.100.10:18789`.
+- [ ] Install or load the plugin only on a dedicated OpenClaw test platform configured out of band; never commit its address or token.
 - [ ] Test record/query/correct/undo, duplicate retry, validation failure, injected commit failure, and restart persistence.
 - [ ] Confirm a commit failure creates no dietary record even if a technical log is available.
 - [ ] Save concise evidence and update the progress document with passed, failed, deferred, and follow-up items.

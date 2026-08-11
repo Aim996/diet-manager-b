@@ -2,9 +2,13 @@ import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 import { Type } from "typebox";
 const actionSchema = Type.Union([
     Type.Literal("record_meal"),
+    Type.Literal("record_water"),
     Type.Literal("add_inventory"),
     Type.Literal("query_inventory"),
     Type.Literal("query_meals"),
+    Type.Literal("query_daily_summary"),
+    Type.Literal("correct_record"),
+    Type.Literal("undo_record"),
 ]);
 const itemSchema = Type.Object({
     name: Type.String(),
@@ -15,6 +19,7 @@ const itemSchema = Type.Object({
 }, { additionalProperties: false });
 export const dietManagerParameters = Type.Object({
     action: actionSchema,
+    operation_id: Type.Optional(Type.String()),
     source_text: Type.Optional(Type.String()),
     occurred_at_text: Type.Optional(Type.String()),
     items: Type.Optional(Type.Array(itemSchema)),
@@ -42,3 +47,4 @@ export default defineToolPlugin({
         }),
     ],
 });
+export { assertDietManagerOutcome, dietManagerStatuses } from "./contracts.js";

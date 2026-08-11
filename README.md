@@ -2,7 +2,7 @@
 
 饮食管家 B 是一个以 Skill 为智能体入口、SQLite 为唯一业务后端的饮食记录项目。OpenClaw、MCP 和其他智能体平台只提供薄适配层，不复制业务逻辑。
 
-> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。业务 SQLite 表和完整写入闭环尚未交付。
+> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。SQLite bootstrap/migration 候选已经实现；业务 repository 和完整写入闭环尚未交付。
 
 ## 当前路线
 
@@ -16,7 +16,7 @@
 
 ## 从 GitHub 下载
 
-仓库当前为私有仓库，需要已授权的 GitHub 身份：
+仓库为公开开源仓库，可直接使用 GitHub CLI：
 
 ```powershell
 gh repo clone Aim996/diet-manager-b
@@ -51,19 +51,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\shared\tests\validate-
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\shared\tests\validate-receipt-and-date-contract-v2.ps1
 ```
 
-B 包要求 Node `>=24.14.0 <25`：
+B 包要求 Node `>=24.15.0 <25`（与当前 OpenClaw 2026.7.1 的宿主门一致）：
 
 ```powershell
 cd .\version-b-lite-plugin
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm test
 pnpm build
 ```
 
+当前依赖安装采用 `--ignore-scripts`，不会要求用户盲目批准第三方构建脚本；本仓库的测试、TypeScript 构建和 OpenClaw 插件校验均已在该安装策略下通过。不要对来源不明的依赖运行 `pnpm approve-builds`。
+
 ## 下一步
 
-1. 完成 `SH-CONTRACT-002` 独立语义复核。
-2. 依次收口 Issue/纠正、数据模型、mapping、harness 和 trace。
-3. 实现 B SQLite repository，并验证失败时业务零数据。
-4. 完成记录、查询、更正、撤销的真实纵向闭环。
-5. 部署到专用 OpenClaw 环境；业务稳定后再增加 MCP 薄适配器。
+1. 完成 `B-STOR-001` 独立复核和证据收口。
+2. 实现 B SQLite repository，并验证写入失败时技术日志可有、业务数据严格为零。
+3. 完成记录、查询、更正、撤销的真实纵向闭环。
+4. 部署到专用 OpenClaw 环境；业务稳定后再增加 MCP 薄适配器。
