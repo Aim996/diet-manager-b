@@ -91,7 +91,7 @@ export interface DietManagerOutcome {
 
 **Entry gate:** Do not start this task until the plan-0.3 prerequisites `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` have current accepted outputs. The Task 2 SQLite compatibility spike is allowed before this gate; production tables and migrations are not.
 
-**Current gate status (2026-08-11):** `SH-SAFE-BASE-001` has passed the `DEC-028` bounded exit acceptance (`EV-20260811-012`). `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` remain pending, so production repository work is still blocked.
+**Current gate status (2026-08-12):** `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` are complete through `EV-20260812-026`. `B-STOR-001` is now the sole WIP and remains limited to the fixed SQLite leaf, initial migration, constraints and packaging. Repository transactions in this Task 3 stay pending until the narrower `B-STOR-001` bootstrap closes.
 
 **Files:**
 

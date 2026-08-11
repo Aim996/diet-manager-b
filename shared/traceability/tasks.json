@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 293149,
-      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
+      "length": 293282,
+      "sha256": "89106779E2F4C48DD4A34E8C86F27CBA655EF80498F9AFD0ABEA0C699F73E5FA"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -20,9 +20,10 @@
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 32,
+      "未开始": 31,
       "已完成": 19,
-      "已取消": 8
+      "已取消": 8,
+      "进行中": 1
     },
     "case_producer_rows": 144,
     "full_case_responsibility_assignments": 5,
@@ -4126,9 +4127,12 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/migration/interruption_candidate_not_activated",
+            "/migration/interruption_retry_requires_fresh_candidate"
+          ]
         },
         {
           "task_id": "C-STOR-001",
@@ -5217,9 +5221,12 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/path_authority/fixed_database_leaf",
+            "/path_authority/reject_arbitrary_or_reparse_path"
+          ]
         },
         {
           "task_id": "C-STOR-001",
@@ -5252,9 +5259,12 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/migration/failure_keeps_final_unpublished",
+            "/migration/failure_keeps_user_version_unadvanced"
+          ]
         },
         {
           "task_id": "B-MERGE-C-001",
@@ -6837,12 +6847,25 @@
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
       "owner_reviewer": "Codex /root / 独立B存储复核待指派",
-      "status": "未开始",
-      "next_reopen": "依赖已齐；next=补齐brief并在隔离临时库执行兼容spike；驱动、固定文件名、migration或打包边界变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "status": "进行中",
+      "next_reopen": "brief/design/TDD计划已建立；next=RED固定路径、20/18/22和migration故障；驱动、固定文件名、migration或打包边界变化重开",
+      "brief_path": "docs/work-items/B-STOR-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-STORAGE-004": [
+          "/path_authority/fixed_database_leaf",
+          "/path_authority/reject_arbitrary_or_reparse_path"
+        ],
+        "CASE-STORAGE-005": [
+          "/migration/failure_keeps_final_unpublished",
+          "/migration/failure_keeps_user_version_unadvanced"
+        ],
+        "CASE-OPS-003": [
+          "/migration/interruption_candidate_not_activated",
+          "/migration/interruption_retry_requires_fresh_candidate"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "B-MERGE-C-001",
