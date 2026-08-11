@@ -16,7 +16,7 @@
 - `FactCommit` failure has zero dietary business data; an independent redacted technical log is not a receipt or dietary record.
 - `effects_pending` and finalizer failure cannot produce a success receipt or progress block.
 - Use TDD: validator RED before contract mutation, then GREEN.
-- This workspace has no Git repository; replace commit steps with SHA-256 checkpoints in the implementation report.
+- The workspace now has a private Git repository; keep SHA-256 checkpoints as the contract freeze authority and use Git only as an additional delivery/history layer.
 
 ---
 
@@ -31,11 +31,11 @@
 - Consumes: `diet-manager/contract-v2` final `EnvelopeFinalize` output.
 - Produces: `diet-manager/receipt-date-contract-v2` machine JSON and human-readable companion rules.
 
-- [ ] **Step 1: Write the failing validator**
+- [x] **Step 1: Write the failing validator**
 
 Assert exact identity/version/upstream, the `OccurredTime` fields and precision values, B-only write route, success status set, `daily_progress_by_date[]` authority, single-day alias equality, multi-day alias absence, six progress metrics, decimal `round_half_up`, field-level evidence labels, receipt block order, and forbidden success output for `effects_pending`.
 
-- [ ] **Step 2: Run the validator and verify RED**
+- [x] **Step 2: Run the validator and verify RED**
 
 Run:
 
@@ -45,11 +45,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File shared/tests/validate-re
 
 Expected: non-zero with `RECEIPT-DATE-CONTRACT-v2 machine block is missing` against the current v1 file.
 
-- [ ] **Step 3: Add the minimal v2 machine block and align the body**
+- [x] **Step 3: Add the minimal v2 machine block and align the body**
 
 The machine block must expose exact plain values rather than free prose. Update the front matter and introduction from CONTRACT-v1/A-B-C to CONTRACT-v2/portable Skill+B+thin adapters. Preserve valid golden rules and replace old aggregate estimate labels or stale inventory effects with the exact total-plan 0.3 examples.
 
-- [ ] **Step 4: Run validator GREEN**
+- [x] **Step 4: Run validator GREEN**
 
 Expected:
 
@@ -57,7 +57,7 @@ Expected:
 RECEIPT_DATE_V2|PASS|id=diet-manager/receipt-date-contract-v2|metrics=6|trace=11|legacy_guards=10
 ```
 
-- [ ] **Step 5: Record SHA checkpoint**
+- [x] **Step 5: Record SHA checkpoint**
 
 Record SHA-256 for candidate, validator, brief, report, review package, and current total plan in the work-item report.
 
@@ -72,23 +72,23 @@ Record SHA-256 for candidate, validator, brief, report, review package, and curr
 - Consumes: machine protocol from Task 1.
 - Produces: exact date examples, progress formulas, single-day alias and cross-day receipt examples.
 
-- [ ] **Step 1: Add failing golden assertions**
+- [x] **Step 1: Add failing golden assertions**
 
 Assert fixed clock `2026-08-09 10:00 Asia/Shanghai`, date outputs `5号`, `7月15号`, `2025年12月31号`, no `00:00`, single-day alias equality text, cross-day dated blocks, no success progress while `effects_pending`, and field-level labels `按个人模板/沿用历史营养表/参考数据库/估算`.
 
-- [ ] **Step 2: Verify RED against any missing current-0.3 semantics**
+- [x] **Step 2: Verify RED against any missing current-0.3 semantics**
 
 Run the same validator and capture the first missing golden anchor.
 
-- [ ] **Step 3: Apply only the missing normative text/golden corrections**
+- [x] **Step 3: Apply only the missing normative text/golden corrections**
 
 Do not add Schema fields, storage logic, UI framework behavior, agent-specific fields, or new product capabilities.
 
-- [ ] **Step 4: Run validator and static audit GREEN**
+- [x] **Step 4: Run validator and static audit GREEN**
 
 Verify the machine block parses, the 11 current task-scope IDs are each present exactly once in the trace table, old v1-only `REQ-UX-*` trace IDs are absent, Markdown fences are paired, and business data candidates remain zero.
 
-- [ ] **Step 5: Record SHA checkpoint**
+- [x] **Step 5: Record SHA checkpoint**
 
 Update the v2 report with RED/GREEN output and the fresh hashes.
 
@@ -105,19 +105,19 @@ Update the v2 report with RED/GREEN output and the fresh hashes.
 - Consumes: frozen candidate/validator/report hashes.
 - Produces: independent PASS or actionable FAIL; only PASS may close the task.
 
-- [ ] **Step 1: Build a read-only review package**
+- [x] **Step 1: Build a read-only review package**
 
 Require semantic review of all 11 current task-scope IDs, machine/body consistency, exact golden calculations, cross-day behavior, B-only boundary, and zero-business-data failure behavior.
 
-- [ ] **Step 2: Run independent OpenClaw review**
+- [x] **Step 2: Run independent OpenClaw review**
 
 The reviewer must not treat implementation tests as semantic proof. A FAIL reopens Task 1 or Task 2 with TDD.
 
-- [ ] **Step 3: Run final local verification**
+- [x] **Step 3: Run final local verification**
 
 Require validator PASS, parser error count 0, 11/11 trace singleton, legacy current hits 0, paired fences, frozen SHA values, and business candidates 0.
 
-- [ ] **Step 4: Register completion only after both gates pass**
+- [x] **Step 4: Register completion only after both gates pass**
 
 Add EV-014, mark `SH-CONTRACT-002` completed, update the readable progress snapshot, and leave product/G1/G2/G3 status unchanged.
 
