@@ -35,7 +35,13 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-OPS-001",
     "CASE-OPS-003",
     "CASE-OPS-010",
-    "CASE-EXPORT-004"
+    "CASE-EXPORT-004",
+    "CASE-RECEIPT-002",
+    "CASE-RECEIPT-004",
+    "CASE-RECEIPT-005",
+    "CASE-RECEIPT-006",
+    "CASE-PROGRESS-006",
+    "CASE-STORAGE-006"
 )
 
 $ExpectedDomainCaseIds = @(
@@ -383,7 +389,7 @@ function Test-DomainCaseCandidate {
         "cases"
     ) "DOMAIN_CASE_SET_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "DOMAIN_CASE_SET_ID_INVALID"
-    Assert-DomainEqual "1.2.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
+    Assert-DomainEqual "1.3.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
     Assert-DomainExactProperties $CaseSet.package_invariants @(
         "adapters_may_rewrite_oracle", "technical_log", "technical_log_counts_as_record",
         "fact_commit_failure_business_write_count", "fact_commit_failure_forbidden_artifacts"
@@ -508,4 +514,4 @@ Invoke-DomainMutation "MUT-DOMAIN-ALLOW-FAILED-FACT-BUSINESS-WRITE" {
     $casesCandidate.package_invariants.fact_commit_failure_business_write_count = 1
 } "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID" $caseSet $fixtures
 
-"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.2.0|cases=9|scenarios=9|mutations=11"
+"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.3.0|cases=9|scenarios=9|mutations=11"
