@@ -30,7 +30,7 @@ const EXPECTED_COUNTS = Object.freeze({
   debts: 7,
   changes: 4,
   governance: 63,
-  evidence: 27,
+  evidence: 28,
   catalogCases: 27,
 });
 
@@ -753,7 +753,7 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 71, cases: 144, tasks: 59, governance: 63, evidence: 27 });
+  assert.deepEqual(baseline.summary, { requirements: 71, cases: 144, tasks: 59, governance: 63, evidence: 28 });
 
   const firstRequirement = planText.split('\n').find((line) => line.startsWith('| `REQ-SCOPE-001` |'));
   expectFailure('TRACE_DUPLICATE_ID', () => buildTraceability(projectRoot, {

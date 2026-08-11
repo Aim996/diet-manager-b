@@ -3,7 +3,7 @@
 ## Status
 
 - product line: B only
-- state: local candidate frozen; independent review pending
+- state: complete through `EV-20260812-028`; independent review PASS with P0=0/P1=0/P2=0
 - reviewed implementation candidate: `0184ac8eb53583db1e95a4c55fa146a0dfca58cf`
 - stacked base: `c1181ae500769be0346450fab949701731cf49d9`
 - scope: server-authoritative preview, idempotency reservation, state-transition guard and migration guard
@@ -109,3 +109,15 @@ No model was invoked by the implementation or package validation commands.
 - installable product or G1/G2/G3 claims.
 
 These are later Plan 0.3 items, not missing claims from this candidate.
+
+## Independent review closure
+
+OpenClaw 02 independently cloned the public frozen branch and reviewed implementation commit `0184ac8eb53583db1e95a4c55fa146a0dfca58cf`. It reproduced 27/27 focused tests, 4 files / 48 complete package tests, TypeScript no-emit/build and both OpenClaw plugin gates. The rebuilt `dist` matched the committed output.
+
+The reviewer also tested concurrent same-key creation under a held SQLite write lock, lock timeout, ghost/forged/stale/tampered tokens, extra and removed schema objects, real second-insert constraint rollback and dynamic caller-state getters. The result remained one exact control-row pair or zero new rows as appropriate, with every dietary/business table empty. Review-owned clones and database roots were removed.
+
+```text
+B_MERGE_C_001_REVIEW|PASS|P0=0|P1=0|P2=0|commit=0184ac8eb53583db1e95a4c55fa146a0dfca58cf|cleanup=1
+```
+
+This closes `B-MERGE-C-001` only. `B-STOR-002` is now the next WIP and must integrate the authority into actual business repository transactions without weakening the zero-half-record rule.

@@ -91,7 +91,7 @@ export interface DietManagerOutcome {
 
 **Entry gate:** Do not start this task until the plan-0.3 prerequisites `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, and `SH-TRACE-001` have current accepted outputs. The Task 2 SQLite compatibility spike is allowed before this gate; production tables and migrations are not.
 
-**Current gate status (2026-08-12):** `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, `SH-TRACE-001`, and `B-STOR-001` are complete through `EV-20260812-027`. The SQLite bootstrap has a fixed leaf, migration 0001, exact 20/18/22 mapping checks, three-phase failure cleanup, 21 passing tests and independent P0=0/P1=0 review. `B-MERGE-C-001` is the sole WIP; repository transactions below remain blocked until its server-authoritative preview/state guards close.
+**Current gate status (2026-08-12):** `SH-SAFE-BASE-001`, `SH-MAP-001`, `SH-HARNESS-001`, `SH-TRACE-001`, `B-STOR-001`, and `B-MERGE-C-001` are complete through `EV-20260812-028`. The SQLite bootstrap has a fixed leaf, migration 0001 and exact 20/18/22 mapping checks. The B server-authority layer has exact preview/revision binding, atomic idempotency reservation and stale/forged/illegal-state/migration zero-write guards; 48 package tests and independent P0=0/P1=0/P2=0 review pass. `B-STOR-002` is the sole WIP and must integrate that authority into repository transactions while preserving the user's zero-half-record rule.
 
 **Files:**
 

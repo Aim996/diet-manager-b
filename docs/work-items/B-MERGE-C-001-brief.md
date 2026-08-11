@@ -6,9 +6,9 @@
 - milestone: `M3`
 - type: `B-only security merge`
 - product_line: `B only`
-- status: `in progress`
+- status: `complete`
 - owner: `Codex /root`
-- reviewer: `independent B security review after local freeze`
+- reviewer: `OpenClaw 02 independent B security review; PASS P0=0/P1=0/P2=0`
 - requirements: `REQ-CORE-003`, `REQ-SAFE-003`, `REQ-CONTEXT-003`, `REQ-OPS-002`
 - cases: `CASE-INVENTORY-006`, `CASE-STORAGE-001`, `CASE-STORAGE-005`, `CASE-STORAGE-006`, `CASE-STORAGE-007`
 - roots: `ROOT-B`

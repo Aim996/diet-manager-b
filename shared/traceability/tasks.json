@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 293943,
-      "sha256": "7C5CF7473D5EEE29003696C08D93166814EA161990C860CD5D6515EE1A12ADD4"
+      "length": 294685,
+      "sha256": "3E0D4A5EB4C5F036CA90FA51378263ACE6EE07227F4A30F4E531FB07808B3637"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,14 +14,14 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "AA4CA8780D4C2DDFDB421034C06FCDA280C3C79A2F453F564085B1B778AC469F"
+      "sha256": "A7A33653D1E9DFFF236A0918F063CBA1A95823DCF335C4E27B630E841F8F92B7"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 30,
-      "已完成": 20,
+      "未开始": 29,
+      "已完成": 21,
       "已取消": 8,
       "进行中": 1
     },
@@ -2838,7 +2838,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3072,7 +3072,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3159,7 +3159,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3225,9 +3225,12 @@
       "producers": [
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/preview/data_revision_stale_zero_write",
+            "/preview/caller_state_untrusted"
+          ]
         },
         {
           "task_id": "C-STOR-002",
@@ -3266,7 +3269,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4578,7 +4581,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4774,7 +4777,7 @@
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5109,13 +5112,16 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/idempotency/same_identity_returns_original_preview",
+            "/idempotency/same_identity_zero_new_rows"
+          ]
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5162,7 +5168,7 @@
       "producers": [
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5268,9 +5274,12 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/migration/illegal_transition_zero_write",
+            "/migration/history_and_user_version_match"
+          ]
         },
         {
           "task_id": "X-GATE-001",
@@ -5325,13 +5334,15 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/idempotency/retry_uses_frozen_server_authority"
+          ]
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5437,13 +5448,17 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/idempotency/changed_digest_conflict_zero_write",
+            "/idempotency/changed_subject_conflict_zero_write",
+            "/idempotency/changed_command_conflict_zero_write"
+          ]
         },
         {
           "task_id": "B-STOR-002",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -6897,14 +6912,37 @@
       "deliverables": "B preview store/token、transition guard、migration guard和负例测试",
       "verification": "伪造/陈旧/非法转换/非法迁移全部零写入，同键冲突与合法重试可证明；E-STOR+E-CASE",
       "roots": "ROOT-B",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 独立B安全复核待指派",
-      "status": "进行中",
-      "next_reopen": "DEC-027、CHG-20260810-001；next=brief/design+RED；协议或迁移规则变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "actual_evidence_ids": [
+        "EV-20260812-028"
+      ],
+      "owner_reviewer": "Codex /root / OpenClaw 02独立B安全复核",
+      "status": "已完成",
+      "next_reopen": "七字段绑定、原子幂等预留、27项focused/48项B测试及独立并发/篡改探针P0=0/P1=0/P2=0；协议、token或迁移规则变化重开",
+      "brief_path": "docs/work-items/B-MERGE-C-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-INVENTORY-006": [
+          "/preview/data_revision_stale_zero_write",
+          "/preview/caller_state_untrusted"
+        ],
+        "CASE-STORAGE-001": [
+          "/idempotency/same_identity_returns_original_preview",
+          "/idempotency/same_identity_zero_new_rows"
+        ],
+        "CASE-STORAGE-005": [
+          "/migration/illegal_transition_zero_write",
+          "/migration/history_and_user_version_match"
+        ],
+        "CASE-STORAGE-006": [
+          "/idempotency/retry_uses_frozen_server_authority"
+        ],
+        "CASE-STORAGE-007": [
+          "/idempotency/changed_digest_conflict_zero_write",
+          "/idempotency/changed_subject_conflict_zero_write",
+          "/idempotency/changed_command_conflict_zero_write"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "B-STOR-002",
@@ -6937,9 +6975,9 @@
       "verification": "§26.4 B-only repository切片+故障/响应丢失/backup integrity；E-STOR+E-CASE",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立B安全复核",
-      "status": "未开始",
-      "next_reopen": "依赖齐前不得开始；next=B-only G1矩阵；Schema/事务变化重开",
+      "owner_reviewer": "Codex /root / 独立B安全复核待指派",
+      "status": "进行中",
+      "next_reopen": "dependencies complete through EV-20260812-028; next=brief/design+RED；Schema/事务变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

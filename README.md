@@ -2,7 +2,7 @@
 
 饮食管家 B 是一个以 Skill 为智能体入口、SQLite 为唯一业务后端的饮食记录项目。OpenClaw、MCP 和其他智能体平台只提供薄适配层，不复制业务逻辑。
 
-> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。SQLite bootstrap/migration 候选已经实现；业务 repository 和完整写入闭环尚未交付。
+> 当前状态：开发中，尚不是可用于真实饮食数据的生产版本。SQLite bootstrap/migration 与服务端权威 preview/state guard 已通过独立复核；业务 repository 和完整写入闭环尚未交付。
 
 ## 当前路线
 
@@ -64,7 +64,7 @@ pnpm build
 
 ## 下一步
 
-1. 完成 `B-MERGE-C-001`：把服务端权威 preview/state、陈旧/伪造状态拒绝和 migration guard 并入 B。
-2. 实现 `B-STOR-002` 原子 repository，并验证写入失败时技术日志可有、业务数据严格为零。
+1. 实现 `B-STOR-002` 原子 repository，并验证写入失败时技术日志可有、业务数据严格为零。
+2. 通过 B-only G1 存储硬安全门。
 3. 完成记录、查询、更正、撤销的真实纵向闭环。
 4. 部署到专用 OpenClaw 环境；业务稳定后再增加 MCP 薄适配器。
