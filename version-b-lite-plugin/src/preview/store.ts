@@ -78,6 +78,13 @@ export interface AuthorizedServerPreview {
   result_status: "preview_ready";
 }
 
+export interface AuthorizedRepositoryPreview {
+  binding: PreviewBindingV1;
+  idempotency_key: string;
+  envelope_state: "received" | "effects_pending";
+  result_status: "preview_ready" | "facts_committed_effects_pending";
+}
+
 interface FrozenCreateInput {
   database: DatabaseSync;
   secret: Uint8Array;
@@ -490,5 +497,68 @@ export function authorizeServerPreview(
     idempotency_key: row.idempotency_key,
     envelope_state: "received",
     result_status: "preview_ready",
+  });
+}
+
+export function authorizeRepositoryPreview(
+  input: AuthorizeServerPreviewInput,
+): AuthorizedRepositoryPreview {
+  const frozen = freezeAuthorizeInput(input);
+  assertCurrentMigrationAuthority(frozen.database);
+  const tokenBinding = verifyPreviewToken(frozen.token, frozen.secret);
+  if (tokenBinding.input_digest !== frozen.inputDigest) {
+    throw new Error("PREVIEW_BINDING_MISMATCH:input_digest");
+  }
+  if (tokenBinding.subject_scope !== frozen.subjectScope) {
+    throw new Error("PREVIEW_BINDING_MISMATCH:subject_scope");
+  }
+  if (tokenBinding.command_type !== frozen.commandType) {
+    throw new Error("PREVIEW_BINDING_MISMATCH:command_type");
+  }
+  if (tokenBinding.data_revision !== frozen.dataRevision) {
+    throw new Error("PREVIEW_STALE:data_revision");
+  }
+
+  const row = findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id);
+  if (!row || !row.envelope_id || !row.idempotency_key) {
+    return authorityInvalid("missing");
+  }
+  if (
+    row.envelope_id !== row.operation_id ||
+    row.envelope_idempotency_key !== row.idempotency_key ||
+    row.envelope_input_digest !== row.idempotency_input_digest ||
+    row.terminal_result_json !== null
+  ) {
+    return authorityInvalid("identity");
+  }
+
+  const previewReady =
+    row.envelope_state === "received" &&
+    row.result_status === "preview_ready" &&
+    row.committed_at === null &&
+    row.idempotency_state === "preview_ready";
+  const factsCommitted =
+    row.envelope_state === "effects_pending" &&
+    row.result_status === "facts_committed_effects_pending" &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "effects_pending";
+  if (!previewReady && !factsCommitted) return authorityInvalid("state");
+
+  const authoritativeBinding = storedBinding(row.payload_json);
+  if (!bindingEquals(authoritativeBinding, tokenBinding)) {
+    return authorityInvalid("binding");
+  }
+  if (row.envelope_input_digest !== tokenBinding.input_digest) {
+    return authorityInvalid("identity");
+  }
+
+  return Object.freeze({
+    binding: authoritativeBinding,
+    idempotency_key: row.idempotency_key,
+    envelope_state: previewReady ? "received" : "effects_pending",
+    result_status: previewReady
+      ? "preview_ready"
+      : "facts_committed_effects_pending",
   });
 }
