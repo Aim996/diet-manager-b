@@ -1,0 +1,65 @@
+{
+  "fixture_catalog_id": "diet-manager/core-fixtures-v1",
+  "version": "1.0.0",
+  "environments": [
+    {
+      "fixture_id": "env-zh-cn-20260811",
+      "clock": "2026-08-11T08:30:00+08:00",
+      "timezone": "Asia/Shanghai",
+      "locale": "zh-CN",
+      "week_start": "monday"
+    }
+  ],
+  "goals": [
+    {
+      "fixture_id": "goals-six-metric-v1",
+      "version": 1,
+      "timezone": "Asia/Shanghai",
+      "metrics": [
+        {"metric": "energy_kcal", "target": 2000, "unit": "kcal"},
+        {"metric": "protein_g", "target": 75, "unit": "g"},
+        {"metric": "fat_g", "target": 60, "unit": "g"},
+        {"metric": "carbohydrate_g", "target": 250, "unit": "g"},
+        {"metric": "fiber_g", "target": 25, "unit": "g"},
+        {"metric": "water_ml", "target": 2500, "unit": "ml"}
+      ]
+    }
+  ],
+  "query_views": [
+    {
+      "fixture_id": "query-current-day-meals-v1",
+      "date": "2026-08-11",
+      "timezone": "Asia/Shanghai",
+      "records": [
+        {
+          "fixture_record_id": "fixture-meal-active-breakfast",
+          "lifecycle": "active",
+          "occurred_at": "2026-08-11T07:30:00+08:00",
+          "display_time": "07:30",
+          "summary": "07:30 鸡蛋和面包"
+        },
+        {
+          "fixture_record_id": "fixture-meal-active-apple",
+          "lifecycle": "active",
+          "occurred_at": "2026-08-11T08:10:00+08:00",
+          "display_time": "08:10",
+          "summary": "08:10 苹果"
+        },
+        {
+          "fixture_record_id": "fixture-meal-superseded",
+          "lifecycle": "superseded",
+          "occurred_at": "2026-08-11T06:50:00+08:00",
+          "display_time": "06:50",
+          "summary": "superseded"
+        },
+        {
+          "fixture_record_id": "fixture-meal-voided",
+          "lifecycle": "voided",
+          "occurred_at": "2026-08-11T08:20:00+08:00",
+          "display_time": "08:20",
+          "summary": "voided"
+        }
+      ]
+    }
+  ]
+}
