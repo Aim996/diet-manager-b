@@ -228,6 +228,9 @@ export function cloneDriverObservation(value: unknown): DriverObservation {
   if (outcomeStatus === "failed" && reasonCode === null) {
     fail(`${label}:reason_code`, "failure_requires_code");
   }
+  if (reasonCode !== null && !/^[a-z][a-z0-9_]{0,63}$/.test(reasonCode)) {
+    fail(`${label}:reason_code`, "safe_token");
+  }
   const businessWrites = descriptors.business_writes.value;
   if (!Number.isSafeInteger(businessWrites) || (businessWrites as number) < 0) {
     fail(`${label}:business_writes`, "nonnegative_safe_integer");

@@ -83,7 +83,6 @@ interface RouteResultRow {
 
 interface BRouteResultRow extends RouteResultRow {
   readonly comparison: "not_compared" | "matched" | "mismatched";
-  readonly mismatch_path: string | null;
 }
 
 interface CaseReportRow {
@@ -366,7 +365,6 @@ export async function runAcceptanceHarness(
     aBusinessWrites += a.business_writes;
     bBusinessWrites += b.business_writes;
     let comparison: BRouteResultRow["comparison"] = "not_compared";
-    let mismatchPath: string | null = null;
     if (b.execution_status === "not_executed") {
       if (b.reason_code !== "backend_pending" || b.business_writes !== 0) {
         throw new Error(`HARNESS_PENDING_RESULT_INVALID:${candidate.id}`);
@@ -381,7 +379,6 @@ export async function runAcceptanceHarness(
         bMatched += 1;
       } else {
         comparison = "mismatched";
-        mismatchPath = result.mismatch_path;
         bMismatched += 1;
       }
     }
@@ -399,7 +396,6 @@ export async function runAcceptanceHarness(
         reason_code: b.reason_code,
         business_writes: b.business_writes,
         comparison,
-        mismatch_path: mismatchPath,
       },
     });
   }

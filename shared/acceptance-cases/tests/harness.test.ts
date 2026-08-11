@@ -18,6 +18,29 @@ const testsDirectory = dirname(fileURLToPath(import.meta.url));
 const acceptanceRoot = resolve(testsDirectory, "..");
 const manifestPath = resolve(acceptanceRoot, "harness-manifest.json");
 
+const expectedContracts = [
+  {
+    contract_id: "diet-manager/contract-v2",
+    path: "shared/business-contract.md",
+    sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+  },
+  {
+    contract_id: "diet-manager/receipt-date-contract-v2",
+    path: "shared/contracts/receipt-and-date-contract.md",
+    sha256: "F33E34D6B9EA9B1212208D75C5025FA86BB07923248E3B4929A1EF0BB7A375DD",
+  },
+  {
+    contract_id: "diet-manager/issue-correction-contract-v2",
+    path: "shared/contracts/issue-correction-contract.md",
+    sha256: "41E4A18D4D72644641D66A58F918616EBB0A6189E7F0BE1E836741E057298FDB",
+  },
+  {
+    contract_id: "diet-manager/storage-mapping-v1",
+    path: "shared/contracts/storage-mapping.md",
+    sha256: "6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47",
+  },
+] as const;
+
 test("freezes the shared harness manifest", () => {
   assert.equal(existsSync(manifestPath), true, "HARNESS_MANIFEST_MISSING");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
@@ -36,6 +59,20 @@ test("freezes the shared harness manifest", () => {
   assert.equal(manifest.harness_id, "diet-manager/shared-acceptance-harness-v1");
   assert.equal(manifest.version, "1.0.0");
   assert.equal(manifest.selected_route, "B");
+  assert.deepEqual(manifest.contracts, expectedContracts);
+  assert.deepEqual(manifest.case_catalog, {
+    path: "shared/acceptance-cases/cases.json",
+    case_set_id: "diet-manager/core-acceptance-cases-v1",
+    version: "1.4.0",
+    case_count: 27,
+    sha256: "4A59E83E0CF07B69AE67C394B89F5633A9CE93D32D65B472E3B429151E65E041",
+  });
+  assert.deepEqual(manifest.fixture_catalog, {
+    path: "shared/acceptance-cases/fixtures/core-v1.json",
+    fixture_catalog_id: "diet-manager/core-fixtures-v1",
+    version: "1.2.0",
+    sha256: "E4069D2EB2FCE22B191657BDE91CDFF737597891F3CA0535AA22C5BA6FE16C60",
+  });
   assert.deepEqual(manifest.route_policy, {
     b_mode: "selected_execution_adapter",
     a_mode: "read_only_no_writer",
@@ -186,6 +223,19 @@ test("B rejects failed execution with any dietary business write", async () => {
   await assert.rejects(
     () => adapter.execute(sampleInput()),
     /HARNESS_DRIVER_OBSERVATION_INVALID:business_writes:failure_requires_zero/,
+  );
+});
+
+test("B rejects report-facing reason text that could contain a machine path", async () => {
+  const adapter = createBAdapter(() => ({
+    outcome_status: "failed",
+    reason_code: "C:\\private\\technical.log",
+    business_writes: 0,
+    observation: null,
+  }));
+  await assert.rejects(
+    () => adapter.execute(sampleInput()),
+    /HARNESS_DRIVER_OBSERVATION_INVALID:reason_code:safe_token/,
   );
 });
 
