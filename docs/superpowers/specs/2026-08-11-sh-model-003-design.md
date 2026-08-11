@@ -38,7 +38,7 @@ open | awaiting_user | resolved | dismissed
 
 It carries the 22 required contract fields, including stable identity/code/type/priority, entity and field references, discovery evidence, safe candidates/actions, status revision, presentation time, and nullable closure fields. The 23 issue codes, four issue types, four priorities, eight resolution reasons, and four resolution sources are exact enums from the v2 contract.
 
-The schema enforces these state rules semantically:
+The combined Schema and mandatory semantic validator enforce these state rules:
 
 - `open` and `awaiting_user` have no terminal resolution time/source/event; `deferred_by_user` may return an issue to `open` without creating a fifth state.
 - `resolved` and `dismissed` require a resolution event, time, source, and compatible reason.
@@ -72,7 +72,7 @@ timezone
 
 The operation enum contains the frozen 13 operations, including `change_food_type`, `void_event`, and `restore_event`. The model has no overwrite or physical-delete operation.
 
-`before_snapshot`, `change_set`, and `after_snapshot` are all required. Snapshot references preserve event identity, lifecycle, revision, affected item references, occurred-time reference, and content digest; they prove an append-only change without copying an unrestricted business object into this schema. `base_revision` is a positive integer checked during FactCommit. `affected_dates` is a sorted, unique, nonempty user-timezone date array.
+`before_snapshot`, `change_set`, and `after_snapshot` are all required. Snapshot references preserve event identity, lifecycle, revision, affected item references, occurred-time reference, and content digest. JSON Schema directly enforces object shape and void/restore lifecycle. The mandatory semantic validator enforces target identity, `base_revision == before.revision`, `after.revision == before.revision + 1`, digest change, and affected-date ordering because standard JSON Schema cannot compare arbitrary sibling values. `affected_dates` remains a unique, nonempty user-timezone date array at the structure layer.
 
 Ambiguous target, stale revision, no-change, and concurrent conflict are represented only as command outcomes with zero new CorrectionEvent and zero effects. Same `request_id` and same input returns the original frozen result rather than adding another correction or compensation.
 
@@ -119,11 +119,11 @@ If finalization fails, the public stage result remains `effects_pending`; it has
 
 `MixedItemResult` stores one input child result with a stable zero-based sequence, operation identity, command type, one of the five command statuses, optional committed fact/correction references, Issue references, and a nullable stable error code. It cannot claim committed data for `needs_clarification`, `ignored`, or `failed`.
 
-`MixedCommitResult` preserves the original child order and per-event idempotency identity. A later child failure never removes or rewrites an earlier committed child. The model does not invent a synthetic all-success state that hides partial failure.
+`MixedCommitResult` preserves the original child order and per-event idempotency identity. The semantic validator requires `sequence == array index` and unique child `operation_id/idempotency_key`; these cross-item rules are not falsely attributed to JSON Schema. A later child failure never removes or rewrites an earlier committed child. The model does not invent a synthetic all-success state that hides partial failure.
 
 `ReceiptData` is structured renderer input, not rendered Chinese text. It identifies the terminal envelope, committed event/correction references, actual inventory effect references, Issue references, affected dates, and finalization time. It exists only for terminal `committed` or `committed_with_issues` output.
 
-`EnvelopeFinalizeResult` references the existing `DailyProgressResult` by absolute `$id`. Exactly one affected date requires a field-equal single-day alias; multiple dates forbid the alias. Adapters may render the frozen result but may not query old progress or recompute current-envelope increments.
+`EnvelopeFinalizeResult` references the existing `DailyProgressResult` by absolute `$id`. JSON Schema requires the alias to exist for one date and to be absent for multiple dates. The semantic validator additionally requires the single alias to equal the only array item and requires date ordering. Adapters may render the frozen result but may not query old progress or recompute current-envelope increments.
 
 ## Error and retry invariants
 
@@ -138,8 +138,10 @@ If finalization fails, the public stage result remains `effects_pending`; it has
 ## Validation architecture
 
 - `shared/schemas/issue-correction-mixed.schema.json` defines the public model and references the existing Event/Amount and Nutrition/Progress schemas by absolute `$id` only where an existing public definition is authoritative.
-- `shared/tests/fixtures/issue-correction-mixed-cases.json` contains fixed positive and negative full-object cases. Expected case IDs, order, and outcomes are test-owned literals in the validator, not copied from fixture metadata.
+- `shared/tests/fixtures/issue-correction-mixed-cases.json` contains fixed positive and negative full-object cases. `semantic_only_case_ids` explicitly identifies cases whose objects are structurally valid but violate a mandatory cross-field invariant. Expected case IDs and both layer boundaries are test-owned literals in the validator.
 - `shared/tests/validate-issue-correction-mixed-schemas.ps1` pins schema/fixture identities and hashes, exact public definitions, exact enums, and semantic invariants that JSON Schema alone cannot express.
+
+`x-semantic-contract` is an annotation and an implementation obligation, not an escape hatch. The future B writer must execute these invariants inside the same transaction boundary before any business commit. Adapters may not skip them, and independent review must validate both the standards-based Schema layer and an independently implemented semantic layer.
 
 The fixed corpus must cover at least:
 

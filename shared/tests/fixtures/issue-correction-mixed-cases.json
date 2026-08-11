@@ -1,6 +1,18 @@
 {
   "fixture_set_id": "diet-manager/issue-correction-mixed-cases/v1",
   "schema_version": "1.0.0",
+  "semantic_only_case_ids": [
+    "ICM-CORRECTION-TARGET-MISMATCH-INVALID",
+    "ICM-CORRECTION-DATE-ORDER-INVALID",
+    "ICM-CORRECTION-NO-CHANGE-EVENT-INVALID",
+    "ICM-CORRECTION-STALE-WRITE-INVALID",
+    "ICM-CORRECTION-REVISION-INCREMENT-INVALID",
+    "ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID",
+    "ICM-MIXED-SEQUENCE-DUPLICATE-INVALID",
+    "ICM-MIXED-SEQUENCE-GAP-INVALID",
+    "ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID",
+    "ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID"
+  ],
   "templates": {
     "issue_open": {
       "issue_id": "issue-001",
@@ -184,6 +196,14 @@
         {"sequence":2,"operation_id":"operation-003","idempotency_key":"idem-item-003","command_type":"create","status":"committed","committed_fact_ids":["meal-003"],"correction_event_ids":[],"issue_ids":[],"error_code":null}
       ]}
     },
+    "daily_progress_day": {
+      "date":"2026-08-11","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],
+      "committed_totals":{"energy_kcal":"500","protein_g":"30","fat_g":"10","carbohydrate_g":"60","fiber_g":"8","water_ml":"800"},
+      "configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},
+      "current_turn_increments":{"energy_kcal":"100","protein_g":"5","fat_g":"2","carbohydrate_g":"18","fiber_g":"1","water_ml":"250"},
+      "metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},
+      "coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"800","idempotency_result_id":"terminal-result-001","generated_at":"2026-08-11T08:00:05+08:00"
+    },
     "progress_single": {
       "result_id": "progress-result-001",
       "schema_version": "1.0.0",
@@ -268,13 +288,17 @@
     {"case_id":"ICM-CORRECTION-CHANGE-AMOUNT-VALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-CORRECTION-VOID-VALID","target":"CorrectionEvent","template_id":"correction_void","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-CORRECTION-RESTORE-VALID","target":"CorrectionEvent","template_id":"correction_restore","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-VOID-AFTER-ACTIVE-INVALID","target":"CorrectionEvent","template_id":"correction_void","mutations":[{"op":"set","path":"/after_snapshot/lifecycle","value":"active"}],"expected_valid":false,"expected_error_contains":"void lifecycle"},
+    {"case_id":"ICM-CORRECTION-RESTORE-BEFORE-ACTIVE-INVALID","target":"CorrectionEvent","template_id":"correction_restore","mutations":[{"op":"set","path":"/before_snapshot/lifecycle","value":"active"}],"expected_valid":false,"expected_error_contains":"restore lifecycle"},
     {"case_id":"ICM-CORRECTION-CROSS-DAY-VALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-CORRECTION-LEGACY-OPERATION-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/operation","value":"edit"}],"expected_valid":false,"expected_error_contains":"operation"},
     {"case_id":"ICM-CORRECTION-MISSING-SNAPSHOT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"remove","path":"/before_snapshot"}],"expected_valid":false,"expected_error_contains":"before_snapshot"},
     {"case_id":"ICM-CORRECTION-DATE-ORDER-INVALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[{"op":"set","path":"/affected_dates","value":["2026-08-11","2026-08-10"]}],"expected_valid":false,"expected_error_contains":"affected_dates"},
     {"case_id":"ICM-CORRECTION-DUPLICATE-DATE-INVALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[{"op":"set","path":"/affected_dates","value":["2026-08-10","2026-08-10"]}],"expected_valid":false,"expected_error_contains":"affected_dates"},
+    {"case_id":"ICM-CORRECTION-TARGET-MISMATCH-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/event_id","value":"meal-other"}],"expected_valid":false,"expected_error_contains":"target_event_id"},
     {"case_id":"ICM-CORRECTION-NO-CHANGE-EVENT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/content_digest","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}],"expected_valid":false,"expected_error_contains":"snapshot change"},
     {"case_id":"ICM-CORRECTION-STALE-WRITE-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/base_revision","value":2}],"expected_valid":false,"expected_error_contains":"base_revision"},
+    {"case_id":"ICM-CORRECTION-REVISION-INCREMENT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/revision","value":3}],"expected_valid":false,"expected_error_contains":"revision increment"},
     {"case_id":"ICM-OUTBOX-PENDING-VALID","target":"EffectOutboxEntry","template_id":"outbox_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-OUTBOX-RETRYABLE-FAILED-VALID","target":"EffectOutboxEntry","template_id":"outbox_retryable","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-OUTBOX-PERMANENT-SKIP-VALID","target":"EffectOutboxEntry","template_id":"outbox_permanent","mutations":[],"expected_valid":true,"expected_error_contains":null},
@@ -296,12 +320,15 @@
     {"case_id":"ICM-FINALIZE-EFFECTS-PENDING-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-FINALIZE-PENDING-RECEIPT-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[{"op":"set","path":"/receipt_data","value":{"$template":"receipt_committed"}}],"expected_valid":false,"expected_error_contains":"terminal outputs"},
     {"case_id":"ICM-FINALIZE-CROSS-DAY-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_cross_day","mutations":[],"expected_valid":true,"expected_error_contains":null},
-    {"case_id":"ICM-FINALIZE-CROSS-DAY-ALIAS-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_cross_day","mutations":[{"op":"set","path":"/progress_result/daily_progress","value":{"$template":"progress_single","$set":{}}}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
+    {"case_id":"ICM-FINALIZE-CROSS-DAY-ALIAS-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_cross_day","mutations":[{"op":"set","path":"/progress_result/daily_progress","value":{"$template":"daily_progress_day"}}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
     {"case_id":"ICM-FINALIZE-SINGLE-ALIAS-MISSING-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[{"op":"remove","path":"/progress_result/daily_progress"}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
+    {"case_id":"ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[{"op":"set","path":"/progress_result/daily_progress/date","value":"2026-08-10"}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
     {"case_id":"ICM-MIXED-ORDERED-VALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-MIXED-LATER-FAILURE-VALID","target":"MixedCommitResult","template_id":"mixed_later_failure","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-MIXED-SEQUENCE-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/sequence","value":0}],"expected_valid":false,"expected_error_contains":"sequence"},
     {"case_id":"ICM-MIXED-SEQUENCE-GAP-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/sequence","value":2}],"expected_valid":false,"expected_error_contains":"sequence"},
+    {"case_id":"ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/operation_id","value":"operation-001"}],"expected_valid":false,"expected_error_contains":"duplicate identity"},
+    {"case_id":"ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/idempotency_key","value":"idem-item-001"}],"expected_valid":false,"expected_error_contains":"duplicate identity"},
     {"case_id":"ICM-MIXED-FAILED-BUSINESS-REF-INVALID","target":"MixedCommitResult","template_id":"mixed_later_failure","mutations":[{"op":"set","path":"/items/1/correction_event_ids","value":["correction-forbidden"]}],"expected_valid":false,"expected_error_contains":"business refs"},
     {"case_id":"ICM-IDEMPOTENCY-TERMINAL-RETRY-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"ICM-IDEMPOTENCY-PENDING-RESUME-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},

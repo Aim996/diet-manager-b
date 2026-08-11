@@ -89,7 +89,7 @@ shared/tests/fixtures/issue-correction-mixed-cases.json#/cases/*
 shared/schemas/issue-correction-mixed.schema.json#/$defs/*
 ```
 
-The validator owns the exact 58 case IDs/order/outcomes and four mutation checks. Fixture metadata or candidate schema content cannot define expected outcomes.
+The validator owns the exact 65 case IDs/outcomes, exact 10 semantic-only case IDs, exact 10 semantic invariant IDs, and four mutation checks. Fixture metadata or candidate schema content cannot redefine expected end-to-end outcomes. A standards-based Schema engine validates structure-layer outcomes; an independent semantic implementation validates the `x-semantic-contract` layer.
 
 ## Trace ownership
 
@@ -111,4 +111,4 @@ The validator owns the exact 58 case IDs/order/outcomes and four mutation checks
 
 ## Completion gate
 
-The task may be marked complete only after missing-file RED, 58-case GREEN, four mutation RED/GREEN proofs, upstream regression PASS, strict parser/JSON/ASCII gates, zero protected/business-data candidates, independent P0/P1 review PASS, private GitHub delivery, and independent-clone reproduction. Completion freezes a shared model only and does not make the product installable.
+The task may be marked complete only after missing-file RED, 65-case two-layer GREEN, four mutation RED/GREEN proofs, upstream regression PASS, strict parser/JSON/ASCII gates, zero protected/business-data candidates, independent P0/P1 review PASS, private GitHub delivery, and independent-clone reproduction. Completion freezes a shared model only and does not make the product installable.

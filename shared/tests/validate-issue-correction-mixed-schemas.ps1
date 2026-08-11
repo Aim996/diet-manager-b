@@ -10,8 +10,8 @@ $FixturePath = Join-Path $ProjectRoot 'shared\tests\fixtures\issue-correction-mi
 $ExpectedSchemaId = 'https://diet-manager.local/schemas/issue-correction-mixed/v1'
 $ExpectedFixtureSetId = 'diet-manager/issue-correction-mixed-cases/v1'
 $ExpectedVersion = '1.0.0'
-$ExpectedSchemaSha256 = 'AD4F13E1A937CB3A0C9334F906F06DC3C87D6B551BB216676231EC0F572251D8'
-$ExpectedFixtureSha256 = '87D264AD2928584592B2C1CD4A702777B2D6D720F5A7CA34832B17D094BB84F3'
+$ExpectedSchemaSha256 = 'EDBB15A38543431DD66564B696F7EA956F725E241E628D8EF36E1B9B0D3B511F'
+$ExpectedFixtureSha256 = 'FAD2104BACD46D831D51F72B7B4395923BC5B9BB007E05AA76903330408EE1F7'
 $ExpectedDefinitionNames = @(
     'Issue',
     'IssueResolutionEvent',
@@ -46,13 +46,17 @@ $ExpectedCaseIds = @(
     'ICM-CORRECTION-CHANGE-AMOUNT-VALID',
     'ICM-CORRECTION-VOID-VALID',
     'ICM-CORRECTION-RESTORE-VALID',
+    'ICM-CORRECTION-VOID-AFTER-ACTIVE-INVALID',
+    'ICM-CORRECTION-RESTORE-BEFORE-ACTIVE-INVALID',
     'ICM-CORRECTION-CROSS-DAY-VALID',
     'ICM-CORRECTION-LEGACY-OPERATION-INVALID',
     'ICM-CORRECTION-MISSING-SNAPSHOT-INVALID',
     'ICM-CORRECTION-DATE-ORDER-INVALID',
     'ICM-CORRECTION-DUPLICATE-DATE-INVALID',
+    'ICM-CORRECTION-TARGET-MISMATCH-INVALID',
     'ICM-CORRECTION-NO-CHANGE-EVENT-INVALID',
     'ICM-CORRECTION-STALE-WRITE-INVALID',
+    'ICM-CORRECTION-REVISION-INCREMENT-INVALID',
     'ICM-OUTBOX-PENDING-VALID',
     'ICM-OUTBOX-RETRYABLE-FAILED-VALID',
     'ICM-OUTBOX-PERMANENT-SKIP-VALID',
@@ -76,15 +80,42 @@ $ExpectedCaseIds = @(
     'ICM-FINALIZE-CROSS-DAY-VALID',
     'ICM-FINALIZE-CROSS-DAY-ALIAS-INVALID',
     'ICM-FINALIZE-SINGLE-ALIAS-MISSING-INVALID',
+    'ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID',
     'ICM-MIXED-ORDERED-VALID',
     'ICM-MIXED-LATER-FAILURE-VALID',
     'ICM-MIXED-SEQUENCE-DUPLICATE-INVALID',
     'ICM-MIXED-SEQUENCE-GAP-INVALID',
+    'ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID',
+    'ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID',
     'ICM-MIXED-FAILED-BUSINESS-REF-INVALID',
     'ICM-IDEMPOTENCY-TERMINAL-RETRY-VALID',
     'ICM-IDEMPOTENCY-PENDING-RESUME-VALID',
     'ICM-IDEMPOTENCY-CONFLICT-ZERO-WRITE-VALID',
     'ICM-IDEMPOTENCY-CONFLICT-BUSINESS-WRITE-INVALID'
+)
+$ExpectedSemanticOnlyCaseIds = @(
+    'ICM-CORRECTION-TARGET-MISMATCH-INVALID',
+    'ICM-CORRECTION-DATE-ORDER-INVALID',
+    'ICM-CORRECTION-NO-CHANGE-EVENT-INVALID',
+    'ICM-CORRECTION-STALE-WRITE-INVALID',
+    'ICM-CORRECTION-REVISION-INCREMENT-INVALID',
+    'ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID',
+    'ICM-MIXED-SEQUENCE-DUPLICATE-INVALID',
+    'ICM-MIXED-SEQUENCE-GAP-INVALID',
+    'ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID',
+    'ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID'
+)
+$ExpectedSemanticInvariantIds = @(
+    'correction_target_identity',
+    'correction_base_revision_match',
+    'correction_revision_increment',
+    'correction_digest_change',
+    'correction_affected_dates_order',
+    'mixed_sequence_index',
+    'mixed_operation_id_unique',
+    'mixed_idempotency_key_unique',
+    'daily_progress_dates_order',
+    'daily_progress_single_alias_equality'
 )
 
 function Fail([string]$Code, [string]$Detail) {
@@ -103,6 +134,47 @@ function Get-Value($Object, [string]$Name) {
 function Get-RawValue($Object, [string]$Name) {
     if (-not (Has-Property $Object $Name)) { return $null }
     Write-Output -NoEnumerate $Object.PSObject.Properties[$Name].Value
+}
+
+function Assert-SchemaLayerContract($Schema, $Definitions) {
+    $semantic = Get-Value $Schema 'x-semantic-contract'
+    Assert-ExactProperties $semantic @('validator','fixture_field','invariants') 'x-semantic-contract'
+    if ((Get-Value $semantic 'validator') -cne 'shared/tests/validate-issue-correction-mixed-schemas.ps1' -or (Get-Value $semantic 'fixture_field') -cne 'semantic_only_case_ids') {
+        Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'semantic contract identity'
+    }
+    $actualInvariants = @($semantic.invariants)
+    if ((@($actualInvariants | Sort-Object) -join '|') -cne (@($ExpectedSemanticInvariantIds | Sort-Object) -join '|')) {
+        Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'semantic invariant set'
+    }
+
+    $correction = Get-Value $Definitions 'CorrectionEvent'
+    $rules = @($correction.allOf)
+    if ($rules.Count -ne 2) { Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'CorrectionEvent lifecycle rule count' }
+    $voidIf = Get-Value (Get-Value (Get-Value $rules[0] 'if') 'properties') 'operation'
+    $voidAfter = Get-Value (Get-Value (Get-Value (Get-Value $rules[0] 'then') 'properties') 'after_snapshot') 'properties'
+    if ((Get-Value $voidIf 'const') -cne 'void_event' -or (Get-Value (Get-Value $voidAfter 'lifecycle') 'const') -cne 'voided') {
+        Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'CorrectionEvent void rule'
+    }
+    $restoreIf = Get-Value (Get-Value (Get-Value $rules[1] 'if') 'properties') 'operation'
+    $restoreThen = Get-Value (Get-Value $rules[1] 'then') 'properties'
+    $restoreBefore = Get-Value (Get-Value (Get-Value $restoreThen 'before_snapshot') 'properties') 'lifecycle'
+    $restoreAfter = Get-Value (Get-Value (Get-Value $restoreThen 'after_snapshot') 'properties') 'lifecycle'
+    if ((Get-Value $restoreIf 'const') -cne 'restore_event' -or (Get-Value $restoreBefore 'const') -cne 'voided' -or (Get-Value $restoreAfter 'const') -cne 'active') {
+        Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'CorrectionEvent restore rule'
+    }
+
+    $finalize = Get-Value $Definitions 'EnvelopeFinalizeResult'
+    $progress = Get-Value (Get-Value $finalize 'properties') 'progress_result'
+    $progressVariants = @($progress.anyOf)
+    $progressRules = @($progressVariants[0].allOf)
+    if ($progressRules.Count -ne 2) { Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'progress alias rule count' }
+    $aliasRule = $progressRules[1]
+    $dayRule = Get-Value (Get-Value (Get-Value $aliasRule 'if') 'properties') 'daily_progress_by_date'
+    $thenRequired = @($aliasRule.then.required)
+    $elseRequired = @($aliasRule.else.not.required)
+    if ([int](Get-Value $dayRule 'maxItems') -ne 1 -or ($thenRequired -join '|') -cne 'daily_progress' -or ($elseRequired -join '|') -cne 'daily_progress') {
+        Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_SEMANTIC_BOUNDARY_INVALID' 'progress alias cardinality rule'
+    }
 }
 
 function Read-JsonStrict([string]$Path) {
@@ -504,11 +576,22 @@ $actualDefinitions = @($definitions.PSObject.Properties.Name | Sort-Object)
 $expectedDefinitions = @($ExpectedDefinitionNames | Sort-Object)
 if (($actualDefinitions -join '|') -cne ($expectedDefinitions -join '|')) { Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_DEFINITIONS_INVALID' ($actualDefinitions -join ',') }
 if ((Get-Value $schema 'oneOf').Count -ne $ExpectedDefinitionNames.Count) { Fail 'ISSUE_CORRECTION_MIXED_SCHEMA_DEFINITIONS_INVALID' 'oneOf count' }
+Assert-SchemaLayerContract $schema $definitions
 if ((Get-Value $fixture 'fixture_set_id') -cne $ExpectedFixtureSetId -or (Get-Value $fixture 'schema_version') -cne $ExpectedVersion) { Fail 'ISSUE_CORRECTION_MIXED_FIXTURE_IDENTITY_INVALID' 'fixture identity' }
-Assert-ExactProperties $fixture @('fixture_set_id','schema_version','templates','cases') 'fixture root'
+Assert-ExactProperties $fixture @('fixture_set_id','schema_version','semantic_only_case_ids','templates','cases') 'fixture root'
 $templates = Get-Value $fixture 'templates'; $cases = Get-Value $fixture 'cases'
 if ($cases.Count -ne $ExpectedCaseIds.Count) { Fail 'ISSUE_CORRECTION_MIXED_FIXTURE_COVERAGE_INVALID' "case count $($cases.Count)" }
 $actualIds = @($cases.case_id); if (@($actualIds | Sort-Object -Unique).Count -ne $actualIds.Count -or (@($actualIds | Sort-Object) -join '|') -cne (@($ExpectedCaseIds | Sort-Object) -join '|')) { Fail 'ISSUE_CORRECTION_MIXED_FIXTURE_COVERAGE_INVALID' 'case ids' }
+$semanticOnlyIds = @($fixture.semantic_only_case_ids)
+if (@($semanticOnlyIds | Sort-Object -Unique).Count -ne $semanticOnlyIds.Count -or (@($semanticOnlyIds | Sort-Object) -join '|') -cne (@($ExpectedSemanticOnlyCaseIds | Sort-Object) -join '|')) {
+    Fail 'ISSUE_CORRECTION_MIXED_FIXTURE_COVERAGE_INVALID' 'semantic-only case ids'
+}
+foreach ($semanticOnlyId in $semanticOnlyIds) {
+    $semanticCase = @($cases | Where-Object { [string](Get-Value $_ 'case_id') -ceq [string]$semanticOnlyId })
+    if ($semanticCase.Count -ne 1 -or (Get-Value $semanticCase[0] 'expected_valid') -isnot [bool] -or [bool](Get-Value $semanticCase[0] 'expected_valid')) {
+        Fail 'ISSUE_CORRECTION_MIXED_FIXTURE_COVERAGE_INVALID' "semantic-only case $semanticOnlyId"
+    }
+}
 
 $resolvedCases = [ordered]@{}
 $passed = 0
@@ -545,4 +628,4 @@ foreach ($mutationName in $mutationChecks.Keys) {
     Write-Output "$mutationName|PASS|rejected_case=$mutationCaseId"
 }
 
-Write-Output "ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=$ExpectedVersion|cases=$passed|definitions=$($ExpectedDefinitionNames.Count)|mutations=4"
+Write-Output "ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=$ExpectedVersion|cases=$passed|definitions=$($ExpectedDefinitionNames.Count)|semantic_only=$($ExpectedSemanticOnlyCaseIds.Count)|mutations=4"

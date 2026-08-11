@@ -3,6 +3,22 @@
   "$id": "https://diet-manager.local/schemas/issue-correction-mixed/v1",
   "title": "Diet Manager Issue Correction and Mixed Commit Model v1",
   "x-schema-version": "1.0.0",
+  "x-semantic-contract": {
+    "validator": "shared/tests/validate-issue-correction-mixed-schemas.ps1",
+    "fixture_field": "semantic_only_case_ids",
+    "invariants": [
+      "correction_target_identity",
+      "correction_base_revision_match",
+      "correction_revision_increment",
+      "correction_digest_change",
+      "correction_affected_dates_order",
+      "mixed_sequence_index",
+      "mixed_operation_id_unique",
+      "mixed_idempotency_key_unique",
+      "daily_progress_dates_order",
+      "daily_progress_single_alias_equality"
+    ]
+  },
   "oneOf": [
     { "$ref": "#/$defs/Issue" },
     { "$ref": "#/$defs/IssueResolutionEvent" },
@@ -219,7 +235,22 @@
         "affected_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "format": "date" } },
         "created_at": { "type": "string", "format": "date-time" },
         "timezone": { "type": "string", "minLength": 1 }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "void_event" } }, "required": ["operation"] },
+          "then": { "properties": { "after_snapshot": { "properties": { "lifecycle": { "const": "voided" } } } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "restore_event" } }, "required": ["operation"] },
+          "then": {
+            "properties": {
+              "before_snapshot": { "properties": { "lifecycle": { "const": "voided" } } },
+              "after_snapshot": { "properties": { "lifecycle": { "const": "active" } } }
+            }
+          }
+        }
+      ]
     },
     "EffectOutboxEntry": {
       "type": "object",
@@ -332,7 +363,21 @@
         "result_status": { "enum": ["committed", "committed_with_issues", "failed"] },
         "mixed_result": { "anyOf": [{ "$ref": "#/$defs/MixedCommitResult" }, { "type": "null" }] },
         "receipt_data": { "anyOf": [{ "$ref": "#/$defs/ReceiptData" }, { "type": "null" }] },
-        "progress_result": { "anyOf": [{ "$ref": "https://diet-manager.local/schemas/nutrition-progress/v1#/$defs/DailyProgressResult" }, { "type": "null" }] },
+        "progress_result": {
+          "anyOf": [
+            {
+              "allOf": [
+                { "$ref": "https://diet-manager.local/schemas/nutrition-progress/v1#/$defs/DailyProgressResult" },
+                {
+                  "if": { "properties": { "daily_progress_by_date": { "maxItems": 1 } }, "required": ["daily_progress_by_date"] },
+                  "then": { "required": ["daily_progress"] },
+                  "else": { "not": { "required": ["daily_progress"] } }
+                }
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
         "terminal_idempotency_result": {
           "type": ["object", "null"],
           "additionalProperties": false,
