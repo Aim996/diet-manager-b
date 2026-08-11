@@ -23,6 +23,7 @@
 6. `version-b-lite-plugin/tests/handoff-contract.test.ts`：对交接清单和验证器的 TDD 契约测试。
 7. `docs/开发进度.md`：重写为当前单一进度快照，详细列出已开发、正在开发、待开发、发现问题、待优化和后续优化。
 8. `docs/work-items/SH-HANDOFF-001-brief.md`：登记本次开发交接任务，避免与 M7 正式安装任务混淆。
+9. `CONTRIBUTING.md`、`SECURITY.md` 和 `.github/pull_request_template.md`：建立符合 GitHub 协作习惯的分支、PR、测试、数据与安全报告规范；当前不开源且不擅自选择许可证。
 
 ## 环境与安装契约
 
@@ -57,3 +58,4 @@
 - 交接验证器和插件测试全部通过。
 - OpenClaw 02/03/04 各自职责通过，且仓库、日志和证据中没有令牌或真实饮食数据。
 - GitHub `main` 最终只接收经过上述验证的相同字节。
+- 机器清单必须声明当前仓库私有、未来计划开源、许可证仍需用户选择；没有 `LICENSE` 前不得把仓库称为开源软件。

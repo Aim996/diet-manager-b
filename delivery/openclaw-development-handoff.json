@@ -6,6 +6,11 @@
     "default_branch": "main",
     "private": true
   },
+  "publication": {
+    "current_visibility": "private",
+    "future_open_source": true,
+    "license_status": "user_selection_required"
+  },
   "package_root": "version-b-lite-plugin",
   "runtime": {
     "node": ">=24.15.0 <25",

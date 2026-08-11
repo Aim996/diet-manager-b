@@ -22,6 +22,11 @@ const expectedManifest = {
     default_branch: "main",
     private: true,
   },
+  publication: {
+    current_visibility: "private",
+    future_open_source: true,
+    license_status: "user_selection_required",
+  },
   package_root: "version-b-lite-plugin",
   runtime: {
     node: ">=24.15.0 <25",
@@ -59,6 +64,13 @@ const expectedAllowBuilds = [
 const requiredRelativePaths = [
   "README.md",
   "START-HERE.md",
+  "CONTRIBUTING.md",
+  "SECURITY.md",
+  ".github/pull_request_template.md",
+  "docs/OPENCLAW-DEVELOPMENT-HANDOFF.md",
+  "docs/开发进度.md",
+  "delivery/openclaw-development-handoff.json",
+  "scripts/validate-openclaw-development-handoff.mjs",
   "总功能开发计划0.3.md",
   "version-b-lite-plugin/package.json",
   "version-b-lite-plugin/pnpm-lock.yaml",

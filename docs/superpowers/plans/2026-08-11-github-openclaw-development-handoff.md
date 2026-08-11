@@ -170,6 +170,9 @@ git commit -m "feat: add machine-verifiable OpenClaw handoff"
 - Modify: `README.md`
 - Modify: `START-HERE.md`
 - Create: `docs/OPENCLAW-DEVELOPMENT-HANDOFF.md`
+- Create: `CONTRIBUTING.md`
+- Create: `SECURITY.md`
+- Create: `.github/pull_request_template.md`
 - Modify: `docs/开发进度.md`
 - Modify: `version-b-lite-plugin/tests/handoff-contract.test.ts`
 
@@ -205,7 +208,7 @@ Expected: FAIL on the first missing document anchor.
 
 - [ ] **Step 3: Rewrite the documents from the same manifest contract**
 
-`README.md` and `START-HERE.md` must state B-only, development-only, exact clone/build/validate commands, and the no-business-write boundary. `docs/OPENCLAW-DEVELOPMENT-HANDOFF.md` must include preflight, private GitHub authentication, clone, dependency install, tests, build, plugin validation, plugin/Skill install, behavior smoke, zero-write audit, and safe cleanup. `docs/开发进度.md` must contain these exact sections:
+`README.md` and `START-HERE.md` must state B-only, development-only, exact clone/build/validate commands, and the no-business-write boundary. `docs/OPENCLAW-DEVELOPMENT-HANDOFF.md` must include preflight, private GitHub authentication, clone, dependency install, tests, build, plugin validation, plugin/Skill install, behavior smoke, zero-write audit, and safe cleanup. `CONTRIBUTING.md`, `SECURITY.md`, and `.github/pull_request_template.md` must define feature-branch/PR flow, test gates, zero real-data contribution, private vulnerability reporting, and the current no-PRODUCT support status. `docs/开发进度.md` must contain these exact sections:
 
 ```markdown
 ## 当前结论
@@ -231,7 +234,7 @@ Expected: both commands exit 0.
 - [ ] **Step 5: Commit the human handoff**
 
 ```powershell
-git add README.md START-HERE.md docs/OPENCLAW-DEVELOPMENT-HANDOFF.md docs/开发进度.md version-b-lite-plugin/tests/handoff-contract.test.ts
+git add README.md START-HERE.md CONTRIBUTING.md SECURITY.md .github/pull_request_template.md docs/OPENCLAW-DEVELOPMENT-HANDOFF.md docs/开发进度.md version-b-lite-plugin/tests/handoff-contract.test.ts
 git commit -m "docs: publish truthful GitHub OpenClaw handoff"
 ```
 
