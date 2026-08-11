@@ -6,9 +6,9 @@
 - milestone: `M2`
 - type: `harness`
 - product_line: `B-only shared execution`
-- status: `in_progress`
+- status: `completed`
 - owner: `Codex /root`
-- reviewer: `one final independent public-candidate review`
+- reviewer: `OpenClaw 02 public-clone review; PASS P0=0/P1=0/P2=2`
 - base: `689b4efe882dafb791b40888a85ff03b6b26d76b`
 
 ## Objective
@@ -25,7 +25,7 @@ The current B backend is intentionally absent. Therefore completion of this task
 - `SH-CASE-003`
 - `SH-CASE-004`
 
-All dependencies are complete.
+All dependencies are complete. Closure evidence: `EV-20260812-025`.
 
 ## Required cases and requirements
 

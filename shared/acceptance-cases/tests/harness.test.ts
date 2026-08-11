@@ -179,6 +179,26 @@ test("adapters reject Oracle fields before invoking dynamic getters", async () =
   assert.equal(getterCalls, 0);
 });
 
+test("adapters reject Proxy input before invoking any Proxy trap", async () => {
+  let trapCalls = 0;
+  const input = new Proxy(sampleInput(), {
+    getPrototypeOf(target) {
+      trapCalls += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      trapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      trapCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
+  await assert.rejects(() => aAdapter.execute(input), /HARNESS_INPUT_INVALID:proxy/);
+  assert.equal(trapCalls, 0);
+});
+
 test("B gives the driver an isolated recursively frozen input", async () => {
   const input = sampleInput();
   let delivered: CaseExecutionInput | undefined;

@@ -74,10 +74,10 @@ Files:
 - after review create `docs/evidence/EV-20260812-025-sh-harness-001.md`
 - update `docs/开发进度.md` and `总功能开发计划0.3.md`
 
-- [ ] Run Node built-in tests and the default harness CLI using the exact bundled Node path.
-- [ ] Run the four acceptance validators and relevant contract/model validators serially.
-- [ ] Run Parser/JSON/UTF-8/diff/secret/machine-path/protected-scope/residual gates.
-- [ ] Publish one stacked draft PR based on the SH-CASE-004 branch.
-- [ ] Use at most one independent public-clone review; require P0/P1/P2 and cleanup.
-- [ ] After P0=0/P1=0, write evidence, mark the task complete and set next WIP to `SH-TRACE-001`.
-- [ ] Re-run focused gates, push and require local/remote/PR-head equality.
+- [x] Run Node built-in tests and the default harness CLI using the exact bundled Node path.
+- [x] Run the four acceptance validators and relevant contract/model validators serially.
+- [x] Run Parser/JSON/UTF-8/diff/secret/machine-path/protected-scope/residual gates.
+- [x] Publish one stacked draft PR based on the SH-CASE-004 branch.
+- [x] Use at most one independent public-clone review; require P0/P1/P2 and cleanup.
+- [x] After P0=0/P1=0, write evidence, mark the task complete and set next WIP to `SH-TRACE-001`.
+- [x] Re-run focused gates, push and require local/remote/PR-head equality.
