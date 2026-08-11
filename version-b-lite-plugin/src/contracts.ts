@@ -1,0 +1,142 @@
+export const dietManagerActions = [
+  "record_meal",
+  "record_water",
+  "add_inventory",
+  "query_inventory",
+  "query_meals",
+  "query_daily_summary",
+  "correct_record",
+  "undo_record",
+] as const;
+
+export type DietManagerAction = (typeof dietManagerActions)[number];
+
+export const dietManagerStatuses = [
+  "foundation_not_implemented",
+  "committed",
+  "committed_with_issues",
+  "needs_clarification",
+  "ignored",
+  "failed",
+] as const;
+
+export type DietManagerStatus = (typeof dietManagerStatuses)[number];
+
+export interface DietManagerItem {
+  name: string;
+  quantity?: number;
+  unit?: string;
+  per_item_amount?: number;
+  per_item_unit?: string;
+}
+
+export interface DietManagerRequest {
+  action: DietManagerAction;
+  operation_id?: string;
+  source_text?: string;
+  occurred_at_text?: string;
+  items?: DietManagerItem[];
+}
+
+export interface FoundationOutcome {
+  action: DietManagerAction;
+  status: "foundation_not_implemented";
+  committed: false;
+  operation_id?: never;
+  record_id?: never;
+}
+
+export interface FailedOutcome {
+  action: DietManagerAction;
+  status: "failed";
+  committed: false;
+  operation_id?: string;
+  error_code: string;
+  record_id?: never;
+}
+
+export interface NonWritingOutcome {
+  action: DietManagerAction;
+  status: "needs_clarification" | "ignored";
+  committed: false;
+  operation_id?: string;
+  reason_code: string;
+  record_id?: never;
+}
+
+export interface CommittedOutcome {
+  action: DietManagerAction;
+  status: "committed" | "committed_with_issues";
+  committed: true;
+  operation_id: string;
+  record_id: string;
+}
+
+export type DietManagerOutcome =
+  | FoundationOutcome
+  | FailedOutcome
+  | NonWritingOutcome
+  | CommittedOutcome;
+
+function invalidOutcome(reason: string): never {
+  throw new TypeError(`DIET_MANAGER_OUTCOME_INVALID:${reason}`);
+}
+
+export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("shape");
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.action !== "string" ||
+    !dietManagerActions.includes(candidate.action as DietManagerAction)
+  ) {
+    return invalidOutcome("action");
+  }
+  if (
+    typeof candidate.status !== "string" ||
+    !dietManagerStatuses.includes(candidate.status as DietManagerStatus)
+  ) {
+    return invalidOutcome("status");
+  }
+  if (typeof candidate.committed !== "boolean") {
+    return invalidOutcome("committed");
+  }
+
+  const hasCommittedStatus =
+    candidate.status === "committed" ||
+    candidate.status === "committed_with_issues";
+  if (candidate.committed !== hasCommittedStatus) {
+    return invalidOutcome("commit_status");
+  }
+  if (!candidate.committed && candidate.record_id !== undefined) {
+    return invalidOutcome("failed_record_id");
+  }
+  if (
+    (candidate.status === "needs_clarification" ||
+      candidate.status === "ignored") &&
+    (typeof candidate.reason_code !== "string" ||
+      candidate.reason_code.trim().length === 0)
+  ) {
+    return invalidOutcome("reason_code");
+  }
+  if (
+    candidate.status === "failed" &&
+    (typeof candidate.error_code !== "string" ||
+      candidate.error_code.trim().length === 0)
+  ) {
+    return invalidOutcome("error_code");
+  }
+  if (
+    hasCommittedStatus &&
+    (typeof candidate.operation_id !== "string" ||
+      candidate.operation_id.trim().length === 0 ||
+      typeof candidate.record_id !== "string" ||
+      candidate.record_id.trim().length === 0)
+  ) {
+    return invalidOutcome("committed_identity");
+  }
+
+  return candidate as unknown as DietManagerOutcome;
+}

@@ -1,0 +1,55 @@
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Dependencies and local tool state
+**/node_modules/
+**/.pnpm-store/
+**/.npm/
+**/.cache/
+**/.codex/
+
+# Runtime/business data: never publish dietary records or local databases
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.db-*
+*.jsonl
+*.jsonl.*
+
+# Logs, coverage, scratch and test artifacts
+*.log
+*.tmp
+*.temp
+coverage/
+tmp/
+temp/
+docs/evidence/raw/
+docs/evidence/*.json
+
+# Protected leases: intentionally excluded from Git and publication
+/shared/contracts/data-model.md
+/shared/schemas/domain.schema.json
+/shared/schemas/fixtures/domain-cases.json
+/shared/tests/validate-domain-schema.mjs
+/shared/tests/validate-domain-schema.ps1
+
+# Superseded implementation branches; the selected product route is B only
+/version-a-skill-only/
+/version-c-strict-plugin/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

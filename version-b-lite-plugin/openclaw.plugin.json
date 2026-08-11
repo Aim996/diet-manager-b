@@ -1,0 +1,17 @@
+{
+  "id": "diet-manager-b",
+  "name": "Diet Manager B Foundation",
+  "description": "A non-writing Diet Manager B foundation tool boundary.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["diet_manager"]
+  }
+}
