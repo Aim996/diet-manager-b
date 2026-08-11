@@ -530,11 +530,19 @@ foreach ($case in $cases) {
     Write-Output "$caseId|PASS"
 }
 
-foreach ($mutationCaseId in @('ICM-FACT-COMMIT-FAILED-BUSINESS-ID-INVALID','ICM-OUTBOX-TERMINAL-REOPEN-INVALID','ICM-FINALIZE-PENDING-RECEIPT-INVALID','ICM-MIXED-SEQUENCE-DUPLICATE-INVALID')) {
+$mutationChecks = [ordered]@{
+    'MUT-FAILED-FACT-ALLOW-BUSINESS' = 'ICM-FACT-COMMIT-FAILED-BUSINESS-ID-INVALID'
+    'MUT-OUTBOX-ALLOW-TERMINAL-REOPEN' = 'ICM-OUTBOX-TERMINAL-REOPEN-INVALID'
+    'MUT-PENDING-ALLOW-RECEIPT' = 'ICM-FINALIZE-PENDING-RECEIPT-INVALID'
+    'MUT-MIXED-ALLOW-REORDER' = 'ICM-MIXED-SEQUENCE-DUPLICATE-INVALID'
+}
+foreach ($mutationName in $mutationChecks.Keys) {
+    $mutationCaseId = [string]$mutationChecks[$mutationName]
     $entry = $resolvedCases[$mutationCaseId]
     $rejected = $false
     try { Assert-Target $entry.value $entry.target } catch { $rejected = $true }
-    if (-not $rejected) { Fail 'ISSUE_CORRECTION_MIXED_MUTATION_NOT_REJECTED' $mutationCaseId }
+    if (-not $rejected) { Fail 'ISSUE_CORRECTION_MIXED_MUTATION_NOT_REJECTED' $mutationName }
+    Write-Output "$mutationName|PASS|rejected_case=$mutationCaseId"
 }
 
 Write-Output "ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=$ExpectedVersion|cases=$passed|definitions=$($ExpectedDefinitionNames.Count)|mutations=4"
