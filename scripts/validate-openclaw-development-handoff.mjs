@@ -77,6 +77,7 @@ const requiredRelativePaths = [
   "version-b-lite-plugin/pnpm-workspace.yaml",
   "version-b-lite-plugin/openclaw.plugin.json",
   "version-b-lite-plugin/dist/index.js",
+  "version-b-lite-plugin/dist/storage/sqlite-runtime.js",
   "version-b-lite-plugin/src/index.ts",
   "version-b-lite-plugin/skills/diet-manager-b/SKILL.md",
   "version-b-lite-plugin/skills/diet-manager-b/agents/openai.yaml",

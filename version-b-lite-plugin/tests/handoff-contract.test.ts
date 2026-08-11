@@ -33,6 +33,14 @@ const pullRequestTemplatePath = resolve(
   ".github",
   "pull_request_template.md",
 );
+const compiledIndexPath = resolve(packageRoot, "dist", "index.js");
+const compiledContractsPath = resolve(packageRoot, "dist", "contracts.js");
+const compiledSqliteRuntimePath = resolve(
+  packageRoot,
+  "dist",
+  "storage",
+  "sqlite-runtime.js",
+);
 
 describe("GitHub and OpenClaw development handoff", () => {
   test("publishes the machine handoff and read-only validator", () => {
@@ -191,5 +199,38 @@ describe("GitHub and OpenClaw development handoff", () => {
     expect(security).toContain("当前没有正式受支持的 PRODUCT 版本");
     expect(pullRequestTemplate).toContain("pnpm handoff:validate");
     expect(pullRequestTemplate).toContain("业务数据新增为 0");
+  });
+
+  test("keeps the tracked plugin artifacts synchronized with the B boundary", () => {
+    expect(existsSync(compiledIndexPath)).toBe(true);
+    expect(existsSync(compiledContractsPath)).toBe(true);
+    expect(existsSync(compiledSqliteRuntimePath)).toBe(true);
+    if (
+      !existsSync(compiledIndexPath) ||
+      !existsSync(compiledContractsPath) ||
+      !existsSync(compiledSqliteRuntimePath)
+    ) {
+      return;
+    }
+
+    const compiledIndex = readFileSync(compiledIndexPath, "utf8");
+    const compiledContracts = readFileSync(compiledContractsPath, "utf8");
+    const compiledSqliteRuntime = readFileSync(compiledSqliteRuntimePath, "utf8");
+    for (const action of [
+      "record_meal",
+      "record_water",
+      "add_inventory",
+      "query_inventory",
+      "query_meals",
+      "query_daily_summary",
+      "correct_record",
+      "undo_record",
+    ]) {
+      expect(compiledIndex).toContain(`Type.Literal("${action}")`);
+      expect(compiledContracts).toContain(`"${action}"`);
+    }
+    expect(compiledContracts).toContain("assertDietManagerOutcome");
+    expect(compiledContracts).toContain("committed_with_issues");
+    expect(compiledSqliteRuntime).toContain('requireNode("node:sqlite")');
   });
 });
