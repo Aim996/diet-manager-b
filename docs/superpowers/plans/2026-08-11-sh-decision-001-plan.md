@@ -56,7 +56,7 @@
 - [x] Record RED/GREEN, exact hashes, review limitations, and B-only/no-safety-advice boundaries.
 - [x] Close `Q-005` only for the v1 policy coverage actually frozen.
 - [x] Mark `SH-DECISION-001` completed without claiming G1/G2 or product readiness.
-- [ ] Push to the private GitHub main delivery chain and reproduce validation in the independent clone.
+- [x] Push to the private GitHub main delivery chain and reproduce validation in the independent clone.
 
 ## Verification commands
 
