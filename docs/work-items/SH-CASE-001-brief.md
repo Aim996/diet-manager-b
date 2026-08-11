@@ -6,7 +6,7 @@
 - milestone: `M2`
 - type: `cases`
 - product_line: `B-only shared Oracle`
-- status: `ready_for_red`
+- status: `candidate_green_review_pending`
 - owner: `Codex /root`
 - reviewer: `OpenClaw independent product-case review`
 - full_case_set: `none`
