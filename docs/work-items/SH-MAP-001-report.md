@@ -3,7 +3,7 @@
 ## Candidate identity
 
 - task: `SH-MAP-001`
-- status: candidate green after round-2 correction, round-3 independent review pending
+- status: completed after round-3 independent review PASS
 - product line: B only
 - mapping: `shared/contracts/storage-mapping.md`
 - validator: `shared/tests/validate-storage-mapping.ps1`
@@ -82,7 +82,17 @@ Before changing the mapping, the strengthened validator rejected the candidate w
 STORAGE_MAPPING_SET_INVALID:effect_bundle allowed
 ```
 
-The four boundaries now partition all 20 tables into exact, non-overlapping writable/forbidden sets. `effect_bundle` may update `command_envelopes`, cannot update `idempotency_records`, and `envelope_finalize` explicitly forbids `goal_versions`. Two dedicated mutations prevent either EffectBundle regression. Completion still requires a fresh round-3 independent PASS.
+The four boundaries now partition all 20 tables into exact, non-overlapping writable/forbidden sets. `effect_bundle` may update `command_envelopes`, cannot update `idempotency_records`, and `envelope_finalize` explicitly forbids `goal_versions`. Two dedicated mutations prevent either EffectBundle regression. This correction was then submitted to a fresh round-3 review.
+
+### Independent review round 3 PASS
+
+The third review received four exact candidate files through a five-chunk gzip/Base64 package, verified every chunk, payload and file hash, then combined them with the already verified Schema/design/brief inputs. Its independent checker did not execute the candidate PowerShell validator, reproduced the physical contract hash and rejected 33/33 independent mutations.
+
+```text
+SH-MAP-001-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|definitions=34|tables=20|indexes=18|mutations=33
+```
+
+The remaining P2 suggestions concern optional future SQLite `CHECK` hardening for additional enum columns. They are recorded for the DDL/migration task and do not expand this mapping task.
 
 ## Upstream regression
 
@@ -123,9 +133,6 @@ These hashes are candidate identities and must be refreshed if independent revie
 - no `selected-route-map.json`;
 - no G1/G2/G3 or installability claim.
 
-## Pending completion gates
+## Completion status
 
-1. round-3 independent storage-mapping review with P0=0/P1=0;
-2. evidence `EV-20260811-020`;
-3. private GitHub push and independent-clone reproduction;
-4. final source/origin/clone equality and clean status.
+The mapping candidate is frozen in implementation commit `d8f612b5c2a7a556fc4f79c7f76414d4d70b78e3`. Independent review is complete. Evidence, private GitHub delivery and clone reproduction are recorded in `EV-20260811-020`; the documentation closure commit is intentionally separate so the evidence does not self-reference its own Git object.
