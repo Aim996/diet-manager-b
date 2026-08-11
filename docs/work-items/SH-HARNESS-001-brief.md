@@ -71,3 +71,16 @@ A write failure may create a separate redacted technical log, but it must create
 ## Reopen conditions
 
 Reopen when an upstream contract hash, mapping hash, case catalog, fixture catalog, adapter protocol, selected route or Oracle comparison semantics changes.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-STORAGE-001:
+    - /execution/idempotency_same_input_zero_duplicate_writes
+  CASE-STORAGE-007:
+    - /execution/idempotency_conflict_zero_business_writes
+  CASE-EFFECT-001:
+    - /execution/effect_failure_zero_false_commit
+  CASE-EFFECT-003:
+    - /execution/finalizer_failure_zero_false_success
+full_case_set: none

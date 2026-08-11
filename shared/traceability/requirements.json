@@ -1,0 +1,3164 @@
+{
+  "schema_version": "diet-manager/traceability-requirements/v1",
+  "generated_from": {
+    "plan": {
+      "path": "总功能开发计划0.3.md",
+      "length": 293149,
+      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
+    },
+    "acceptance_catalog": {
+      "path": "shared/acceptance-cases/cases.json",
+      "length": 30964,
+      "sha256": "4A59E83E0CF07B69AE67C394B89F5633A9CE93D32D65B472E3B429151E65E041"
+    },
+    "generator": {
+      "path": "shared/tests/validate-traceability.mjs",
+      "length": 37212,
+      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
+    }
+  },
+  "counts": {
+    "requirements": 71,
+    "cases": 144,
+    "shared_catalog_cases": 27
+  },
+  "selectors": {
+    "G1_COMMON_B_ONLY": [
+      "CASE-STORAGE-001",
+      "CASE-STORAGE-002",
+      "CASE-STORAGE-004",
+      "CASE-STORAGE-005",
+      "CASE-STORAGE-006",
+      "CASE-STORAGE-007",
+      "CASE-EFFECT-003",
+      "CASE-FOUNDATION-002",
+      "CASE-INVENTORY-007",
+      "CASE-PURCHASE-001",
+      "CASE-QUERY-003",
+      "CASE-INVENTORY-001",
+      "CASE-INVENTORY-004"
+    ],
+    "G2_VERTICAL_SLICE_B_ONLY": [
+      "CASE-MIXED-001",
+      "CASE-CORR-001",
+      "CASE-QUERY-001",
+      "CASE-EFFECT-001",
+      "CASE-MEAL-006",
+      "CASE-NUTR-008",
+      "CASE-MEAL-003",
+      "CASE-MEAL-004",
+      "CASE-INVENTORY-003",
+      "CASE-INVENTORY-004",
+      "CASE-NUTR-001",
+      "CASE-NUTR-002",
+      "CASE-NUTR-005",
+      "CASE-STORAGE-001",
+      "CASE-RECEIPT-001",
+      "CASE-RECEIPT-003",
+      "CASE-PROGRESS-010"
+    ],
+    "B_RELEASE_EXCLUDED": [
+      "CASE-STORAGE-003"
+    ],
+    "RELEASE_0_1_MUST": [
+      "CASE-CORR-001",
+      "CASE-CORR-002",
+      "CASE-CORR-003",
+      "CASE-CORR-004",
+      "CASE-CORR-005",
+      "CASE-DATE-001",
+      "CASE-DATE-002",
+      "CASE-DATE-003",
+      "CASE-EFFECT-001",
+      "CASE-EFFECT-002",
+      "CASE-EFFECT-003",
+      "CASE-EXPORT-003",
+      "CASE-EXPORT-004",
+      "CASE-FOUNDATION-001",
+      "CASE-FOUNDATION-002",
+      "CASE-INVENTORY-001",
+      "CASE-INVENTORY-002",
+      "CASE-INVENTORY-003",
+      "CASE-INVENTORY-004",
+      "CASE-INVENTORY-005",
+      "CASE-INVENTORY-006",
+      "CASE-INVENTORY-007",
+      "CASE-INVENTORY-008",
+      "CASE-INVENTORY-009",
+      "CASE-ISSUE-001",
+      "CASE-ISSUE-002",
+      "CASE-ISSUE-003",
+      "CASE-MEAL-001",
+      "CASE-MEAL-002",
+      "CASE-MEAL-003",
+      "CASE-MEAL-004",
+      "CASE-MEAL-005",
+      "CASE-MEAL-006",
+      "CASE-MEAL-007",
+      "CASE-MEAL-008",
+      "CASE-MEAL-009",
+      "CASE-MEAL-010",
+      "CASE-MEAL-011",
+      "CASE-MEAL-012",
+      "CASE-MEAL-013",
+      "CASE-MEAL-014",
+      "CASE-MEAL-015",
+      "CASE-MEAL-016",
+      "CASE-MEAL-017",
+      "CASE-MEAL-018",
+      "CASE-MEAL-019",
+      "CASE-MEAL-020",
+      "CASE-MEAL-021",
+      "CASE-MIXED-001",
+      "CASE-MIXED-002",
+      "CASE-MIXED-003",
+      "CASE-NUTR-001",
+      "CASE-NUTR-002",
+      "CASE-NUTR-003",
+      "CASE-NUTR-004",
+      "CASE-NUTR-005",
+      "CASE-NUTR-006",
+      "CASE-NUTR-008",
+      "CASE-NUTR-009",
+      "CASE-NUTR-010",
+      "CASE-NUTR-011",
+      "CASE-OPS-001",
+      "CASE-OPS-002",
+      "CASE-OPS-003",
+      "CASE-OPS-004",
+      "CASE-OPS-005",
+      "CASE-OPS-006",
+      "CASE-OPS-007",
+      "CASE-OPS-008",
+      "CASE-OPS-009",
+      "CASE-OPS-010",
+      "CASE-POLICY-001",
+      "CASE-POLICY-002",
+      "CASE-PRIV-001",
+      "CASE-PRIV-002",
+      "CASE-PROGRESS-001",
+      "CASE-PROGRESS-002",
+      "CASE-PROGRESS-003",
+      "CASE-PROGRESS-004",
+      "CASE-PROGRESS-005",
+      "CASE-PROGRESS-006",
+      "CASE-PROGRESS-007",
+      "CASE-PROGRESS-008",
+      "CASE-PROGRESS-009",
+      "CASE-PROGRESS-010",
+      "CASE-PROGRESS-011",
+      "CASE-PROGRESS-012",
+      "CASE-PURCHASE-001",
+      "CASE-PURCHASE-002",
+      "CASE-PURCHASE-003",
+      "CASE-PURCHASE-004",
+      "CASE-PURCHASE-005",
+      "CASE-PURCHASE-006",
+      "CASE-PURCHASE-007",
+      "CASE-PURCHASE-008",
+      "CASE-PURCHASE-009",
+      "CASE-PURCHASE-010",
+      "CASE-QUERY-001",
+      "CASE-QUERY-002",
+      "CASE-QUERY-003",
+      "CASE-QUERY-004",
+      "CASE-QUERY-005",
+      "CASE-RECEIPT-001",
+      "CASE-RECEIPT-002",
+      "CASE-RECEIPT-003",
+      "CASE-RECEIPT-004",
+      "CASE-RECEIPT-005",
+      "CASE-RECEIPT-006",
+      "CASE-SCOPE-001",
+      "CASE-STORAGE-001",
+      "CASE-STORAGE-002",
+      "CASE-STORAGE-004",
+      "CASE-STORAGE-005",
+      "CASE-STORAGE-006",
+      "CASE-STORAGE-007",
+      "CASE-WATER-001",
+      "CASE-WATER-002",
+      "CASE-WATER-003",
+      "CASE-WATER-004",
+      "CASE-WATER-005",
+      "CASE-WATER-006"
+    ],
+    "RELEASE_0_2_MUST": [
+      "CASE-CORR-001",
+      "CASE-CORR-002",
+      "CASE-CORR-003",
+      "CASE-CORR-004",
+      "CASE-CORR-005",
+      "CASE-CORR-006",
+      "CASE-CORR-007",
+      "CASE-DATE-001",
+      "CASE-DATE-002",
+      "CASE-DATE-003",
+      "CASE-EFFECT-001",
+      "CASE-EFFECT-002",
+      "CASE-EFFECT-003",
+      "CASE-EXPORT-001",
+      "CASE-EXPORT-003",
+      "CASE-EXPORT-004",
+      "CASE-FOUNDATION-001",
+      "CASE-FOUNDATION-002",
+      "CASE-INVENTORY-001",
+      "CASE-INVENTORY-002",
+      "CASE-INVENTORY-003",
+      "CASE-INVENTORY-004",
+      "CASE-INVENTORY-005",
+      "CASE-INVENTORY-006",
+      "CASE-INVENTORY-007",
+      "CASE-INVENTORY-008",
+      "CASE-INVENTORY-009",
+      "CASE-ISSUE-001",
+      "CASE-ISSUE-002",
+      "CASE-ISSUE-003",
+      "CASE-LIFE-001",
+      "CASE-LIFE-002",
+      "CASE-LIFE-003",
+      "CASE-LIFE-004",
+      "CASE-LIFE-005",
+      "CASE-LIFE-006",
+      "CASE-LIFE-007",
+      "CASE-LIFE-008",
+      "CASE-LIFE-009",
+      "CASE-MEAL-001",
+      "CASE-MEAL-002",
+      "CASE-MEAL-003",
+      "CASE-MEAL-004",
+      "CASE-MEAL-005",
+      "CASE-MEAL-006",
+      "CASE-MEAL-007",
+      "CASE-MEAL-008",
+      "CASE-MEAL-009",
+      "CASE-MEAL-010",
+      "CASE-MEAL-011",
+      "CASE-MEAL-012",
+      "CASE-MEAL-013",
+      "CASE-MEAL-014",
+      "CASE-MEAL-015",
+      "CASE-MEAL-016",
+      "CASE-MEAL-017",
+      "CASE-MEAL-018",
+      "CASE-MEAL-019",
+      "CASE-MEAL-020",
+      "CASE-MEAL-021",
+      "CASE-MIXED-001",
+      "CASE-MIXED-002",
+      "CASE-MIXED-003",
+      "CASE-NUTR-001",
+      "CASE-NUTR-002",
+      "CASE-NUTR-003",
+      "CASE-NUTR-004",
+      "CASE-NUTR-005",
+      "CASE-NUTR-006",
+      "CASE-NUTR-008",
+      "CASE-NUTR-009",
+      "CASE-NUTR-010",
+      "CASE-NUTR-011",
+      "CASE-OPS-001",
+      "CASE-OPS-002",
+      "CASE-OPS-003",
+      "CASE-OPS-004",
+      "CASE-OPS-005",
+      "CASE-OPS-006",
+      "CASE-OPS-007",
+      "CASE-OPS-008",
+      "CASE-OPS-009",
+      "CASE-OPS-010",
+      "CASE-POLICY-001",
+      "CASE-POLICY-002",
+      "CASE-PRIV-001",
+      "CASE-PRIV-002",
+      "CASE-PROGRESS-001",
+      "CASE-PROGRESS-002",
+      "CASE-PROGRESS-003",
+      "CASE-PROGRESS-004",
+      "CASE-PROGRESS-005",
+      "CASE-PROGRESS-006",
+      "CASE-PROGRESS-007",
+      "CASE-PROGRESS-008",
+      "CASE-PROGRESS-009",
+      "CASE-PROGRESS-010",
+      "CASE-PROGRESS-011",
+      "CASE-PROGRESS-012",
+      "CASE-PURCHASE-001",
+      "CASE-PURCHASE-002",
+      "CASE-PURCHASE-003",
+      "CASE-PURCHASE-004",
+      "CASE-PURCHASE-005",
+      "CASE-PURCHASE-006",
+      "CASE-PURCHASE-007",
+      "CASE-PURCHASE-008",
+      "CASE-PURCHASE-009",
+      "CASE-PURCHASE-010",
+      "CASE-QUERY-001",
+      "CASE-QUERY-002",
+      "CASE-QUERY-003",
+      "CASE-QUERY-004",
+      "CASE-QUERY-005",
+      "CASE-RECEIPT-001",
+      "CASE-RECEIPT-002",
+      "CASE-RECEIPT-003",
+      "CASE-RECEIPT-004",
+      "CASE-RECEIPT-005",
+      "CASE-RECEIPT-006",
+      "CASE-REVIEW-001",
+      "CASE-REVIEW-002",
+      "CASE-REVIEW-003",
+      "CASE-REVIEW-004",
+      "CASE-REVIEW-005",
+      "CASE-SCOPE-001",
+      "CASE-STORAGE-001",
+      "CASE-STORAGE-002",
+      "CASE-STORAGE-004",
+      "CASE-STORAGE-005",
+      "CASE-STORAGE-006",
+      "CASE-STORAGE-007",
+      "CASE-TEMPLATE-001",
+      "CASE-TEMPLATE-002",
+      "CASE-TEMPLATE-003",
+      "CASE-TEMPLATE-004",
+      "CASE-TEMPLATE-005",
+      "CASE-WATER-001",
+      "CASE-WATER-002",
+      "CASE-WATER-003",
+      "CASE-WATER-004",
+      "CASE-WATER-005",
+      "CASE-WATER-006"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "REQ-SCOPE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "只记录本人，不建家庭成员",
+      "source": "会话11、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.2、§20.4",
+      "case_ids": [
+        "CASE-MEAL-011",
+        "CASE-MEAL-017",
+        "CASE-MEAL-018",
+        "CASE-MEAL-019"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SCOPE-002",
+      "stage": "EXCLUDED",
+      "status": "approved_exclusion",
+      "disposition": "明确排除",
+      "title": "医疗诊断、自动健康评价和0.3健康助手",
+      "source": "会话11",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§2.4、§5.3",
+      "case_ids": [
+        "CASE-SCOPE-001"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SCOPE-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "面向智能体的Skill是主交付物；B为唯一Skill+确定性插件后端产品主线，A只保留只读/无插件降级规范，C停止独立产品实现；后端不得脱离Skill作为产品；foundation/PRODUCT/安装严格分层",
+      "source": "会话3—6、42—46",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§1—§4、§22.1、DEC-018、DEC-027",
+      "case_ids": [
+        "CASE-FOUNDATION-001",
+        "CASE-OPS-007"
+      ],
+      "reference_ids": [
+        "DEC-018",
+        "DEC-027"
+      ]
+    },
+    {
+      "id": "REQ-CORE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "已发生事实优先于库存、营养和投影效果",
+      "source": "会话12、37—42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.1、§21.5",
+      "case_ids": [
+        "CASE-INVENTORY-003",
+        "CASE-INVENTORY-004",
+        "CASE-EFFECT-001"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CORE-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "原话、unknown、字段证据和规则版本永久可追溯",
+      "source": "会话12、23、35、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.4、§18.10",
+      "case_ids": [
+        "CASE-NUTR-006",
+        "CASE-RECEIPT-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CORE-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "命令结果、事件生命周期、Issue和批次状态分轴",
+      "source": "会话37—42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§0.5、§6.6、§11.16",
+      "case_ids": [
+        "CASE-STORAGE-001",
+        "CASE-ISSUE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-EVENT-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "所有领域事件继承EventEnvelope并追加保存",
+      "source": "会话25、38、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§15、§23.1—§23.2",
+      "case_ids": [
+        "CASE-CORR-001",
+        "CASE-CORR-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-TIME-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "OccurredTime区间、时区、解析锚点与可注入时钟",
+      "source": "会话36、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§6.2、§20.5—§20.7",
+      "case_ids": [
+        "CASE-MEAL-012",
+        "CASE-MEAL-013",
+        "CASE-MEAL-014"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-TIME-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "本月仅几号、跨月月日、跨年完整日期",
+      "source": "会话16",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§10",
+      "case_ids": [
+        "CASE-DATE-001",
+        "CASE-DATE-002",
+        "CASE-DATE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-TIME-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "购买、制作、入库、接收、发生和提交时间分离",
+      "source": "会话18—20、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§11.13",
+      "case_ids": [
+        "CASE-MEAL-002",
+        "CASE-PURCHASE-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CONTEXT-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "省略主语、本人份量与短期可靠指代",
+      "source": "会话11、24、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.2、§20.4、§20.9—§20.12",
+      "case_ids": [
+        "CASE-MEAL-017",
+        "CASE-MEAL-018",
+        "CASE-MEAL-019"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CONTEXT-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "完成、计划、否定、转折和操作类型先解析",
+      "source": "会话25、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§20.1—§20.3",
+      "case_ids": [
+        "CASE-MEAL-009",
+        "CASE-MEAL-010",
+        "CASE-MEAL-015",
+        "CASE-MEAL-016"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CONTEXT-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "快捷组、场景和跟进绑定revision、有效期与会话边界",
+      "source": "会话15、21、37、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.6、§8.11、§20.9—§20.12",
+      "case_ids": [
+        "CASE-INVENTORY-006",
+        "CASE-ISSUE-002",
+        "CASE-MEAL-020"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-MEAL-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "一餐多项、有序items和meal_id归组",
+      "source": "会话8、25、41",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§6.1—§6.3、§20.14",
+      "case_ids": [
+        "CASE-MEAL-001",
+        "CASE-MEAL-021"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-MEAL-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "明确、近似、范围、模糊和缺失数量；四量分离",
+      "source": "会话12、23、33、35",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§6.3—§6.4",
+      "case_ids": [
+        "CASE-MEAL-003",
+        "CASE-MEAL-006",
+        "CASE-INVENTORY-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-MEAL-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "常见菜透明模板，高度可变套餐只保存已知事实",
+      "source": "会话23、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§6.5、§13.10—§13.11",
+      "case_ids": [
+        "CASE-MEAL-007",
+        "CASE-MEAL-008",
+        "CASE-NUTR-003",
+        "CASE-NUTR-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PURCHASE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "入库事件和商品最低字段规范",
+      "source": "会话13、18、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§7.1—§7.2",
+      "case_ids": [
+        "CASE-PURCHASE-001",
+        "CASE-PURCHASE-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PURCHASE-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "外层、内层、容量、总量与公式分别保存",
+      "source": "会话13、20、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§7.3—§7.4",
+      "case_ids": [
+        "CASE-PURCHASE-001",
+        "CASE-PURCHASE-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PURCHASE-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "单项详细、多类逐行简化入库回执",
+      "source": "会话19—21",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§12",
+      "case_ids": [
+        "CASE-PURCHASE-003",
+        "CASE-PURCHASE-006"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PRODUCT-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "商品身份、别名、品牌/变体/规格与批次分离",
+      "source": "会话17—18、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§7.5、§11.1—§11.4",
+      "case_ids": [
+        "CASE-PURCHASE-007",
+        "CASE-PURCHASE-008"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PRODUCT-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "存放位置分层推断、披露和追加式纠正",
+      "source": "会话19—21、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§11.5—§11.6、§11.15",
+      "case_ids": [
+        "CASE-PURCHASE-003",
+        "CASE-PURCHASE-010"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PRODUCT-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "开封、保质、时间锚点、有效到期和被动临期查询",
+      "source": "会话19—21、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§11.7—§11.11、§11.19",
+      "case_ids": [
+        "CASE-PURCHASE-004",
+        "CASE-PURCHASE-005",
+        "CASE-PURCHASE-009"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PRODUCT-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "批次耗尽不删身份；精确同商品复用历史营养",
+      "source": "会话24、39—40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§11.17、§14.6—§14.8",
+      "case_ids": [
+        "CASE-PURCHASE-007",
+        "CASE-NUTR-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PANTRY-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "无外食/不扣证据时默认读并尝试家庭库存，scene=unknown也不跳过",
+      "source": "会话12",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.5—§5.6、§9.1",
+      "case_ids": [
+        "CASE-MEAL-004",
+        "CASE-MEAL-005",
+        "CASE-MEAL-020",
+        "CASE-INVENTORY-001"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PANTRY-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "unique/multiple/none/insufficient稳定匹配与降级",
+      "source": "会话12、15、37、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§9.2—§9.3",
+      "case_ids": [
+        "CASE-INVENTORY-003",
+        "CASE-INVENTORY-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PANTRY-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "同商品批次指定→FEFO→FIFO并可跨批分配",
+      "source": "会话39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§9.4、§11.18",
+      "case_ids": [
+        "CASE-INVENTORY-002",
+        "CASE-INVENTORY-009"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PANTRY-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "单位可换才扣、库存不负、模板量不作库存证据",
+      "source": "会话12、23、39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§9.5—§9.7、§13.13、§18.8",
+      "case_ids": [
+        "CASE-INVENTORY-005",
+        "CASE-INVENTORY-007",
+        "CASE-EFFECT-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PANTRY-005",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "用户逐次授权的部分扣减、盘点、丢弃、退货、获赠和赠出",
+      "source": "会话8推理、38—39",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§9.7、§11.12、§15.17",
+      "case_ids": [
+        "CASE-LIFE-001",
+        "CASE-LIFE-002",
+        "CASE-LIFE-005",
+        "CASE-LIFE-008",
+        "CASE-LIFE-009"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "标签、同商品历史、权威公共库、可信联网、模板的来源优先级",
+      "source": "会话23、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.1—§13.4",
+      "case_ids": [
+        "CASE-NUTR-001",
+        "CASE-NUTR-002",
+        "CASE-NUTR-005",
+        "CASE-NUTR-010"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "来源注册、许可、缓存、限流、失败降级和最小披露",
+      "source": "会话23、40、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.4—§13.5、§13.17—§13.18",
+      "case_ids": [
+        "CASE-PRIV-001",
+        "CASE-NUTR-006",
+        "CASE-NUTR-010",
+        "CASE-NUTR-011"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "版本化NutritionProfile与不可变摄入Snapshot",
+      "source": "会话23—24、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.6—§13.8、§13.19",
+      "case_ids": [
+        "CASE-NUTR-001",
+        "CASE-NUTR-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "有限模糊量取合理上界并公开克重/范围",
+      "source": "会话23、33、35",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.9、§18.6—§18.7",
+      "case_ids": [
+        "CASE-MEAL-003",
+        "CASE-NUTR-008"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-005",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "明确数量不标估算；估算只落实际推定字段",
+      "source": "会话33、35",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.12、§18.6",
+      "case_ids": [
+        "CASE-MEAL-006",
+        "CASE-NUTR-009"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NUTR-006",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "unknown不补0，已知部分必须披露覆盖",
+      "source": "会话23、36、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.16、§19.5",
+      "case_ids": [
+        "CASE-NUTR-006",
+        "CASE-QUERY-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-TEMPLATE-001",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "个人菜品一次候选、两次激活、三次稳定",
+      "source": "会话24、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§14.1—§14.5",
+      "case_ids": [
+        "CASE-TEMPLATE-001",
+        "CASE-TEMPLATE-002",
+        "CASE-TEMPLATE-003",
+        "CASE-TEMPLATE-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-TEMPLATE-002",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "个人可变、新版本、单次覆盖和只学习用户证据",
+      "source": "会话24、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§14.4—§14.5、§14.9—§14.10",
+      "case_ids": [
+        "CASE-TEMPLATE-004",
+        "CASE-TEMPLATE-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-ISSUE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "Issue稳定代码、单一字段模型和四状态生命周期",
+      "source": "会话12、14—15、37",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§8.2—§8.3、§8.12",
+      "case_ids": [
+        "CASE-ISSUE-001",
+        "CASE-ISSUE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-ISSUE-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "非阻塞问题集中提示、延期、查询和覆盖影响",
+      "source": "会话12、15、37",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§8.1、§8.4、§8.7—§8.13",
+      "case_ids": [
+        "CASE-ISSUE-001",
+        "CASE-ISSUE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-QUICK-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "2—4快捷项、组合/自然语言、末行自由文本、执行前复核",
+      "source": "会话15、21、37",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§8.4—§8.5、§8.10—§8.11",
+      "case_ids": [
+        "CASE-RECEIPT-003",
+        "CASE-INVENTORY-006"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CORR-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "追加式定位、纠正、撤销与恢复",
+      "source": "会话25、38",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§15.1—§15.7",
+      "case_ids": [
+        "CASE-CORR-001",
+        "CASE-CORR-003",
+        "CASE-CORR-004",
+        "CASE-CORR-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CORR-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "库存返还/补扣、营养重算、跨日进度和幂等补偿",
+      "source": "会话38",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§15.11—§15.16",
+      "case_ids": [
+        "CASE-CORR-001",
+        "CASE-CORR-002",
+        "CASE-INVENTORY-008"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-CORR-003",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "跨餐/跨日范围批量纠正和撤销预览、确认与安全提交",
+      "source": "会话38",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§15.17",
+      "case_ids": [
+        "CASE-CORR-006",
+        "CASE-CORR-007"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-WATER-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "只有白水进入diet_water，营养饮品归meal",
+      "source": "会话26",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§16.1、§16.4",
+      "case_ids": [
+        "CASE-WATER-001",
+        "CASE-WATER-003",
+        "CASE-WATER-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-WATER-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "容量谨慎换算、食物水分不超液体量且不双计",
+      "source": "会话26",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§16.2—§16.3",
+      "case_ids": [
+        "CASE-WATER-002",
+        "CASE-WATER-005",
+        "CASE-WATER-006",
+        "CASE-PROGRESS-008"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PROGRESS-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "六目标、固定顺序、每项两行和10格条",
+      "source": "会话26",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§17.1、§17.5—§17.10",
+      "case_ids": [
+        "CASE-PROGRESS-001",
+        "CASE-PROGRESS-002",
+        "CASE-PROGRESS-003",
+        "CASE-PROGRESS-004",
+        "CASE-PROGRESS-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PROGRESS-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "成功回执只用同次最终daily_progress，不额外报告读取",
+      "source": "会话26、30—31",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§17.2—§17.4",
+      "case_ids": [
+        "CASE-PROGRESS-006",
+        "CASE-STORAGE-006"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PROGRESS-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "未知纤维和饮水已知下界，统一CoverageStatus=partial",
+      "source": "会话26、40",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§17.9—§17.9.1、§23.2",
+      "case_ids": [
+        "CASE-PROGRESS-004",
+        "CASE-PROGRESS-009"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PROGRESS-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "信封级增量、终态幂等冻结和跨日进度数组",
+      "source": "会话38、41—42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§17.2—§17.3、§17.13、§20.20",
+      "case_ids": [
+        "CASE-PROGRESS-010",
+        "CASE-PROGRESS-011",
+        "CASE-STORAGE-006"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-RECEIPT-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "标题单行、每菜/食物/饮品一行、菜内紧凑",
+      "source": "会话29—35",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§18.1—§18.4",
+      "case_ids": [
+        "CASE-RECEIPT-001",
+        "CASE-RECEIPT-006"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-RECEIPT-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "字段级证据标签、自然单位克重、无重复本轮营养",
+      "source": "会话30、33、35",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§18.2、§18.6—§18.8",
+      "case_ids": [
+        "CASE-RECEIPT-002",
+        "CASE-RECEIPT-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-RECEIPT-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "进度块之后无未经请求评价、警告或建议",
+      "source": "会话26",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§17.11—§17.12",
+      "case_ids": [
+        "CASE-RECEIPT-004",
+        "CASE-RECEIPT-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-QUERY-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "日明细、当前有效视图和可读歧义定位",
+      "source": "会话36、38",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§19.1—§19.4、§19.9",
+      "case_ids": [
+        "CASE-QUERY-001",
+        "CASE-QUERY-004",
+        "CASE-QUERY-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-QUERY-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "一次聚合、覆盖/unknown和日进度",
+      "source": "会话36",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§19.5—§19.6、§19.10",
+      "case_ids": [
+        "CASE-QUERY-002",
+        "CASE-QUERY-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-QUERY-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "用户请求时最小周六项聚合与历史目标",
+      "source": "会话36",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§19.7",
+      "case_ids": [
+        "CASE-PROGRESS-007",
+        "CASE-PROGRESS-012"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-REVIEW-001",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "丰富周回顾、趋势、常用项、快速复用和逐项状态的批量补录",
+      "source": "会话8推理、36",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§19.8、§25.6",
+      "case_ids": [
+        "CASE-REVIEW-001",
+        "CASE-REVIEW-002",
+        "CASE-REVIEW-003",
+        "CASE-REVIEW-004",
+        "CASE-REVIEW-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-MIXED-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "叙述顺序、逐子操作FactCommit/EffectBundle和正式结果枚举",
+      "source": "会话25、41—42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§20.15—§20.20、§21.5",
+      "case_ids": [
+        "CASE-MIXED-001",
+        "CASE-MIXED-002",
+        "CASE-MIXED-003",
+        "CASE-EFFECT-001"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SAFE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "八类数据/执行根、固定正式路径和隔离测试根",
+      "source": "会话1、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§21.2—§21.3、§29.5",
+      "case_ids": [
+        "CASE-STORAGE-004",
+        "CASE-FOUNDATION-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SAFE-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "FactCommit、durable outbox、EffectBundle与EnvelopeFinalize故障隔离",
+      "source": "会话12、42及独立复核",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§20.16、§20.20、§21.5",
+      "case_ids": [
+        "CASE-EFFECT-001",
+        "CASE-EFFECT-002",
+        "CASE-EFFECT-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SAFE-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "全副作用幂等、同键冲突、并发、响应丢失和终态冻结",
+      "source": "会话38、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§15.16、§20.20、§21.6—§21.8",
+      "case_ids": [
+        "CASE-STORAGE-001",
+        "CASE-STORAGE-002",
+        "CASE-STORAGE-006",
+        "CASE-STORAGE-007",
+        "CASE-STORAGE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SAFE-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "验证前后manifest、失败照扫、sidecar和零正式数据差异",
+      "source": "会话1、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§21.10—§21.15",
+      "case_ids": [
+        "CASE-FOUNDATION-001",
+        "CASE-FOUNDATION-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-PRIV-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "联网最小披露、日志脱敏和秘密隔离",
+      "source": "会话40、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.17、§21.16—§21.17",
+      "case_ids": [
+        "CASE-PRIV-001",
+        "CASE-PRIV-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NFR-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "明确常见记录一轮完成，歧义只问最小关键问题",
+      "source": "会话8推理、12、15",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§5.1、§8.4",
+      "case_ids": [
+        "CASE-MEAL-001",
+        "CASE-ISSUE-001"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NFR-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "确定性十进制、unknown不造值、投影可重建",
+      "source": "会话23、35、42",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.12、§23",
+      "case_ids": [
+        "CASE-NUTR-006",
+        "CASE-STORAGE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-NFR-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "候选、阈值、取整和B-only门条件使用版本化策略而非临场判断；不保留三路评分选路",
+      "source": "独立复核，承接会话15、19、23—24、46",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§23.6、§26.5",
+      "case_ids": [
+        "CASE-POLICY-001",
+        "CASE-POLICY-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-OPS-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "单一安装入口、只读预检、隔离冒烟和支持矩阵",
+      "source": "会话3—4、43",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.3—§22.10",
+      "case_ids": [
+        "CASE-OPS-001",
+        "CASE-OPS-007"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-OPS-002",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "升级先备份、迁移回滚、恢复先临时验证",
+      "source": "会话43",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.11—§22.17",
+      "case_ids": [
+        "CASE-OPS-002",
+        "CASE-OPS-003",
+        "CASE-OPS-004",
+        "CASE-STORAGE-005"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-OPS-003",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "默认卸载保留数据；整库删除精确预览和二次确认",
+      "source": "会话43",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.19—§22.21",
+      "case_ids": [
+        "CASE-OPS-005",
+        "CASE-OPS-006",
+        "CASE-OPS-008"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-OPS-004",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "不可变候选、逐文件hash、相同字节原样晋级",
+      "source": "会话43及计划治理",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.22、§26.6",
+      "case_ids": [
+        "CASE-OPS-009",
+        "CASE-OPS-010"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-EXPORT-BASE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "可恢复备份与最小用户数据导出明确分离",
+      "source": "会话43、推理需求",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.15—§22.18",
+      "case_ids": [
+        "CASE-EXPORT-003",
+        "CASE-EXPORT-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-EXPORT-RICH-001",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "日期/字段筛选、CSV/分析导出与匿名化选项",
+      "source": "会话8推理、43",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§22.18、§25.7",
+      "case_ids": [
+        "CASE-EXPORT-001",
+        "CASE-PRIV-001",
+        "CASE-PRIV-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-LIFE-001",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "主动临期提醒、去重/延期、库存调整，以及多次一致确认后可见启用和停用个人位置规则",
+      "source": "会话19—21、39及推理需求",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§11.11—§11.12、§11.15、§25.6",
+      "case_ids": [
+        "CASE-LIFE-001",
+        "CASE-LIFE-002",
+        "CASE-LIFE-003",
+        "CASE-LIFE-004",
+        "CASE-LIFE-005",
+        "CASE-LIFE-006",
+        "CASE-LIFE-007"
+      ],
+      "reference_ids": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "CASE-CORR-001",
+      "requirement_ids": [
+        "REQ-CORR-001",
+        "REQ-CORR-002",
+        "REQ-EVENT-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CORR-001"
+      ]
+    },
+    {
+      "id": "CASE-CORR-002",
+      "requirement_ids": [
+        "REQ-CORR-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-CORR-003",
+      "requirement_ids": [
+        "REQ-CORR-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-CORR-004",
+      "requirement_ids": [
+        "REQ-CORR-001",
+        "REQ-EVENT-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-CORR-005",
+      "requirement_ids": [
+        "REQ-CORR-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-CORR-006",
+      "requirement_ids": [
+        "REQ-CORR-003"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-CORR-007",
+      "requirement_ids": [
+        "REQ-CORR-003"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-DATE-001",
+      "requirement_ids": [
+        "REQ-TIME-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-DATE-002",
+      "requirement_ids": [
+        "REQ-TIME-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-DATE-003",
+      "requirement_ids": [
+        "REQ-TIME-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-EFFECT-001",
+      "requirement_ids": [
+        "REQ-CORE-001",
+        "REQ-MIXED-001",
+        "REQ-SAFE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-SAFE-002"
+      ]
+    },
+    {
+      "id": "CASE-EFFECT-002",
+      "requirement_ids": [
+        "REQ-PANTRY-004",
+        "REQ-SAFE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-EFFECT-003",
+      "requirement_ids": [
+        "REQ-SAFE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-SAFE-003"
+      ]
+    },
+    {
+      "id": "CASE-EXPORT-001",
+      "requirement_ids": [
+        "REQ-EXPORT-RICH-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-EXPORT-003",
+      "requirement_ids": [
+        "REQ-EXPORT-BASE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-EXPORT-004",
+      "requirement_ids": [
+        "REQ-EXPORT-BASE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-EXPORT-BASE-001",
+        "REQ-OPS-002",
+        "REQ-OPS-003"
+      ]
+    },
+    {
+      "id": "CASE-FOUNDATION-001",
+      "requirement_ids": [
+        "REQ-SAFE-004",
+        "REQ-SCOPE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-FOUNDATION-002",
+      "requirement_ids": [
+        "REQ-SAFE-001",
+        "REQ-SAFE-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-SAFE-004"
+      ]
+    },
+    {
+      "id": "CASE-INVENTORY-001",
+      "requirement_ids": [
+        "REQ-PANTRY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-002",
+      "requirement_ids": [
+        "REQ-PANTRY-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-003",
+      "requirement_ids": [
+        "REQ-CORE-001",
+        "REQ-PANTRY-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PANTRY-002"
+      ]
+    },
+    {
+      "id": "CASE-INVENTORY-004",
+      "requirement_ids": [
+        "REQ-CORE-001",
+        "REQ-PANTRY-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-005",
+      "requirement_ids": [
+        "REQ-MEAL-002",
+        "REQ-PANTRY-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-006",
+      "requirement_ids": [
+        "REQ-CONTEXT-003",
+        "REQ-QUICK-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-007",
+      "requirement_ids": [
+        "REQ-PANTRY-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-008",
+      "requirement_ids": [
+        "REQ-CORR-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-INVENTORY-009",
+      "requirement_ids": [
+        "REQ-PANTRY-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-ISSUE-001",
+      "requirement_ids": [
+        "REQ-ISSUE-001",
+        "REQ-ISSUE-002",
+        "REQ-NFR-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-ISSUE-001"
+      ]
+    },
+    {
+      "id": "CASE-ISSUE-002",
+      "requirement_ids": [
+        "REQ-CONTEXT-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-ISSUE-003",
+      "requirement_ids": [
+        "REQ-CORE-003",
+        "REQ-ISSUE-001",
+        "REQ-ISSUE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-001",
+      "requirement_ids": [
+        "REQ-LIFE-001",
+        "REQ-PANTRY-005"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-002",
+      "requirement_ids": [
+        "REQ-LIFE-001",
+        "REQ-PANTRY-005"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-003",
+      "requirement_ids": [
+        "REQ-LIFE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-004",
+      "requirement_ids": [
+        "REQ-LIFE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-005",
+      "requirement_ids": [
+        "REQ-LIFE-001",
+        "REQ-PANTRY-005"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-006",
+      "requirement_ids": [
+        "REQ-LIFE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-007",
+      "requirement_ids": [
+        "REQ-LIFE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-008",
+      "requirement_ids": [
+        "REQ-PANTRY-005"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-LIFE-009",
+      "requirement_ids": [
+        "REQ-PANTRY-005"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-001",
+      "requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-NFR-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-RECEIPT-001",
+        "REQ-TIME-001"
+      ]
+    },
+    {
+      "id": "CASE-MEAL-002",
+      "requirement_ids": [
+        "REQ-TIME-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-003",
+      "requirement_ids": [
+        "REQ-MEAL-002",
+        "REQ-NUTR-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-004",
+      "requirement_ids": [
+        "REQ-PANTRY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-005",
+      "requirement_ids": [
+        "REQ-PANTRY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-006",
+      "requirement_ids": [
+        "REQ-MEAL-002",
+        "REQ-NUTR-005"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-007",
+      "requirement_ids": [
+        "REQ-MEAL-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-008",
+      "requirement_ids": [
+        "REQ-MEAL-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-009",
+      "requirement_ids": [
+        "REQ-CONTEXT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-010",
+      "requirement_ids": [
+        "REQ-CONTEXT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-011",
+      "requirement_ids": [
+        "REQ-SCOPE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-012",
+      "requirement_ids": [
+        "REQ-TIME-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-013",
+      "requirement_ids": [
+        "REQ-TIME-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-014",
+      "requirement_ids": [
+        "REQ-TIME-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-015",
+      "requirement_ids": [
+        "REQ-CONTEXT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-016",
+      "requirement_ids": [
+        "REQ-CONTEXT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-017",
+      "requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-SCOPE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-018",
+      "requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-SCOPE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-019",
+      "requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-SCOPE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-020",
+      "requirement_ids": [
+        "REQ-CONTEXT-003",
+        "REQ-PANTRY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MEAL-021",
+      "requirement_ids": [
+        "REQ-MEAL-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001"
+      ]
+    },
+    {
+      "id": "CASE-MIXED-001",
+      "requirement_ids": [
+        "REQ-MIXED-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MIXED-001"
+      ]
+    },
+    {
+      "id": "CASE-MIXED-002",
+      "requirement_ids": [
+        "REQ-MIXED-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-MIXED-003",
+      "requirement_ids": [
+        "REQ-MIXED-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-001",
+      "requirement_ids": [
+        "REQ-NUTR-001",
+        "REQ-NUTR-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-NUTR-001"
+      ]
+    },
+    {
+      "id": "CASE-NUTR-002",
+      "requirement_ids": [
+        "REQ-NUTR-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-003",
+      "requirement_ids": [
+        "REQ-MEAL-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-004",
+      "requirement_ids": [
+        "REQ-MEAL-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-005",
+      "requirement_ids": [
+        "REQ-NUTR-001",
+        "REQ-NUTR-003",
+        "REQ-PRODUCT-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-006",
+      "requirement_ids": [
+        "REQ-CORE-002",
+        "REQ-NFR-002",
+        "REQ-NUTR-002",
+        "REQ-NUTR-006"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-008",
+      "requirement_ids": [
+        "REQ-NUTR-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-009",
+      "requirement_ids": [
+        "REQ-NUTR-005"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-010",
+      "requirement_ids": [
+        "REQ-NUTR-001",
+        "REQ-NUTR-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-NUTR-011",
+      "requirement_ids": [
+        "REQ-NUTR-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-001",
+      "requirement_ids": [
+        "REQ-OPS-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-OPS-001",
+        "REQ-SAFE-004"
+      ]
+    },
+    {
+      "id": "CASE-OPS-002",
+      "requirement_ids": [
+        "REQ-OPS-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-003",
+      "requirement_ids": [
+        "REQ-OPS-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-OPS-002"
+      ]
+    },
+    {
+      "id": "CASE-OPS-004",
+      "requirement_ids": [
+        "REQ-OPS-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-005",
+      "requirement_ids": [
+        "REQ-OPS-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-006",
+      "requirement_ids": [
+        "REQ-OPS-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-007",
+      "requirement_ids": [
+        "REQ-OPS-001",
+        "REQ-SCOPE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-008",
+      "requirement_ids": [
+        "REQ-OPS-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-009",
+      "requirement_ids": [
+        "REQ-OPS-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-OPS-010",
+      "requirement_ids": [
+        "REQ-OPS-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-OPS-004"
+      ]
+    },
+    {
+      "id": "CASE-POLICY-001",
+      "requirement_ids": [
+        "REQ-NFR-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-POLICY-002",
+      "requirement_ids": [
+        "REQ-NFR-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PRIV-001",
+      "requirement_ids": [
+        "REQ-EXPORT-RICH-001",
+        "REQ-NUTR-002",
+        "REQ-PRIV-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1",
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PRIV-001"
+      ]
+    },
+    {
+      "id": "CASE-PRIV-002",
+      "requirement_ids": [
+        "REQ-EXPORT-RICH-001",
+        "REQ-PRIV-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1",
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-001",
+      "requirement_ids": [
+        "REQ-PROGRESS-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-002",
+      "requirement_ids": [
+        "REQ-PROGRESS-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-003",
+      "requirement_ids": [
+        "REQ-PROGRESS-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-004",
+      "requirement_ids": [
+        "REQ-PROGRESS-001",
+        "REQ-PROGRESS-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-005",
+      "requirement_ids": [
+        "REQ-PROGRESS-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-006",
+      "requirement_ids": [
+        "REQ-PROGRESS-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PROGRESS-002"
+      ]
+    },
+    {
+      "id": "CASE-PROGRESS-007",
+      "requirement_ids": [
+        "REQ-QUERY-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-008",
+      "requirement_ids": [
+        "REQ-WATER-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-009",
+      "requirement_ids": [
+        "REQ-PROGRESS-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-010",
+      "requirement_ids": [
+        "REQ-PROGRESS-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-011",
+      "requirement_ids": [
+        "REQ-PROGRESS-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PROGRESS-012",
+      "requirement_ids": [
+        "REQ-QUERY-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-001",
+      "requirement_ids": [
+        "REQ-PURCHASE-001",
+        "REQ-PURCHASE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PURCHASE-001"
+      ]
+    },
+    {
+      "id": "CASE-PURCHASE-002",
+      "requirement_ids": [
+        "REQ-PURCHASE-001",
+        "REQ-PURCHASE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-003",
+      "requirement_ids": [
+        "REQ-PRODUCT-002",
+        "REQ-PURCHASE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-004",
+      "requirement_ids": [
+        "REQ-PRODUCT-003",
+        "REQ-TIME-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-005",
+      "requirement_ids": [
+        "REQ-PRODUCT-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-006",
+      "requirement_ids": [
+        "REQ-PURCHASE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-007",
+      "requirement_ids": [
+        "REQ-PRODUCT-001",
+        "REQ-PRODUCT-004"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-008",
+      "requirement_ids": [
+        "REQ-PRODUCT-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-009",
+      "requirement_ids": [
+        "REQ-PRODUCT-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-PURCHASE-010",
+      "requirement_ids": [
+        "REQ-PRODUCT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-QUERY-001",
+      "requirement_ids": [
+        "REQ-QUERY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-QUERY-001",
+        "REQ-TIME-001"
+      ]
+    },
+    {
+      "id": "CASE-QUERY-002",
+      "requirement_ids": [
+        "REQ-NUTR-006",
+        "REQ-QUERY-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-QUERY-003",
+      "requirement_ids": [
+        "REQ-QUERY-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-QUERY-004",
+      "requirement_ids": [
+        "REQ-QUERY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-QUERY-005",
+      "requirement_ids": [
+        "REQ-QUERY-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RECEIPT-001",
+      "requirement_ids": [
+        "REQ-RECEIPT-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-RECEIPT-001",
+        "REQ-TIME-001"
+      ]
+    },
+    {
+      "id": "CASE-RECEIPT-002",
+      "requirement_ids": [
+        "REQ-CORE-002",
+        "REQ-RECEIPT-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CORE-002",
+        "REQ-QUICK-001",
+        "REQ-RECEIPT-002"
+      ]
+    },
+    {
+      "id": "CASE-RECEIPT-003",
+      "requirement_ids": [
+        "REQ-QUICK-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RECEIPT-004",
+      "requirement_ids": [
+        "REQ-RECEIPT-002",
+        "REQ-RECEIPT-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-RECEIPT-002",
+        "REQ-RECEIPT-003"
+      ]
+    },
+    {
+      "id": "CASE-RECEIPT-005",
+      "requirement_ids": [
+        "REQ-RECEIPT-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-RECEIPT-003",
+        "REQ-SCOPE-002"
+      ]
+    },
+    {
+      "id": "CASE-RECEIPT-006",
+      "requirement_ids": [
+        "REQ-RECEIPT-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-RECEIPT-001"
+      ]
+    },
+    {
+      "id": "CASE-REVIEW-001",
+      "requirement_ids": [
+        "REQ-REVIEW-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-REVIEW-002",
+      "requirement_ids": [
+        "REQ-REVIEW-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-REVIEW-003",
+      "requirement_ids": [
+        "REQ-REVIEW-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-REVIEW-004",
+      "requirement_ids": [
+        "REQ-REVIEW-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-REVIEW-005",
+      "requirement_ids": [
+        "REQ-REVIEW-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-SCOPE-001",
+      "requirement_ids": [
+        "REQ-SCOPE-002"
+      ],
+      "stages": [
+        "EXCLUDED"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-STORAGE-001",
+      "requirement_ids": [
+        "REQ-CORE-003",
+        "REQ-SAFE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CORE-003",
+        "REQ-SAFE-003"
+      ]
+    },
+    {
+      "id": "CASE-STORAGE-002",
+      "requirement_ids": [
+        "REQ-SAFE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-STORAGE-003",
+      "requirement_ids": [
+        "REQ-NFR-002",
+        "REQ-SAFE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-STORAGE-004",
+      "requirement_ids": [
+        "REQ-SAFE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-STORAGE-005",
+      "requirement_ids": [
+        "REQ-OPS-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-STORAGE-006",
+      "requirement_ids": [
+        "REQ-PROGRESS-002",
+        "REQ-PROGRESS-004",
+        "REQ-SAFE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PROGRESS-002",
+        "REQ-PROGRESS-004",
+        "REQ-SAFE-003"
+      ]
+    },
+    {
+      "id": "CASE-STORAGE-007",
+      "requirement_ids": [
+        "REQ-SAFE-003"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-SAFE-003"
+      ]
+    },
+    {
+      "id": "CASE-TEMPLATE-001",
+      "requirement_ids": [
+        "REQ-TEMPLATE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-TEMPLATE-002",
+      "requirement_ids": [
+        "REQ-TEMPLATE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-TEMPLATE-003",
+      "requirement_ids": [
+        "REQ-TEMPLATE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-TEMPLATE-004",
+      "requirement_ids": [
+        "REQ-TEMPLATE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-TEMPLATE-005",
+      "requirement_ids": [
+        "REQ-TEMPLATE-001",
+        "REQ-TEMPLATE-002"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-WATER-001",
+      "requirement_ids": [
+        "REQ-WATER-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-TIME-001",
+        "REQ-WATER-001"
+      ]
+    },
+    {
+      "id": "CASE-WATER-002",
+      "requirement_ids": [
+        "REQ-WATER-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-WATER-003",
+      "requirement_ids": [
+        "REQ-WATER-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-WATER-004",
+      "requirement_ids": [
+        "REQ-WATER-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-WATER-005",
+      "requirement_ids": [
+        "REQ-WATER-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-WATER-006",
+      "requirement_ids": [
+        "REQ-WATER-002"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    }
+  ]
+}

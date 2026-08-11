@@ -103,3 +103,14 @@
 - 不得在注册表写任何真实 API key、token、用户数据、样例完整原话或业务记录。
 - 不得创建或修改任何正式 JSONL/SQLite 业务数据。
 - 不得提前把任务状态写成已完成；通过独立复审和证据落账后才能由主协调者更新总计划。
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-NUTR-010:
+    - /nutrition_source/priority
+    - /nutrition_source/cache_policy
+  CASE-NUTR-011:
+    - /nutrition_source/failure_mapping
+    - /nutrition_source/external_field_allowlist
+full_case_set: none

@@ -57,3 +57,16 @@ Supporting upstream SAFE/EVENT/PROGRESS semantics remain authoritative but are n
 - Six current trace IDs are singletons; v1-only trace IDs are absent.
 - Independent OpenClaw semantic PASS and `Ready for SH-CONTRACT-004 completion: Yes`.
 - Final local audit, EV-015, total-plan completion registration, GitHub push, and clone reproduction.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-ISSUE-001:
+    - /contract/issue/lifecycle
+  CASE-ISSUE-003:
+    - /contract/issue/resolution
+  CASE-CORR-001:
+    - /contract/correction/append_only
+  CASE-EFFECT-002:
+    - /contract/effect_bundle/compensation
+full_case_set: none

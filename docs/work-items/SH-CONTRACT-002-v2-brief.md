@@ -64,3 +64,16 @@ RECEIPT_DATE_V2|PASS|id=diet-manager/receipt-date-contract-v2|metrics=6|trace=11
 ```
 
 此外必须通过 PowerShell Parser、11 条 ID 单例、Markdown 围栏、旧规则扫描、黄金公式/日期及业务候选 0，并取得独立复核 PASS 和新鲜 EV 后才能完成。
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-DATE-001:
+    - /contract/date/display_policy
+  CASE-PROGRESS-011:
+    - /contract/result/daily_progress_by_date
+  CASE-RECEIPT-001:
+    - /contract/receipt/blocks
+  CASE-RECEIPT-004:
+    - /contract/receipt/progress_last
+full_case_set: none
