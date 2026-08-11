@@ -1,6 +1,6 @@
 {
   "fixture_catalog_id": "diet-manager/core-fixtures-v1",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "environments": [
     {
       "fixture_id": "env-zh-cn-20260811",
@@ -275,6 +275,332 @@
       "pre_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2",
       "post_state_vector": "terminal_records=1|business_writes=0|frozen_key=idem-fixed-001|frozen_digest=digest-apple-v1|frozen_subject=user:fixture|frozen_command=record_meal",
       "post_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2"
+    }
+  ],
+  "ops_security_scenarios": [
+    {
+      "fixture_id": "ops-privacy-public-nutrition-v1",
+      "scenario_type": "privacy_external_allowlist",
+      "allowed_external_fields": ["normalized_name", "brand", "variant", "specification", "preparation_state", "region"],
+      "outbound_request": {
+        "normalized_name": "milk",
+        "brand": "fixture-brand",
+        "variant": "whole_milk",
+        "specification": "250ml_carton",
+        "preparation_state": "ready_to_drink",
+        "region": "CN"
+      },
+      "forbidden_context": {
+        "user_name": "fixture-user-secret",
+        "raw_chat": "fixture-raw-chat-secret",
+        "meal_history": "fixture-meal-history-secret",
+        "inventory_summary": "fixture-inventory-secret",
+        "goals": "fixture-goals-secret",
+        "api_token": "fixture-api-token-secret"
+      },
+      "ordinary_log": {
+        "operation": "nutrition_lookup",
+        "status": "degraded",
+        "source_type": "public",
+        "duration_ms": 12,
+        "error_code": "credential_missing",
+        "object_count": 1,
+        "raw_context_present": false,
+        "secret_present": false
+      },
+      "credential_state": "missing",
+      "fallback": {
+        "strategy": "cache_template_unknown",
+        "invented_nutrition_values": false
+      },
+      "business_write_count": 0
+    },
+    {
+      "fixture_id": "ops-foundation-zero-diff-v1",
+      "scenario_type": "foundation_zero_official_diff",
+      "official_files_before": [
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        },
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite-wal",
+          "bytes_base64": "d2FsLWZpeHR1cmUtdjEK",
+          "length": 15,
+          "sha256": "9528413EE4DB283FF0E565813A4243F216A4F5B97909ADBB7C6A9B919E7A5D55",
+          "last_write_utc": "2026-08-11T00:00:01Z"
+        }
+      ],
+      "official_files_after": [
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        },
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite-wal",
+          "bytes_base64": "d2FsLWZpeHR1cmUtdjEK",
+          "length": 15,
+          "sha256": "9528413EE4DB283FF0E565813A4243F216A4F5B97909ADBB7C6A9B919E7A5D55",
+          "last_write_utc": "2026-08-11T00:00:01Z"
+        }
+      ],
+      "failure_stage": "plugin_validation",
+      "after_scan_completed": true,
+      "differences": {
+        "added": [],
+        "modified": [],
+        "deleted": [],
+        "path_escape_count": 0
+      },
+      "temporary_roots": ["@VALIDATION/run-001", "@OPENCLAW/run-001"],
+      "cleanup": {
+        "attempted": true,
+        "succeeded": true,
+        "residual_count": 0
+      },
+      "technical_log_channel": {
+        "logical_path": "@EVIDENCE/foundation-failure.json",
+        "redacted": true,
+        "counts_as_record": false,
+        "raw_context_present": false,
+        "secret_present": false
+      },
+      "business_write_count": 0
+    },
+    {
+      "fixture_id": "ops-clean-install-b-v1",
+      "scenario_type": "clean_install",
+      "package_manifest": {
+        "product_version": "0.1.0",
+        "route": "B",
+        "contract_version": 2,
+        "schema_version": 1,
+        "supported_environment": "win-x64-fixture",
+        "package_files": [
+          {
+            "logical_path": "@PACKAGE/plugin.bundle",
+            "bytes_base64": "cGx1Z2luLWJ1bmRsZS12MQo=",
+            "length": 17,
+            "sha256": "D5398DAC86B1524329C270934140657EF6DDDF7DE5653529C80810EF5F449922",
+            "last_write_utc": "2026-08-11T01:00:00Z"
+          },
+          {
+            "logical_path": "@PACKAGE/skill.bundle",
+            "bytes_base64": "c2tpbGwtYnVuZGxlLXYxCg==",
+            "length": 16,
+            "sha256": "7ED6128AC045C5B01F2999B862B891F556F1A3AAD461372207D10D3187991B1D",
+            "last_write_utc": "2026-08-11T01:00:01Z"
+          }
+        ],
+        "installer_version": "1.0.0",
+        "release_evidence_id": "EV-FIXTURE-RELEASE-001"
+      },
+      "supported_environment": {
+        "os": "windows",
+        "architecture": "x64",
+        "powershell": "5.1",
+        "node": "24.x",
+        "openclaw": "fixture-supported"
+      },
+      "preflight": {
+        "read_only": true,
+        "compatible": true,
+        "created_count": 0,
+        "migrated_count": 0,
+        "incompatible_items": []
+      },
+      "staging": {
+        "logical_root": "@BUILD/install-staging-001",
+        "package_verified": true,
+        "partial_final_file_count": 0
+      },
+      "initialized_schema": {
+        "storage": "sqlite",
+        "schema_version": 1,
+        "business_record_count": 0,
+        "formal_jsonl_count": 0
+      },
+      "isolated_smoke": {
+        "logical_root": "@ISOLATED/smoke-001",
+        "operations": ["load", "empty_query", "synthetic_meal", "synthetic_inventory", "idempotency_retry"],
+        "official_write_count": 0,
+        "cleanup_succeeded": true,
+        "residual_count": 0
+      },
+      "promotion": {
+        "method": "atomic_switch",
+        "activated": true,
+        "rebuild_after_verification": false
+      },
+      "receipt": {
+        "product_version": "0.1.0",
+        "route": "B",
+        "business_record_count": 0,
+        "official_data_impact_count": 0,
+        "foundation_presented_as_product": false
+      }
+    },
+    {
+      "fixture_id": "ops-migration-interrupted-v1",
+      "scenario_type": "migration_interrupted",
+      "source_state": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "readable": true,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "verified_backup": {
+        "backup_id": "backup-fixture-001",
+        "verified": true,
+        "restore_tested": true,
+        "data_file": {
+          "logical_path": "@BACKUP/backup-fixture-001/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "rehearsal": {
+        "completed": true,
+        "integrity_valid": true,
+        "record_count": 2
+      },
+      "failure": {
+        "injection_point": "formal_migration_after_begin",
+        "error_code": "migration_interrupted",
+        "candidate_activated": false,
+        "success_receipt_visible": false
+      },
+      "target_state": {
+        "visible": false,
+        "partial_file_count": 0,
+        "schema_version_active": false,
+        "product_version_active": false
+      },
+      "old_state_after_failure": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "readable": true,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "retry_policy": {
+        "fresh_attempt_required": true,
+        "resume_partial_allowed": false
+      }
+    },
+    {
+      "fixture_id": "ops-candidate-byte-drift-v1",
+      "scenario_type": "candidate_byte_drift",
+      "frozen_candidate": {
+        "candidate_id": "candidate-fixture-001",
+        "status": "frozen",
+        "files": [
+          {
+            "logical_path": "@CANDIDATE/plugin.bundle",
+            "bytes_base64": "cGx1Z2luLWNhbmRpZGF0ZS12MQo=",
+            "length": 20,
+            "sha256": "A1F76240BECC09AA5DA27649576AD7826FBA9CCB013C3F862C5E30E78447B5B6",
+            "last_write_utc": "2026-08-11T03:00:00Z"
+          }
+        ],
+        "gates_status": "passed",
+        "evidence_id": "EV-FIXTURE-G3-001"
+      },
+      "changed_file": {
+        "logical_path": "@CANDIDATE/plugin.bundle",
+        "bytes_base64": "cGx1Z2luLWNhbmRpZGF0ZS12MS1ob3RmaXgK",
+        "length": 27,
+        "sha256": "1502B0E6A925440961349C5A7FED919B96B8D64FD4B56EBB179BBB076EAA90EC",
+        "last_write_utc": "2026-08-11T03:01:00Z"
+      },
+      "invalidation": {
+        "candidate_status": "invalidated",
+        "reason": "byte_changed_after_freeze",
+        "new_manifest_required": true,
+        "affected_gates_rerun": true
+      },
+      "evidence_state": {
+        "previous_evidence_authorizes_promotion": false
+      },
+      "promotion": {
+        "allowed": false,
+        "method": "none",
+        "rebuild_allowed": false,
+        "patch_allowed": false,
+        "substitution_allowed": false
+      }
+    },
+    {
+      "fixture_id": "ops-minimal-export-restore-reject-v1",
+      "scenario_type": "minimal_export_restore_rejected",
+      "export_manifest": {
+        "artifact_type": "minimal_user_export",
+        "export_version": 1,
+        "timezone": "Asia/Shanghai",
+        "record_count": 0,
+        "file": {
+          "logical_path": "@EXPORT/minimal-user-export.json",
+          "bytes_base64": "eyJleHBvcnRfdmVyc2lvbiI6MSwicmVjb3JkcyI6W119Cg==",
+          "length": 34,
+          "sha256": "775BEA8868EAC71F342C28CDE982C817401616E58EBCE387DFA80CD136400462",
+          "last_write_utc": "2026-08-11T04:00:00Z"
+        },
+        "restorable": false
+      },
+      "missing_backup_capabilities": ["backup_manifest", "complete_schema", "idempotency_state", "integrity_check"],
+      "restore_attempt": {
+        "status": "rejected",
+        "error_code": "not_restorable_backup",
+        "replacement_count": 0,
+        "deletion_count": 0,
+        "migration_count": 0,
+        "version_changed": false
+      },
+      "official_state_before": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        }
+      },
+      "official_state_after": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        }
+      }
     }
   ]
 }
