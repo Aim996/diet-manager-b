@@ -5,7 +5,7 @@
 - 日期：2026-08-11（Asia/Shanghai）
 - 平台：专用 OpenClaw 测试环境
 - 最终会话：`agent:main:explicit:contract-004-v2-independent-review-round2`
-- 会话 URL：`http://192.168.100.10:18789/chat?session=agent%3Amain%3Aexplicit%3Acontract-004-v2-independent-review-round2`
+- 会话：专用 OpenClaw 第二轮独立复核（地址与令牌仅在环境外配置，未写入仓库）
 - 方式：只读语义复核；审阅者不执行本地验证器、不修改文件，也不把验证器 GREEN 当成语义证明
 - 最终结论：`PASS`
 - 完成标志：`Ready for SH-CONTRACT-004 completion: Yes`

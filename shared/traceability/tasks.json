@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 293149,
-      "sha256": "FCDF3D19F8D53A0847633BD553D1ADCECDB9B6A5F3CE833093149AD4FD0BC857"
+      "length": 293943,
+      "sha256": "7C5CF7473D5EEE29003696C08D93166814EA161990C860CD5D6515EE1A12ADD4"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,15 +14,16 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
+      "sha256": "AA4CA8780D4C2DDFDB421034C06FCDA280C3C79A2F453F564085B1B778AC469F"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 32,
-      "已完成": 19,
-      "已取消": 8
+      "未开始": 30,
+      "已完成": 20,
+      "已取消": 8,
+      "进行中": 1
     },
     "case_producer_rows": 144,
     "full_case_responsibility_assignments": 5,
@@ -3224,7 +3225,7 @@
       "producers": [
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4126,9 +4127,12 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/migration/interruption_candidate_not_activated",
+            "/migration/interruption_retry_requires_fresh_candidate"
+          ]
         },
         {
           "task_id": "C-STOR-001",
@@ -5105,7 +5109,7 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5217,9 +5221,12 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/path_authority/fixed_database_leaf",
+            "/path_authority/reject_arbitrary_or_reparse_path"
+          ]
         },
         {
           "task_id": "C-STOR-001",
@@ -5252,13 +5259,16 @@
         },
         {
           "task_id": "B-STOR-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/migration/failure_keeps_final_unpublished",
+            "/migration/failure_keeps_user_version_unadvanced"
+          ]
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5315,7 +5325,7 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5427,7 +5437,7 @@
         },
         {
           "task_id": "B-MERGE-C-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -6835,14 +6845,29 @@
       "deliverables": "B DB模块+migration",
       "verification": "Node/OpenClaw/driver矩阵；E-STOR",
       "roots": "ROOT-B",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 独立B存储复核待指派",
-      "status": "未开始",
-      "next_reopen": "依赖已齐；next=补齐brief并在隔离临时库执行兼容spike；驱动、固定文件名、migration或打包边界变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "actual_evidence_ids": [
+        "EV-20260812-027"
+      ],
+      "owner_reviewer": "Codex /root / OpenClaw 02独立B存储复核",
+      "status": "已完成",
+      "next_reopen": "固定叶、20/18/22、三阶段故障零发布、21项测试与独立复核P0=0/P1=0；驱动、固定文件名、migration或打包边界变化重开",
+      "brief_path": "docs/work-items/B-STOR-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-STORAGE-004": [
+          "/path_authority/fixed_database_leaf",
+          "/path_authority/reject_arbitrary_or_reparse_path"
+        ],
+        "CASE-STORAGE-005": [
+          "/migration/failure_keeps_final_unpublished",
+          "/migration/failure_keeps_user_version_unadvanced"
+        ],
+        "CASE-OPS-003": [
+          "/migration/interruption_candidate_not_activated",
+          "/migration/interruption_retry_requires_fresh_candidate"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "B-MERGE-C-001",
@@ -6873,9 +6898,9 @@
       "verification": "伪造/陈旧/非法转换/非法迁移全部零写入，同键冲突与合法重试可证明；E-STOR+E-CASE",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立安全复核",
-      "status": "未开始",
-      "next_reopen": "DEC-027、CHG-20260810-001；依赖齐前不得开始；协议或迁移规则变化重开",
+      "owner_reviewer": "Codex /root / 独立B安全复核待指派",
+      "status": "进行中",
+      "next_reopen": "DEC-027、CHG-20260810-001；next=brief/design+RED；协议或迁移规则变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

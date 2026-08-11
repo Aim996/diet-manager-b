@@ -5,7 +5,7 @@ PASS
 ## 复核身份与范围
 
 - 复核者：专用 OpenClaw 测试平台中的独立审阅会话（DeepSeek V4 Flash / High）。
-- 会话：`http://192.168.100.10:18789/chat?session=agent%3Amain%3Aexplicit%3Acontract-v2-independent-review`
+- 会话：专用 OpenClaw 独立复核会话（地址与令牌仅在环境外配置，未写入仓库）
 - 复核方式：只读审阅上传的 CONTRACT-v2 候选、总计划 0.3、验证器及 work-item 材料；不把实现方测试 PASS 当作契约 PASS。
 - 候选 SHA-256：`632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E`
 - 验证器 SHA-256：`2395D4B0A5806CDCE5FE1C313BE814CF473ABF65B3810E72DBC2BFFD20790589`

@@ -85,7 +85,7 @@ describe("diet manager B 基底", () => {
 
     expect(packageManifest.dependencies?.typebox).toBeDefined();
     expect(packageManifest.devDependencies?.["@types/node"]).toBe("^24.0.0");
-    expect(packageManifest.engines?.node).toBe(">=24.14.0 <25");
+    expect(packageManifest.engines?.node).toBe(">=24.15.0 <25");
     expect(packageManifest.peerDependencies?.openclaw).toBe(">=2026.5.17");
     expect(packageManifest.openclaw?.extensions).toEqual(["./dist/index.js"]);
     expect(packageManifest.scripts?.["plugin:build"]).toBeDefined();
