@@ -1,6 +1,6 @@
 {
   "case_set_id": "diet-manager/core-acceptance-cases-v1",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "contract": {
     "contract_id": "diet-manager/contract-v2",
     "contract_version": 2
@@ -751,6 +751,38 @@
         }
       },
       "forbidden": ["retry_recomputed_from_current_totals", "retry_performed_business_write", "date_order_changed", "single_day_alias_on_multi_date_result", "partial_receipt", "duplicate_fact_or_effect"]
+    },
+    {
+      "id": "CASE-STORAGE-001",
+      "requirement_ids": ["REQ-CORE-003", "REQ-SAFE-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了一个苹果。网络响应丢失后，用同一幂等键和相同输入重试。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "domain_scenario_fixture": "domain-idempotency-conflict-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "idempotency": {
+          "original_key": "idem-fixed-001",
+          "first_execution": {
+            "meal_event_count": 1,
+            "inventory_effect_count": 1,
+            "product_template_count": 1,
+            "result_ref": "fixture-result-apple-v1"
+          },
+          "same_key_same_input": {
+            "returned_exact_original_result": true,
+            "business_write_count": 0,
+            "meal_event_count_delta": 0,
+            "inventory_effect_count_delta": 0,
+            "product_template_count_delta": 0
+          }
+        }
+      },
+      "forbidden": ["duplicate_meal_event", "duplicate_inventory_effect", "duplicate_product_template", "recomputed_result", "business_write_on_same_key_retry"]
     }
   ]
 }

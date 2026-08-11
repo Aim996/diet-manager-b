@@ -74,14 +74,14 @@ This does not claim that A passed the B business Oracle. It proves only the froz
 
 ## Runner and report
 
-The default CLI validates the manifest hashes, loads the exact 26-case catalog, runs A degradation and the current B adapter, and emits a deterministic JSON report.
+The default CLI validates the manifest hashes, loads the exact 27-case catalog, runs A degradation and the current B adapter, and emits a deterministic JSON report.
 
 Before a B driver exists, the expected report state is:
 
 ```text
 harness_status = ready_backend_pending
-A: 26 degraded, 0 writes
-B: 26 backend_pending, 0 comparisons, 0 writes
+A: 27 degraded, 0 writes
+B: 27 backend_pending, 0 comparisons, 0 writes
 C: no independent adapter
 ```
 
@@ -100,7 +100,9 @@ The manifest independently locks:
 - `shared/acceptance-cases/cases.json`
 - `shared/acceptance-cases/fixtures/core-v1.json`
 
-The expected catalog is `diet-manager/core-acceptance-cases-v1`, version `1.3.0`, count `26`.
+The expected catalog is `diet-manager/core-acceptance-cases-v1`, version `1.4.0`, count `27`.
+
+The original 26 entries remain byte-for-byte and order stable. During the first manifest RED, the total plan exposed that required case `CASE-STORAGE-001` was referenced by `SH-HARNESS-001` but absent from the cumulative catalog. The harness prerequisite therefore appends exactly that one idempotent-retry case, reuses the existing `domain-idempotency-conflict-v1` fixture, and adds an independent mutation that rejects re-executing the same key and same input. It does not add a database implementation.
 
 ## Test strategy
 
@@ -128,4 +130,4 @@ Required RED/GREEN families:
 - no OpenClaw/MCP production adapter;
 - no C adapter;
 - no A writer;
-- no modification of the 26 case values, existing fixtures, golden texts or protected lease files.
+- no modification of the prior 26 case values, existing fixtures, golden texts or protected lease files; the only catalog addition is `CASE-STORAGE-001`.

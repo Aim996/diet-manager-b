@@ -13,7 +13,7 @@
 
 ## Objective
 
-Build one deterministic execution protocol and machine report around the shared 26-case Oracle. B is the only executable product route; A proves read-only/no-plugin/zero-write degradation; C has no independent adapter and its safety controls remain assigned to B.
+Build one deterministic execution protocol and machine report around the shared 27-case Oracle. B is the only executable product route; A proves read-only/no-plugin/zero-write degradation; C has no independent adapter and its safety controls remain assigned to B.
 
 The current B backend is intentionally absent. Therefore completion of this task means `harness ready, backend pending`, not that business cases, SQLite or the installable Skill are complete.
 
@@ -31,16 +31,19 @@ All dependencies are complete.
 
 - requirements: `REQ-NFR-002`, `REQ-SAFE-003`
 - required cases: `CASE-STORAGE-001`, `CASE-STORAGE-007`, `CASE-EFFECT-001`, `CASE-EFFECT-003`
-- cumulative catalog: exact 26 cases from `shared/acceptance-cases/cases.json`
+- cumulative catalog: exact version `1.4.0`, 27 cases from `shared/acceptance-cases/cases.json`
+- discovered prerequisite: append only the previously referenced but missing `CASE-STORAGE-001`; preserve the prior 26 cases and all fixture bytes
 
 ## Deliverables
 
 - `shared/acceptance-cases/harness-manifest.json`
+- `shared/acceptance-cases/cases.json` with the single plan-required `CASE-STORAGE-001` prerequisite
 - `shared/acceptance-cases/adapters/types.ts`
 - `shared/acceptance-cases/adapters/a.ts`
 - `shared/acceptance-cases/adapters/b.ts`
 - `shared/acceptance-cases/run-all.ts`
 - `shared/acceptance-cases/tests/harness.test.ts`
+- compatible updates to the four acceptance validators so each continues to own only its intended case subset
 - report, review package, independent review and closure evidence
 - Plan 0.3 and development-progress updates after completion
 
