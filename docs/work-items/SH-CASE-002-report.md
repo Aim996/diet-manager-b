@@ -3,7 +3,7 @@
 ## Candidate identity
 
 - task: `SH-CASE-002`
-- status: implementation and local regression PASS; independent review pending
+- status: implementation, local regression and independent review PASS
 - product line: B-only shared Oracle
 - catalog version: `1.1.0`
 - cumulative cases: `14` = original core `5` + domain/failure `9`
@@ -86,6 +86,14 @@ ISSUE_CORRECTION_MIXED_SCHEMAS|PASS|version=1.0.0|cases=65|definitions=12|semant
 
 The five protected lease files were not read, hashed, edited or executed.
 
+## Independent review
+
+Round 1 independently caught all eleven mutations but correctly returned `FAIL|p0=0|p1=1` for the inventory-status token drift. After the focused RED and minimal correction, Round 2 verified the fresh 177207-byte/15-file package, all six declared candidate hashes, both corrected inventory statuses, the unchanged Issue code, the original five cases and all eleven independent mutations:
+
+```text
+SH-CASE-002-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=9|scenarios=9|mutations=11
+```
+
 ## Candidate hashes
 
 | File | SHA-256 |
@@ -104,11 +112,9 @@ The five protected lease files were not read, hashed, edited or executed.
 - Independent review round 1 found an inventory-status token drift: the candidate used `skipped_multiple_candidates`, while the frozen contract requires `skipped_ambiguous`. A focused RED reproduced the mismatch, both affected cases and their independent assertions were corrected, and the Issue code remains `inventory_multiple_candidates`.
 - The selected cumulative-catalog design avoids a second domain Oracle and keeps the original core validator responsible for the first five cases.
 
-## Pending before completion
+## Completion boundary
 
-1. independent P0/P1 review using literals independent of the candidate validator;
-2. final evidence and detailed progress update;
-3. private GitHub push and clean-clone reproduction.
+The shared Oracle package is complete after evidence, private GitHub push and clean-clone reproduction. SQLite DDL, repository/outbox runtime, a real B adapter and OpenClaw/MCP production integration remain separate future tasks and are not implied by this result.
 
 ## Deliberately deferred
 
