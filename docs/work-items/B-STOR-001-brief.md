@@ -6,9 +6,9 @@
 - milestone: `M3`
 - type: `storage`
 - product_line: `B only`
-- status: `in_progress`
+- status: `complete`
 - owner: `Codex /root`
-- reviewer: `independent B storage review after frozen candidate`
+- reviewer: `OpenClaw 02 independent B storage review`
 - requirements: `REQ-SAFE-001`, `REQ-OPS-002`, `REQ-NFR-002`
 - cases: `CASE-STORAGE-004`, `CASE-STORAGE-005`, `CASE-OPS-003`
 - roots: `ROOT-B`
@@ -29,7 +29,7 @@ All dependencies are complete and current at task start.
 ## Roots and data boundary
 
 - official data roots: the configured B SQLite root is read-only for this task and must not be opened by tests;
-- isolated test roots: one fresh system-temporary direct child matching `diet-manager-b/B-STOR-001/<guid>` per test run;
+- isolated test roots: one fresh system-temporary direct child matching `diet-manager-b-B-STOR-001-<guid>` per test run;
 - runtime path authority: only an adapter-owned private root enters the storage module; database filename is fixed internally;
 - temporary candidate, WAL, SHM and lock files must be direct descendants of the same test-owned root and removed after each test;
 - no production business record, user text, food name, quantity or credential may enter tests or reports.

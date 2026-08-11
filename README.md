@@ -64,7 +64,7 @@ pnpm build
 
 ## 下一步
 
-1. 完成 `B-STOR-001` 独立复核和证据收口。
-2. 实现 B SQLite repository，并验证写入失败时技术日志可有、业务数据严格为零。
+1. 完成 `B-MERGE-C-001`：把服务端权威 preview/state、陈旧/伪造状态拒绝和 migration guard 并入 B。
+2. 实现 `B-STOR-002` 原子 repository，并验证写入失败时技术日志可有、业务数据严格为零。
 3. 完成记录、查询、更正、撤销的真实纵向闭环。
 4. 部署到专用 OpenClaw 环境；业务稳定后再增加 MCP 薄适配器。

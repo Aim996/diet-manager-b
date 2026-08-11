@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 293282,
-      "sha256": "89106779E2F4C48DD4A34E8C86F27CBA655EF80498F9AFD0ABEA0C699F73E5FA"
+      "length": 293943,
+      "sha256": "7C5CF7473D5EEE29003696C08D93166814EA161990C860CD5D6515EE1A12ADD4"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "3CC12F2CF51B7CEF25755B8777C28488F6ADA8E2076DFF62F03EA2517B5504EC"
+      "sha256": "AA4CA8780D4C2DDFDB421034C06FCDA280C3C79A2F453F564085B1B778AC469F"
     }
   },
   "counts": {
-    "evidence": 26,
-    "files_present": 24,
+    "evidence": 27,
+    "files_present": 25,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -466,6 +466,24 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "SH-TRACE-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-027",
+      "scope": "B-STOR-001 SQLite bootstrap",
+      "result": "固定私有root/数据库叶、内置node:sqlite、mapping-locked 20表/18索引/22外键、三阶段故障零发布/零残留、21项测试与OpenClaw插件门通过；独立复核P0=0/P1=0",
+      "limitation": "关闭驱动、初始migration与本地打包兼容；不代表repository、真实业务写入、安装、部署或G1/G2/G3完成",
+      "reference_ids": [
+        "B-STOR-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-027-b-stor-001.md",
+        "length": 2902,
+        "sha256": "819252058D563843081180256F4F4A4CBD275DD1AAE2FCC5B2C49E5A70E979FB"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-STOR-001"
       ]
     }
   ]

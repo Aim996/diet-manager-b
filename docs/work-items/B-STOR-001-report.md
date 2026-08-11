@@ -3,7 +3,7 @@
 ## Status
 
 - product line: B only
-- state: local candidate green; independent review and evidence closure pending
+- state: complete through `EV-20260812-027`; independent review PASS with P0=0/P1=0
 - scope: SQLite bootstrap and migration 0001 only
 - explicitly absent: business repository, meal/water/inventory writes, outbox worker, OpenClaw business adapter and MCP
 
@@ -81,3 +81,9 @@ OpenClaw rejected bundled Node 24.14 before validation because the current host 
 - MCP or other agent adapters.
 
 These are later plan items, not missing claims from B-STOR-001.
+
+## Independent review closure
+
+OpenClaw 02 reproduced the complete local gate in one isolated public-clone review at commit `71cc68b7649604b76cb27b253a673347012ca4f0`: 21/21 tests, both TypeScript gates, both OpenClaw gates, independent 38/38 DDL equivalence, exact 20/18/22 physical schema, zero protected/business artifacts and zero review residue. Verdict: P0=0, P1=0, P2=1, cleanup=1.
+
+The sole P2 was the brief's temporary-root spelling and is corrected in the evidence-closure delta. It did not affect isolation, cleanup, implementation code or the accepted storage behavior.
