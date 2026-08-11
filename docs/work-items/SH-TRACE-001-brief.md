@@ -45,11 +45,11 @@ All dependencies are recorded complete in §31 with registered evidence.
 ## Verification commands
 
 ```powershell
-& 'C:\Users\10481\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' shared/tests/validate-traceability.mjs --self-test
-& 'C:\Users\10481\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' shared/tests/validate-traceability.mjs
+node shared/tests/validate-traceability.mjs --self-test
+node shared/tests/validate-traceability.mjs
 ```
 
-The absolute executable is an execution instruction only and must not be written into generated mirrors or reports.
+Use any repository-supported Node.js 24 executable available in the caller's environment. Machine-specific executable paths must not be committed or written into generated mirrors or reports.
 
 ## Completion Oracle
 
