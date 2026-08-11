@@ -6,9 +6,10 @@
 - branch: `agent/sh-case-003-ops-security-oracles`
 - base: `33e51b773be66b78581e7a3d13fdd95e86c8f6a4`
 - candidate implementation head: `3f120a0e6ac037c4a071d9fce7db089cb212335e`
-- status: `candidate_review_pending`
+- independent review head: `1139dd59a590e9fb78a49efd471c52e4bba8a958`
+- status: `independent_review_passed`
 - product state: Oracle/fixtures only; not installable and not production-ready
-- OpenClaw use: `0`
+- OpenClaw use: one bounded read-only review on OpenClaw 02
 
 ## Implemented
 
@@ -135,15 +136,32 @@ Protected domain-schema validators were not read or executed.
 - Added fixture-only and case-only validation entry points so fixture GREEN cannot be hidden behind a later cumulative case RED.
 - Used independently recomputed Base64 length/SHA checks instead of trusting declared hashes.
 - Kept deletion scope bounded to zero deletion before invalid restore rejection; standalone uninstall deletion was not pulled forward.
+- Removed two workspace-local absolute paths from the brief before public review and replaced them with repository-relative descriptions. The final public branch contains no machine path, OpenClaw address, token or key in the changed files.
+
+## Independent review
+
+The repository was made public and reviewed from an unauthenticated HTTPS partial clone at exact head `1139dd59a590e9fb78a49efd471c52e4bba8a958`. The reviewer built three independent checkers from Plan 0.3, the brief and base `33e51b7`; candidate PASS text and declared hashes were corroboration only.
+
+The review proved exact 20-case order, six new fixtures, byte preservation of the original fourteen cases and old fixture arrays, all fourteen file-like Base64/length/SHA values, all twelve mutations, cumulative core/domain ownership, open-source hygiene and a clean draft PR. Final result:
+
+```text
+SH_CASE_003_REVIEW|PASS|P0=0|P1=0|P2=2
+```
+
+The two P2 items are recorded in `SH-CASE-003-review.md`: an optional second preservation-digest layer for old values, and this report's previous omission of the already-fixed absolute-path cleanup. Neither weakens the selected Oracle. The first is deferred to future validator hardening; the second is closed by this report update.
+
+The exact public-review clone was removed after ownership, symlink and mount checks:
+
+```text
+SH_CASE_003_PUBLIC_REVIEW_CLEANUP|PASS|residual=0
+```
 
 ## Pending
 
-- independent P0/P1 review
-- final review/evidence documents and Plan 0.3 status closure
 - `SH-CASE-004`
 - B adapter/harness and all product implementations
 - installer, migration, backup/restore, uninstall/delete and release code
 
 ## Completion boundary
 
-This candidate must not be marked complete until an independent reviewer reports P0=0/P1=0. No OpenClaw capacity was consumed during implementation. Until review, progress and Plan 0.3 completion fields remain unchanged.
+`SH-CASE-003` is complete only as a static Oracle/fixture package. Independent review reported P0=0/P1=0. This does not mark any installer, migration runner, backup/restore, delete implementation, SQLite repository, adapter, harness or product release complete.
