@@ -377,6 +377,18 @@ function Test-DomainCaseCandidate {
     ) "DOMAIN_CASE_SET_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "DOMAIN_CASE_SET_ID_INVALID"
     Assert-DomainEqual "1.1.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
+    Assert-DomainExactProperties $CaseSet.package_invariants @(
+        "adapters_may_rewrite_oracle", "technical_log", "technical_log_counts_as_record",
+        "fact_commit_failure_business_write_count", "fact_commit_failure_forbidden_artifacts"
+    ) "DOMAIN_CASE_PACKAGE_INVARIANTS_INVALID"
+    Assert-DomainEqual $false $CaseSet.package_invariants.adapters_may_rewrite_oracle "DOMAIN_CASE_ORACLE_AUTHORITY_INVALID"
+    Assert-DomainEqual "allowed_separate_redacted_only" ([string]$CaseSet.package_invariants.technical_log) "DOMAIN_CASE_TECHNICAL_LOG_INVALID"
+    Assert-DomainEqual $false $CaseSet.package_invariants.technical_log_counts_as_record "DOMAIN_CASE_TECHNICAL_LOG_RECORD_INVALID"
+    Assert-DomainEqual 0 $CaseSet.package_invariants.fact_commit_failure_business_write_count "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID"
+    Assert-DomainExactStringArray @(
+        "meal_or_water_fact", "inventory_change", "nutrition_snapshot", "issue", "business_outbox",
+        "daily_progress", "success_receipt", "terminal_idempotency_result"
+    ) $CaseSet.package_invariants.fact_commit_failure_forbidden_artifacts "DOMAIN_CASE_FAILED_FACT_ARTIFACTS_INVALID"
 
     $caseIds = @($CaseSet.cases | ForEach-Object { [string]$_.id })
     Assert-DomainExactStringArray $ExpectedCumulativeCaseIds $caseIds "DOMAIN_CASE_IDS_INVALID"
@@ -400,8 +412,92 @@ function Test-DomainCaseCandidate {
     Assert-DomainCases $CaseSet
 }
 
+function Invoke-DomainMutation {
+    param([string]$Name, [scriptblock]$Mutator, [string]$ExpectedPrefix, $CaseSet, $Fixtures)
+    $caseCandidate = Copy-DomainJson $CaseSet
+    $fixtureCandidate = Copy-DomainJson $Fixtures
+    & $Mutator $caseCandidate $fixtureCandidate
+    $rejected = $false
+    try {
+        Test-DomainCaseCandidate $caseCandidate $fixtureCandidate
+    }
+    catch {
+        $message = [string]$_.Exception.Message
+        if (-not $message.StartsWith($ExpectedPrefix, [StringComparison]::Ordinal)) {
+            throw ("DOMAIN_MUTATION_WRONG_ERROR:{0}:expected={1}:actual={2}" -f $Name, $ExpectedPrefix, $message)
+        }
+        $rejected = $true
+    }
+    Assert-DomainTrue $rejected ("DOMAIN_MUTATION_SURVIVED:{0}" -f $Name)
+    "{0}|PASS" -f $Name
+}
+
 $caseSet = Read-DomainJson $CasesPath "DOMAIN_CASE_SET_FILE_MISSING" "DOMAIN_CASE_SET_JSON_INVALID"
 $fixtures = Read-DomainJson $FixturesPath "DOMAIN_CASE_FIXTURE_FILE_MISSING" "DOMAIN_CASE_FIXTURE_JSON_INVALID"
 Test-DomainCaseCandidate $caseSet $fixtures
 
-"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.1.0|cases=9|scenarios=9|mutations=0"
+Invoke-DomainMutation "MUT-DOMAIN-DROP-REQUIRED-CASE" {
+    param($casesCandidate, $fixturesCandidate)
+    $casesCandidate.cases = @($casesCandidate.cases | Where-Object { [string]$_.id -cne "CASE-PURCHASE-001" })
+} "DOMAIN_CASE_IDS_INVALID" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-COLLAPSE-PACKAGE-QUANTITIES" {
+    param($casesCandidate, $fixturesCandidate)
+    $scenario = @($fixturesCandidate.domain_scenarios | Where-Object { [string]$_.fixture_id -ceq "domain-purchase-milk-2x12x250-v1" })[0]
+    $scenario.package.total_inner = 1
+} "DOMAIN_SCENARIO_VALUE_INVALID:purchase:total_inner" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-AUTOSELECT-INVENTORY" {
+    param($casesCandidate, $fixturesCandidate)
+    $scenario = @($fixturesCandidate.domain_scenarios | Where-Object { [string]$_.fixture_id -ceq "domain-inventory-multiple-products-v1" })[0]
+    $scenario.candidates[0].after_quantity = 5
+} "DOMAIN_SCENARIO_VALUE_INVALID:inventory:unchanged" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-OVERRIDE-EXACT-LABEL" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-NUTR-001" })[0]
+    $case.oracle.effect_bundle.nutrition_profile.priority_rule = "public_source_wins"
+} "DOMAIN_CASE_VALUE_INVALID:CASE-NUTR-001:priority" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-SERIALIZE-ISSUES" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-ISSUE-001" })[0]
+    $case.oracle.presentation.prompt_policy = "serial_questionnaire"
+} "DOMAIN_CASE_VALUE_INVALID:CASE-ISSUE-001:presentation" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-OVERWRITE-CORRECTION-TARGET" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-CORR-001" })[0]
+    $case.oracle.fact_commit.correction_event.write_policy = "overwrite_original"
+} "DOMAIN_CASE_VALUE_INVALID:CASE-CORR-001:write_policy" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-REORDER-MIXED-CHILDREN" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-MIXED-001" })[0]
+    $case.oracle.mixed.operation_results = @($case.oracle.mixed.operation_results[1], $case.oracle.mixed.operation_results[0])
+} "DOMAIN_CASE_VALUE_INVALID:CASE-MIXED-001:order" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-ROLLBACK-FACT-ON-EFFECT-FAILURE" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-EFFECT-001" })[0]
+    $case.oracle.failure.fact_commit_preserved = $false
+} "DOMAIN_CASE_VALUE_INVALID:CASE-EFFECT-001:fact" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-EXPOSE-FINALIZER-SUCCESS" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-EFFECT-003" })[0]
+    $case.oracle.failure.success_receipt_visible = $true
+} "DOMAIN_CASE_VALUE_INVALID:CASE-EFFECT-003:receipt" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-REUSE-IDEMPOTENCY-RESULT" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-STORAGE-007" })[0]
+    $case.oracle.idempotency.conflicts[0].returned_original_result = $true
+} "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-007:result" $caseSet $fixtures
+
+Invoke-DomainMutation "MUT-DOMAIN-ALLOW-FAILED-FACT-BUSINESS-WRITE" {
+    param($casesCandidate, $fixturesCandidate)
+    $casesCandidate.package_invariants.fact_commit_failure_business_write_count = 1
+} "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID" $caseSet $fixtures
+
+"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.1.0|cases=9|scenarios=9|mutations=11"
