@@ -114,7 +114,7 @@ SH-CASE-002-INDEPENDENT-REVIEW|PASS|p0=0|p1=0|cases=9|scenarios=9|mutations=11
 
 ## Completion boundary
 
-The shared Oracle package is complete after evidence, private GitHub push and clean-clone reproduction. SQLite DDL, repository/outbox runtime, a real B adapter and OpenClaw/MCP production integration remain separate future tasks and are not implied by this result.
+The shared Oracle package is complete. Candidate commit `eedc1c367d6a0ab7abf84c107f50bb9606332f31` was pushed to private `origin/main`; the independent clone fast-forwarded to the same commit, reran all eight allowed validators and remained clean. SQLite DDL, repository/outbox runtime, a real B adapter and OpenClaw/MCP production integration remain separate future tasks and are not implied by this result.
 
 ## Deliberately deferred
 
