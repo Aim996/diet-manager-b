@@ -74,3 +74,18 @@ Inventory schema: `ConfirmedAlias`, `FieldProvenance`, `ProductIdentity`, `Inven
 ## Completion
 
 The task closes only when the fixed fixture set and mutations pass, an independent semantic reviewer accepts the frozen files, GitHub delivery is reproducible from an independent clone, protected tracked files remain zero, and business data candidates remain zero.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-CORR-001:
+    - /schema/event/correction_reference
+  CASE-MEAL-003:
+    - /schema/amount/four_amounts
+  CASE-PURCHASE-007:
+    - /schema/product_identity
+  CASE-INVENTORY-005:
+    - /schema/inventory_transaction/nonnegative_after
+  CASE-RECEIPT-002:
+    - /schema/field_provenance
+full_case_set: none

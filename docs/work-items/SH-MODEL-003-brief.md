@@ -112,3 +112,16 @@ The validator owns the exact 65 case IDs/outcomes, exact 10 semantic-only case I
 ## Completion gate
 
 The task may be marked complete only after missing-file RED, 65-case two-layer GREEN, four mutation RED/GREEN proofs, upstream regression PASS, strict parser/JSON/ASCII gates, zero protected/business-data candidates, independent P0/P1 review PASS, private GitHub delivery, and independent-clone reproduction. Completion freezes a shared model only and does not make the product installable.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-EFFECT-001:
+    - /schema/effect_bundle/pending_failure
+  CASE-EFFECT-003:
+    - /schema/envelope_finalize/pending_failure
+  CASE-STORAGE-006:
+    - /schema/mixed_commit_result/frozen_result
+  CASE-STORAGE-007:
+    - /schema/mixed_commit_result/idempotency_conflict
+full_case_set: none

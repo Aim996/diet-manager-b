@@ -121,3 +121,14 @@ git diff --check
 - No active reminder delivery.
 - No food-safety or medical advice.
 - No protected lease access.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-POLICY-001:
+    - /policy/threshold_boundaries
+    - /policy/decimal_rounding
+  CASE-POLICY-002:
+    - /policy/b_only_gate
+    - /policy/version_change
+full_case_set: none

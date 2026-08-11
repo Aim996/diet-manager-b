@@ -50,3 +50,18 @@
 6. 独立复核者逐语义审阅 CONTRACT-v2，并给出 PASS/FAIL、候选哈希和发现处置。
 
 只有六项全部满足并形成新鲜 `EV-*` 后，主计划才可把 `SH-CONTRACT-001` 标记为已完成。
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-EFFECT-001:
+    - /contract/effect_bundle/technical_failure
+  CASE-EFFECT-003:
+    - /contract/envelope_finalize/technical_failure
+  CASE-MIXED-002:
+    - /contract/command/mixed_operation_order
+  CASE-STORAGE-001:
+    - /contract/idempotency/same_key_same_digest
+  CASE-STORAGE-007:
+    - /contract/idempotency/same_key_conflict
+full_case_set: none

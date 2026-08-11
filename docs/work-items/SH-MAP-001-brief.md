@@ -74,3 +74,11 @@ Then run the six frozen contract/model validators from SH-MODEL-003 and repeat i
 ## Reopen conditions
 
 Any shared Schema hash, mapping field, table/index/constraint, transaction boundary, route policy, technical-log boundary, migration/recovery rule or validator change reopens this task.
+
+## Machine traceability
+
+case_assertion_paths:
+  CASE-EFFECT-001:
+    - /storage_mapping/fact_commit_transaction
+    - /storage_mapping/effect_bundle_outbox
+full_case_set: none
