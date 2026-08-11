@@ -1,9 +1,9 @@
 # SH-CASE-003 Ops and Security Oracle Design
 
-**Date:** 2026-08-11  
-**Task:** `SH-CASE-003`  
-**Product line:** B-only shared Oracle  
-**Status:** approved scope, design candidate  
+**Date:** 2026-08-11
+**Task:** `SH-CASE-003`
+**Product line:** B-only shared Oracle
+**Status:** approved scope, design candidate
 
 ## 1. Context
 

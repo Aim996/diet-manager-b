@@ -163,12 +163,12 @@ full_case_set: none
 - official data replaced or deleted before restore-source validation
 - technical log counted as a dietary/business record
 
-## Absolute roots
+## Repository-relative roots
 
-- source_root: `E:\codx\skill\饮食管家`
-- shared_root: `E:\codx\skill\饮食管家\shared`
-- cases_root: `E:\codx\skill\饮食管家\shared\acceptance-cases`
-- isolated_worktree_root: `E:\codx\skill\.worktrees\diet-manager-b-sh-case-003`
+- source_root: repository root (`.`)
+- shared_root: `./shared`
+- cases_root: `./shared/acceptance-cases`
+- isolated_worktree_root: local implementation detail; intentionally not frozen into the public contract
 - product_data_root: not created by this task
 - isolated_test_data_root: not needed; validators are read-only
 
