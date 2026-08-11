@@ -143,7 +143,7 @@ full_case_set: none
 
 - source: `喝了一盒这个牛奶。`
 - exact product/variant and package label fixture
-- source type: `package_label`; label wins over lower tiers
+- source type: `product_label`; label wins over lower tiers
 - raw label, parsed values, profile version and applicable product are retained
 - one NutritionSnapshot references the frozen profile/version
 - missing label fields remain unknown; no public-source override
