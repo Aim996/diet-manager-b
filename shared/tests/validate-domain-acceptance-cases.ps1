@@ -29,7 +29,13 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-MIXED-001",
     "CASE-EFFECT-001",
     "CASE-EFFECT-003",
-    "CASE-STORAGE-007"
+    "CASE-STORAGE-007",
+    "CASE-PRIV-001",
+    "CASE-FOUNDATION-002",
+    "CASE-OPS-001",
+    "CASE-OPS-003",
+    "CASE-OPS-010",
+    "CASE-EXPORT-004"
 )
 
 $ExpectedDomainCaseIds = @(
@@ -377,7 +383,7 @@ function Test-DomainCaseCandidate {
         "cases"
     ) "DOMAIN_CASE_SET_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "DOMAIN_CASE_SET_ID_INVALID"
-    Assert-DomainEqual "1.1.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
+    Assert-DomainEqual "1.2.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
     Assert-DomainExactProperties $CaseSet.package_invariants @(
         "adapters_may_rewrite_oracle", "technical_log", "technical_log_counts_as_record",
         "fact_commit_failure_business_write_count", "fact_commit_failure_forbidden_artifacts"
@@ -403,10 +409,11 @@ function Test-DomainCaseCandidate {
         "environments",
         "goals",
         "query_views",
-        "domain_scenarios"
+        "domain_scenarios",
+        "ops_security_scenarios"
     ) "DOMAIN_CASE_FIXTURE_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-fixtures-v1" ([string]$Fixtures.fixture_catalog_id) "DOMAIN_CASE_FIXTURE_ID_INVALID"
-    Assert-DomainEqual "1.1.0" ([string]$Fixtures.version) "DOMAIN_CASE_FIXTURE_VERSION_INVALID"
+    Assert-DomainEqual "1.2.0" ([string]$Fixtures.version) "DOMAIN_CASE_FIXTURE_VERSION_INVALID"
     $scenarioIds = @($Fixtures.domain_scenarios | ForEach-Object { [string]$_.fixture_id })
     Assert-DomainExactStringArray $ExpectedDomainScenarioIds $scenarioIds "DOMAIN_CASE_SCENARIO_IDS_INVALID"
     Assert-DomainScenarioFixtures $Fixtures
@@ -501,4 +508,4 @@ Invoke-DomainMutation "MUT-DOMAIN-ALLOW-FAILED-FACT-BUSINESS-WRITE" {
     $casesCandidate.package_invariants.fact_commit_failure_business_write_count = 1
 } "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID" $caseSet $fixtures
 
-"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.1.0|cases=9|scenarios=9|mutations=11"
+"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.2.0|cases=9|scenarios=9|mutations=11"

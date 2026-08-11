@@ -469,6 +469,207 @@ function Assert-OpsScenarioFixtures {
     Assert-OpsExportScenario (Get-OpsScenarioById $Fixtures "ops-minimal-export-restore-reject-v1")
 }
 
+function Assert-OpsSourceText {
+    param($Case, [string]$ExpectedBase64, [string]$Code)
+
+    Assert-OpsTrue ($Case.source_text -is [string]) ("{0}:type" -f $Code)
+    $actual = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$Case.source_text))
+    Assert-OpsEqual $ExpectedBase64 $actual $Code
+}
+
+function Assert-OpsCaseCommon {
+    param(
+        $Case,
+        [string]$ExpectedId,
+        [string[]]$ExpectedRequirements,
+        [string]$ExpectedSourceBase64,
+        [string]$ExpectedFixture,
+        [string[]]$ExpectedOracleProperties,
+        [string[]]$ExpectedForbidden
+    )
+
+    Assert-OpsExactProperties $Case @("id", "requirement_ids", "stage", "source_text", "setup", "oracle", "forbidden") ("OPS_SECURITY_CASE_SHAPE_INVALID:{0}" -f $ExpectedId)
+    Assert-OpsEqual $ExpectedId ([string]$Case.id) ("OPS_SECURITY_CASE_VALUE_INVALID:{0}:id" -f $ExpectedId)
+    Assert-OpsExactStringArray $ExpectedRequirements $Case.requirement_ids ("OPS_SECURITY_CASE_VALUE_INVALID:{0}:requirements" -f $ExpectedId)
+    Assert-OpsEqual "PRODUCT-0.1" ([string]$Case.stage) ("OPS_SECURITY_CASE_VALUE_INVALID:{0}:stage" -f $ExpectedId)
+    Assert-OpsSourceText $Case $ExpectedSourceBase64 ("OPS_SECURITY_CASE_VALUE_INVALID:{0}:source" -f $ExpectedId)
+    Assert-OpsExactProperties $Case.setup @(
+        "environment_fixture", "goals_fixture", "query_view_fixture", "ops_security_fixture", "prior_context"
+    ) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}" -f $ExpectedId)
+    Assert-OpsEqual "env-zh-cn-20260811" ([string]$Case.setup.environment_fixture) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:environment" -f $ExpectedId)
+    Assert-OpsTrue ($null -eq $Case.setup.goals_fixture) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:goals" -f $ExpectedId)
+    Assert-OpsTrue ($null -eq $Case.setup.query_view_fixture) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:query" -f $ExpectedId)
+    Assert-OpsEqual $ExpectedFixture ([string]$Case.setup.ops_security_fixture) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:fixture" -f $ExpectedId)
+    Assert-OpsTrue ($Case.setup.prior_context -is [System.Array]) ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:prior_context_array" -f $ExpectedId)
+    Assert-OpsEqual 0 @($Case.setup.prior_context).Count ("OPS_SECURITY_CASE_SETUP_INVALID:{0}:prior_context_count" -f $ExpectedId)
+    Assert-OpsExactProperties $Case.oracle $ExpectedOracleProperties ("OPS_SECURITY_CASE_ORACLE_INVALID:{0}" -f $ExpectedId)
+    Assert-OpsExactStringArray $ExpectedForbidden $Case.forbidden ("OPS_SECURITY_CASE_FORBIDDEN_INVALID:{0}" -f $ExpectedId)
+}
+
+function Assert-OpsPrivacyCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-PRIV-001" @("REQ-PRIV-001") "5p+l6K+i6L+Z5Liq54mb5aW255qE5YWs5YWx6JCl5YW75L+h5oGv44CC" "ops-privacy-public-nutrition-v1" @("privacy", "fallback") @(
+        "user_identity_disclosed", "raw_chat_disclosed", "history_disclosed", "inventory_disclosed",
+        "goals_disclosed", "secret_disclosed", "business_write", "unknown_nutrition_filled_with_zero"
+    )
+    Assert-OpsExactProperties $Case.oracle.privacy @(
+        "allowed_external_fields", "forbidden_external_fields", "ordinary_log_redacted", "secret_isolated", "business_write_count"
+    ) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:privacy"
+    Assert-OpsExactStringArray @(
+        "normalized_name", "brand", "variant", "specification", "preparation_state", "region"
+    ) $Case.oracle.privacy.allowed_external_fields "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:allowlist"
+    Assert-OpsExactStringArray @(
+        "user_name", "raw_chat", "meal_history", "inventory_summary", "goals", "api_token"
+    ) $Case.oracle.privacy.forbidden_external_fields "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:forbidden_fields"
+    Assert-OpsEqual $true $Case.oracle.privacy.ordinary_log_redacted "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:log"
+    Assert-OpsEqual $true $Case.oracle.privacy.secret_isolated "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:secret"
+    Assert-OpsEqual 0 ([int]$Case.oracle.privacy.business_write_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:writes"
+    Assert-OpsExactProperties $Case.oracle.fallback @("credential_missing_strategy", "invented_nutrition_values") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:fallback"
+    Assert-OpsEqual "cache_template_unknown" ([string]$Case.oracle.fallback.credential_missing_strategy) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:fallback_strategy"
+    Assert-OpsEqual $false $Case.oracle.fallback.invented_nutrition_values "OPS_SECURITY_CASE_VALUE_INVALID:CASE-PRIV-001:invented"
+}
+
+function Assert-OpsFoundationCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-FOUNDATION-002" @("REQ-SAFE-004") "6L+Q6KGMZm91bmRhdGlvbumqjOivgeW5tuavlOi+g+WJjeWQjuato+W8j+S4muWKoeaVsOaNruOAgg==" "ops-foundation-zero-diff-v1" @("official_manifest", "validation_failure", "cleanup") @(
+        "official_file_added", "official_file_modified", "official_file_deleted", "sidecar_omitted",
+        "after_scan_skipped_on_failure", "path_escape", "temporary_residual", "technical_log_counted_as_record"
+    )
+    Assert-OpsExactProperties $Case.oracle.official_manifest @(
+        "after_scan_on_failure", "added_count", "modified_count", "deleted_count", "sidecar_count", "path_escape_count"
+    ) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:manifest"
+    Assert-OpsEqual $true $Case.oracle.official_manifest.after_scan_on_failure "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:after_scan"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_manifest.added_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:added"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_manifest.modified_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:modified"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_manifest.deleted_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:deleted"
+    Assert-OpsEqual 1 ([int]$Case.oracle.official_manifest.sidecar_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:sidecar"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_manifest.path_escape_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:path_escape"
+    Assert-OpsExactProperties $Case.oracle.validation_failure @("failure_stage", "technical_log_allowed", "technical_log_counts_as_record") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:failure"
+    Assert-OpsEqual "plugin_validation" ([string]$Case.oracle.validation_failure.failure_stage) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:failure_stage"
+    Assert-OpsEqual $true $Case.oracle.validation_failure.technical_log_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:log_allowed"
+    Assert-OpsEqual $false $Case.oracle.validation_failure.technical_log_counts_as_record "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:log_record"
+    Assert-OpsExactProperties $Case.oracle.cleanup @("attempted", "succeeded", "residual_count") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:cleanup"
+    Assert-OpsEqual $true $Case.oracle.cleanup.attempted "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:cleanup_attempted"
+    Assert-OpsEqual $true $Case.oracle.cleanup.succeeded "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:cleanup_succeeded"
+    Assert-OpsEqual 0 ([int]$Case.oracle.cleanup.residual_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-FOUNDATION-002:cleanup_residual"
+}
+
+function Assert-OpsInstallCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-OPS-001" @("REQ-OPS-001", "REQ-SAFE-004") "5a6J6KOFUFJPRFVDVC0wLjHjgII=" "ops-clean-install-b-v1" @("preflight", "package_verification", "installation", "isolated_smoke", "receipt") @(
+        "preflight_write", "package_hash_mismatch_accepted", "partial_installation_promoted", "formal_jsonl_created",
+        "sample_business_record_created", "smoke_wrote_official_data", "smoke_residual", "foundation_claimed_as_product"
+    )
+    Assert-OpsExactProperties $Case.oracle.preflight @("read_only", "compatible", "official_create_count") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:preflight"
+    Assert-OpsEqual $true $Case.oracle.preflight.read_only "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:preflight_read_only"
+    Assert-OpsEqual $true $Case.oracle.preflight.compatible "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:compatible"
+    Assert-OpsEqual 0 ([int]$Case.oracle.preflight.official_create_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:preflight_create"
+    Assert-OpsExactProperties $Case.oracle.package_verification @("hash_match", "verified_before_staging") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:package"
+    Assert-OpsEqual $true $Case.oracle.package_verification.hash_match "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:hash"
+    Assert-OpsEqual $true $Case.oracle.package_verification.verified_before_staging "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:verify_order"
+    Assert-OpsExactProperties $Case.oracle.installation @(
+        "route", "storage", "schema_version", "business_record_count", "formal_jsonl_count", "atomic_promotion"
+    ) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:installation"
+    Assert-OpsEqual "B" ([string]$Case.oracle.installation.route) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:route"
+    Assert-OpsEqual "sqlite" ([string]$Case.oracle.installation.storage) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:storage"
+    Assert-OpsEqual 1 ([int]$Case.oracle.installation.schema_version) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:schema"
+    Assert-OpsEqual 0 ([int]$Case.oracle.installation.business_record_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:records"
+    Assert-OpsEqual 0 ([int]$Case.oracle.installation.formal_jsonl_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:jsonl"
+    Assert-OpsEqual $true $Case.oracle.installation.atomic_promotion "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:atomic"
+    Assert-OpsExactProperties $Case.oracle.isolated_smoke @("official_write_count", "cleanup_succeeded", "residual_count") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:smoke"
+    Assert-OpsEqual 0 ([int]$Case.oracle.isolated_smoke.official_write_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:smoke_write"
+    Assert-OpsEqual $true $Case.oracle.isolated_smoke.cleanup_succeeded "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:smoke_cleanup"
+    Assert-OpsEqual 0 ([int]$Case.oracle.isolated_smoke.residual_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:smoke_residual"
+    Assert-OpsExactProperties $Case.oracle.receipt @("product_version", "foundation_presented_as_product", "official_data_impact_count") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:receipt"
+    Assert-OpsEqual "0.1.0" ([string]$Case.oracle.receipt.product_version) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:product"
+    Assert-OpsEqual $false $Case.oracle.receipt.foundation_presented_as_product "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:foundation"
+    Assert-OpsEqual 0 ([int]$Case.oracle.receipt.official_data_impact_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-001:impact"
+}
+
+function Assert-OpsMigrationCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-OPS-003" @("REQ-OPS-002") "5oqK546w5pyJ5pWw5o2u5Y2H57qn5Yiw5paw54mI5pys44CC" "ops-migration-interrupted-v1" @("migration_failure", "old_state_after_failure", "retry") @(
+        "migration_without_verified_backup", "candidate_activated_after_failure", "schema_version_advanced_after_failure",
+        "product_version_advanced_after_failure", "old_data_unreadable", "partial_target_visible", "success_receipt_visible", "partial_resume"
+    )
+    Assert-OpsExactProperties $Case.oracle.migration_failure @(
+        "error_code", "candidate_activated", "success_receipt_visible", "schema_version_after", "product_version_after"
+    ) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:failure"
+    Assert-OpsEqual "migration_interrupted" ([string]$Case.oracle.migration_failure.error_code) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:error"
+    Assert-OpsEqual $false $Case.oracle.migration_failure.candidate_activated "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:activated"
+    Assert-OpsEqual $false $Case.oracle.migration_failure.success_receipt_visible "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:receipt"
+    Assert-OpsEqual 1 ([int]$Case.oracle.migration_failure.schema_version_after) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:schema"
+    Assert-OpsEqual "0.1.0" ([string]$Case.oracle.migration_failure.product_version_after) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:product"
+    Assert-OpsExactProperties $Case.oracle.old_state_after_failure @("readable", "record_count", "bytes_unchanged", "partial_target_visible") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:old_state"
+    Assert-OpsEqual $true $Case.oracle.old_state_after_failure.readable "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:readable"
+    Assert-OpsEqual 2 ([int]$Case.oracle.old_state_after_failure.record_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:records"
+    Assert-OpsEqual $true $Case.oracle.old_state_after_failure.bytes_unchanged "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:bytes"
+    Assert-OpsEqual $false $Case.oracle.old_state_after_failure.partial_target_visible "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:partial"
+    Assert-OpsExactProperties $Case.oracle.retry @("fresh_attempt_required", "resume_partial_allowed") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:retry"
+    Assert-OpsEqual $true $Case.oracle.retry.fresh_attempt_required "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:fresh"
+    Assert-OpsEqual $false $Case.oracle.retry.resume_partial_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-003:resume"
+}
+
+function Assert-OpsCandidateCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-OPS-010" @("REQ-OPS-004") "5pmL57qn5bey57uP6YCa6L+H5YWo6YOo6Zeo55qE5YCZ6YCJ44CC" "ops-candidate-byte-drift-v1" @("candidate_integrity", "invalidation", "release") @(
+        "changed_bytes_accepted", "old_manifest_reused", "old_evidence_reused", "candidate_promoted",
+        "release_rebuilt", "release_patched", "dependency_substituted", "affected_gates_skipped"
+    )
+    Assert-OpsExactProperties $Case.oracle.candidate_integrity @("original_sha256", "changed_sha256", "bytes_identical") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:integrity"
+    Assert-OpsEqual "A1F76240BECC09AA5DA27649576AD7826FBA9CCB013C3F862C5E30E78447B5B6" ([string]$Case.oracle.candidate_integrity.original_sha256) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:original_sha"
+    Assert-OpsEqual "1502B0E6A925440961349C5A7FED919B96B8D64FD4B56EBB179BBB076EAA90EC" ([string]$Case.oracle.candidate_integrity.changed_sha256) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:changed_sha"
+    Assert-OpsEqual $false $Case.oracle.candidate_integrity.bytes_identical "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:identical"
+    Assert-OpsExactProperties $Case.oracle.invalidation @("candidate_status", "previous_evidence_valid", "new_manifest_required", "affected_gates_rerun") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:invalidation"
+    Assert-OpsEqual "invalidated" ([string]$Case.oracle.invalidation.candidate_status) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:status"
+    Assert-OpsEqual $false $Case.oracle.invalidation.previous_evidence_valid "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:evidence"
+    Assert-OpsEqual $true $Case.oracle.invalidation.new_manifest_required "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:manifest"
+    Assert-OpsEqual $true $Case.oracle.invalidation.affected_gates_rerun "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:gates"
+    Assert-OpsExactProperties $Case.oracle.release @("promotion_allowed", "rebuild_allowed", "patch_allowed", "substitution_allowed") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:release"
+    Assert-OpsEqual $false $Case.oracle.release.promotion_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:promotion"
+    Assert-OpsEqual $false $Case.oracle.release.rebuild_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:rebuild"
+    Assert-OpsEqual $false $Case.oracle.release.patch_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:patch"
+    Assert-OpsEqual $false $Case.oracle.release.substitution_allowed "OPS_SECURITY_CASE_VALUE_INVALID:CASE-OPS-010:substitution"
+}
+
+function Assert-OpsExportCase {
+    param($Case)
+
+    Assert-OpsCaseCommon $Case "CASE-EXPORT-004" @("REQ-EXPORT-BASE-001", "REQ-OPS-002", "REQ-OPS-003") "55So6L+Z5Liq5pyA5bCP55So5oi35a+85Ye65oGi5aSN5YWo6YOo5pWw5o2u44CC" "ops-minimal-export-restore-reject-v1" @("export", "restore_rejection", "official_state") @(
+        "minimal_export_labeled_as_backup", "minimal_export_restored", "official_data_replaced_before_validation",
+        "official_data_deleted_before_validation", "schema_migrated_before_validation", "version_changed", "success_receipt_visible"
+    )
+    Assert-OpsExactProperties $Case.oracle.export @("artifact_type", "readable", "restorable") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:export"
+    Assert-OpsEqual "minimal_user_export" ([string]$Case.oracle.export.artifact_type) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:type"
+    Assert-OpsEqual $true $Case.oracle.export.readable "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:readable"
+    Assert-OpsEqual $false $Case.oracle.export.restorable "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:restorable"
+    Assert-OpsExactProperties $Case.oracle.restore_rejection @("status", "error_code", "missing_backup_capabilities") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:rejection"
+    Assert-OpsEqual "rejected" ([string]$Case.oracle.restore_rejection.status) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:status"
+    Assert-OpsEqual "not_restorable_backup" ([string]$Case.oracle.restore_rejection.error_code) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:error"
+    Assert-OpsExactStringArray @("backup_manifest", "complete_schema", "idempotency_state", "integrity_check") $Case.oracle.restore_rejection.missing_backup_capabilities "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:capabilities"
+    Assert-OpsExactProperties $Case.oracle.official_state @("replacement_count", "deletion_count", "migration_count", "version_unchanged") "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:official"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_state.replacement_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:replacement"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_state.deletion_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:deletion"
+    Assert-OpsEqual 0 ([int]$Case.oracle.official_state.migration_count) "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:migration"
+    Assert-OpsEqual $true $Case.oracle.official_state.version_unchanged "OPS_SECURITY_CASE_VALUE_INVALID:CASE-EXPORT-004:version"
+}
+
+function Assert-OpsCases {
+    param($CaseSet)
+
+    Assert-OpsPrivacyCase (Get-OpsCaseById $CaseSet "CASE-PRIV-001")
+    Assert-OpsFoundationCase (Get-OpsCaseById $CaseSet "CASE-FOUNDATION-002")
+    Assert-OpsInstallCase (Get-OpsCaseById $CaseSet "CASE-OPS-001")
+    Assert-OpsMigrationCase (Get-OpsCaseById $CaseSet "CASE-OPS-003")
+    Assert-OpsCandidateCase (Get-OpsCaseById $CaseSet "CASE-OPS-010")
+    Assert-OpsExportCase (Get-OpsCaseById $CaseSet "CASE-EXPORT-004")
+}
+
 function Test-OpsSecurityCasesCandidate {
     param($CaseSet)
 
@@ -504,6 +705,7 @@ function Test-OpsSecurityCasesCandidate {
     foreach ($id in $ExpectedOpsCaseIds) {
         [void](Get-OpsCaseById $CaseSet $id)
     }
+    Assert-OpsCases $CaseSet
 }
 
 function Test-OpsSecurityFixtureCandidate {

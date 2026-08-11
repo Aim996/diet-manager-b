@@ -1,6 +1,6 @@
 {
   "case_set_id": "diet-manager/core-acceptance-cases-v1",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "contract": {
     "contract_id": "diet-manager/contract-v2",
     "contract_version": 2
@@ -398,6 +398,208 @@
         }
       },
       "forbidden": ["business_write_on_conflict", "old_result_masquerades_as_new_result", "original_record_mutation"]
+    },
+    {
+      "id": "CASE-PRIV-001",
+      "requirement_ids": ["REQ-PRIV-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "查询这个牛奶的公共营养信息。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-privacy-public-nutrition-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "privacy": {
+          "allowed_external_fields": ["normalized_name", "brand", "variant", "specification", "preparation_state", "region"],
+          "forbidden_external_fields": ["user_name", "raw_chat", "meal_history", "inventory_summary", "goals", "api_token"],
+          "ordinary_log_redacted": true,
+          "secret_isolated": true,
+          "business_write_count": 0
+        },
+        "fallback": {
+          "credential_missing_strategy": "cache_template_unknown",
+          "invented_nutrition_values": false
+        }
+      },
+      "forbidden": ["user_identity_disclosed", "raw_chat_disclosed", "history_disclosed", "inventory_disclosed", "goals_disclosed", "secret_disclosed", "business_write", "unknown_nutrition_filled_with_zero"]
+    },
+    {
+      "id": "CASE-FOUNDATION-002",
+      "requirement_ids": ["REQ-SAFE-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "运行foundation验证并比较前后正式业务数据。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-foundation-zero-diff-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "official_manifest": {
+          "after_scan_on_failure": true,
+          "added_count": 0,
+          "modified_count": 0,
+          "deleted_count": 0,
+          "sidecar_count": 1,
+          "path_escape_count": 0
+        },
+        "validation_failure": {
+          "failure_stage": "plugin_validation",
+          "technical_log_allowed": true,
+          "technical_log_counts_as_record": false
+        },
+        "cleanup": {
+          "attempted": true,
+          "succeeded": true,
+          "residual_count": 0
+        }
+      },
+      "forbidden": ["official_file_added", "official_file_modified", "official_file_deleted", "sidecar_omitted", "after_scan_skipped_on_failure", "path_escape", "temporary_residual", "technical_log_counted_as_record"]
+    },
+    {
+      "id": "CASE-OPS-001",
+      "requirement_ids": ["REQ-OPS-001", "REQ-SAFE-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "安装PRODUCT-0.1。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-clean-install-b-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "preflight": {
+          "read_only": true,
+          "compatible": true,
+          "official_create_count": 0
+        },
+        "package_verification": {
+          "hash_match": true,
+          "verified_before_staging": true
+        },
+        "installation": {
+          "route": "B",
+          "storage": "sqlite",
+          "schema_version": 1,
+          "business_record_count": 0,
+          "formal_jsonl_count": 0,
+          "atomic_promotion": true
+        },
+        "isolated_smoke": {
+          "official_write_count": 0,
+          "cleanup_succeeded": true,
+          "residual_count": 0
+        },
+        "receipt": {
+          "product_version": "0.1.0",
+          "foundation_presented_as_product": false,
+          "official_data_impact_count": 0
+        }
+      },
+      "forbidden": ["preflight_write", "package_hash_mismatch_accepted", "partial_installation_promoted", "formal_jsonl_created", "sample_business_record_created", "smoke_wrote_official_data", "smoke_residual", "foundation_claimed_as_product"]
+    },
+    {
+      "id": "CASE-OPS-003",
+      "requirement_ids": ["REQ-OPS-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "把现有数据升级到新版本。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-migration-interrupted-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "migration_failure": {
+          "error_code": "migration_interrupted",
+          "candidate_activated": false,
+          "success_receipt_visible": false,
+          "schema_version_after": 1,
+          "product_version_after": "0.1.0"
+        },
+        "old_state_after_failure": {
+          "readable": true,
+          "record_count": 2,
+          "bytes_unchanged": true,
+          "partial_target_visible": false
+        },
+        "retry": {
+          "fresh_attempt_required": true,
+          "resume_partial_allowed": false
+        }
+      },
+      "forbidden": ["migration_without_verified_backup", "candidate_activated_after_failure", "schema_version_advanced_after_failure", "product_version_advanced_after_failure", "old_data_unreadable", "partial_target_visible", "success_receipt_visible", "partial_resume"]
+    },
+    {
+      "id": "CASE-OPS-010",
+      "requirement_ids": ["REQ-OPS-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "晋级已经通过全部门的候选。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-candidate-byte-drift-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "candidate_integrity": {
+          "original_sha256": "A1F76240BECC09AA5DA27649576AD7826FBA9CCB013C3F862C5E30E78447B5B6",
+          "changed_sha256": "1502B0E6A925440961349C5A7FED919B96B8D64FD4B56EBB179BBB076EAA90EC",
+          "bytes_identical": false
+        },
+        "invalidation": {
+          "candidate_status": "invalidated",
+          "previous_evidence_valid": false,
+          "new_manifest_required": true,
+          "affected_gates_rerun": true
+        },
+        "release": {
+          "promotion_allowed": false,
+          "rebuild_allowed": false,
+          "patch_allowed": false,
+          "substitution_allowed": false
+        }
+      },
+      "forbidden": ["changed_bytes_accepted", "old_manifest_reused", "old_evidence_reused", "candidate_promoted", "release_rebuilt", "release_patched", "dependency_substituted", "affected_gates_skipped"]
+    },
+    {
+      "id": "CASE-EXPORT-004",
+      "requirement_ids": ["REQ-EXPORT-BASE-001", "REQ-OPS-002", "REQ-OPS-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "用这个最小用户导出恢复全部数据。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": null,
+        "query_view_fixture": null,
+        "ops_security_fixture": "ops-minimal-export-restore-reject-v1",
+        "prior_context": []
+      },
+      "oracle": {
+        "export": {
+          "artifact_type": "minimal_user_export",
+          "readable": true,
+          "restorable": false
+        },
+        "restore_rejection": {
+          "status": "rejected",
+          "error_code": "not_restorable_backup",
+          "missing_backup_capabilities": ["backup_manifest", "complete_schema", "idempotency_state", "integrity_check"]
+        },
+        "official_state": {
+          "replacement_count": 0,
+          "deletion_count": 0,
+          "migration_count": 0,
+          "version_unchanged": true
+        }
+      },
+      "forbidden": ["minimal_export_labeled_as_backup", "minimal_export_restored", "official_data_replaced_before_validation", "official_data_deleted_before_validation", "schema_migrated_before_validation", "version_changed", "success_receipt_visible"]
     }
   ]
 }
