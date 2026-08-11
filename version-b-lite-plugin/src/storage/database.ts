@@ -99,7 +99,7 @@ function expectedSchemaSql(statement: string): string {
   return statement.endsWith(";") ? statement.slice(0, -1) : statement;
 }
 
-function validateSchema(database: DatabaseSyncType): void {
+export function assertDietDatabaseIdentity(database: DatabaseSyncType): void {
   if (scalar(database, "PRAGMA application_id") !== DIET_DATABASE_APPLICATION_ID) {
     return fail("STORAGE_IDENTITY_INVALID:application_id");
   }
@@ -118,7 +118,7 @@ function validateSchema(database: DatabaseSyncType): void {
 
   const schemaRows = database
     .prepare(
-      "SELECT type, name, sql FROM sqlite_schema WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+      "SELECT type, name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
     )
     .all() as Array<{ type: string; name: string; sql: string }>;
   const actual = new Map(schemaRows.map((row) => [`${row.type}:${row.name}`, row.sql]));
@@ -209,7 +209,7 @@ function createFreshDatabase(
       now: (options.now ?? (() => new Date().toISOString()))(),
       fault: options.migrationFault,
     });
-    validateSchema(database);
+    assertDietDatabaseIdentity(database);
     database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
     database.close();
     database = undefined;
@@ -232,7 +232,7 @@ function validateExistingReadOnly(databasePath: string): void {
   let database: DatabaseSyncType | undefined;
   try {
     database = openConnection(databasePath, true);
-    validateSchema(database);
+    assertDietDatabaseIdentity(database);
   } finally {
     database?.close();
   }
@@ -255,7 +255,7 @@ export function openDietDatabase(options: OpenDietDatabaseOptions): DietDatabase
   const database = openConnection(databasePath);
   configureConnection(database);
   try {
-    validateSchema(database);
+    assertDietDatabaseIdentity(database);
   } catch (error) {
     database.close();
     throw error;
