@@ -23,6 +23,24 @@ export function computeRepositoryDataRevision(database: DatabaseSync): string {
        ORDER BY batch_id`,
     )
     .all();
+  const products = database
+    .prepare(
+      `SELECT
+        product_id, schema_version, normalized_name, product_type,
+        brand, manufacturer, barcode, sku, payload_json
+       FROM products
+       ORDER BY product_id`,
+    )
+    .all();
+  const batches = database
+    .prepare(
+      `SELECT
+        batch_id, product_id, stock_event_id, schema_version, committed_at,
+        stocked_at, explicit_expiration_at, quantity_unit, payload_json
+       FROM inventory_batches
+       ORDER BY batch_id`,
+    )
+    .all();
   const issues = database
     .prepare(
       `SELECT issue_id, issue_code, status, revision, resolved_at, payload_json
@@ -34,6 +52,8 @@ export function computeRepositoryDataRevision(database: DatabaseSync): string {
     authority_kind: "diet-manager/repository-revision/v1",
     events,
     inventory,
+    products,
+    batches,
     issues,
   })}`;
 }

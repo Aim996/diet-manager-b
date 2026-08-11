@@ -52,6 +52,23 @@ export interface InventoryEffectInput {
   now: string;
 }
 
+export interface PendingInventoryEffectsInput {
+  database: DatabaseSync;
+  limit: number;
+}
+
+export interface PendingInventoryEffect {
+  outbox_id: string;
+  envelope_id: string;
+  operation_id: string;
+  effect_id: string;
+  effect_kind: "inventory_add" | "inventory_deduct";
+  state: "pending" | "retryable_failed";
+  attempt_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type InventoryEffectFault =
   | "after_claim"
   | "after_business_writes"
@@ -835,6 +852,48 @@ function replayResult(database: DatabaseSync, row: OutboxEventRow): InventoryEff
     quantity_microunits: reason.quantity_microunits as number,
     unit: intent.unit,
   });
+}
+
+export function listPendingInventoryEffects(
+  input: PendingInventoryEffectsInput,
+): readonly PendingInventoryEffect[] {
+  const fields = exactDataProperties(input, ["database", "limit"] as const);
+  if (typeof fields.database.value !== "object" || fields.database.value === null) {
+    return invalid("database");
+  }
+  if (
+    !Number.isSafeInteger(fields.limit.value) ||
+    (fields.limit.value as number) < 1 ||
+    (fields.limit.value as number) > 1_000
+  ) {
+    return invalid("limit");
+  }
+  const database = fields.database.value as DatabaseSync;
+  assertCurrentMigrationAuthority(database);
+  const rows = database
+    .prepare(
+      `SELECT
+        outbox_id, envelope_id, operation_id, effect_id, effect_kind,
+        state, attempt_count, created_at, updated_at
+       FROM effect_outbox
+       WHERE state IN ('pending', 'retryable_failed')
+         AND effect_kind IN ('inventory_add', 'inventory_deduct')
+       ORDER BY created_at, outbox_id
+       LIMIT ?`,
+    )
+    .all(fields.limit.value) as unknown as PendingInventoryEffect[];
+  for (const row of rows) {
+    if (
+      (row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct") ||
+      (row.state !== "pending" && row.state !== "retryable_failed") ||
+      !Number.isSafeInteger(row.attempt_count) ||
+      row.attempt_count < 0
+    ) {
+      return authorityInvalid("pending_row");
+    }
+    Object.freeze(row);
+  }
+  return Object.freeze(rows);
 }
 
 export function processInventoryEffect(

@@ -523,6 +523,39 @@ function replayResult(database, row) {
         unit: intent.unit,
     });
 }
+export function listPendingInventoryEffects(input) {
+    const fields = exactDataProperties(input, ["database", "limit"]);
+    if (typeof fields.database.value !== "object" || fields.database.value === null) {
+        return invalid("database");
+    }
+    if (!Number.isSafeInteger(fields.limit.value) ||
+        fields.limit.value < 1 ||
+        fields.limit.value > 1_000) {
+        return invalid("limit");
+    }
+    const database = fields.database.value;
+    assertCurrentMigrationAuthority(database);
+    const rows = database
+        .prepare(`SELECT
+        outbox_id, envelope_id, operation_id, effect_id, effect_kind,
+        state, attempt_count, created_at, updated_at
+       FROM effect_outbox
+       WHERE state IN ('pending', 'retryable_failed')
+         AND effect_kind IN ('inventory_add', 'inventory_deduct')
+       ORDER BY created_at, outbox_id
+       LIMIT ?`)
+        .all(fields.limit.value);
+    for (const row of rows) {
+        if ((row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct") ||
+            (row.state !== "pending" && row.state !== "retryable_failed") ||
+            !Number.isSafeInteger(row.attempt_count) ||
+            row.attempt_count < 0) {
+            return authorityInvalid("pending_row");
+        }
+        Object.freeze(row);
+    }
+    return Object.freeze(rows);
+}
 export function processInventoryEffect(input, options) {
     const frozen = freezeInput(input);
     const frozenOptions = freezeOptions(options);

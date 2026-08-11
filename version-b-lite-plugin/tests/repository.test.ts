@@ -20,6 +20,7 @@ import {
   type PreparedFactCommit,
 } from "../src/repository/fact-commit.js";
 import {
+  listPendingInventoryEffects,
   processInventoryEffect,
   type InventoryEffectInput,
 } from "../src/repository/inventory-effects.js";
@@ -604,6 +605,45 @@ describe("B-STOR-002 FactCommit", () => {
     }
   });
 
+  test("includes authoritative product rows in the server repository revision", () => {
+    const fixture = createFixture();
+    try {
+      const previewRevision = fixture.input.dataRevision;
+      fixture.runtime.database
+        .prepare(
+          `INSERT INTO products(
+             product_id, schema_version, normalized_name, product_type,
+             brand, manufacturer, barcode, sku, payload_json
+           ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`,
+        )
+        .run(
+          "product-revision-only-001",
+          "domain/v2",
+          "revision-only-product",
+          "synthetic_product",
+          JSON.stringify({ contract: "B-STOR-002/revision-product/v1" }),
+        );
+
+      expect(computeRepositoryDataRevision(fixture.runtime.database)).not.toBe(
+        previewRevision,
+      );
+      const before = tableCounts(fixture.runtime.database);
+      expect(() => commitPreparedFact(fixture.input)).toThrow(
+        "PREVIEW_STALE:data_revision",
+      );
+      expect(tableCounts(fixture.runtime.database)).toEqual(before);
+      expect(
+        scalar(
+          fixture.runtime.database,
+          "SELECT COUNT(*) FROM event_records WHERE envelope_id = 'preview-repository-001'",
+        ),
+      ).toBe(0);
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      disposeFixture(fixture);
+    }
+  });
+
   test("rejects active request members before reading them or opening SQL", () => {
     const fixture = createFixture();
     let getterCalls = 0;
@@ -782,6 +822,41 @@ describe("B-STOR-002 inventory EffectBundle", () => {
       expectIntegrity(fixture.runtime.database);
     } finally {
       disposeFixture(fixture);
+    }
+  });
+
+  test("discovers pending inventory work deterministically after database reopen", () => {
+    const fixture = createFixture();
+    let reopened: ReturnType<typeof openDietDatabase> | undefined;
+    try {
+      commitPreparedFact(addFact(fixture.runtime.database));
+      fixture.runtime.close();
+      reopened = openDietDatabase({ privateRuntimeRoot: fixture.root });
+
+      const pending = listPendingInventoryEffects({
+        database: reopened.database,
+        limit: 10,
+      });
+      expect(pending).toEqual([
+        {
+          outbox_id: "outbox-inventory-1",
+          envelope_id: "preview-inventory-1",
+          operation_id: "operation-inventory-1",
+          effect_id: "effect-inventory-1",
+          effect_kind: "inventory_add",
+          state: "pending",
+          attempt_count: 0,
+          created_at: "2026-08-12T02:01:01.000Z",
+          updated_at: "2026-08-12T02:01:01.000Z",
+        },
+      ]);
+      expect(Object.isFrozen(pending)).toBe(true);
+      expect(Object.isFrozen(pending[0])).toBe(true);
+      expectIntegrity(reopened.database);
+    } finally {
+      reopened?.close();
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
     }
   });
 
