@@ -37,7 +37,13 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-OPS-001",
     "CASE-OPS-003",
     "CASE-OPS-010",
-    "CASE-EXPORT-004"
+    "CASE-EXPORT-004",
+    "CASE-RECEIPT-002",
+    "CASE-RECEIPT-004",
+    "CASE-RECEIPT-005",
+    "CASE-RECEIPT-006",
+    "CASE-PROGRESS-006",
+    "CASE-STORAGE-006"
 )
 
 $ExpectedOpsCaseIds = @(
@@ -677,7 +683,7 @@ function Test-OpsSecurityCasesCandidate {
         "case_set_id", "version", "contract", "fixture_catalog", "package_invariants", "cases"
     ) "OPS_SECURITY_CASE_SET_SHAPE_INVALID:root"
     Assert-OpsEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "OPS_SECURITY_CASE_SET_ID_INVALID"
-    Assert-OpsEqual "1.2.0" ([string]$CaseSet.version) "OPS_SECURITY_CASE_SET_VERSION_INVALID"
+    Assert-OpsEqual "1.3.0" ([string]$CaseSet.version) "OPS_SECURITY_CASE_SET_VERSION_INVALID"
     Assert-OpsExactProperties $CaseSet.contract @("contract_id", "contract_version") "OPS_SECURITY_CONTRACT_SHAPE_INVALID"
     Assert-OpsEqual "diet-manager/contract-v2" ([string]$CaseSet.contract.contract_id) "OPS_SECURITY_CONTRACT_ID_INVALID"
     Assert-OpsEqual 2 ([int]$CaseSet.contract.contract_version) "OPS_SECURITY_CONTRACT_VERSION_INVALID"
@@ -839,5 +845,5 @@ if (-not $LibraryOnly) {
 
         $mutationCount = 12
     }
-    "OPS_SECURITY_ACCEPTANCE_CASES|PASS|version=1.2.0|cases=6|scenarios=6|mutations={0}" -f $mutationCount
+    "OPS_SECURITY_ACCEPTANCE_CASES|PASS|version=1.3.0|cases=6|scenarios=6|mutations={0}" -f $mutationCount
 }

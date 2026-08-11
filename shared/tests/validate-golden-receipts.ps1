@@ -245,6 +245,12 @@ function Get-GoldenJsonValueSha256 {
     return Get-GoldenSha256 $utf8.GetBytes($json)
 }
 
+function Copy-GoldenJson {
+    param($Value)
+
+    return ($Value | ConvertTo-Json -Depth 64 -Compress | ConvertFrom-Json)
+}
+
 function Test-GoldenNumber {
     param($Value)
 
@@ -356,6 +362,7 @@ function Assert-GoldenQuickOptions {
     Assert-GoldenTrue ([string]$prompt.issue_code -ceq 'quantity_estimated') ("${code}:issue_code")
     Assert-GoldenTrue ([string]$prompt.status -ceq 'awaiting_user') ("${code}:status")
     Assert-GoldenTrue ($prompt.option_count -is [int] -and [int]$prompt.option_count -ge 2 -and [int]$prompt.option_count -le 4) ("${code}:count")
+    Assert-GoldenTrue ([string]$prompt.safe_exit_option -ceq 'D') ("${code}:safe_exit_option")
 
     $optionLines = @($Lines | Where-Object { $_ -cmatch '^[A-D]\. ' })
     Assert-GoldenTrue ($optionLines.Count -eq [int]$prompt.option_count) ("${code}:line_count")
@@ -578,6 +585,233 @@ function Test-GoldenReceiptsCandidate {
     }
 }
 
+function Get-GoldenMutationEntry {
+    param(
+        $Context,
+        [string]$CaseId
+    )
+
+    $entries = @($Context.Catalog.entries | Where-Object { [string]$_.case_id -ceq $CaseId })
+    Assert-GoldenTrue ($entries.Count -eq 1) ('GOLDEN_MUTATION_ENTRY:{0}' -f $CaseId)
+    return $entries[0]
+}
+
+function Get-GoldenMutationTextPath {
+    param(
+        $Context,
+        [string]$CaseId
+    )
+
+    $entry = Get-GoldenMutationEntry $Context $CaseId
+    return Resolve-GoldenTextPath ([string]$Context.SharedRoot) ([string]$entry.text_path) $CaseId
+}
+
+function Set-GoldenMutationText {
+    param(
+        $Context,
+        [string]$CaseId,
+        [string]$Text
+    )
+
+    Assert-GoldenTrue ($Text.Length -gt 0 -and $Text.EndsWith("`n", [StringComparison]::Ordinal)) ('GOLDEN_MUTATION_TEXT_TERMINAL:{0}' -f $CaseId)
+    Assert-GoldenTrue (-not $Text.EndsWith("`n`n", [StringComparison]::Ordinal)) ('GOLDEN_MUTATION_TEXT_EXTRA_TERMINAL:{0}' -f $CaseId)
+    $entry = Get-GoldenMutationEntry $Context $CaseId
+    $path = Get-GoldenMutationTextPath $Context $CaseId
+    $utf8 = New-Object Text.UTF8Encoding($false, $true)
+    $bytes = $utf8.GetBytes($Text)
+    [IO.File]::WriteAllBytes($path, $bytes)
+    $entry.utf8_length = $bytes.Count
+    $entry.sha256 = Get-GoldenSha256 $bytes
+    $entry.line_count = @($Text.Substring(0, $Text.Length - 1) -split "`n", -1).Count
+}
+
+function Invoke-GoldenMutation {
+    param(
+        [string]$Name,
+        [string]$ExpectedPrefix,
+        [scriptblock]$Mutator
+    )
+
+    Assert-GoldenTrue ($null -ne $script:GoldenMutationCaseSet) 'GOLDEN_MUTATION_BASELINE_MISSING'
+    Assert-GoldenTrue ($null -ne $script:GoldenMutationCatalog) 'GOLDEN_MUTATION_CATALOG_MISSING'
+    Assert-GoldenTrue (-not [string]::IsNullOrWhiteSpace($script:GoldenMutationSharedRoot)) 'GOLDEN_MUTATION_ROOT_MISSING'
+
+    $leaf = 'sh-case-004-golden-' + [guid]::NewGuid().ToString('N')
+    Assert-GoldenTrue ($leaf -cmatch '^sh-case-004-golden-[0-9a-f]{32}$') 'GOLDEN_MUTATION_TEMP_LEAF'
+    $systemTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
+    $testRoot = [IO.Path]::GetFullPath((Join-Path $systemTemp $leaf))
+    Assert-GoldenTrue ((Split-Path -Parent $testRoot) -ceq $systemTemp) 'GOLDEN_MUTATION_TEMP_OWNER'
+    $testSharedRoot = Join-Path $testRoot 'shared'
+    $testGoldenRoot = Join-Path $testSharedRoot 'acceptance-cases\golden-receipts'
+
+    try {
+        $null = [IO.Directory]::CreateDirectory($testGoldenRoot)
+        $sourceGoldenRoot = Join-Path $script:GoldenMutationSharedRoot 'acceptance-cases\golden-receipts'
+        foreach ($sourcePath in [IO.Directory]::GetFiles($sourceGoldenRoot)) {
+            $sourceItem = Get-Item -LiteralPath $sourcePath -Force
+            Assert-GoldenTrue (-not $sourceItem.PSIsContainer -and ($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) 'GOLDEN_MUTATION_SOURCE_INVALID'
+            $destinationPath = Join-Path $testGoldenRoot ([IO.Path]::GetFileName($sourcePath))
+            [IO.File]::Copy($sourcePath, $destinationPath, $false)
+        }
+
+        $context = [pscustomobject][ordered]@{
+            CaseSet = Copy-GoldenJson $script:GoldenMutationCaseSet
+            Catalog = Copy-GoldenJson $script:GoldenMutationCatalog
+            SharedRoot = $testSharedRoot
+        }
+        & $Mutator $context
+
+        $observed = $null
+        try {
+            $null = Test-GoldenReceiptsCandidate $context.CaseSet $context.Catalog $context.SharedRoot
+        }
+        catch {
+            $observed = [string]$_.Exception.Message
+        }
+
+        if ($null -eq $observed) {
+            throw ('MUTATION_SURVIVED:{0}' -f $Name)
+        }
+        if (-not $observed.StartsWith($ExpectedPrefix, [StringComparison]::Ordinal)) {
+            throw ('MUTATION_WRONG_FAILURE:{0}:expected={1}:actual={2}' -f $Name, $ExpectedPrefix, $observed)
+        }
+        Write-Output ('{0}|PASS|rejected={1}' -f $Name, $observed)
+    }
+    finally {
+        if ([IO.Directory]::Exists($testRoot)) {
+            $item = Get-Item -LiteralPath $testRoot -Force
+            Assert-GoldenTrue ($item.PSIsContainer -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) 'GOLDEN_MUTATION_TEMP_INVALID'
+            [IO.Directory]::Delete($testRoot, $true)
+        }
+        Assert-GoldenTrue (-not [IO.Directory]::Exists($testRoot)) 'GOLDEN_MUTATION_TEMP_RESIDUAL'
+    }
+}
+
+function Invoke-GoldenMutationSuite {
+    param(
+        $CaseSet,
+        $Catalog,
+        [string]$Root
+    )
+
+    $script:GoldenMutationCaseSet = $CaseSet
+    $script:GoldenMutationCatalog = $Catalog
+    $script:GoldenMutationSharedRoot = $Root
+    try {
+        Invoke-GoldenMutation 'MUT-GOLDEN-TEXT-BYTE' 'GOLDEN_TEXT_SHA256:CASE-EFFECT-003' {
+            param($context)
+            $path = Get-GoldenMutationTextPath $context 'CASE-EFFECT-003'
+            $utf8 = New-Object Text.UTF8Encoding($false, $true)
+            $text = $utf8.GetString([IO.File]::ReadAllBytes($path))
+            $replacement = Convert-GoldenCodePointsToString @(0x98DF)
+            [IO.File]::WriteAllBytes($path, $utf8.GetBytes($replacement + $text.Substring(1)))
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-CRLF' 'GOLDEN_TEXT_CR:CASE-EFFECT-003' {
+            param($context)
+            $path = Get-GoldenMutationTextPath $context 'CASE-EFFECT-003'
+            $bytes = [IO.File]::ReadAllBytes($path)
+            $mutated = New-Object byte[] ($bytes.Count + 1)
+            [Array]::Copy($bytes, 0, $mutated, 0, $bytes.Count - 1)
+            $mutated[$bytes.Count - 1] = 13
+            $mutated[$bytes.Count] = 10
+            [IO.File]::WriteAllBytes($path, $mutated)
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-COMPONENT-SPLIT' 'GOLDEN_MULTI_DISH_ITEM_COUNT' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-RECEIPT-001'
+            $path = Get-GoldenMutationTextPath $context 'CASE-RECEIPT-001'
+            $utf8 = New-Object Text.UTF8Encoding($false, $true)
+            $text = $utf8.GetString([IO.File]::ReadAllBytes($path))
+            $lines = @($text.Substring(0, $text.Length - 1) -split "`n", -1)
+            $separator = [char]0x3001
+            $splitIndex = $lines[1].IndexOf($separator)
+            Assert-GoldenTrue ($splitIndex -gt 0) 'GOLDEN_MUTATION_COMPONENT_SEPARATOR'
+            $left = $lines[1].Substring(0, $splitIndex)
+            $right = $lines[1].Substring($splitIndex + 1)
+            $newLines = @($lines[0], $left, $right) + @($lines[2..($lines.Count - 1)])
+            $entry.final_result.receipt_data.item_lines = @($left, $right) + @($entry.final_result.receipt_data.item_lines[1..3])
+            Set-GoldenMutationText $context 'CASE-RECEIPT-001' (($newLines -join "`n") + "`n")
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-EXPLICIT-ESTIMATED' 'GOLDEN_EXPLICIT_FIELD_ESTIMATED:CASE-RECEIPT-002' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-RECEIPT-002'
+            $path = Get-GoldenMutationTextPath $context 'CASE-RECEIPT-002'
+            $utf8 = New-Object Text.UTF8Encoding($false, $true)
+            $text = $utf8.GetString([IO.File]::ReadAllBytes($path))
+            $database = Convert-GoldenCodePointsToString @(0x53C2, 0x8003, 0x6570, 0x636E, 0x5E93)
+            $estimate = Convert-GoldenCodePointsToString @(0x4F30, 0x7B97)
+            $oldLine = [string]$entry.final_result.receipt_data.item_lines[0]
+            $newLine = $oldLine.Replace($database, $estimate)
+            $entry.final_result.receipt_data.item_lines[0] = $newLine
+            $entry.required_literals[0] = $newLine
+            Set-GoldenMutationText $context 'CASE-RECEIPT-002' $text.Replace($oldLine, $newLine)
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-PROGRESS-NOT-LAST' 'GOLDEN_PROGRESS_START:CASE-PROGRESS-006' {
+            param($context)
+            $path = Get-GoldenMutationTextPath $context 'CASE-PROGRESS-006'
+            $utf8 = New-Object Text.UTF8Encoding($false, $true)
+            $text = $utf8.GetString([IO.File]::ReadAllBytes($path))
+            Set-GoldenMutationText $context 'CASE-PROGRESS-006' ($text + "unexpected-tail`n")
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-POST-PROGRESS-ADVICE' 'GOLDEN_TEXT_FORBIDDEN_LITERAL:CASE-RECEIPT-004' {
+            param($context)
+            $path = Get-GoldenMutationTextPath $context 'CASE-RECEIPT-004'
+            $utf8 = New-Object Text.UTF8Encoding($false, $true)
+            $text = $utf8.GetString([IO.File]::ReadAllBytes($path))
+            $advice = Convert-GoldenCodePointsToString @(0x5EFA, 0x8BAE)
+            Set-GoldenMutationText $context 'CASE-RECEIPT-004' ($text + $advice + "`n")
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-QUICK-SAFE-EXIT' 'GOLDEN_QUICK_OPTIONS:CASE-RECEIPT-002:safe_exit_option' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-RECEIPT-002'
+            $entry.final_result.receipt_data.issue_prompt.safe_exit_option = 'C'
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-QUICK-FREE-TEXT-LINE' 'GOLDEN_QUICK_OPTIONS:CASE-RECEIPT-002:free_text_position' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-RECEIPT-002'
+            $entry.final_result.receipt_data.issue_prompt.free_text_line = 'different-free-text-line'
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-REPLAY-USES-LATEST' 'GOLDEN_REPLAY:CASE-STORAGE-006:retry_expectation' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-STORAGE-006'
+            $entry.final_result.retry_expectation = 'latest_totals'
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-MULTI-DATE-ALIAS' 'GOLDEN_CROSS_DAY:CASE-STORAGE-006:original_shape' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-STORAGE-006'
+            $entry.final_result.original_result | Add-Member -NotePropertyName daily_progress -NotePropertyValue $entry.final_result.original_result.daily_progress_by_date[0]
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-CROSS-DATE-ORDER' 'GOLDEN_CROSS_DAY:CASE-STORAGE-006:date_0_value' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-STORAGE-006'
+            $first = $entry.final_result.original_result.daily_progress_by_date[0]
+            $second = $entry.final_result.original_result.daily_progress_by_date[1]
+            $entry.final_result.original_result.daily_progress_by_date = @($second, $first)
+        }
+
+        Invoke-GoldenMutation 'MUT-GOLDEN-PENDING-SUCCESS' 'GOLDEN_PENDING:CASE-EFFECT-003:receipt' {
+            param($context)
+            $entry = Get-GoldenMutationEntry $context 'CASE-EFFECT-003'
+            $entry.final_result.receipt_data = [pscustomobject][ordered]@{ title = 'success' }
+        }
+    }
+    finally {
+        $script:GoldenMutationCaseSet = $null
+        $script:GoldenMutationCatalog = $null
+        $script:GoldenMutationSharedRoot = $null
+    }
+}
+
 function Read-GoldenTextAsset {
     param(
         [string]$Path,
@@ -741,5 +975,6 @@ if (-not $LibraryOnly) {
     $catalog = Read-GoldenJson $catalogPath 'GOLDEN_MANIFEST_MISSING'
     $caseSet = Read-GoldenJson $caseSetPath 'GOLDEN_CASE_SET_MISSING'
     $result = Test-GoldenReceiptsCandidate $caseSet $catalog $SharedRoot
+    Invoke-GoldenMutationSuite $caseSet $catalog $SharedRoot
     Write-Output ('GOLDEN_RECEIPTS|PASS|case_version={0}|cases={1}|assets={2}' -f $result.case_version, $result.cases, $result.assets)
 }
