@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 294685,
-      "sha256": "3E0D4A5EB4C5F036CA90FA51378263ACE6EE07227F4A30F4E531FB07808B3637"
+      "length": 295085,
+      "sha256": "E8E113A76CD84F58F0FD1E9E95BB58C89BF37495EB143D6199AE04907F8B4DF9"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "A7A33653D1E9DFFF236A0918F063CBA1A95823DCF335C4E27B630E841F8F92B7"
+      "sha256": "0A58C198161E5AD153C216891259C5E48E504A4E47253A08F19E670517949329"
     }
   },
   "counts": {
-    "evidence": 28,
-    "files_present": 26,
+    "evidence": 29,
+    "files_present": 27,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -502,6 +502,24 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "B-MERGE-C-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-029",
+      "scope": "B-STOR-002 原子repository",
+      "result": "FactCommit、库存投影、outbox/effect、终态封存、幂等/响应丢失、重启恢复、同键并发和崩溃不可见；21项focused、69项B测试、真实worker并发/崩溃harness与OpenClaw本地插件门通过，独立复核P0=0/P1=0",
+      "limitation": "关闭B原子repository和“技术日志可有、饮食业务零半写入”边界；不代表G1门、业务纵切、安装、部署或产品可用",
+      "reference_ids": [
+        "B-STOR-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-029-b-stor-002.md",
+        "length": 3788,
+        "sha256": "5A0256BC95C2EB5841B673D48AD5AEA12E9E884E2A0DDA64B59931BB0099E748"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-STOR-002"
       ]
     }
   ]

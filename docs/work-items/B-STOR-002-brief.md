@@ -6,9 +6,9 @@
 - milestone: `M3`
 - type: `B-only transaction repository`
 - product_line: `B only`
-- status: `in_progress`
+- status: `complete`
 - owner: `Codex /root`
-- reviewer: `one bounded independent B repository review after candidate freeze`
+- reviewer: `OpenClaw 02; PASS P0=0/P1=0 at d66c55c`
 - requirements: `REQ-SAFE-002`, `REQ-SAFE-003`, `REQ-PANTRY-004`
 - cases: `CASE-STORAGE-001`, `CASE-STORAGE-002`, `CASE-STORAGE-006`, `CASE-STORAGE-007`, `CASE-EFFECT-003`, `CASE-INVENTORY-007`, `CASE-PURCHASE-001`, `CASE-QUERY-003`, `CASE-INVENTORY-001`, `CASE-INVENTORY-004`
 - roots: `ROOT-B`
