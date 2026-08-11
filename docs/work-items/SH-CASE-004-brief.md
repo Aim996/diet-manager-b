@@ -6,9 +6,9 @@
 - milestone: `M2`
 - type: `cases`
 - product_line: `B-only shared Oracle`
-- status: `in_progress`
+- status: `completed`
 - owner: `Codex /root`
-- reviewer: `one final independent interaction reviewer pending`
+- reviewer: `OpenClaw 02 independent public-clone review; P0=0/P1=0/P2=2`
 - full_case_set: `none`
 
 ## Objective

@@ -8,6 +8,8 @@
 
 **Tech Stack:** JSON, UTF-8 text fixtures, Windows PowerShell 5.1, Git.
 
+**Execution status:** Completed on 2026-08-12. Reviewed public candidate `072c1fb9ed4242a39b7b1aeaf1c134d5d1c33508` passed with `P0=0/P1=0/P2=2`; closure evidence is `EV-20260812-024`. The unchecked boxes below remain the original executable instructions, not outstanding work.
+
 ## Global Constraints
 
 - Work only on branch `agent/sh-case-004-golden-receipts`, based on completed `SH-CASE-003` commit `b07df0461379f8998c14344e4d7e0087302665e7`.

@@ -6,7 +6,7 @@
 - branch: `agent/sh-case-004-golden-receipts`
 - base: `b07df0461379f8998c14344e4d7e0087302665e7`
 - implementation head before review documents: `7845ea5cf626ab27024c0444908d218351859f9c`
-- status: `local_verification_passed_review_pending`
+- status: `independent_review_passed`
 - product state: static golden Oracle and acceptance cases only
 - model-budget policy: deterministic local validation first; at most one final independent OpenClaw review
 
@@ -182,9 +182,17 @@ The five protected domain lease files were compared by path name only and were n
 - Avoided repeating the heavy Windows safety-foundation work; this task contains only the small path/reparse checks needed to protect its temporary mutation copies.
 - Kept all routine work local and deterministic, reserving model use for one final review.
 
-## Pending
+## Independent review
 
-- one independent public-candidate review
-- closure evidence and Plan 0.3/progress update after P0=0/P1=0
+The public candidate `072c1fb9ed4242a39b7b1aeaf1c134d5d1c33508` passed one independent OpenClaw 02 review:
+
+```text
+SH_CASE_004_REVIEW|PASS|P0=0|P1=0|P2=2|sha=072c1fb9ed4242a39b7b1aeaf1c134d5d1c33508|cleanup=1
+```
+
+The two P2 items are optional hardening for per-case Oracle-key/source-text literals and a cosmetic pre-review status-wording difference. Neither changes the selected behavior or blocks closure.
+
+## Pending product work
+
 - next work item `SH-HARNESS-001`
 - renderer, SQLite repository, adapter, install/upgrade flow and end-to-end Skill packaging
