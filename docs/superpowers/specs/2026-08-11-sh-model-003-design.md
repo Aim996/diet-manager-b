@@ -103,7 +103,7 @@ Outbox state is exactly:
 pending | processing | succeeded | retryable_failed | permanent_business_skip
 ```
 
-Every entry has stable envelope/operation/effect identity, effect kind, attempt count, state, creation/update times, and a nullable stable reason. `succeeded` and `permanent_business_skip` are terminal. Retry resumes only `pending` or `retryable_failed`; it never replays a succeeded effect or FactCommit.
+Every entry has stable envelope/operation/effect identity, effect kind, `previous_state`, current state, attempt count, creation/update times, and a nullable stable reason. `previous_state` is null only for creation into `pending`; later updates must form one of the frozen legal transitions. `succeeded` and `permanent_business_skip` are terminal. Retry resumes only `pending` or `retryable_failed`; it never replays a succeeded effect or FactCommit.
 
 `EffectBundleResult` freezes one operation's nutrition, inventory, Issue, and projection contribution references. A technical failure keeps the fact, returns `effects_pending`, and leaves the unfinished outbox entry retryable. A permanent business skip requires a reason and, where the contract requires one, an Issue reference; it is not reclassified as a successful physical effect.
 

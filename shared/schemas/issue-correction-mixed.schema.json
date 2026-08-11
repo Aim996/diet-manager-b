@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diet-manager.local/schemas/issue-correction-mixed/v1",
+  "title": "Diet Manager Issue Correction and Mixed Commit Model v1",
+  "x-schema-version": "1.0.0",
+  "oneOf": [
+    { "$ref": "#/$defs/Issue" },
+    { "$ref": "#/$defs/IssueResolutionEvent" },
+    { "$ref": "#/$defs/QuickPrompt" },
+    { "$ref": "#/$defs/CorrectionSnapshot" },
+    { "$ref": "#/$defs/CorrectionEvent" },
+    { "$ref": "#/$defs/EffectOutboxEntry" },
+    { "$ref": "#/$defs/FactCommitResult" },
+    { "$ref": "#/$defs/EffectBundleResult" },
+    { "$ref": "#/$defs/ReceiptData" },
+    { "$ref": "#/$defs/EnvelopeFinalizeResult" },
+    { "$ref": "#/$defs/MixedItemResult" },
+    { "$ref": "#/$defs/MixedCommitResult" }
+  ],
+  "$defs": {
+    "Issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue_id", "issue_code", "issue_type", "priority", "entity_type", "entity_id", "field_path", "detected_at", "source_message_id", "source_text", "known_facts", "missing_or_conflicting_facts", "impact", "candidate_values", "candidate_actions", "status", "revision", "last_presented_at", "resolved_at", "resolution_source", "resolution_reason", "resolution_event_id"],
+      "properties": {
+        "issue_id": { "type": "string", "minLength": 1 },
+        "issue_code": { "enum": ["reference_ambiguous", "consumption_state_ambiguous", "negation_scope_conflict", "food_identity_unrecognized", "quantity_missing", "quantity_estimated", "quantity_vague_unresolved", "composition_unknown", "nutrition_missing", "nutrition_estimated", "missing_package_content", "inventory_no_match", "inventory_multiple_candidates", "inventory_insufficient", "inventory_unit_unconvertible", "inventory_batch_uncertain", "occurred_time_defaulted", "meal_slot_inferred", "storage_location_uncertain", "shelf_life_unknown", "possible_duplicate", "effect_processing_failed", "progress_projection_pending"] },
+        "issue_type": { "enum": ["blocking_fact", "non_blocking_business", "non_blocking_technical", "optional"] },
+        "priority": { "enum": ["critical", "high", "normal", "low"] },
+        "entity_type": { "type": "string", "minLength": 1 },
+        "entity_id": { "type": ["string", "null"], "minLength": 1 },
+        "field_path": { "type": ["string", "null"], "minLength": 1 },
+        "detected_at": { "type": "string", "format": "date-time" },
+        "source_message_id": { "type": ["string", "null"], "minLength": 1 },
+        "source_text": { "type": ["string", "null"], "minLength": 1 },
+        "known_facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field_path", "value_text", "source", "evidence_ref"],
+            "properties": {
+              "field_path": { "type": "string", "minLength": 1 },
+              "value_text": { "type": "string" },
+              "source": { "type": "string", "minLength": 1 },
+              "evidence_ref": { "type": ["string", "null"], "minLength": 1 }
+            }
+          }
+        },
+        "missing_or_conflicting_facts": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "impact": { "type": "string", "minLength": 1 },
+        "candidate_values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_id", "label", "value_text", "evidence"],
+            "properties": {
+              "candidate_id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "value_text": { "type": "string" },
+              "evidence": { "type": ["string", "null"], "minLength": 1 }
+            }
+          }
+        },
+        "candidate_actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action_id", "label", "operation", "safe_exit"],
+            "properties": {
+              "action_id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "operation": { "type": "string", "minLength": 1 },
+              "safe_exit": { "type": "boolean" }
+            }
+          }
+        },
+        "status": { "enum": ["open", "awaiting_user", "resolved", "dismissed"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "last_presented_at": { "type": ["string", "null"], "format": "date-time" },
+        "resolved_at": { "type": ["string", "null"], "format": "date-time" },
+        "resolution_source": { "type": ["string", "null"], "enum": [null, "user", "reliable_context", "system_retry", "event_lifecycle"] },
+        "resolution_reason": { "type": ["string", "null"], "enum": [null, "user_supplied", "user_confirmed", "reliable_evidence_resolved", "kept_estimate", "deferred_by_user", "dismissed_by_user", "event_superseded", "effect_retry_succeeded"] },
+        "resolution_event_id": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["open", "awaiting_user"] } }, "required": ["status"] },
+          "then": { "properties": { "resolved_at": { "type": "null" }, "resolution_source": { "type": "null" }, "resolution_event_id": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "resolved" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "resolved_at": { "type": "string", "format": "date-time" },
+              "resolution_source": { "enum": ["user", "reliable_context", "system_retry", "event_lifecycle"] },
+              "resolution_reason": { "enum": ["user_supplied", "user_confirmed", "reliable_evidence_resolved", "kept_estimate", "event_superseded", "effect_retry_succeeded"] },
+              "resolution_event_id": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "dismissed" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "resolved_at": { "type": "string", "format": "date-time" },
+              "resolution_source": { "const": "user" },
+              "resolution_reason": { "const": "dismissed_by_user" },
+              "resolution_event_id": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "IssueResolutionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "issue_id", "request_id", "expected_revision", "application_outcome", "resolution_reason", "rejection_reason", "resolution_source", "created_at"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "issue_id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string", "minLength": 1 },
+        "expected_revision": { "type": "integer", "minimum": 1 },
+        "application_outcome": { "enum": ["applied", "no_change", "rejected"] },
+        "resolution_reason": { "type": ["string", "null"], "enum": [null, "user_supplied", "user_confirmed", "reliable_evidence_resolved", "kept_estimate", "deferred_by_user", "dismissed_by_user", "event_superseded", "effect_retry_succeeded"] },
+        "rejection_reason": { "type": ["string", "null"], "enum": [null, "stale_revision", "expired_prompt", "conflicting_selection", "prompt_target_revision_stale", "business_validation_failed"] },
+        "resolution_source": { "type": ["string", "null"], "enum": [null, "user", "reliable_context", "system_retry", "event_lifecycle"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "application_outcome": { "const": "rejected" } }, "required": ["application_outcome"] },
+          "then": { "properties": { "resolution_reason": { "type": "null" }, "resolution_source": { "type": "null" }, "rejection_reason": { "enum": ["stale_revision", "expired_prompt", "conflicting_selection", "prompt_target_revision_stale", "business_validation_failed"] } } },
+          "else": { "properties": { "rejection_reason": { "type": "null" }, "resolution_reason": { "type": "string" }, "resolution_source": { "type": "string" } } }
+        }
+      ]
+    },
+    "QuickPrompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_id", "issue_id", "option_ids", "safe_exit_option_id", "generated_from_revision", "generated_at", "expires_at"],
+      "properties": {
+        "prompt_id": { "type": "string", "minLength": 1 },
+        "issue_id": { "type": "string", "minLength": 1 },
+        "option_ids": { "type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "safe_exit_option_id": { "type": "string", "minLength": 1 },
+        "generated_from_revision": { "type": "integer", "minimum": 1 },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CorrectionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "lifecycle", "revision", "occurred_time_ref", "item_refs", "content_digest"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "lifecycle": { "enum": ["active", "superseded", "voided"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "occurred_time_ref": { "type": "string", "minLength": 1 },
+        "item_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "content_digest": { "type": "string", "pattern": "^[A-F0-9]{64}$" }
+      }
+    },
+    "CorrectionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["correction_id", "target_event_id", "base_revision", "request_id", "source_text", "operation", "before_snapshot", "change_set", "after_snapshot", "nutrition_delta", "inventory_effects", "affected_dates", "created_at", "timezone"],
+      "properties": {
+        "correction_id": { "type": "string", "minLength": 1 },
+        "target_event_id": { "type": "string", "minLength": 1 },
+        "base_revision": { "type": "integer", "minimum": 1 },
+        "request_id": { "type": "string", "minLength": 1 },
+        "source_text": { "type": "string", "minLength": 1 },
+        "operation": { "enum": ["change_amount", "change_unit", "change_time", "change_meal_slot", "change_item_name", "change_food_type", "change_components", "add_item", "remove_item", "change_inventory_link", "change_nutrition_source", "void_event", "restore_event"] },
+        "before_snapshot": { "$ref": "#/$defs/CorrectionSnapshot" },
+        "change_set": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field_path", "before_value", "after_value"],
+            "properties": {
+              "field_path": { "type": "string", "minLength": 1 },
+              "before_value": { "type": ["string", "null"] },
+              "after_value": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "after_snapshot": { "$ref": "#/$defs/CorrectionSnapshot" },
+        "nutrition_delta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["energy_kcal", "protein_g", "fat_g", "carbohydrate_g", "fiber_g"],
+          "properties": {
+            "energy_kcal": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+            "protein_g": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+            "fat_g": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+            "carbohydrate_g": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+            "fiber_g": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" }
+          }
+        },
+        "inventory_effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["effect_id", "transaction_id", "action"],
+            "properties": {
+              "effect_id": { "type": "string", "minLength": 1 },
+              "transaction_id": { "type": ["string", "null"], "minLength": 1 },
+              "action": { "enum": ["reverse", "replace", "none"] }
+            }
+          }
+        },
+        "affected_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "format": "date" } },
+        "created_at": { "type": "string", "format": "date-time" },
+        "timezone": { "type": "string", "minLength": 1 }
+      }
+    },
+    "EffectOutboxEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outbox_id", "envelope_id", "operation_id", "effect_id", "effect_kind", "previous_state", "state", "attempt_count", "reason", "created_at", "updated_at"],
+      "properties": {
+        "outbox_id": { "type": "string", "minLength": 1 },
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "operation_id": { "type": "string", "minLength": 1 },
+        "effect_id": { "type": "string", "minLength": 1 },
+        "effect_kind": { "enum": ["nutrition", "inventory", "issue", "projection"] },
+        "previous_state": { "type": ["string", "null"], "enum": [null, "pending", "processing", "retryable_failed", "succeeded", "permanent_business_skip"] },
+        "state": { "enum": ["pending", "processing", "succeeded", "retryable_failed", "permanent_business_skip"] },
+        "attempt_count": { "type": "integer", "minimum": 0 },
+        "reason": { "type": ["string", "null"], "minLength": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "oneOf": [
+        { "properties": { "previous_state": { "type": "null" }, "state": { "const": "pending" }, "attempt_count": { "const": 0 }, "reason": { "type": "null" } } },
+        { "properties": { "previous_state": { "const": "pending" }, "state": { "const": "processing" }, "attempt_count": { "minimum": 1 }, "reason": { "type": "null" } } },
+        { "properties": { "previous_state": { "const": "processing" }, "state": { "enum": ["succeeded", "retryable_failed", "permanent_business_skip"] }, "attempt_count": { "minimum": 1 } }, "allOf": [{ "if": { "properties": { "state": { "enum": ["retryable_failed", "permanent_business_skip"] } } }, "then": { "properties": { "reason": { "type": "string", "minLength": 1 } } }, "else": { "properties": { "reason": { "type": "null" } } } }] },
+        { "properties": { "previous_state": { "const": "retryable_failed" }, "state": { "const": "processing" }, "attempt_count": { "minimum": 2 }, "reason": { "type": "null" } } }
+      ]
+    },
+    "FactCommitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "envelope_id", "operation_id", "idempotency_key", "input_digest", "envelope_state", "result_status", "business_writes", "committed_event_ids", "correction_event_ids", "outbox_ids", "issue_ids", "nutrition_snapshot_ids", "inventory_transaction_ids", "progress_result", "receipt_data", "terminal_idempotency_result", "committed_at", "error_code"],
+      "properties": {
+        "stage": { "const": "FactCommit" },
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "operation_id": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "input_digest": { "type": "string", "pattern": "^[A-F0-9]{64}$" },
+        "envelope_state": { "enum": ["fact_committed", "failed_fact"] },
+        "result_status": { "enum": ["committed", "committed_with_issues", "failed"] },
+        "business_writes": { "type": "integer", "minimum": 0 },
+        "committed_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "correction_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "outbox_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "issue_ids": { "type": "array", "maxItems": 0 },
+        "nutrition_snapshot_ids": { "type": "array", "maxItems": 0 },
+        "inventory_transaction_ids": { "type": "array", "maxItems": 0 },
+        "progress_result": { "type": "null" },
+        "receipt_data": { "type": "null" },
+        "terminal_idempotency_result": { "type": "null" },
+        "committed_at": { "type": ["string", "null"], "format": "date-time" },
+        "error_code": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "oneOf": [
+        { "properties": { "envelope_state": { "const": "fact_committed" }, "result_status": { "enum": ["committed", "committed_with_issues"] }, "business_writes": { "minimum": 1 }, "outbox_ids": { "minItems": 1 }, "committed_at": { "type": "string", "format": "date-time" }, "error_code": { "type": "null" } }, "anyOf": [{ "properties": { "committed_event_ids": { "minItems": 1 } } }, { "properties": { "correction_event_ids": { "minItems": 1 } } }] },
+        { "properties": { "envelope_state": { "const": "failed_fact" }, "result_status": { "const": "failed" }, "business_writes": { "const": 0 }, "committed_event_ids": { "maxItems": 0 }, "correction_event_ids": { "maxItems": 0 }, "outbox_ids": { "maxItems": 0 }, "committed_at": { "type": "null" }, "error_code": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "EffectBundleResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "envelope_id", "operation_id", "effect_state", "result_status", "effect_writes", "nutrition_snapshot_ids", "inventory_transaction_ids", "issue_ids", "projection_refs", "retry_after", "reason", "progress_result", "receipt_data", "terminal_idempotency_result", "completed_at"],
+      "properties": {
+        "stage": { "const": "EffectBundle" },
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "operation_id": { "type": "string", "minLength": 1 },
+        "effect_state": { "enum": ["succeeded", "retryable_failed", "permanent_business_skip"] },
+        "result_status": { "enum": ["committed", "committed_with_issues", "failed"] },
+        "effect_writes": { "type": "integer", "minimum": 0 },
+        "nutrition_snapshot_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "inventory_transaction_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "issue_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "projection_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "retry_after": { "type": ["string", "null"], "format": "date-time" },
+        "reason": { "type": ["string", "null"], "minLength": 1 },
+        "progress_result": { "type": "null" },
+        "receipt_data": { "type": "null" },
+        "terminal_idempotency_result": { "type": "null" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "oneOf": [
+        { "properties": { "effect_state": { "const": "succeeded" }, "result_status": { "enum": ["committed", "committed_with_issues"] }, "effect_writes": { "minimum": 1 }, "retry_after": { "type": "null" }, "reason": { "type": "null" }, "completed_at": { "type": "string", "format": "date-time" } } },
+        { "properties": { "effect_state": { "const": "retryable_failed" }, "result_status": { "const": "failed" }, "effect_writes": { "const": 0 }, "nutrition_snapshot_ids": { "maxItems": 0 }, "inventory_transaction_ids": { "maxItems": 0 }, "issue_ids": { "maxItems": 0 }, "projection_refs": { "maxItems": 0 }, "retry_after": { "type": "string", "format": "date-time" }, "reason": { "type": "string", "minLength": 1 }, "completed_at": { "type": "null" } } },
+        { "properties": { "effect_state": { "const": "permanent_business_skip" }, "result_status": { "const": "committed_with_issues" }, "effect_writes": { "minimum": 1 }, "issue_ids": { "minItems": 1 }, "retry_after": { "type": "null" }, "reason": { "type": "string", "minLength": 1 }, "completed_at": { "type": "string", "format": "date-time" } } }
+      ]
+    },
+    "ReceiptData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "envelope_id", "result_status", "committed_event_ids", "correction_event_ids", "actual_inventory_effect_ids", "issue_ids", "affected_dates", "finalized_at"],
+      "properties": {
+        "receipt_id": { "type": "string", "minLength": 1 },
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "result_status": { "enum": ["committed", "committed_with_issues"] },
+        "committed_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "correction_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "actual_inventory_effect_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "issue_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "affected_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "format": "date" } },
+        "finalized_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "EnvelopeFinalizeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "envelope_id", "idempotency_key", "input_digest", "envelope_state", "result_status", "mixed_result", "receipt_data", "progress_result", "terminal_idempotency_result", "error_code", "finalized_at"],
+      "properties": {
+        "stage": { "const": "EnvelopeFinalize" },
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "input_digest": { "type": "string", "pattern": "^[A-F0-9]{64}$" },
+        "envelope_state": { "enum": ["terminal", "effects_pending"] },
+        "result_status": { "enum": ["committed", "committed_with_issues", "failed"] },
+        "mixed_result": { "anyOf": [{ "$ref": "#/$defs/MixedCommitResult" }, { "type": "null" }] },
+        "receipt_data": { "anyOf": [{ "$ref": "#/$defs/ReceiptData" }, { "type": "null" }] },
+        "progress_result": { "anyOf": [{ "$ref": "https://diet-manager.local/schemas/nutrition-progress/v1#/$defs/DailyProgressResult" }, { "type": "null" }] },
+        "terminal_idempotency_result": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["result_id", "frozen_digest"],
+          "properties": { "result_id": { "type": "string", "minLength": 1 }, "frozen_digest": { "type": "string", "pattern": "^[A-F0-9]{64}$" } }
+        },
+        "error_code": { "type": ["string", "null"], "minLength": 1 },
+        "finalized_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "oneOf": [
+        { "properties": { "envelope_state": { "const": "terminal" }, "result_status": { "enum": ["committed", "committed_with_issues"] }, "mixed_result": { "$ref": "#/$defs/MixedCommitResult" }, "receipt_data": { "$ref": "#/$defs/ReceiptData" }, "progress_result": { "$ref": "https://diet-manager.local/schemas/nutrition-progress/v1#/$defs/DailyProgressResult" }, "terminal_idempotency_result": { "type": "object" }, "error_code": { "type": "null" }, "finalized_at": { "type": "string", "format": "date-time" } } },
+        { "properties": { "envelope_state": { "const": "effects_pending" }, "result_status": { "const": "failed" }, "mixed_result": { "type": "null" }, "receipt_data": { "type": "null" }, "progress_result": { "type": "null" }, "terminal_idempotency_result": { "type": "null" }, "error_code": { "type": "string", "minLength": 1 }, "finalized_at": { "type": "null" } } }
+      ]
+    },
+    "MixedItemResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "operation_id", "idempotency_key", "command_type", "status", "committed_fact_ids", "correction_event_ids", "issue_ids", "error_code"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "operation_id": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "command_type": { "enum": ["create", "correct", "void", "restore", "clarify", "ignore"] },
+        "status": { "enum": ["committed", "committed_with_issues", "needs_clarification", "ignored", "failed"] },
+        "committed_fact_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "correction_event_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "issue_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "error_code": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "enum": ["needs_clarification", "ignored", "failed"] } }, "required": ["status"] }, "then": { "properties": { "committed_fact_ids": { "maxItems": 0 }, "correction_event_ids": { "maxItems": 0 } } } },
+        { "if": { "properties": { "status": { "enum": ["committed", "committed_with_issues"] } }, "required": ["status"] }, "then": { "properties": { "error_code": { "type": "null" } } }, "else": { "properties": { "error_code": { "type": "string", "minLength": 1 } } } }
+      ]
+    },
+    "MixedCommitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelope_id", "idempotency_key", "input_digest", "items", "frozen_at"],
+      "properties": {
+        "envelope_id": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "input_digest": { "type": "string", "pattern": "^[A-F0-9]{64}$" },
+        "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/MixedItemResult" } },
+        "frozen_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
