@@ -119,6 +119,14 @@ openclaw skills info diet-manager-b
 - Skill 名是 `diet-manager-b`。
 - 不允许出现第二套 A/C 工具或同名冲突插件。
 
+如果 Gateway 在安装前已经运行，安装完成不代表当前进程已经注册新工具。必须新开一个测试会话，或安全重启本专用 Gateway，然后再次核对：
+
+- plugin 状态为 loaded/enabled；
+- `diet_manager` 出现在运行时工具集中；
+- Skill 状态为 Ready。
+
+重复执行安装时，OpenClaw 2026.7.1 可能以 `plugin already exists` 或 `Skill already exists` 安全拒绝。只有在插件/Skill 仍各一份、配置未重复、业务文件前后不变时，才把该结果判为幂等；不得使用 `--force` 掩盖冲突。
+
 ## 8. 八动作冒烟
 
 依次验证：
@@ -171,6 +179,8 @@ openclaw plugins uninstall diet-manager-b
 ```
 
 OpenClaw 2026.7.1 没有通用 `skills uninstall` 命令。因此 Skill 只安装到本次专用测试 agent/workspace，不使用 `--global`；测试结束时通过平台删除该精确测试 workspace。不得递归删除共享 Skill 根、用户主目录或无关 OpenClaw 配置。
+
+卸载完成后还必须完整重启本专用 Gateway 进程，并复核 `diet-manager-b`、`diet_manager` 和 Skill 都不再发现。仅发送 in-process 热重载信号并不足以证明已加载的工具对象从内存卸载；磁盘/配置已清理但旧工具仍可调用时，必须明确报告为运行时残留，不能宣称清理完全成功。
 
 ## 11. 失败判定
 
