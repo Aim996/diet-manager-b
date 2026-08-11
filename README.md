@@ -16,6 +16,8 @@
 
 `B-STOR-002` 的实现报告、独立复核和证据分别见 [实现报告](./docs/work-items/B-STOR-002-report.md)、[复核报告](./docs/work-items/B-STOR-002-review.md) 与 [EV-20260812-029](./docs/evidence/EV-20260812-029-b-stor-002.md)。当前公开草稿 PR 为 [#8](https://github.com/Aim996/diet-manager-b/pull/8)。
 
+`X-GATE-001` 的门报告、复核和证据见 [门报告](./docs/work-items/X-GATE-001-report.md)、[复核报告](./docs/work-items/X-GATE-001-review.md) 与 [EV-20260812-030](./docs/evidence/EV-20260812-030-x-gate-001.md)；草稿 PR 为 [#9](https://github.com/Aim996/diet-manager-b/pull/9)。
+
 ## 从 GitHub 下载
 
 仓库为公开开源仓库，可直接使用 GitHub CLI：
