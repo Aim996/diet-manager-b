@@ -1,0 +1,387 @@
+{
+  "fixture_id": "diet-manager/decision-threshold-fixtures/v1",
+  "fixture_version": "1.0.0",
+  "policy_id": "diet-manager/decision-thresholds/v1",
+  "policy_version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "POL-CAND-0",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 0, "hard_conflicts_resolved": true, "similarity_only": false },
+      "expected": "none"
+    },
+    {
+      "case_id": "POL-CAND-1",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 1, "hard_conflicts_resolved": true, "similarity_only": false },
+      "expected": "unique"
+    },
+    {
+      "case_id": "POL-CAND-2",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 2, "hard_conflicts_resolved": true, "similarity_only": false },
+      "expected": "multiple"
+    },
+    {
+      "case_id": "POL-CAND-SIMILARITY-2",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 2, "hard_conflicts_resolved": true, "similarity_only": true },
+      "expected": "needs_confirmation"
+    },
+    {
+      "case_id": "POL-CAND-SIMILARITY-1",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 1, "hard_conflicts_resolved": true, "similarity_only": true },
+      "expected": "needs_confirmation"
+    },
+    {
+      "case_id": "POL-CAND-CONFLICT-1",
+      "rule": "unique_reliable_product",
+      "input": { "remaining_count": 1, "hard_conflicts_resolved": false, "similarity_only": false },
+      "expected": "needs_confirmation"
+    },
+    {
+      "case_id": "POL-QUICK-1",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 1, "complete_safe_actions": true, "live_target_revision": true, "safe_exit": true },
+      "expected": "hidden"
+    },
+    {
+      "case_id": "POL-QUICK-2",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 2, "complete_safe_actions": true, "live_target_revision": true, "safe_exit": true },
+      "expected": "shown"
+    },
+    {
+      "case_id": "POL-QUICK-4",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 4, "complete_safe_actions": true, "live_target_revision": true, "safe_exit": true },
+      "expected": "shown"
+    },
+    {
+      "case_id": "POL-QUICK-5",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 5, "complete_safe_actions": true, "live_target_revision": true, "safe_exit": true },
+      "expected": "hidden"
+    },
+    {
+      "case_id": "POL-QUICK-STALE",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 2, "complete_safe_actions": true, "live_target_revision": false, "safe_exit": true },
+      "expected": "hidden"
+    },
+    {
+      "case_id": "POL-QUICK-INCOMPLETE",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 2, "complete_safe_actions": false, "live_target_revision": true, "safe_exit": true },
+      "expected": "hidden"
+    },
+    {
+      "case_id": "POL-QUICK-NO-EXIT",
+      "rule": "quick_option_candidate",
+      "input": { "option_count": 2, "complete_safe_actions": true, "live_target_revision": true, "safe_exit": false },
+      "expected": "hidden"
+    },
+    {
+      "case_id": "POL-EXP-NEGATIVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "-1" },
+      "expected": "expired"
+    },
+    {
+      "case_id": "POL-EXP-ZERO",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "0" },
+      "expected": "expired"
+    },
+    {
+      "case_id": "POL-EXP-JUST-IN",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "0.01" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "24" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "24.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-MISSING-RULE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "not_configured", "remaining_hours": "12" },
+      "expected": "unknown"
+    },
+    {
+      "case_id": "POL-EXP-MISSING-DATE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": false, "rule_id": "prepared_refrigerated_opened", "remaining_hours": "12" },
+      "expected": "unknown"
+    },
+    {
+      "case_id": "POL-EXP-PREP-UNOPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_unopened", "remaining_hours": "48" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-PREP-UNOPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "prepared_refrigerated_unopened", "remaining_hours": "48.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-PERISH-OPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "perishable_refrigerated_opened", "remaining_hours": "24" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-PERISH-OPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "perishable_refrigerated_opened", "remaining_hours": "24.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-PERISH-UNOPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "perishable_refrigerated_unopened", "remaining_hours": "72" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-PERISH-UNOPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "perishable_refrigerated_unopened", "remaining_hours": "72.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-FROZEN-OPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "frozen_opened", "remaining_hours": "168" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-FROZEN-OPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "frozen_opened", "remaining_hours": "168.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-FROZEN-UNOPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "frozen_unopened", "remaining_hours": "168" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-FROZEN-UNOPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "frozen_unopened", "remaining_hours": "168.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-SHELF-OPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "shelf_stable_opened", "remaining_hours": "168" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-SHELF-OPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "shelf_stable_opened", "remaining_hours": "168.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-EXP-SHELF-UNOPEN-AT",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "shelf_stable_unopened", "remaining_hours": "336" },
+      "expected": "near_expiry"
+    },
+    {
+      "case_id": "POL-EXP-SHELF-UNOPEN-ABOVE",
+      "rule": "near_expiry",
+      "input": { "effective_expiration_known": true, "rule_id": "shelf_stable_unopened", "remaining_hours": "336.01" },
+      "expected": "normal"
+    },
+    {
+      "case_id": "POL-TPL-ABS-AT",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "100", "candidate_grams": "110", "same_major_components": true, "no_unresolved_issues": true },
+      "expected": "consistent"
+    },
+    {
+      "case_id": "POL-TPL-ABS-ABOVE",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "100", "candidate_grams": "110.01", "same_major_components": true, "no_unresolved_issues": true },
+      "expected": "materially_different"
+    },
+    {
+      "case_id": "POL-TPL-REL-AT",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "1000", "candidate_grams": "1100", "same_major_components": true, "no_unresolved_issues": true },
+      "expected": "consistent"
+    },
+    {
+      "case_id": "POL-TPL-REL-ABOVE",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "1000", "candidate_grams": "1100.01", "same_major_components": true, "no_unresolved_issues": true },
+      "expected": "materially_different"
+    },
+    {
+      "case_id": "POL-TPL-MAJOR-ADDED",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "100", "candidate_grams": "100", "same_major_components": false, "no_unresolved_issues": true },
+      "expected": "materially_different"
+    },
+    {
+      "case_id": "POL-TPL-UNRESOLVED",
+      "rule": "template_consistent",
+      "input": { "mode": "amount", "baseline_grams": "100", "candidate_grams": "100", "same_major_components": true, "no_unresolved_issues": false },
+      "expected": "cannot_learn"
+    },
+    {
+      "case_id": "POL-TPL-CONF-1",
+      "rule": "template_consistent",
+      "input": { "mode": "confirmation", "count": 1, "explicit": true },
+      "expected": "candidate"
+    },
+    {
+      "case_id": "POL-TPL-CONF-2",
+      "rule": "template_consistent",
+      "input": { "mode": "confirmation", "count": 2, "explicit": true },
+      "expected": "active"
+    },
+    {
+      "case_id": "POL-TPL-CONF-3",
+      "rule": "template_consistent",
+      "input": { "mode": "confirmation", "count": 3, "explicit": true },
+      "expected": "stable"
+    },
+    {
+      "case_id": "POL-TPL-SYSTEM-ONLY",
+      "rule": "template_consistent",
+      "input": { "mode": "confirmation", "count": 3, "explicit": false },
+      "expected": "no_evidence"
+    },
+    {
+      "case_id": "POL-ROUND-Q-DOWN",
+      "rule": "rounding",
+      "input": { "mode": "display_quantity", "value": "1.24" },
+      "expected": "1.2"
+    },
+    {
+      "case_id": "POL-ROUND-Q-HALF",
+      "rule": "rounding",
+      "input": { "mode": "display_quantity", "value": "1.25" },
+      "expected": "1.3"
+    },
+    {
+      "case_id": "POL-ROUND-PCT-HALF",
+      "rule": "rounding",
+      "input": { "mode": "percentage", "value": "98.5" },
+      "expected": "99"
+    },
+    {
+      "case_id": "POL-ROUND-GRID-LOW",
+      "rule": "rounding",
+      "input": { "mode": "ten_grid", "value": "94.9" },
+      "expected": "9"
+    },
+    {
+      "case_id": "POL-ROUND-GRID-HALF",
+      "rule": "rounding",
+      "input": { "mode": "ten_grid", "value": "95" },
+      "expected": "10"
+    },
+    {
+      "case_id": "POL-G1-PASS",
+      "rule": "x_gate_001",
+      "input": {
+        "legacy_scores_present": false,
+        "conditions": {
+          "shared_models_frozen": true,
+          "b_merge_c_controls_passed": true,
+          "b_storage_driver_compatible": true,
+          "b_migrations_and_constraints_passed": true,
+          "b_fault_matrix_passed": true,
+          "official_roots_unchanged": true,
+          "fresh_evidence_present": true
+        }
+      },
+      "expected": "pass_b_safety"
+    },
+    {
+      "case_id": "POL-G1-RETURN",
+      "rule": "x_gate_001",
+      "input": {
+        "legacy_scores_present": false,
+        "conditions": {
+          "shared_models_frozen": true,
+          "b_merge_c_controls_passed": true,
+          "b_storage_driver_compatible": true,
+          "b_migrations_and_constraints_passed": true,
+          "b_fault_matrix_passed": false,
+          "official_roots_unchanged": true,
+          "fresh_evidence_present": true
+        }
+      },
+      "expected": "return_to_b_storage"
+    },
+    {
+      "case_id": "POL-G2-BIND",
+      "rule": "x_gate_002",
+      "input": {
+        "legacy_scores_present": false,
+        "conditions": {
+          "x_gate_001_pass_b_safety": true,
+          "b_slice_evidence_fresh": true,
+          "b_fault_evidence_fresh": true,
+          "contract_ids_and_hashes_frozen": true,
+          "absolute_paths_complete": true,
+          "selected_route_map_absent": true,
+          "no_legacy_route_scores": true
+        }
+      },
+      "expected": "bind_b_ready"
+    },
+    {
+      "case_id": "POL-G2-RETURN-HASH",
+      "rule": "x_gate_002",
+      "input": {
+        "legacy_scores_present": false,
+        "conditions": {
+          "x_gate_001_pass_b_safety": true,
+          "b_slice_evidence_fresh": true,
+          "b_fault_evidence_fresh": true,
+          "contract_ids_and_hashes_frozen": false,
+          "absolute_paths_complete": true,
+          "selected_route_map_absent": true,
+          "no_legacy_route_scores": true
+        }
+      },
+      "expected": "return_to_b_slice"
+    },
+    {
+      "case_id": "POL-G2-RETURN-SCORES",
+      "rule": "x_gate_002",
+      "input": {
+        "legacy_scores_present": true,
+        "conditions": {
+          "x_gate_001_pass_b_safety": true,
+          "b_slice_evidence_fresh": true,
+          "b_fault_evidence_fresh": true,
+          "contract_ids_and_hashes_frozen": true,
+          "absolute_paths_complete": true,
+          "selected_route_map_absent": true,
+          "no_legacy_route_scores": true
+        }
+      },
+      "expected": "return_to_b_slice"
+    }
+  ]
+}
