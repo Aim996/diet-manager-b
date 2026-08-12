@@ -2,7 +2,7 @@
 
 ## Candidate
 
-- Candidate SHA: `3a253b854059f42dd3e3954ff9d0796e56591be8`
+- Candidate SHA: `cbf9811ce64c002b44737d50b846df6ce2535b4c`
 - Branch: `agent/b-slice-001-vertical`
 - Stage: A — candidate freeze and review inputs only
 - Full responsibility set: `G2_VERTICAL_SLICE_B_ONLY` (17 cases)
@@ -93,6 +93,8 @@ full_case_set: `G2_VERTICAL_SLICE_B_ONLY`
 The assertion test dispatches each case to the named real observation builder in `shared/acceptance-cases/adapters/b-slice-driver.ts`: `CASE-MIXED-001` `runMixed` (589), `CASE-CORR-001` `runCorrection` (654), `CASE-QUERY-001` `runQuery` (717), `CASE-EFFECT-001` `runEffectFailure` (756), `CASE-MEAL-006` `runMeal006` (857), `CASE-NUTR-008` `runNutrition008` (895), `CASE-MEAL-003` `runMeal003` (933), `CASE-MEAL-004` `runMeal004` (968), `CASE-INVENTORY-003` `runInventory003` (1002), `CASE-INVENTORY-004` `runInventory004` (1034), `CASE-NUTR-001` `runNutrition001` (1066), `CASE-NUTR-002` `runNutrition002` (1103), `CASE-NUTR-005` `runNutrition005` (1121), `CASE-STORAGE-001` `runStorage001` (1153), `CASE-RECEIPT-001` `runReceipt001` (1184), `CASE-RECEIPT-003` `runReceipt003` (1205), and `CASE-PROGRESS-010` `runProgress010` (1231). The P1-1 focused SQLite regression is `rejects an invalid meal amount before FactCommit and keeps it query-invisible` in `version-b-lite-plugin/tests/vertical-slice.test.ts`.
 
 Fix2 adds three more pre-FactCommit SQLite regressions in that test file: `rejects nutrition scaling overflow before FactCommit and keeps it query-invisible`, `rejects an accessor envelope without reading it or writing business rows`, and `rejects a custom operations array prototype without calling entries or writing rows`. `3a253b8` descriptor/prototype-clones untrusted envelopes before validation and reuses the no-write meal preflight for real nutrition scaling.
+
+Fix3 adds `rejects multi-item nutrition summation overflow before FactCommit and keeps it query-invisible`, `rejects correction nutrition scaling overflow before FactCommit and keeps the correction query-invisible`, and `rejects envelope symbols and non-enumerable array indexes before reading or writing` in `version-b-lite-plugin/tests/vertical-slice.test.ts`. `ca0d9ea` accumulates the exact scaled nutrition vector during meal preflight and evaluates correction nutrition before append; it also accepts safely frozen ordinary arrays while rejecting symbols, accessors, non-enumerable indexes, and nonstandard prototypes. `cbf9811` records the local OpenClaw-generated metadata formatting used by the frozen candidate.
 
 ## Stage A disposition
 

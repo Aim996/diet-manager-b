@@ -2,7 +2,7 @@
 
 ## Candidate and review scope
 
-Review candidate: `3a253b854059f42dd3e3954ff9d0796e56591be8` on `agent/b-slice-001-vertical`.
+Review candidate: `cbf9811ce64c002b44737d50b846df6ce2535b4c` on `agent/b-slice-001-vertical`.
 
 Review the business semantics, operation grouping, replay identity, append-only corrections, read-only query behavior, failure-log redaction, crash/restart cleanup, public tool boundary, and dependency/open-source hygiene. This package contains only sanitized repository-relative evidence. It contains no tokens, user data, machine-private URLs, or protected-file content.
 
@@ -26,7 +26,8 @@ Set-Location version-b-lite-plugin
 Set-Location ..
 & $nodeExe .\shared\tests\validate-x-gate-001.mjs --self-test
 & $nodeExe .\shared\tests\validate-traceability.mjs --self-test
-& $nodeExe --experimental-strip-types --test .\shared\acceptance-cases\tests\harness.test.ts .\shared\acceptance-cases\tests\b-slice.test.ts
+& $nodeExe --experimental-strip-types --test .\shared\acceptance-cases\tests\harness.test.ts
+& $nodeExe --experimental-strip-types --test .\shared\acceptance-cases\tests\b-slice.test.ts
 Test-Path .\shared\selected-route-map.json
 git rev-parse HEAD
 git status --porcelain=v1 --untracked-files=all
@@ -36,7 +37,7 @@ Run the x-gate command above: its protected-path Set compares names from Git out
 
 ## Fresh sanitized results
 
-- Plugin gate: 7 files / 142 tests passed; TypeScript no-emit passed.
+- Plugin gate: 7 files / 145 tests passed; TypeScript no-emit passed.
 - Repository concurrency and B-slice crash harnesses passed; crash cleanup reported no surviving child, temporary database, or log residue.
 - Local OpenClaw build check and validation passed; plugin metadata is current and the plugin is valid.
 - X-GATE-001 self-test passed: 13 cases, 7 checks, `pass_b_safety`, and 6 mutation rejections.
@@ -51,7 +52,9 @@ The case assertion test is `shared/acceptance-cases/tests/b-slice.test.ts`; the 
 
 P1-1 RED was the real SQLite regression `rejects an invalid meal amount before FactCommit and keeps it query-invisible`: before the fix, negative observed input threw only after FactCommit and left one event, one meal item, two outboxes, and one checkpoint. `4fd6ab7` adds complete runtime envelope validation and canonical deep freezing before preview/FactCommit; `7b83215` refreshes the runtime artifact. The focused GREEN and the full 139-test gate passed. Null nutrition/amount fields remain valid unknowns.
 
-Fix2 adds descriptor/prototype-safe cloning before validation, then a no-write meal preflight which reuses real inventory matching and nutrition scaling. Its real SQLite REDs were (1) all six nutrients and adoption at `Number.MAX_SAFE_INTEGER` with basis `1`, which threw `DOMAIN_RULE_INVALID:nutrition_scaled` only after one event, one item, two outboxes, and one checkpoint; (2) an `envelope_id` accessor hit once; and (3) a custom operations-array `entries()` hit once. `3a253b8` makes all three fail before FactCommit with zero hits, zero business rows, and no query-visible meal; it preserves `null=unknown` fields and uses an in-memory preceding purchase candidate for the legitimate mixed preflight. The focused 4-test regression, full 142-test plugin gate, and complete frozen gate passed.
+Fix2 adds descriptor/prototype-safe cloning before validation, then a no-write meal preflight which reuses real inventory matching and nutrition scaling. Its real SQLite REDs were (1) all six nutrients and adoption at `Number.MAX_SAFE_INTEGER` with basis `1`, which threw `DOMAIN_RULE_INVALID:nutrition_scaled` only after one event, one item, two outboxes, and one checkpoint; (2) an `envelope_id` accessor hit once; and (3) a custom operations-array `entries()` hit once. `3a253b8` makes all three fail before FactCommit with zero hits, zero business rows, and no query-visible meal; it preserves `null=unknown` fields and uses an in-memory preceding purchase candidate for the legitimate mixed preflight.
+
+Fix3 retains that preflight boundary for the aggregate paths discovered in re-review. The real SQLite tests are `rejects multi-item nutrition summation overflow before FactCommit and keeps it query-invisible` and `rejects correction nutrition scaling overflow before FactCommit and keeps the correction query-invisible`; both now reject with zero new business rows and no query-visible partial write. `ca0d9ea` accumulates every scaled meal vector with `addNutritionVectors()` before FactCommit and preflights corrected nutrition across replace/undo/restore before append. The descriptor test `rejects envelope symbols and non-enumerable array indexes before reading or writing` confirms symbols and non-enumerable indexes are rejected while ordinary frozen arrays remain accepted. The focused three regression tests, existing unknown/undo/restore compatibility tests, full 145-test plugin gate, and complete frozen gate passed. `cbf9811` is the generated OpenClaw metadata-formatting commit included in the reviewed candidate.
 
 ## Required verdict
 
