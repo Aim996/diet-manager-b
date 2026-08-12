@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295375,
-      "sha256": "D91F4C2D601A8AA21F39704DA07CE986EF8F2D9A2379B4D05B93DF4DD652FF1A"
+      "length": 295985,
+      "sha256": "F4A500D61D17C671F5FB9FBCE82DF21CA8BE68FECADE5E2BB09CF76C58CE94D7"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "363D5D680ECAA6F578FDB3FC77C55A4A443F40499DD5C0745CC817350B7B4A96"
+      "sha256": "263D18740462A6EE032B6D1BACC74C40755EAB8124A65C03BC5D4AB3DED07B5F"
     }
   },
   "counts": {
-    "evidence": 30,
-    "files_present": 28,
+    "evidence": 31,
+    "files_present": 29,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -539,6 +539,25 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "X-GATE-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-031",
+      "scope": "B-SLICE-001 B-only首条纵向切片",
+      "result": "候选074fd30465eded2b650e0e00dadfca98ec363abc通过147项插件测试、13项foundation、共享22项/精确17案责任、x-gate/trace、并发/崩溃、OpenClaw本地门和残留检查；四轮修复后独立复核P0=0/P1=0/P2=0、Ready",
+      "limitation": "只关闭B-SLICE-001并把B-FAULT-001设为唯一下一实现任务；not installable; public OpenClaw tool remains non-writing；不代表完整故障矩阵、G2/G3、安装、部署或产品可用",
+      "reference_ids": [
+        "B-SLICE-001",
+        "B-FAULT-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-031-b-slice-001.md",
+        "length": 3564,
+        "sha256": "3D370031F1B80A75719A226EF59AA13399C280115AAE1306FFB076CDC8D7C8C6"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-SLICE-001"
       ]
     }
   ]

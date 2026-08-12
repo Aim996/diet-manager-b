@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295375,
-      "sha256": "D91F4C2D601A8AA21F39704DA07CE986EF8F2D9A2379B4D05B93DF4DD652FF1A"
+      "length": 295985,
+      "sha256": "F4A500D61D17C671F5FB9FBCE82DF21CA8BE68FECADE5E2BB09CF76C58CE94D7"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,14 +14,14 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "363D5D680ECAA6F578FDB3FC77C55A4A443F40499DD5C0745CC817350B7B4A96"
+      "sha256": "263D18740462A6EE032B6D1BACC74C40755EAB8124A65C03BC5D4AB3DED07B5F"
     }
   },
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 28,
-      "已完成": 23,
+      "未开始": 27,
+      "已完成": 24,
       "已取消": 8
     },
     "case_producer_rows": 144,
@@ -2522,7 +2522,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -2707,7 +2707,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3147,7 +3147,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3208,7 +3208,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3562,7 +3562,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3589,7 +3589,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3633,7 +3633,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3854,7 +3854,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3916,7 +3916,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -3949,7 +3949,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -4014,7 +4014,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -4069,7 +4069,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -4554,7 +4554,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -4810,7 +4810,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -4943,7 +4943,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -5009,7 +5009,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -5239,7 +5239,7 @@
         },
         {
           "task_id": "B-SLICE-001",
-          "task_status": "未开始",
+          "task_status": "已完成",
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
@@ -7381,10 +7381,12 @@
       "deliverables": "B纵向切片",
       "verification": "§26.5 B-only固定共同Oracle全通过；E-STOR+E-CASE",
       "roots": "ROOT-B",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root实现 / 独立B纵切复核待定",
-      "status": "未开始",
-      "next_reopen": "Stage A候选074fd30465eded2b650e0e00dadfca98ec363abc已通过147项plugin测试和完整允许门；独立复核待定；P0/P1归零前不得完成Stage B，候选或上游证据变化重开",
+      "actual_evidence_ids": [
+        "EV-20260812-031"
+      ],
+      "owner_reviewer": "Codex /root实现 / 独立B纵切复核",
+      "status": "已完成",
+      "next_reopen": "候选074fd30465eded2b650e0e00dadfca98ec363abc通过147项plugin测试、完整允许门与最终复核P0=0/P1=0/P2=0；next=B-FAULT-001；候选、17案Oracle或上游证据变化重开",
       "brief_path": "docs/work-items/B-SLICE-001-brief.md",
       "case_assertion_paths": {
         "CASE-MIXED-001": [
@@ -7586,7 +7588,7 @@
       "actual_evidence_ids": [],
       "owner_reviewer": "未分配/独立B故障复核",
       "status": "未开始",
-      "next_reopen": "依赖齐前不得开始；故障点变化重开",
+      "next_reopen": "唯一下一实现任务；按WIP单独启动并补齐完整故障矩阵；故障点或依赖证据变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,
@@ -7655,7 +7657,7 @@
       "actual_evidence_ids": [],
       "owner_reviewer": "门主持人/至少两名复核",
       "status": "未开始",
-      "next_reopen": "contract hash与B证据齐前不得开始或创建map；未来明确选择bind_b_ready或return_to_b_slice；输入变化重开",
+      "next_reopen": "B-FAULT-001未完成，继续阻塞且不得创建map；未来输入齐全后明确选择bind_b_ready或return_to_b_slice；输入变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

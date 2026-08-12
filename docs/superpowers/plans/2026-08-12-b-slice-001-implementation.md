@@ -780,13 +780,13 @@ git commit -m "test: verify B slice crash recovery"
 - Modify: `docs/开发进度.md`
 - Modify: `总功能开发计划0.3.md`
 - Modify: `shared/traceability/tasks.json`
-- Modify: `shared/traceability/evidence.json`
+- Modify: `shared/traceability/evidence-index.json`
 
 **Interfaces:**
 - Consumes: one frozen candidate SHA and fresh outputs from every prior task.
 - Produces: auditable E-STOR+E-CASE evidence; `B-SLICE-001=已完成`; only `B-FAULT-001` becomes the next task.
 
-- [ ] **Step 1: Run the complete local gate on one SHA**
+- [x] **Step 1: Run the complete local gate on one SHA**
 
 Run, without editing between commands:
 
@@ -801,33 +801,32 @@ Run, without editing between commands:
 
 Then run the allowed shared trace, gate, and acceptance validators. Record exact case/test counts, hashes, runtime range, fixture cleanup, and zero model calls.
 
-- [ ] **Step 2: Confirm the public tool remains non-writing**
+- [x] **Step 2: Confirm the public tool remains non-writing**
 
 Run the existing foundation test and assert `handleFoundationAction()` still returns `foundation_not_implemented` with `committed:false`. Confirm no `selected-route-map.json` exists.
 
-- [ ] **Step 3: Write the report and review package**
+- [x] **Step 3: Write the report and review package**
 
 The report must list all 17 cases, their real assertion paths, candidate SHA, failures discovered and fixed, deferred non-G2 work, and the explicit statement “not installable; public OpenClaw tool remains non-writing.” The review package contains reproducible commands and no tokens, machine-private URLs, user data, or protected file content.
 
-- [ ] **Step 4: Perform independent review and fix all P0/P1 findings**
+- [x] **Step 4: Perform independent review and fix all P0/P1 findings**
 
 Review must inspect business semantics, transaction grouping, replay, append-only corrections, query write count, failure logs, public boundary, and open-source hygiene. Any code fix changes the candidate SHA and requires rerunning the affected gate plus final full gate.
 
-- [ ] **Step 5: Update progress and traceability**
+- [x] **Step 5: Update progress and traceability**
 
 Set `B-SLICE-001` to completed only after the fresh evidence and P0=0/P1=0 review exist. Add `EV-20260812-031`; regenerate trace data; verify there are no orphan requirement/case/task/evidence references. Leave `B-FAULT-001` not started and identify it as the only next implementation task.
 
-- [ ] **Step 6: Final verification and commit**
+- [x] **Step 6: Final verification and commit**
 
 ```powershell
 git diff --check
 git status --short
 git add docs shared/traceability 总功能开发计划0.3.md
 git commit -m "docs: close B vertical slice"
-git push origin agent/b-slice-001-vertical
 ```
 
-Verify local and remote heads match and the working tree is clean.
+Verify the local working tree is clean. The controller owns the final push; the Task 10 executor does not push.
 
 ---
 
