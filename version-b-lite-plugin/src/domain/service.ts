@@ -88,12 +88,190 @@ function invalid(reason: string): never {
   throw new TypeError(`DIET_DOMAIN_REQUEST_INVALID:${reason}`);
 }
 
-function timestamp(value: string, field: string): string {
+function timestamp(value: unknown, field: string): string {
+  if (typeof value !== "string") return invalid(field);
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.valueOf()) || parsed.toISOString() !== value) {
     return invalid(field);
   }
   return value;
+}
+
+function record(value: unknown, keys: readonly string[], field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
+  const actual = Object.keys(value).sort();
+  if (actual.length !== keys.length || actual.some((key, index) => key !== [...keys].sort()[index])) {
+    return invalid(field);
+  }
+  return value as Record<string, unknown>;
+}
+
+function text(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 256 || /[\u0000-\u001F\u007F]/.test(value)) {
+    return invalid(field);
+  }
+  return value;
+}
+
+function safeNonnegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    return invalid(field);
+  }
+  return value;
+}
+
+function nullableSafeNonnegativeInteger(value: unknown, field: string): number | null {
+  return value === null ? null : safeNonnegativeInteger(value, field);
+}
+
+function enumValue<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+): T {
+  if (typeof value !== "string" || !allowed.includes(value as T)) return invalid(field);
+  return value as T;
+}
+
+function validateNutritionVector(value: unknown, field: string): void {
+  const candidate = record(value, [
+    "energy_kcal_milli", "protein_mg", "fat_mg", "carbohydrate_mg", "fiber_mg", "water_ml_milli",
+  ], field);
+  for (const key of Object.keys(candidate)) {
+    nullableSafeNonnegativeInteger(candidate[key], `${field}.${key}`);
+  }
+}
+
+function validateNutritionSources(value: unknown, field: string): void {
+  if (!Array.isArray(value)) return invalid(field);
+  for (const [index, source] of value.entries()) {
+    const candidate = record(source, [
+      "source_type", "source_ref", "profile_version", "applicable_product_id", "basis_kind",
+      "basis_microunits", "basis_unit", "nutrients",
+    ], `${field}.${index}`);
+    enumValue(candidate.source_type, ["product_label", "public_fixture"], `${field}.${index}.source_type`);
+    text(candidate.source_ref, `${field}.${index}.source_ref`);
+    const version = safeNonnegativeInteger(candidate.profile_version, `${field}.${index}.profile_version`);
+    if (version < 1) return invalid(`${field}.${index}.profile_version`);
+    if (candidate.applicable_product_id !== null) text(candidate.applicable_product_id, `${field}.${index}.applicable_product_id`);
+    enumValue(candidate.basis_kind, [
+      "per_100g", "per_100ml", "per_serving", "per_item", "per_package", "custom_recipe",
+    ], `${field}.${index}.basis_kind`);
+    const basis = safeNonnegativeInteger(candidate.basis_microunits, `${field}.${index}.basis_microunits`);
+    if (basis === 0) return invalid(`${field}.${index}.basis_microunits`);
+    text(candidate.basis_unit, `${field}.${index}.basis_unit`);
+    validateNutritionVector(candidate.nutrients, `${field}.${index}.nutrients`);
+  }
+}
+
+function validateStructuredAmount(value: unknown, field: string): void {
+  const amount = record(value, [
+    "unit", "observed_microunits", "nutrition_adoption_microunits",
+    "inventory_deduction_microunits", "template_reference_microunits", "evidence",
+  ], field);
+  text(amount.unit, `${field}.unit`);
+  safeNonnegativeInteger(amount.observed_microunits, `${field}.observed_microunits`);
+  nullableSafeNonnegativeInteger(amount.nutrition_adoption_microunits, `${field}.nutrition_adoption_microunits`);
+  nullableSafeNonnegativeInteger(amount.inventory_deduction_microunits, `${field}.inventory_deduction_microunits`);
+  nullableSafeNonnegativeInteger(amount.template_reference_microunits, `${field}.template_reference_microunits`);
+  enumValue(amount.evidence, ["explicit", "estimated_upper_bound"], `${field}.evidence`);
+}
+
+function validateOperation(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
+  const operation = value as Record<string, unknown>;
+  const kind = operation.kind;
+  if (kind === "add_inventory") {
+    const candidate = record(value, ["kind", "operation_id", "product", "batch_id", "amount", "nutrition_sources"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    text(candidate.batch_id, `${field}.batch_id`);
+    const product = record(candidate.product, ["product_id", "normalized_name", "product_type"], `${field}.product`);
+    text(product.product_id, `${field}.product.product_id`);
+    text(product.normalized_name, `${field}.product.normalized_name`);
+    text(product.product_type, `${field}.product.product_type`);
+    validateStructuredAmount(candidate.amount, `${field}.amount`);
+    validateNutritionSources(candidate.nutrition_sources, `${field}.nutrition_sources`);
+    return;
+  }
+  if (kind === "record_meal") {
+    const candidate = record(value, ["kind", "operation_id", "occurred_at", "meal_slot", "location", "items"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    timestamp(candidate.occurred_at, `${field}.occurred_at`);
+    text(candidate.meal_slot, `${field}.meal_slot`);
+    enumValue(candidate.location, ["home", "outside"], `${field}.location`);
+    if (!Array.isArray(candidate.items) || candidate.items.length === 0) return invalid(`${field}.items`);
+    for (const [index, item] of candidate.items.entries()) {
+      const mealItem = record(item, ["normalized_name", "item_type", "amount", "nutrition_sources"], `${field}.items.${index}`);
+      text(mealItem.normalized_name, `${field}.items.${index}.normalized_name`);
+      enumValue(mealItem.item_type, ["dish", "food", "nutrition_drink"], `${field}.items.${index}.item_type`);
+      validateStructuredAmount(mealItem.amount, `${field}.items.${index}.amount`);
+      validateNutritionSources(mealItem.nutrition_sources, `${field}.items.${index}.nutrition_sources`);
+    }
+    return;
+  }
+  if (kind === "correct_record") {
+    const candidate = record(value, ["kind", "operation_id", "target_event_id", "base_revision", "item_order", "replacement_amount"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    text(candidate.target_event_id, `${field}.target_event_id`);
+    safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+    safeNonnegativeInteger(candidate.item_order, `${field}.item_order`);
+    validateStructuredAmount(candidate.replacement_amount, `${field}.replacement_amount`);
+    return;
+  }
+  if (kind === "undo_record") {
+    const candidate = record(value, ["kind", "operation_id", "target_event_id", "base_revision"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    text(candidate.target_event_id, `${field}.target_event_id`);
+    safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+    return;
+  }
+  if (kind === "query_inventory") {
+    text(record(value, ["kind", "operation_id"], field).operation_id, `${field}.operation_id`);
+    return;
+  }
+  if (kind === "query_meals" || kind === "query_daily_summary") {
+    const candidate = record(value, ["kind", "operation_id", "date", "timezone"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    text(candidate.date, `${field}.date`);
+    enumValue(candidate.timezone, ["Asia/Shanghai"], `${field}.timezone`);
+    return;
+  }
+  return invalid(`${field}.kind`);
+}
+
+function freezeJson<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const item of value) freezeJson(item);
+    return Object.freeze(value) as T;
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const item of Object.values(value)) freezeJson(item);
+    return Object.freeze(value);
+  }
+  return value;
+}
+
+function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
+  const envelope = record(value, [
+    "envelope_id", "idempotency_key", "command_type", "subject_scope", "source_message_id",
+    "conversation_id", "received_at", "timezone", "operations",
+  ], "envelope");
+  text(envelope.envelope_id, "envelope.envelope_id");
+  text(envelope.idempotency_key, "envelope.idempotency_key");
+  enumValue(envelope.command_type, [
+    "record_meal", "record_water", "add_inventory", "query_inventory", "query_meals",
+    "query_daily_summary", "correct_record", "undo_record",
+  ], "envelope.command_type");
+  text(envelope.subject_scope, "envelope.subject_scope");
+  text(envelope.source_message_id, "envelope.source_message_id");
+  text(envelope.conversation_id, "envelope.conversation_id");
+  timestamp(envelope.received_at, "envelope.received_at");
+  enumValue(envelope.timezone, ["Asia/Shanghai"], "envelope.timezone");
+  if (!Array.isArray(envelope.operations) || envelope.operations.length === 0) return invalid("envelope.operations");
+  for (const [index, operation] of envelope.operations.entries()) {
+    validateOperation(operation, `envelope.operations.${index}`);
+  }
+  return freezeJson(JSON.parse(canonicalJson(value)) as DomainEnvelopeInput);
 }
 
 function quickPromptIssueCode(value: string): QuickPromptIssueCode {
@@ -343,29 +521,30 @@ export function createDietDomainService(
   const options = freezeCreator(input);
   return Object.freeze({
     preview(envelope: DomainEnvelopeInput): DomainPreviewResult {
-      writeOperations(envelope);
-      const inputDigest = digestDomainEnvelope(envelope);
+      const validatedEnvelope = validateAndFreezeEnvelope(envelope);
+      writeOperations(validatedEnvelope);
+      const inputDigest = digestDomainEnvelope(validatedEnvelope);
       const dataRevision = computeRepositoryDataRevision(options.database);
       const now = timestamp(options.now(), "clock");
       const preview = createServerPreview({
         database: options.database,
         secret: options.secret,
-        previewId: envelope.envelope_id,
-        idempotencyKey: envelope.idempotency_key,
+        previewId: validatedEnvelope.envelope_id,
+        idempotencyKey: validatedEnvelope.idempotency_key,
         inputDigest,
-        subjectScope: envelope.subject_scope,
-        commandType: envelope.command_type,
+        subjectScope: validatedEnvelope.subject_scope,
+        commandType: validatedEnvelope.command_type,
         dataRevision,
-        sourceMessageId: envelope.source_message_id,
-        conversationId: envelope.conversation_id,
+        sourceMessageId: validatedEnvelope.source_message_id,
+        conversationId: validatedEnvelope.conversation_id,
         previewMaterial: Object.freeze({
           authority_kind: "diet-manager/domain-preview/v1",
-          envelope,
+          envelope: validatedEnvelope,
         }),
         now,
       });
       return Object.freeze({
-        envelope_id: envelope.envelope_id,
+        envelope_id: validatedEnvelope.envelope_id,
         token: preview.token,
         input_digest: inputDigest,
         data_revision: dataRevision,
@@ -374,7 +553,7 @@ export function createDietDomainService(
     },
 
     execute(execution: DomainExecuteInput): DomainExecutionResult {
-      const envelope = execution.envelope;
+      const envelope = validateAndFreezeEnvelope(execution.envelope);
       const operations = writeOperations(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");

@@ -1249,6 +1249,35 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     return { root, runtime, service };
   }
 
+  it("rejects an invalid meal amount before FactCommit and keeps it query-invisible", () => {
+    const fixture = createMealService();
+    try {
+      const envelope = mealEnvelope({
+        suffix: "invalid-negative-before-fact-commit",
+        location: "outside",
+        items: [mealItem({
+          name: "invalid negative meal", unit: "piece", observed: -1,
+          adopted: null, deducted: null, sources: [],
+        })],
+      });
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => fixture.service.preview(envelope)).toThrowError(
+        "DIET_DOMAIN_REQUEST_INVALID:envelope.operations.0.items.0.amount.observed_microunits",
+      );
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-invalid-negative-before-fact-commit",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("CASE-MEAL-006 records explicit rice and chicken without estimated flags", () => {
     const fixture = createMealService();
     try {
