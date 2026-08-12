@@ -5,14 +5,14 @@
 - Candidate/code commit: `c8e6bcef39d0f98452432c3331095d963b9b9778`
 - Stage A review-input documentation commit: `e8680a131cec1e5dd7c18c9f50b9fed35510dae3`
 - Superseded independently reviewed candidate: `074fd30465eded2b650e0e00dadfca98ec363abc`
-- P0: unassessed for the current candidate
-- P1: unassessed for the current candidate
-- P2: unassessed for the current candidate
-- Ready: NO — independent re-review pending
+- P0: 0
+- P1: 0
+- P2: 0
+- Ready: YES — scoped independent re-review passed
 
 The previous P0=0/P1=0/P2=0, Ready=YES verdict remains a historical verdict for `074fd30465eded2b650e0e00dadfca98ec363abc` only.
 
-Subsequent P1 findings changed source, generated runtime artifacts, and tests; therefore that historical verdict cannot close or approve `c8e6bcef39d0f98452432c3331095d963b9b9778`. The refreshed candidate has complete implementer gate evidence, but no independent final verdict yet.
+Subsequent P1 findings changed source, generated runtime artifacts, and tests, so the historical verdict did not transfer. The refreshed candidate completed its own full gate and the scoped independent re-review approved the exact fix range `2565c9a80324194e39b7a31e8c82dafb3233e8a4..61a02ccb8451b8bed37f5995af84d462a6fa04bd`.
 
 ## Review history
 
@@ -26,10 +26,11 @@ Subsequent P1 findings changed source, generated runtime artifacts, and tests; t
 | Prior final review | P0=0, P1=0, P2=0, Ready=YES for `074fd304` | No new scoped finding was found for that exact historical candidate. |
 | Post-closure final review findings | Two P1 and two P2 findings; Ready=NO | Terminal replay/stored-preview reuse still crossed live preflight; cross-envelope progress preflight was not transaction-authoritative under two SQLite connections; chronology and trailing-whitespace documentation defects remained. |
 | Final fix wave | Implementer remediation and full gate complete; independent verdict pending | `760e985` adds early frozen reuse and transaction-authoritative progress reservations; `d639b2b` corrects the two P2 documents; `c8e6bce` aligns the crash fixture with the production reservation fact. Stage A is `e8680a1`. |
+| Final scoped re-review | P0=0, P1=0, P2=0, Ready=YES | Original P1-1/P1-2/P2-1/P2-2 all ADDRESSED; no new P0/P1/P2. Code and push readiness approved with the disclosed `rg` process concern retained. |
 
-## Current independent review scope
+## Final independent review result
 
-The independent reviewer must verify, rather than inherit, all of the following for exact candidate `c8e6bcef39d0f98452432c3331095d963b9b9778`:
+The independent reviewer verified, rather than inherited, all of the following for exact candidate `c8e6bcef39d0f98452432c3331095d963b9b9778`:
 
 - Frozen terminal replay and stored-preview reuse occur before every live inventory, nutrition, and progress preflight.
 - Reservation input is an exact descriptor/prototype-safe shape; no dynamic getter executes; contribution versus replacement/date authority cannot be confused.
@@ -40,6 +41,8 @@ The independent reviewer must verify, rather than inherit, all of the following 
 
 ## Decision boundary
 
-`B-SLICE-001` is reopened pending an independent verdict for the current candidate. `B-FAULT-001` remains not started and is not yet authorized as the active implementation task. `X-GATE-002` remains blocked, no selected-route map is authorized, and this pending review does not establish installation, deployment, G2/G3 gate passage, or product readiness.
+`B-SLICE-001` is complete for the reviewed candidate. `B-FAULT-001` remains not started and is the only next implementation task. `X-GATE-002` remains blocked, no selected-route map is authorized, and this review does not establish installation, deployment, G2/G3 gate passage, or product readiness.
+
+The implementer disclosed one process exception: a read-only `rg` pipeline expanded beyond its intended safe paths. It emitted no protected path or content, performed no hash/execute/modify/track action, and Git shows no protected-path change; however, a low-level file open cannot be disproved. The exception does not alter the code verdict and must not be rewritten as a clean no-read attestation.
 
 not installable; public OpenClaw tool remains non-writing.
