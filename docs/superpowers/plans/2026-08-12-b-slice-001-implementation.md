@@ -317,7 +317,7 @@ git commit -m "feat: support ordered envelope operations"
 - Consumes: Task 1 domain types and Task 2 repository grouping.
 - Produces: `createDietDomainService()`, `DietDomainService.preview()`, `DietDomainService.execute()`, `DietDomainService.query()`, `listInventoryProjection()`, and purchase result DTOs.
 
-- [ ] **Step 1: Write purchase/query RED tests**
+- [x] **Step 1: Write purchase/query RED tests**
 
 ```ts
 it("adds two boxes of 12 milk cartons and queries one 24-carton batch", () => {
@@ -337,11 +337,11 @@ it("adds two boxes of 12 milk cartons and queries one 24-carton batch", () => {
 
 Also assert exact-label profile v1 is saved, a query creates zero business rows, same-key replay creates zero rows, and a pre-FactCommit injected failure produces only one redacted sink entry.
 
-- [ ] **Step 2: Run focused tests and verify the service RED**
+- [x] **Step 2: Run focused tests and verify the service RED**
 
 Expected: FAIL because `createDietDomainService()` is absent.
 
-- [ ] **Step 3: Implement the two-step service API**
+- [x] **Step 3: Implement the two-step service API**
 
 ```ts
 export interface DietDomainService {
@@ -360,15 +360,15 @@ export interface DomainExecuteInput {
 
 `preview()` computes the canonical digest and current repository revision, then calls `createServerPreview()`. `execute()` recomputes the digest, calls repository authorization, prepares the purchase fact/effect, commits it, runs the inventory add effect, and finalizes once.
 
-- [ ] **Step 4: Implement strict read-only inventory listing**
+- [x] **Step 4: Implement strict read-only inventory listing**
 
 `listInventoryProjection()` must query products, batches, and projections in one read transaction, parse every canonical payload through repository parsers, sort by normalized name then batch ID using ordinal comparison, and perform no writes.
 
-- [ ] **Step 5: Run focused tests, all plugin tests, and TypeScript**
+- [x] **Step 5: Run focused tests, all plugin tests, and TypeScript**
 
 Expected: purchase/query tests PASS; previous tests remain green.
 
-- [ ] **Step 6: Commit the purchase slice**
+- [x] **Step 6: Commit the purchase slice**
 
 ```powershell
 git add version-b-lite-plugin/src/domain version-b-lite-plugin/src/repository/query.ts version-b-lite-plugin/tests/vertical-slice.test.ts

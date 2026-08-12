@@ -4,6 +4,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 
 const QUERY_FIELDS = ["batchId", "database"] as const;
+const LIST_QUERY_FIELDS = ["database"] as const;
 const PROJECTION_PAYLOAD_FIELDS = [
   "authority_kind",
   "batch_id",
@@ -28,6 +29,15 @@ export interface InventoryProjectionResult {
   last_changed_at: string;
 }
 
+export interface InventoryListItem extends InventoryProjectionResult {
+  normalized_name: string;
+  product_type: string;
+}
+
+export interface InventoryProjectionListQuery {
+  database: DatabaseSync;
+}
+
 interface ProjectionRow {
   batch_id: string;
   last_event_id: string;
@@ -39,6 +49,14 @@ interface ProjectionRow {
   effective_status: string;
   effective_expiration_at: string | null;
   payload_json: string;
+}
+
+interface InventoryListRow extends ProjectionRow {
+  product_id: string;
+  normalized_name: string;
+  product_type: string;
+  product_payload_json: string;
+  batch_payload_json: string;
 }
 
 function invalid(reason: string): never {
@@ -151,4 +169,81 @@ export function parseInventoryProjectionRow(
   row: ProjectionRow,
 ): InventoryProjectionResult {
   return parseProjection(row);
+}
+
+function assertCanonicalObject(value: string, label: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return invalid(`${label}_json`);
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    canonicalJson(parsed) !== value
+  ) {
+    return invalid(`${label}_canonical`);
+  }
+}
+
+function ordinalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function listInventoryProjection(
+  input: InventoryProjectionListQuery,
+): readonly InventoryListItem[] {
+  const fields = exactDataProperties(input, LIST_QUERY_FIELDS);
+  if (typeof fields.database.value !== "object" || fields.database.value === null) {
+    return invalid("database");
+  }
+  const database = fields.database.value as DatabaseSync;
+  let transactionOpen = false;
+  try {
+    database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(database);
+    const rows = database
+      .prepare(
+        `SELECT
+          p.product_id, p.normalized_name, p.product_type,
+          p.payload_json AS product_payload_json,
+          b.payload_json AS batch_payload_json,
+          i.*
+         FROM inventory_batch_projections i
+         JOIN inventory_batches b ON b.batch_id = i.batch_id
+         JOIN products p ON p.product_id = b.product_id`,
+      )
+      .all() as unknown as InventoryListRow[];
+    const items = rows.map((row) => {
+      assertCanonicalObject(row.product_payload_json, "product_payload");
+      assertCanonicalObject(row.batch_payload_json, "batch_payload");
+      const projection = parseProjection(row);
+      if (projection.product_id !== row.product_id) return invalid("product_identity");
+      return Object.freeze({
+        ...projection,
+        normalized_name: row.normalized_name,
+        product_type: row.product_type,
+      });
+    });
+    items.sort(
+      (left, right) =>
+        ordinalCompare(left.normalized_name, right.normalized_name) ||
+        ordinalCompare(left.batch_id, right.batch_id),
+    );
+    database.exec("ROLLBACK");
+    transactionOpen = false;
+    return Object.freeze(items);
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+        // Preserve the primary read-model error.
+      }
+    }
+    throw error;
+  }
 }
