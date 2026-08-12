@@ -59,8 +59,8 @@ The Stage A review found that the table above summarized results but did not fre
 | --- | --- |
 | Complete append-only gate log | `docs/evidence/B-FAULT-001-stage-a-gates.txt` |
 | SHA list | `docs/evidence/B-FAULT-001-stage-a-gates.sha256` |
-| Log byte length | `71,540` |
-| Log SHA-256 | `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C` |
+| Log byte length | `70,879` |
+| Log SHA-256 | `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F` |
 | Frozen candidate binding | `b8bdbf207e4eda52eb395989b42e159d554cb078` |
 | Captured commands | `22`, all exit `0` |
 

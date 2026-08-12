@@ -29,7 +29,7 @@ Do not inspect `version-b-lite-plugin/src/storage/migration-v1.ts` content. Do n
 
 Read the B-FAULT plan/spec, `docs/work-items/B-FAULT-001-brief.md`, this package, `docs/work-items/B-FAULT-001-report.md`, and the Task 1–7 reports/reviews in `.superpowers/sdd/2026-08-12-b-fault-001-implementation/`. Review the candidate delta from the plan baseline, with particular attention to:
 
-- `docs/evidence/B-FAULT-001-stage-a-gates.txt` — complete captured output, `71,540` bytes, SHA-256 `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C`
+- `docs/evidence/B-FAULT-001-stage-a-gates.txt` — complete captured output, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`
 - `docs/evidence/B-FAULT-001-stage-a-gates.sha256` — committed identity list
 
 - `shared/acceptance-cases/b-fault-matrix.json`
@@ -90,7 +90,7 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 
 ## Recorded Stage A evidence
 
-- Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `71,540` bytes, SHA-256 `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C`; SHA list at the adjacent `.sha256` path.
+- Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`; SHA list at the adjacent `.sha256` path.
 - Candidate binding: every one of 22 command records names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`.
 - Completeness structure: 22 command begin/end records, exact commands, start/end timestamps, stdout/stderr begin/end sections and byte counts, 22 exit codes, and 22 full Node/temp boundaries. All exits, pinned/task Node counts, and new-temp counts are zero.
 - Sanitization: stdout/stderr are complete after deterministic absolute-prefix substitution only; no lines were omitted. Audit found no unredacted worktree or user-profile prefix and no protected/migration name or credential-shaped value.
