@@ -414,6 +414,7 @@ function assertPreviewReadyRow(row: ExistingAuthorityRow | undefined): ExistingA
 
 function assertPreviewIdentityConflicts(
   row: ExistingAuthorityRow,
+  binding: PreviewBindingV1,
   inputDigest: string,
   subjectScope: string,
   commandType: DietManagerAction,
@@ -421,7 +422,6 @@ function assertPreviewIdentityConflicts(
   if (row.idempotency_input_digest !== inputDigest) {
     throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
   }
-  const binding = storedBinding(row.payload_json);
   if (binding.subject_scope !== subjectScope) {
     throw new Error("IDEMPOTENCY_CONFLICT:subject_scope");
   }
@@ -430,7 +430,7 @@ function assertPreviewIdentityConflicts(
   }
 }
 
-function isTerminalAuthority(row: ExistingAuthorityRow): boolean {
+function isTerminalAuthorityCandidate(row: ExistingAuthorityRow): boolean {
   return (
     row.envelope_state === "finalized" &&
     row.idempotency_state === "finalized" &&
@@ -443,6 +443,87 @@ function bindingEquals(left: PreviewBindingV1, right: PreviewBindingV1): boolean
   return canonicalJson(left) === canonicalJson(right);
 }
 
+function assertRepositoryAuthorityRow(
+  row: ExistingAuthorityRow | undefined,
+  expectedBinding?: PreviewBindingV1,
+): {
+  binding: PreviewBindingV1;
+  idempotency_key: string;
+  envelope_state: AuthorizedRepositoryPreview["envelope_state"];
+  result_status: AuthorizedRepositoryPreview["result_status"];
+} {
+  if (!row || !row.envelope_id || !row.idempotency_key) {
+    return authorityInvalid("missing");
+  }
+  if (
+    row.envelope_id !== row.operation_id ||
+    row.envelope_idempotency_key !== row.idempotency_key ||
+    row.envelope_input_digest !== row.idempotency_input_digest
+  ) {
+    return authorityInvalid("identity");
+  }
+
+  const previewReady =
+    row.envelope_state === "received" &&
+    row.result_status === "preview_ready" &&
+    row.committed_at === null &&
+    row.idempotency_state === "preview_ready" &&
+    row.terminal_result_json === null;
+  const factsCommitted =
+    row.envelope_state === "effects_pending" &&
+    row.result_status === "facts_committed_effects_pending" &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "effects_pending" &&
+    row.terminal_result_json === null;
+  const effectsStable =
+    row.envelope_state === "effects_stable" &&
+    row.result_status === "effects_stable" &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "effects_stable" &&
+    row.terminal_result_json === null;
+  const finalized =
+    row.envelope_state === "finalized" &&
+    (row.result_status === "committed" ||
+      row.result_status === "committed_with_issues") &&
+    typeof row.committed_at === "string" &&
+    row.committed_at.length > 0 &&
+    row.idempotency_state === "finalized" &&
+    typeof row.terminal_result_json === "string" &&
+    row.terminal_result_json.length > 0;
+  if (!previewReady && !factsCommitted && !effectsStable && !finalized) {
+    return authorityInvalid("state");
+  }
+
+  const binding = storedBinding(row.payload_json);
+  if (
+    binding.preview_id !== row.envelope_id ||
+    binding.input_digest !== row.envelope_input_digest ||
+    (expectedBinding !== undefined && !bindingEquals(binding, expectedBinding))
+  ) {
+    return authorityInvalid("binding");
+  }
+  return {
+    binding,
+    idempotency_key: row.idempotency_key,
+    envelope_state: previewReady
+      ? "received"
+      : finalized
+        ? "finalized"
+        : effectsStable
+          ? "effects_stable"
+          : "effects_pending",
+    result_status: previewReady
+      ? "preview_ready"
+      : finalized
+        ? (row.result_status as "committed" | "committed_with_issues")
+        : effectsStable
+          ? "effects_stable"
+          : "facts_committed_effects_pending",
+  };
+}
+
 export function reuseServerPreview(
   input: ReuseServerPreviewInput,
 ): CreatedServerPreview | undefined {
@@ -450,9 +531,12 @@ export function reuseServerPreview(
   assertCurrentMigrationAuthority(frozen.database);
   const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
   if (!existing) return undefined;
-  if (isTerminalAuthority(existing)) {
+  if (isTerminalAuthorityCandidate(existing)) {
+    const terminal = assertRepositoryAuthorityRow(existing);
+    if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
     assertPreviewIdentityConflicts(
       existing,
+      terminal.binding,
       frozen.inputDigest,
       frozen.subjectScope,
       frozen.commandType,
@@ -517,9 +601,12 @@ export function createServerPreview(
       frozen.idempotencyKey,
     );
     if (existing) {
-      if (isTerminalAuthority(existing)) {
+      if (isTerminalAuthorityCandidate(existing)) {
+        const terminal = assertRepositoryAuthorityRow(existing);
+        if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
         assertPreviewIdentityConflicts(
           existing,
+          terminal.binding,
           frozen.inputDigest,
           frozen.subjectScope,
           frozen.commandType,
@@ -665,74 +752,12 @@ export function authorizeRepositoryPreview(
   }
 
   const row = findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id);
-  if (!row || !row.envelope_id || !row.idempotency_key) {
-    return authorityInvalid("missing");
-  }
-  if (
-    row.envelope_id !== row.operation_id ||
-    row.envelope_idempotency_key !== row.idempotency_key ||
-    row.envelope_input_digest !== row.idempotency_input_digest
-  ) {
-    return authorityInvalid("identity");
-  }
-
-  const previewReady =
-    row.envelope_state === "received" &&
-    row.result_status === "preview_ready" &&
-    row.committed_at === null &&
-    row.idempotency_state === "preview_ready" &&
-    row.terminal_result_json === null;
-  const factsCommitted =
-    row.envelope_state === "effects_pending" &&
-    row.result_status === "facts_committed_effects_pending" &&
-    typeof row.committed_at === "string" &&
-    row.committed_at.length > 0 &&
-    row.idempotency_state === "effects_pending" &&
-    row.terminal_result_json === null;
-  const effectsStable =
-    row.envelope_state === "effects_stable" &&
-    row.result_status === "effects_stable" &&
-    typeof row.committed_at === "string" &&
-    row.committed_at.length > 0 &&
-    row.idempotency_state === "effects_stable" &&
-    row.terminal_result_json === null;
-  const finalized =
-    row.envelope_state === "finalized" &&
-    (row.result_status === "committed" ||
-      row.result_status === "committed_with_issues") &&
-    typeof row.committed_at === "string" &&
-    row.committed_at.length > 0 &&
-    row.idempotency_state === "finalized" &&
-    typeof row.terminal_result_json === "string" &&
-    row.terminal_result_json.length > 0;
-  if (!previewReady && !factsCommitted && !effectsStable && !finalized) {
-    return authorityInvalid("state");
-  }
-
-  const authoritativeBinding = storedBinding(row.payload_json);
-  if (!bindingEquals(authoritativeBinding, tokenBinding)) {
-    return authorityInvalid("binding");
-  }
-  if (row.envelope_input_digest !== tokenBinding.input_digest) {
-    return authorityInvalid("identity");
-  }
+  const authority = assertRepositoryAuthorityRow(row, tokenBinding);
 
   return Object.freeze({
-    binding: authoritativeBinding,
-    idempotency_key: row.idempotency_key,
-    envelope_state: previewReady
-      ? "received"
-      : finalized
-        ? "finalized"
-      : effectsStable
-        ? "effects_stable"
-        : "effects_pending",
-    result_status: previewReady
-      ? "preview_ready"
-      : finalized
-        ? (row.result_status as "committed" | "committed_with_issues")
-      : effectsStable
-        ? "effects_stable"
-        : "facts_committed_effects_pending",
+    binding: authority.binding,
+    idempotency_key: authority.idempotency_key,
+    envelope_state: authority.envelope_state,
+    result_status: authority.result_status,
   });
 }

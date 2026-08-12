@@ -33,7 +33,10 @@ import {
 import { finalizeEnvelope } from "../src/repository/envelope-finalize.js";
 import { createContributionProgressReservation } from "../src/repository/progress-reservation.js";
 import { computeRepositoryDataRevision } from "../src/repository/revision.js";
-import { reuseServerPreview } from "../src/preview/store.js";
+import {
+  reuseServerPreview,
+  type ReuseServerPreviewInput,
+} from "../src/preview/store.js";
 import {
   DIET_DATABASE_FILENAME,
   openDietDatabase,
@@ -184,6 +187,39 @@ type Task6CaseId =
   | "CASE-STORAGE-006"
   | "CASE-STORAGE-007"
   | "CASE-INVENTORY-006";
+
+const frozenTask6RowIdentities = [
+  ["CASE-STORAGE-005", "storage-005-after-schema", "migration_bootstrap", "after_schema"],
+  ["CASE-STORAGE-005", "storage-005-before-history", "migration_bootstrap", "before_history"],
+  ["CASE-STORAGE-005", "storage-005-before-commit", "migration_bootstrap", "before_commit"],
+  [
+    "CASE-STORAGE-005",
+    "storage-005-unknown-existing-database",
+    "migration_bootstrap",
+    "unknown_existing_database",
+  ],
+  [
+    "CASE-STORAGE-005",
+    "storage-005-drifted-v1-index",
+    "migration_bootstrap",
+    "drifted_v1_index",
+  ],
+  [
+    "CASE-STORAGE-006",
+    "storage-006-after-commit-before-reply",
+    "record_multi_date",
+    "after_commit_before_reply",
+  ],
+  ["CASE-STORAGE-007", "storage-007-changed-digest", "record_meal", "changed_digest"],
+  ["CASE-STORAGE-007", "storage-007-changed-subject", "record_meal", "changed_subject"],
+  ["CASE-STORAGE-007", "storage-007-changed-command", "record_meal", "changed_command"],
+  [
+    "CASE-INVENTORY-006",
+    "inventory-006-preview-data-revision-changed",
+    "confirm_inventory_selection",
+    "preview_data_revision_changed",
+  ],
+] as const;
 
 interface Task6FaultRow {
   readonly case_id: Task6CaseId;
@@ -664,6 +700,275 @@ function validateTask6Row(value: unknown): Task6FaultRow {
   return row as unknown as Task6FaultRow;
 }
 
+function expectedTask6Observations(input: {
+  commandState: string;
+  commandResultStatus: string;
+  factEffectBundles: number;
+  factsUnchanged: boolean;
+  checkpointCount: number;
+  checkpointUnchanged: boolean;
+  tableUnchanged: boolean;
+  finalizationCount?: number;
+  receiptCount?: number;
+}): Task6FaultRow["observations"] {
+  const count = (value = 0, unchanged = input.tableUnchanged) => ({
+    count: value,
+    unchanged_from_pre_fault: unchanged,
+  });
+  return {
+    command_envelope: {
+      state: input.commandState,
+      result_status: input.commandResultStatus,
+    },
+    outbox: {
+      state: "not_applicable",
+      attempt_count: 0,
+      reason: null,
+      count: 0,
+    },
+    facts: {
+      event_records: 0,
+      meal_items: 0,
+      effect_bundle_commits: input.factEffectBundles,
+      unchanged_from_pre_fault: input.factsUnchanged,
+    },
+    effect_bundle_checkpoints: count(
+      input.checkpointCount,
+      input.checkpointUnchanged,
+    ),
+    inventory_transactions: count(),
+    nutrition_profiles: count(),
+    nutrition_snapshots: count(),
+    issues: count(),
+    daily_progress_snapshots: count(),
+    envelope_finalizations: count(input.finalizationCount),
+    success_receipts: count(input.receiptCount),
+  };
+}
+
+function expectedTask6Retry(input: {
+  action: string;
+  terminalBundleCount?: number;
+  finalizationCount?: number;
+  receiptCount?: number;
+}): Task6FaultRow["same_token_retry"] {
+  return {
+    action: input.action,
+    business_writes: "none",
+    completed_effects_repeated: false,
+    finalizations_added: 0,
+    frozen_result_bytes_unchanged: true,
+    post_retry: {
+      outbox_terminal_count: null,
+      outbox_attempt_count: null,
+      fact_event_records: 0,
+      fact_meal_items: 0,
+      terminal_effect_bundle_count: input.terminalBundleCount ?? 0,
+      daily_progress_snapshot_count: 0,
+      envelope_finalization_count: input.finalizationCount ?? 0,
+      success_receipt_count: input.receiptCount ?? 0,
+    },
+  };
+}
+
+function expectedTask6Frozen(
+  present: boolean,
+  dateOrder: readonly string[] = [],
+  singleDayAlias: boolean | null = null,
+): Task6FaultRow["frozen_result"] {
+  return {
+    present,
+    payload_bytes_unchanged: true,
+    returns_old_result_as_new: false,
+    date_order: dateOrder,
+    single_day_alias_present: singleDayAlias,
+  };
+}
+
+function validateFrozenTask6Authority(row: Task6FaultRow): void {
+  let expected: Pick<
+    Task6FaultRow,
+    | "operation_kind"
+    | "expected_error_code"
+    | "failed_state"
+    | "outbox_state"
+    | "observations"
+    | "restart"
+    | "same_token_retry"
+    | "diagnostic"
+    | "frozen_result"
+    | "forbidden"
+  >;
+  if (row.case_id === "CASE-STORAGE-005") {
+    const rejectedExisting =
+      row.fault_point === "unknown_existing_database" ||
+      row.fault_point === "drifted_v1_index";
+    expected = {
+      operation_kind: "migration_bootstrap",
+      expected_error_code: rejectedExisting
+        ? "storage_identity_invalid"
+        : "storage_migration_failed",
+      failed_state: "migration_rejected",
+      outbox_state: "not_applicable",
+      observations: expectedTask6Observations({
+        commandState: "not_applicable",
+        commandResultStatus: "not_applicable",
+        factEffectBundles: 0,
+        factsUnchanged: rejectedExisting,
+        checkpointCount: 0,
+        checkpointUnchanged: false,
+        tableUnchanged: rejectedExisting,
+      }),
+      restart: {
+        sqlite_reopen_state: rejectedExisting
+          ? "existing_bytes_unchanged"
+          : "candidate_absent",
+        only_unfinished_stage_may_change: true,
+        completed_effects_repeated: false,
+      },
+      same_token_retry: expectedTask6Retry({
+        action: rejectedExisting
+          ? "reject_existing_identity"
+          : "fresh_candidate_required",
+      }),
+      diagnostic: {
+        stage: rejectedExisting ? "StorageOpen" : "StorageMigration",
+        error_code: rejectedExisting
+          ? "STORAGE_IDENTITY_INVALID"
+          : "STORAGE_MIGRATION_FAILED",
+        trace_id: "not_applicable",
+        input_digest: "not_applicable",
+        forbidden_content: allForbiddenDiagnosticContent,
+      },
+      frozen_result: expectedTask6Frozen(false),
+      forbidden: [
+        rejectedExisting
+          ? "existing_database_bytes_changed"
+          : "candidate_database_published",
+      ],
+    };
+  } else if (row.case_id === "CASE-STORAGE-006") {
+    expected = {
+      operation_kind: "record_multi_date",
+      expected_error_code: "response_lost",
+      failed_state: "terminal_frozen",
+      outbox_state: "not_applicable",
+      observations: expectedTask6Observations({
+        commandState: "finalized",
+        commandResultStatus: "terminal",
+        factEffectBundles: 1,
+        factsUnchanged: true,
+        checkpointCount: 1,
+        checkpointUnchanged: true,
+        tableUnchanged: true,
+        finalizationCount: 1,
+        receiptCount: 1,
+      }),
+      restart: {
+        sqlite_reopen_state: "terminal_payload_frozen",
+        only_unfinished_stage_may_change: true,
+        completed_effects_repeated: false,
+      },
+      same_token_retry: expectedTask6Retry({
+        action: "return_exact_original_result",
+        terminalBundleCount: 1,
+        finalizationCount: 1,
+        receiptCount: 1,
+      }),
+      diagnostic: {
+        stage: "EnvelopeFinalize",
+        error_code: "ENVELOPE_FINALIZE_RESPONSE_LOST",
+        trace_id: "required",
+        input_digest: "required",
+        forbidden_content: allForbiddenDiagnosticContent,
+      },
+      frozen_result: expectedTask6Frozen(
+        true,
+        ["2026-08-08", "2026-08-09"],
+        false,
+      ),
+      forbidden: ["retry_recomputed_from_current_totals"],
+    };
+  } else if (row.case_id === "CASE-STORAGE-007") {
+    expected = {
+      operation_kind: "record_meal",
+      expected_error_code: "idempotency_conflict",
+      failed_state: "idempotency_conflict",
+      outbox_state: "not_applicable",
+      observations: expectedTask6Observations({
+        commandState: "finalized",
+        commandResultStatus: "terminal",
+        factEffectBundles: 0,
+        factsUnchanged: true,
+        checkpointCount: 0,
+        checkpointUnchanged: false,
+        tableUnchanged: true,
+      }),
+      restart: {
+        sqlite_reopen_state: "original_terminal_unchanged",
+        only_unfinished_stage_may_change: true,
+        completed_effects_repeated: false,
+      },
+      same_token_retry: expectedTask6Retry({ action: "reject_conflict" }),
+      diagnostic: {
+        stage: "Idempotency",
+        error_code: "IDEMPOTENCY_CONFLICT",
+        trace_id: "required",
+        input_digest: "required",
+        forbidden_content: allForbiddenDiagnosticContent,
+      },
+      frozen_result: expectedTask6Frozen(true),
+      forbidden: ["business_write_on_conflict"],
+    };
+  } else {
+    expected = {
+      operation_kind: "confirm_inventory_selection",
+      expected_error_code: "stale_revision",
+      failed_state: "stale_revision_rejected",
+      outbox_state: "not_applicable",
+      observations: expectedTask6Observations({
+        commandState: "not_applicable",
+        commandResultStatus: "not_applicable",
+        factEffectBundles: 0,
+        factsUnchanged: false,
+        checkpointCount: 0,
+        checkpointUnchanged: false,
+        tableUnchanged: false,
+      }),
+      restart: {
+        sqlite_reopen_state: "candidate_change_preserved",
+        only_unfinished_stage_may_change: true,
+        completed_effects_repeated: false,
+      },
+      same_token_retry: expectedTask6Retry({ action: "require_fresh_preview" }),
+      diagnostic: {
+        stage: "PreviewAuthority",
+        error_code: "STALE_REVISION",
+        trace_id: "required",
+        input_digest: "required",
+        forbidden_content: allForbiddenDiagnosticContent,
+      },
+      frozen_result: expectedTask6Frozen(false),
+      forbidden: ["stale_selection_accepted"],
+    };
+  }
+  const actual = {
+    operation_kind: row.operation_kind,
+    expected_error_code: row.expected_error_code,
+    failed_state: row.failed_state,
+    outbox_state: row.outbox_state,
+    observations: row.observations,
+    restart: row.restart,
+    same_token_retry: row.same_token_retry,
+    diagnostic: row.diagnostic,
+    frozen_result: row.frozen_result,
+    forbidden: row.forbidden,
+  };
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    return matrixInvalid("task6.frozen_authority");
+  }
+}
+
 function parseTask6Rows(value: unknown): readonly Task6FaultRow[] {
   const root = matrixRecord(value, [
     "case_assertion_paths", "case_order", "fault_rows", "matrix_id", "scope_limitations",
@@ -678,6 +983,15 @@ function parseTask6Rows(value: unknown): readonly Task6FaultRow[] {
       typeof candidate === "object" && candidate !== null &&
       task6Cases.has(String((candidate as Record<string, unknown>).case_id)))
     .map(validateTask6Row);
+  const identities = rows.map((row) => [
+    row.case_id,
+    row.fault_id,
+    row.operation_kind,
+    row.fault_point,
+  ]);
+  if (canonicalJson(identities) !== canonicalJson(frozenTask6RowIdentities)) {
+    return matrixInvalid("task6.row_identities");
+  }
   const observedCaseOrder = [...new Set(rows.map((row) => row.case_id))];
   if (canonicalJson(observedCaseOrder) !== canonicalJson(task6CaseOrder)) {
     return matrixInvalid("task6.case_coverage");
@@ -689,6 +1003,7 @@ function parseTask6Rows(value: unknown): readonly Task6FaultRow[] {
     if (canonicalJson(row.assertion_paths) !== canonicalJson(casePaths[row.case_id])) {
       return matrixInvalid("task6.assertion_paths");
     }
+    validateFrozenTask6Authority(row);
   }
   return Object.freeze(rows);
 }
@@ -987,6 +1302,42 @@ function preparePurchaseEffectBoundary(
     sealedAt: committedAt,
   });
   return { committedAt, operation, prepared, preparedAttempt };
+}
+
+function createTerminalMealAuthority(suffix: string) {
+  const root = newTestRoot();
+  const runtime = openDietDatabase({ privateRuntimeRoot: root });
+  const service = createDietDomainService({
+    database: runtime.database,
+    secret,
+    now: () => "2026-08-12T05:00:00.000Z",
+  });
+  const envelope = mealEnvelope(
+    suffix,
+    "outside",
+    mealItem(`terminal authority ${suffix}`, null, `public-terminal-${suffix}`),
+  );
+  const originalAttempt = attempt(service, envelope);
+  originalAttempt.run();
+  const terminalBytes = (runtime.database.prepare(
+    "SELECT terminal_result_json FROM idempotency_records WHERE idempotency_key = ?",
+  ).get(envelope.idempotency_key) as { terminal_result_json: string }).terminal_result_json;
+  const reuseInput: ReuseServerPreviewInput = {
+    database: runtime.database,
+    secret,
+    previewId: envelope.envelope_id,
+    idempotencyKey: envelope.idempotency_key,
+    inputDigest: originalAttempt.preview.input_digest,
+    subjectScope: envelope.subject_scope,
+    commandType: envelope.command_type,
+    sourceMessageId: envelope.source_message_id,
+    conversationId: envelope.conversation_id,
+    previewMaterial: {
+      authority_kind: "diet-manager/domain-preview/v1",
+      envelope,
+    },
+  };
+  return { envelope, reuseInput, root, runtime, terminalBytes };
 }
 
 function expectedFailureFromFactBaseline(
@@ -1516,12 +1867,86 @@ describe("B-FAULT-001 storage and stale-preview matrix aggregation", () => {
     ]).toEqual(root.case_order);
   });
 
+  it.each(frozenTask6RowIdentities)(
+    "rejects deletion of frozen Task 6 row %s/%s",
+    (_caseId, faultId) => {
+      const mutated = mutatedMatrix();
+      mutated.fault_rows = mutated.fault_rows.filter((row) => row.fault_id !== faultId);
+      expect(() => parseTask6Rows(mutated)).toThrow(
+        "B_FAULT_MATRIX_INVALID:task6.row_identities",
+      );
+    },
+  );
+
+  it.each([
+    ["fault id", (rows: Array<Record<string, unknown>>) => {
+      rows.find((row) => row.fault_id === "storage-005-before-history")!.fault_id =
+        "storage-005-before-history-drifted";
+    }],
+    ["row order", (rows: Array<Record<string, unknown>>) => {
+      const left = rows.findIndex((row) => row.fault_id === "storage-005-after-schema");
+      const right = rows.findIndex((row) => row.fault_id === "storage-005-before-history");
+      [rows[left], rows[right]] = [rows[right]!, rows[left]!];
+    }],
+    ["operation kind", (rows: Array<Record<string, unknown>>) => {
+      rows.find((row) => row.fault_id === "storage-007-changed-digest")!.operation_kind =
+        "add_inventory";
+    }],
+    ["fault point", (rows: Array<Record<string, unknown>>) => {
+      rows.find((row) => row.fault_id === "storage-007-changed-command")!.fault_point =
+        "changed_command_drifted";
+    }],
+  ] as const)("rejects frozen Task 6 %s mutation", (_name, mutate) => {
+    const mutated = mutatedMatrix();
+    mutate(mutated.fault_rows);
+    expect(() => parseTask6Rows(mutated)).toThrow(
+      "B_FAULT_MATRIX_INVALID:task6.row_identities",
+    );
+  });
+
+  it.each([
+    ["state", (row: Record<string, unknown>) => {
+      (row.observations as Record<string, Record<string, unknown>>)
+        .command_envelope!.state = "received";
+    }],
+    ["restart", (row: Record<string, unknown>) => {
+      (row.restart as Record<string, unknown>).sqlite_reopen_state = "candidate_absent";
+    }],
+    ["write scope", (row: Record<string, unknown>) => {
+      (row.same_token_retry as Record<string, unknown>).business_writes = "finalizer_only";
+    }],
+    ["table observation", (row: Record<string, unknown>) => {
+      (row.observations as Record<string, Record<string, unknown>>)
+        .inventory_transactions!.unchanged_from_pre_fault = false;
+    }],
+    ["frozen result", (row: Record<string, unknown>) => {
+      (row.frozen_result as Record<string, unknown>).present = false;
+    }],
+    ["forbidden outcome", (row: Record<string, unknown>) => {
+      row.forbidden = ["candidate_database_published"];
+    }],
+    ["diagnostic", (row: Record<string, unknown>) => {
+      (row.diagnostic as Record<string, unknown>).stage = "FactCommit";
+    }],
+  ] as const)("rejects same-type frozen %s mutation", (_name, mutate) => {
+    const mutated = mutatedMatrix();
+    const row = mutated.fault_rows.find(
+      (candidate) => candidate.fault_id === "storage-006-after-commit-before-reply",
+    )!;
+    mutate(row);
+    expect(() => parseTask6Rows(mutated)).toThrow(
+      "B_FAULT_MATRIX_INVALID:task6.frozen_authority",
+    );
+  });
+
   it("rejects deletion, observation-shape drift, and detached assertion authority", () => {
     const deleted = mutatedMatrix();
     deleted.fault_rows = deleted.fault_rows.filter(
       (row) => row.case_id !== "CASE-INVENTORY-006",
     );
-    expect(() => parseTask6Rows(deleted)).toThrow("B_FAULT_MATRIX_INVALID:task6.case_coverage");
+    expect(() => parseTask6Rows(deleted)).toThrow(
+      "B_FAULT_MATRIX_INVALID:task6.row_identities",
+    );
 
     const observationDrift = mutatedMatrix();
     const observationRow = observationDrift.fault_rows.find(
@@ -1675,11 +2100,16 @@ describe("B-FAULT-001 storage and stale-preview matrix aggregation", () => {
         secret,
         now: () => "2026-08-12T05:00:00.000Z",
       });
-      const original = purchaseEnvelope(
+      const original = mealEnvelope(
         "terminal-conflict",
-        "terminal conflict product",
-        "product-terminal-conflict",
+        "outside",
+        mealItem(
+          "terminal conflict meal",
+          null,
+          "public-terminal-conflict-meal",
+        ),
       );
+      expect(rows.every((row) => row.operation_kind === original.command_type)).toBe(true);
       const originalAttempt = attempt(service, original);
       originalAttempt.run();
       const terminalBytes = (runtime.database.prepare(
@@ -1705,7 +2135,9 @@ describe("B-FAULT-001 storage and stale-preview matrix aggregation", () => {
           override.subjectScope = "user:changed-subject";
           expectedDetail = "subject_scope";
         } else if (row.fault_point === "changed_command") {
-          override.commandType = "record_meal";
+          override.commandType = row.operation_kind === "record_meal"
+            ? "add_inventory"
+            : "record_meal";
           expectedDetail = "command_type";
         } else {
           throw new Error(`B_FAULT_MATRIX_INVALID:terminal_fault_point:${row.fault_point}`);
@@ -1736,6 +2168,78 @@ describe("B-FAULT-001 storage and stale-preview matrix aggregation", () => {
       removeOwnedRoot(root);
     }
   });
+
+  it.each(([
+    ["invalid committed status", "state", (database: DatabaseSyncType, envelopeId: string) => {
+      database.prepare(
+        "UPDATE command_envelopes SET result_status = 'preview_ready' WHERE envelope_id = ?",
+      ).run(envelopeId);
+    }],
+    ["missing committed timestamp", "state", (database: DatabaseSyncType, envelopeId: string) => {
+      database.prepare(
+        "UPDATE command_envelopes SET committed_at = NULL WHERE envelope_id = ?",
+      ).run(envelopeId);
+    }],
+    ["repository identity mismatch", "identity", (
+      database: DatabaseSyncType,
+      envelopeId: string,
+    ) => {
+      database.prepare(
+        "UPDATE command_envelopes SET input_digest = ? WHERE envelope_id = ?",
+      ).run("E".repeat(64), envelopeId);
+    }],
+    ["invalid stored binding", "binding", (database: DatabaseSyncType, envelopeId: string) => {
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = '{}' WHERE envelope_id = ?",
+      ).run(envelopeId);
+    }],
+    ["mismatched stored binding", "binding", (
+      database: DatabaseSyncType,
+      envelopeId: string,
+    ) => {
+      const stored = database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelopeId) as { payload_json: string };
+      const payload = JSON.parse(stored.payload_json) as {
+        authority_kind: string;
+        binding: Record<string, unknown>;
+      };
+      payload.binding.preview_id = "preview-mismatched-terminal-authority";
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(payload), envelopeId);
+    }],
+  ] as const).flatMap(([malformation, expectedDetail, corrupt]) =>
+    (["digest", "subject", "command"] as const).map((conflict) =>
+      [malformation, conflict, expectedDetail, corrupt] as const,
+    ),
+  ))(
+    "fails closed on finalized-looking %s before changed %s",
+    (malformation, conflict, expectedDetail, corrupt) => {
+      const fixture = createTerminalMealAuthority(
+        `malformed-${malformation.replaceAll(" ", "-")}-${conflict}`,
+      );
+      try {
+        corrupt(fixture.runtime.database, fixture.envelope.envelope_id);
+        const before = businessSnapshot(fixture.runtime.database);
+        const changed: ReuseServerPreviewInput = {
+          ...fixture.reuseInput,
+          ...(conflict === "digest" ? { inputDigest: "F".repeat(64) } : {}),
+          ...(conflict === "subject" ? { subjectScope: "user:changed-subject" } : {}),
+          ...(conflict === "command" ? { commandType: "add_inventory" as const } : {}),
+        };
+        for (let repetition = 0; repetition < 2; repetition += 1) {
+          const error = captureError(() => reuseServerPreview(changed));
+          expect(error).toEqual(new Error(`PREVIEW_AUTHORITY_INVALID:${expectedDetail}`));
+          expect(String(error)).not.toContain(fixture.terminalBytes);
+        }
+        assertExactBusinessSnapshot(before, businessSnapshot(fixture.runtime.database));
+      } finally {
+        fixture.runtime.close();
+        removeOwnedRoot(fixture.root);
+      }
+    },
+  );
 
   it("preserves nonterminal preview-state precedence over changed identity conflicts", () => {
     const root = newTestRoot();

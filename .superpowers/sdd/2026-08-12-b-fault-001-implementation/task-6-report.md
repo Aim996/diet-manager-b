@@ -75,3 +75,53 @@ the Windows-normalized path. No direct file read, hash, execution, or modificati
 followed. Full repository/build/OpenClaw/crash-harness validation was intentionally
 not run because the brief explicitly limited verification to focused
 fault/storage/authority behavior, TypeScript no-emit, and diff checking.
+
+## Fix round 1: independent-review P1 closure
+
+### P1-1 complete frozen matrix authority
+
+- RED: after adding per-row deletion, identity/order, and representative
+  same-type value mutations, focused fault evidence reported 21 failures and
+  37 passes. The old parser accepted deletion of rows from multi-row cases,
+  accepted row ID/order/operation/fault-point drift, and accepted changes to
+  state, restart, write scope, table observations, frozen result, forbidden
+  outcome, and diagnostic authority.
+- GREEN: Task 6 now binds the exact ordered ten
+  `(case_id, fault_id, operation_kind, fault_point)` tuples. Every remaining
+  row field is either used by the executable scenario or compared against the
+  exact legal case authority; assertion paths remain linked to the matrix's
+  case-level paths. All ten deletion mutations and all identity/value mutations
+  now fail with their intended matrix validation code.
+- `CASE-STORAGE-007` now creates a real finalized `record_meal` authority. The
+  changed-command input moves from the matrix-owned original `record_meal`
+  direction to `add_inventory`; it no longer reverses a purchase fixture into
+  a meal command.
+
+### P1-2 successful-terminal validation before conflict precedence
+
+- RED: five finalized-looking malformations were crossed independently with
+  changed digest, subject, and command. The old code failed 13 of 15 cases by
+  returning an idempotency conflict before `state`, `identity`, or `binding`
+  authority failure. The two invalid-binding subject/command cases already
+  failed closed.
+- GREEN: the existing repository identity, exact state, canonical binding, and
+  binding-match checks are now one shared validator used by repository preview
+  authorization and terminal conflict selection. A terminal candidate must
+  validate as `committed|committed_with_issues`, have a committed timestamp,
+  consistent repository identities, and a canonical row-matching binding
+  before digest/subject/command conflict priority applies.
+- All 15 malformed-terminal combinations return the exact existing
+  `PREVIEW_AUTHORITY_INVALID:state|identity|binding` code twice, leak no terminal
+  payload, and leave the complete snapshot unchanged. The effects-pending state
+  precedence test remains green. Token, secret, input digest, subject, command,
+  binding, and data-revision authorization were not relaxed.
+
+### Fix round 1 verification
+
+- Focused Vitest with one worker:
+  `tests/fault-matrix.test.ts`, `tests/storage-bootstrap.test.ts`, and
+  `tests/server-authority.test.ts`: 107 tests passed in 3 files.
+- `tsc -p tsconfig.json --noEmit`: exit 0.
+- `git diff --check`: exit 0.
+- No new process concern. The earlier migration-v1 search-output concern remains
+  documented above; Fix round 1 used only explicit safe file reads and searches.
