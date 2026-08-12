@@ -29,7 +29,7 @@
     "case_set_id": "diet-manager/core-acceptance-cases-v1",
     "version": "1.4.0",
     "case_count": 27,
-    "sha256": "4A59E83E0CF07B69AE67C394B89F5633A9CE93D32D65B472E3B429151E65E041"
+    "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
   },
   "fixture_catalog": {
     "path": "shared/acceptance-cases/fixtures/core-v1.json",
@@ -54,7 +54,8 @@
     "path": "shared/acceptance-cases/b-fault-matrix.json",
     "matrix_id": "diet-manager/b-fault-matrix/v1",
     "case_count": 7,
-    "sha256": "9DCF577D47C2187A19D0AD62C96C54EFDA7AEEF87D95A4019E812BCBC392C506"
+    "fault_count": 18,
+    "sha256": "57E4D5BBD618F3A52CC2FC124ABCE77C3CD5E7E7342101C4B3E458A07F3E4ACB"
   },
   "route_policy": {
     "b_mode": "selected_execution_adapter",

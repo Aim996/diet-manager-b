@@ -3,18 +3,18 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 296128,
-      "sha256": "055AE76A7885CA02ED97156A4C4C3A9B701D569E34AF3A176EC467F916F9FE49"
+      "length": 296561,
+      "sha256": "EC47141386E86AA5949AE0D2634CFD9893C62DDDE659FC4234A75FC4962387E1"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 30964,
-      "sha256": "4A59E83E0CF07B69AE67C394B89F5633A9CE93D32D65B472E3B429151E65E041"
+      "length": 30962,
+      "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "263D18740462A6EE032B6D1BACC74C40755EAB8124A65C03BC5D4AB3DED07B5F"
+      "sha256": "1236BE871244B331B6FA769ED5736F2C368AE2F4C0F5F62E5FC2E348B1FD57B5"
     }
   },
   "counts": {
@@ -22,7 +22,7 @@
     "Q": 7,
     "RISK": 17,
     "DEBT": 7,
-    "CHG": 4
+    "CHG": 5
   },
   "entries": [
     {
@@ -897,6 +897,20 @@
       "owner_approver": "计划负责人 / 用户直接批准",
       "tasks": "DOC-003-001、SH-SAFE-BASE-001、B-STOR-001",
       "status_evidence": "已验证；简明计划、8动作合同、本地SQLite spike与EV-20260811-012安全有界退出验收已落；后继共享输入仍按各自任务验收"
+    },
+    {
+      "id": "CHG-20260812-001",
+      "kind": "CHG",
+      "reference_ids": [
+        "CASE-EFFECT-003",
+        "B-FAULT-001",
+        "DEC-023"
+      ],
+      "source_change": "CASE-EFFECT-003的正式故障 Oracle 校正；L1状态语义修复",
+      "impact": "全部子效果已耐久而仅EnvelopeFinalize失败时，信封及重启状态从effects_pending更正为effects_stable；同token只允许最终器继续，不得重复效果",
+      "owner_approver": "Codex / 复审冻结",
+      "tasks": "B-FAULT-001、DEC-023、CASE-EFFECT-003",
+      "status_evidence": "实施中；由18行B故障矩阵、catalog SHA绑定与独立故障复核关闭"
     }
   ]
 }

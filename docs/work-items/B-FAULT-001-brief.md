@@ -15,11 +15,13 @@
 
 ## Objective
 
-Freeze the seven-case B fault authority as `diet-manager/b-fault-matrix/v1`. The matrix fixes each fault point, error code, failed/outbox state, restart expectation, same-token retry boundary, forbidden outcome and assertion path. Its SHA-256 in the harness manifest binds the exact bytes used by future executable fault work.
+Freeze the seven-case, eighteen-row B fault authority as `diet-manager/b-fault-matrix/v1`. The matrix fixes each distinct write point, error code, failed/outbox state and attempt/reason, complete persistent observation vector, restart expectation, same-token retry boundary, redacted diagnostic constraint, frozen-result rule, forbidden outcome and assertion path. Its SHA-256 in the harness manifest binds the exact bytes used by future executable fault work.
 
 ## Frozen correction
 
 `CASE-EFFECT-003` fails at `EnvelopeFinalize` only after all child effects are durable. Its envelope state is therefore `effects_stable`, including after restart. A same-token retry may finalize once, but may not re-run a completed effect.
+
+The exact row order is 1 `after_nutrition`, 3 late EffectBundle rows, 4 finalizer rows, 5 migration/open rows, 1 response-loss row, 3 idempotency-conflict rows and 1 stale-preview row. Each row declares the complete observation vector and requires `stage`, `error_code`, `trace_id`, `input_digest` plus the four forbidden diagnostic content categories.
 
 ## Scope boundaries
 

@@ -67,7 +67,7 @@ test("freezes the shared harness manifest", () => {
     case_set_id: "diet-manager/core-acceptance-cases-v1",
     version: "1.4.0",
     case_count: 27,
-    sha256: "4A59E83E0CF07B69AE67C394B89F5633A9CE93D32D65B472E3B429151E65E041",
+    sha256: "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41",
   });
   assert.deepEqual(manifest.fixture_catalog, {
     path: "shared/acceptance-cases/fixtures/core-v1.json",

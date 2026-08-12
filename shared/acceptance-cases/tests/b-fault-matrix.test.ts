@@ -5,158 +5,127 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const testsDirectory = dirname(fileURLToPath(import.meta.url));
-const acceptanceRoot = resolve(testsDirectory, "..");
+const acceptanceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const projectRoot = resolve(acceptanceRoot, "..", "..");
 const matrixPath = resolve(acceptanceRoot, "b-fault-matrix.json");
 const manifestPath = resolve(acceptanceRoot, "harness-manifest.json");
 
 const CASE_ORDER = [
-  "CASE-EFFECT-001",
-  "CASE-EFFECT-002",
-  "CASE-EFFECT-003",
-  "CASE-STORAGE-005",
-  "CASE-STORAGE-006",
-  "CASE-STORAGE-007",
-  "CASE-INVENTORY-006",
+  "CASE-EFFECT-001", "CASE-EFFECT-002", "CASE-EFFECT-003",
+  "CASE-STORAGE-005", "CASE-STORAGE-006", "CASE-STORAGE-007", "CASE-INVENTORY-006",
 ] as const;
 
-const EXPECTED_FAULT_IDS = [
-  "effect_bundle_nutrition_snapshot_write",
-  "effect_bundle_late_write",
-  "envelope_finalize_write",
-  "migration_candidate_publish",
-  "terminal_response_lost",
-  "idempotency_identity_conflict",
-  "preview_revision_stale",
+const FAULT_ORDER = [
+  ["CASE-EFFECT-001", "after_nutrition"],
+  ["CASE-EFFECT-002", "after_inventory_write"],
+  ["CASE-EFFECT-002", "after_issue_write"],
+  ["CASE-EFFECT-002", "after_progress_contribution_prepared"],
+  ["CASE-EFFECT-003", "after_finalization_row"],
+  ["CASE-EFFECT-003", "after_envelope"],
+  ["CASE-EFFECT-003", "after_idempotency"],
+  ["CASE-EFFECT-003", "before_commit"],
+  ["CASE-STORAGE-005", "after_schema"],
+  ["CASE-STORAGE-005", "before_history"],
+  ["CASE-STORAGE-005", "before_commit"],
+  ["CASE-STORAGE-005", "unknown_existing_database"],
+  ["CASE-STORAGE-005", "drifted_v1_index"],
+  ["CASE-STORAGE-006", "after_commit_before_reply"],
+  ["CASE-STORAGE-007", "changed_digest"],
+  ["CASE-STORAGE-007", "changed_subject"],
+  ["CASE-STORAGE-007", "changed_command"],
+  ["CASE-INVENTORY-006", "preview_data_revision_changed"],
 ] as const;
 
-const EXPECTED_ASSERTION_PATHS: Record<(typeof CASE_ORDER)[number], string[]> = {
-  "CASE-EFFECT-001": [
-    "/oracle/failure",
-    "/oracle/state_after_restart",
-    "/oracle/same_key_retry",
-    "/forbidden",
-  ],
-  "CASE-EFFECT-002": [
-    "/effect_bundle/late_failure_full_rollback",
-    "/restart/effects_pending",
-    "/same_token_retry/missing_effect_only",
-    "/forbidden",
-  ],
-  "CASE-EFFECT-003": [
-    "/oracle/failure",
-    "/oracle/state_after_restart",
-    "/oracle/same_key_retry",
-    "/forbidden",
-  ],
-  "CASE-STORAGE-005": [
-    "/migration/failure_keeps_final_unpublished",
-    "/migration/failure_keeps_user_version_unadvanced",
-    "/scope_limitation",
-  ],
-  "CASE-STORAGE-006": [
-    "/oracle/original_result",
-    "/oracle/later_unrelated_write",
-    "/oracle/same_key_retry",
-    "/forbidden",
-  ],
-  "CASE-STORAGE-007": [
-    "/oracle/idempotency/conflicts",
-    "/oracle/idempotency/business_write_count",
-    "/forbidden",
-  ],
-  "CASE-INVENTORY-006": [
-    "/preview/data_revision_stale_zero_write",
-    "/preview/caller_state_untrusted",
-    "/scope_limitation",
-  ],
-};
-
-const FAULT_KEYS = [
-  "fault_id",
-  "operation_kind",
-  "fault_point",
-  "expected_error_code",
-  "failed_state",
-  "outbox_state",
-  "restart",
-  "same_token_retry",
-  "forbidden",
-  "assertion_paths",
+const CASE_FAULT_COUNTS = [1, 3, 4, 5, 1, 3, 1] as const;
+const ROW_KEYS = [
+  "case_id", "fault_id", "operation_kind", "fault_point", "expected_error_code",
+  "failed_state", "outbox_state", "observations", "restart", "same_token_retry",
+  "diagnostic", "frozen_result", "forbidden", "assertion_paths",
 ] as const;
+const OBSERVATION_KEYS = [
+  "command_envelope", "outbox", "facts", "inventory_transactions", "nutrition_profiles",
+  "nutrition_snapshots", "issues", "daily_progress_snapshots", "envelope_finalizations", "success_receipts",
+] as const;
+const COUNT_KEYS = ["count", "unchanged_from_pre_fault"] as const;
+const RESTART_KEYS = ["sqlite_reopen_state", "only_unfinished_stage_may_change", "completed_effects_repeated"] as const;
+const RETRY_KEYS = ["action", "business_writes", "completed_effects_repeated", "finalizations_added", "frozen_result_bytes_unchanged"] as const;
+const DIAGNOSTIC_KEYS = ["stage", "error_code", "trace_id", "input_digest", "forbidden_content"] as const;
 
-const ALLOWED_FAILED_STATES = new Set([
-  "effects_pending",
-  "effects_stable",
-  "migration_rejected",
-  "terminal_frozen",
-  "idempotency_conflict",
-  "stale_revision_rejected",
-]);
-
-type Fault = {
-  fault_id: string;
-  operation_kind: string;
-  fault_point: string;
-  expected_error_code: string;
-  failed_state: string;
-  outbox_state: string;
-  restart: Record<string, unknown>;
-  same_token_retry: Record<string, unknown>;
-  forbidden: string[];
-  assertion_paths: string[];
-};
-
+type Row = Record<string, unknown>;
 type Matrix = {
   matrix_id: string;
   case_order: string[];
-  cases: Array<{ case_id: string; faults: Fault[]; scope_limitation?: string }>;
+  fault_rows: Row[];
   case_assertion_paths: Record<string, string[]>;
+  scope_limitations: Record<string, string>;
 };
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function keys(value: unknown): string[] {
+  assert.equal(typeof value, "object", "B_FAULT_OBJECT_REQUIRED");
+  assert.notEqual(value, null, "B_FAULT_OBJECT_REQUIRED");
+  assert.equal(Array.isArray(value), false, "B_FAULT_OBJECT_REQUIRED");
+  return Object.keys(value as object);
+}
+
 function assertMatrix(matrix: Matrix): void {
   assert.equal(matrix.matrix_id, "diet-manager/b-fault-matrix/v1");
   assert.deepEqual(matrix.case_order, CASE_ORDER, "B_FAULT_CASE_ORDER_INVALID");
+  assert.equal(matrix.fault_rows.length, FAULT_ORDER.length, "B_FAULT_ROW_COUNT_INVALID");
   assert.deepEqual(
-    matrix.cases.map((entry) => entry.case_id),
-    CASE_ORDER,
-    "B_FAULT_CASE_ROWS_INVALID",
-  );
-  assert.deepEqual(
-    matrix.cases.map((entry) => entry.faults.length),
-    [1, 1, 1, 1, 1, 1, 1],
-    "B_FAULT_CASE_FAULT_COUNT_INVALID",
-  );
-  const faults = matrix.cases.map((entry) => entry.faults[0]);
-  assert.deepEqual(
-    faults.map((fault) => fault.fault_id),
-    EXPECTED_FAULT_IDS,
+    matrix.fault_rows.map((row) => [row.case_id, row.fault_point]),
+    FAULT_ORDER,
     "B_FAULT_ORDER_INVALID",
   );
-  assert.deepEqual(matrix.case_assertion_paths, EXPECTED_ASSERTION_PATHS, "B_FAULT_ASSERTION_PATHS_INVALID");
+  assert.deepEqual(
+    CASE_ORDER.map((caseId) => matrix.fault_rows.filter((row) => row.case_id === caseId).length),
+    CASE_FAULT_COUNTS,
+    "B_FAULT_CASE_FAULT_COUNT_INVALID",
+  );
+  const ids = matrix.fault_rows.map((row) => row.fault_id);
+  assert.equal(new Set(ids).size, ids.length, "B_FAULT_DUPLICATE_ID");
 
-  for (const [index, fault] of faults.entries()) {
-    assert.deepEqual(Object.keys(fault), FAULT_KEYS, `B_FAULT_ROW_KEYS_INVALID:${CASE_ORDER[index]}`);
-    assert.equal(fault.operation_kind.length > 0, true, `B_FAULT_OPERATION_KIND_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(fault.fault_point.length > 0, true, `B_FAULT_POINT_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(fault.expected_error_code.length > 0, true, `B_FAULT_ERROR_CODE_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(ALLOWED_FAILED_STATES.has(fault.failed_state), true, `B_FAULT_STATE_INVALID:${CASE_ORDER[index]}`);
-    assert.equal(fault.outbox_state.length > 0, true, `B_FAULT_OUTBOX_STATE_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(Object.keys(fault.restart).length > 0, true, `B_FAULT_RESTART_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(Object.keys(fault.same_token_retry).length > 0, true, `B_FAULT_RETRY_MISSING:${CASE_ORDER[index]}`);
-    assert.equal(fault.forbidden.length > 0, true, `B_FAULT_FORBIDDEN_MISSING:${CASE_ORDER[index]}`);
-    assert.deepEqual(fault.assertion_paths, EXPECTED_ASSERTION_PATHS[CASE_ORDER[index]], `B_FAULT_PATHS_INVALID:${CASE_ORDER[index]}`);
+  for (const row of matrix.fault_rows) {
+    assert.deepEqual(keys(row), ROW_KEYS, `B_FAULT_ROW_KEYS_INVALID:${row.fault_id}`);
+    assert.equal(typeof row.fault_id, "string", "B_FAULT_ID_MISSING");
+    assert.equal(typeof row.operation_kind, "string", "B_FAULT_OPERATION_MISSING");
+    assert.equal(typeof row.expected_error_code, "string", "B_FAULT_ERROR_MISSING");
+    assert.notEqual(row.expected_error_code, "", "B_FAULT_ERROR_EMPTY");
+    assert.deepEqual(keys(row.observations), OBSERVATION_KEYS, `B_FAULT_OBSERVATIONS_INVALID:${row.fault_id}`);
+    assert.deepEqual(keys((row.observations as Record<string, unknown>).command_envelope), ["state", "result_status"]);
+    assert.deepEqual(keys((row.observations as Record<string, unknown>).outbox), ["state", "attempt_count", "reason", "count"]);
+    assert.deepEqual(keys((row.observations as Record<string, unknown>).facts), ["event_records", "meal_items", "effect_bundle_commits", "unchanged_from_pre_fault"]);
+    for (const key of OBSERVATION_KEYS.slice(3)) {
+      assert.deepEqual(keys((row.observations as Record<string, unknown>)[key]), COUNT_KEYS, `B_FAULT_COUNT_OBSERVATION_INVALID:${row.fault_id}:${key}`);
+    }
+    assert.deepEqual(keys(row.restart), RESTART_KEYS, `B_FAULT_RESTART_INVALID:${row.fault_id}`);
+    assert.deepEqual(keys(row.same_token_retry), RETRY_KEYS, `B_FAULT_RETRY_INVALID:${row.fault_id}`);
+    assert.deepEqual(keys(row.diagnostic), DIAGNOSTIC_KEYS, `B_FAULT_DIAGNOSTIC_INVALID:${row.fault_id}`);
+    assert.deepEqual((row.diagnostic as Record<string, unknown>).forbidden_content, ["source_text", "sql", "secret", "absolute_path"]);
+    assert.deepEqual(keys(row.frozen_result), ["present", "payload_bytes_unchanged", "returns_old_result_as_new"], `B_FAULT_FROZEN_RESULT_INVALID:${row.fault_id}`);
+    assert.equal(Array.isArray(row.assertion_paths) && row.assertion_paths.length > 0, true, `B_FAULT_PATHS_MISSING:${row.fault_id}`);
   }
 
-  for (const caseId of ["CASE-EFFECT-002", "CASE-STORAGE-005", "CASE-INVENTORY-006"] as const) {
-    const row = matrix.cases.find((entry) => entry.case_id === caseId);
-    assert.equal(typeof row?.scope_limitation, "string", `B_FAULT_SCOPE_LIMITATION_MISSING:${caseId}`);
-    assert.equal((row?.scope_limitation?.length ?? 0) > 0, true, `B_FAULT_SCOPE_LIMITATION_EMPTY:${caseId}`);
+  for (const caseId of ["CASE-EFFECT-002", "CASE-STORAGE-005", "CASE-INVENTORY-006"]) {
+    assert.equal(typeof matrix.scope_limitations[caseId], "string", `B_FAULT_SCOPE_LIMITATION_MISSING:${caseId}`);
+    assert.notEqual(matrix.scope_limitations[caseId], "", `B_FAULT_SCOPE_LIMITATION_EMPTY:${caseId}`);
+  }
+
+  const effect001 = matrix.fault_rows[0];
+  assert.deepEqual((effect001.observations as Record<string, unknown>).command_envelope, { state: "effects_pending", result_status: "facts_committed_effects_pending" });
+  assert.deepEqual((effect001.observations as Record<string, unknown>).outbox, { state: "retryable_failed", attempt_count: 1, reason: "NUTRITION_EFFECT_WRITE_FAILED", count: 2 });
+  const effect002 = matrix.fault_rows.slice(1, 4);
+  for (const row of effect002) {
+    assert.equal(row.expected_error_code, "effect_bundle_write_failed");
+    assert.deepEqual((row.observations as Record<string, unknown>).outbox, { state: "retryable_failed", attempt_count: 1, reason: "MEAL_EFFECT_FAILED", count: 4 });
+  }
+  for (const row of matrix.fault_rows.slice(4, 8)) {
+    assert.equal(row.expected_error_code, "envelope_finalize_write_failed");
+    assert.deepEqual((row.observations as Record<string, unknown>).command_envelope, { state: "effects_stable", result_status: "effects_stable" });
+    assert.deepEqual((row.observations as Record<string, unknown>).outbox, { state: "succeeded", attempt_count: 1, reason: null, count: 4 });
   }
 }
 
@@ -165,47 +134,48 @@ function readMatrix(): Matrix {
   return JSON.parse(readFileSync(matrixPath, "utf8")) as Matrix;
 }
 
-test("freezes the seven-case B fault authority and manifest binding", () => {
+test("freezes the exact eighteen-row B fault authority and both manifest bindings", () => {
   const matrix = readMatrix();
   assertMatrix(matrix);
-
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-    b_fault_matrix?: { path: string; matrix_id: string; case_count: number; sha256: string };
+    case_catalog: { path: string; sha256: string };
+    b_fault_matrix: { path: string; matrix_id: string; case_count: number; fault_count: number; sha256: string };
   };
-  assert.deepEqual(manifest.b_fault_matrix?.path, "shared/acceptance-cases/b-fault-matrix.json");
-  assert.equal(manifest.b_fault_matrix?.matrix_id, "diet-manager/b-fault-matrix/v1");
-  assert.equal(manifest.b_fault_matrix?.case_count, CASE_ORDER.length);
-  const bytes = readFileSync(resolve(projectRoot, manifest.b_fault_matrix!.path));
-  const actual = createHash("sha256").update(bytes).digest("hex").toUpperCase();
-  assert.equal(actual, manifest.b_fault_matrix?.sha256, "B_FAULT_MATRIX_HASH_INVALID");
-
+  assert.deepEqual(manifest.b_fault_matrix, {
+    path: "shared/acceptance-cases/b-fault-matrix.json",
+    matrix_id: "diet-manager/b-fault-matrix/v1",
+    case_count: 7,
+    fault_count: 18,
+    sha256: manifest.b_fault_matrix.sha256,
+  });
+  for (const entry of [manifest.case_catalog, manifest.b_fault_matrix]) {
+    const actual = createHash("sha256").update(readFileSync(resolve(projectRoot, entry.path))).digest("hex").toUpperCase();
+    assert.equal(actual, entry.sha256, `B_FAULT_MANIFEST_HASH_INVALID:${entry.path}`);
+  }
   const cases = JSON.parse(readFileSync(resolve(acceptanceRoot, "cases.json"), "utf8")) as {
-    cases: Array<{ id: string; oracle?: { failure?: { envelope_status?: string } } }>;
+    cases: Array<{ id: string; oracle?: { failure?: { envelope_status?: string }; state_after_restart?: { envelope_status?: string } } }>;
   };
   const effect003 = cases.cases.find((entry) => entry.id === "CASE-EFFECT-003");
-  assert.equal(effect003?.oracle?.failure?.envelope_status, "effects_stable");
+  assert.equal(effect003?.oracle?.failure?.envelope_status, "effects_stable", "B_FAULT_CATALOG_FAILURE_STATE_INVALID");
+  assert.equal(effect003?.oracle?.state_after_restart?.envelope_status, "effects_stable", "B_FAULT_CATALOG_RESTART_STATE_INVALID");
 });
 
-test("rejects B fault authority mutations", () => {
+test("rejects exact B fault authority mutations", () => {
   const matrix = readMatrix();
   const mutations: Array<[string, (candidate: Matrix) => void]> = [
     ["case missing", (candidate) => candidate.case_order.pop()],
     ["case extra", (candidate) => candidate.case_order.push("CASE-EXTRA-001")],
     ["case reordered", (candidate) => candidate.case_order.reverse()],
-    ["fault missing", (candidate) => candidate.cases[0].faults.pop()],
-    ["fault extra", (candidate) => candidate.cases[0].faults.push(clone(candidate.cases[0].faults[0]))],
-    ["fault reordered", (candidate) => {
-      const first = candidate.cases[0].faults[0];
-      candidate.cases[0].faults[0] = candidate.cases[1].faults[0];
-      candidate.cases[1].faults[0] = first;
-    }],
-    ["illegal state", (candidate) => { candidate.cases[0].faults[0].failed_state = "invented_state"; }],
-    ["empty error code", (candidate) => { candidate.cases[0].faults[0].expected_error_code = ""; }],
-    ["restart missing", (candidate) => { candidate.cases[0].faults[0].restart = {}; }],
-    ["retry missing", (candidate) => { candidate.cases[0].faults[0].same_token_retry = {}; }],
-    ["assertion path missing", (candidate) => candidate.cases[0].faults[0].assertion_paths.pop()],
+    ["fault missing", (candidate) => candidate.fault_rows.pop()],
+    ["fault extra", (candidate) => candidate.fault_rows.push(clone(candidate.fault_rows[0]))],
+    ["fault reordered", (candidate) => candidate.fault_rows.reverse()],
+    ["duplicate fault id", (candidate) => { candidate.fault_rows[1].fault_id = String(candidate.fault_rows[0].fault_id); }],
+    ["empty error code", (candidate) => { candidate.fault_rows[0].expected_error_code = ""; }],
+    ["restart inner field missing", (candidate) => { delete (candidate.fault_rows[0].restart as Record<string, unknown>).sqlite_reopen_state; }],
+    ["retry inner field missing", (candidate) => { delete (candidate.fault_rows[0].same_token_retry as Record<string, unknown>).action; }],
+    ["frozen result omitted", (candidate) => { delete candidate.fault_rows[13].frozen_result; }],
+    ["diagnostic leaks path constraint", (candidate) => { (candidate.fault_rows[0].diagnostic as Record<string, unknown>).forbidden_content = []; }],
   ];
-
   for (const [name, mutate] of mutations) {
     const candidate = clone(matrix);
     mutate(candidate);
