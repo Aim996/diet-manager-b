@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297906,
-      "sha256": "AFE8C21323D7D6A523ED8695B7C51F836C2060C1085D8C958E9463C70577258A"
+      "length": 298059,
+      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -872,13 +872,15 @@
         "SH-CONTRACT-001",
         "B-STOR-002",
         "B-FAULT-001",
-        "EV-20260811-013"
+        "EV-20260811-013",
+        "EV-20260812-029",
+        "EV-20260812-032"
       ],
       "source_change": "第47轮用户明确“写入失败可以产生日志，但饮食记录里不能产生数据”；L1兼容性说明",
       "impact": "澄清DEC-023的业务原子性边界：FactCommit失败时业务记录、效果、outbox、投影、进度与成功结果全部回滚；独立技术日志/审计允许保留脱敏失败证据，但不属于业务数据、不得被查询为饮食记录；已成功FactCommit后的Effect失败仍按既有分层待重试语义",
       "owner_approver": "计划负责人 / 用户直接批准",
       "tasks": "DOC-003-001、SH-CONTRACT-001、B-STOR-002、B-FAULT-001",
-      "status_evidence": "实施中；EV-20260811-013已完成契约冻结，仍待B存储与故障测试证明技术日志和业务表物理、查询与事务边界隔离后转已验证"
+      "status_evidence": "已验证；EV-20260811-013冻结契约，EV-20260812-029与最终EV-20260812-032证明技术日志和业务表物理、查询、事务与重试边界隔离；B-FAULT最终独立复审P0=0/P1=0"
     },
     {
       "id": "CHG-20260811-002",
@@ -911,7 +913,7 @@
       "impact": "全部子效果已耐久而仅EnvelopeFinalize失败时，信封及重启状态从effects_pending更正为effects_stable；同token只允许最终器继续，不得重复效果",
       "owner_approver": "Codex / 复审冻结",
       "tasks": "B-FAULT-001、DEC-023、CASE-EFFECT-003",
-      "status_evidence": "Oracle校正本身已验证；原EV-20260812-032关闭结论被后续全分支复审supersede，B-FAULT-001已重开并等待最终修复候选的独立复审"
+      "status_evidence": "已验证；最终EV-20260812-032绑定候选552feee、替换22-gate日志与独立全分支P0=0/P1=0复审；旧关闭链作为superseded历史保留"
     }
   ]
 }

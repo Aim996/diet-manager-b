@@ -1,16 +1,17 @@
-# B-FAULT-001 Final Fix Candidate Report
+# B-FAULT-001 Final Report
 
-> Final whole-branch review superseded the prior Stage B closure after finding one P1 in mixed-operation diagnostics and two P2 documentation inconsistencies. The old candidate/evidence chain remains below as history; it no longer establishes current completion.
+> The initial whole-branch review superseded the prior Stage B closure after finding one P1 in mixed-operation diagnostics and two P2 documentation inconsistencies. The final-fix candidate and replacement evidence subsequently passed independent whole-branch rereview. The old candidate/evidence chain remains below as traceable history.
 
 ## Status
 
-- Stage: **final fix candidate with replacement gates pending independent whole-branch review**
+- Stage: **completed — DONE_WITH_CONCERNS**
 - Code/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
-- Final-review finding baseline: **P0=0, P1=1, P2=2**; the technical P1 is implemented and locally verified, but no independent final verdict has accepted it.
-- Ready: **NO**
-- Formal closure evidence: **not yet available**; `EV-20260812-032` is retained as `SUPERSEDED_REOPENED`. Replacement gate evidence is frozen, but it has not yet been accepted by an independent whole-branch reviewer.
+- Final whole-branch rereview: **P0=0, P1=0; technical Ready YES**. Its sole remaining documentation P2 was the stale Plan next-action row, corrected in the publication closure.
+- Ready: **YES — technical candidate/evidence**
+- Formal closure evidence: **`EV-20260812-032`**, rebound to the final replacement candidate and immutable gate-log identity.
+- Publication: branch `agent/b-fault-001` tracks `origin/agent/b-fault-001`; draft PR [#11](https://github.com/Aim996/diet-manager-b/pull/11) targets `main`.
 
-This report records a technical final-fix candidate only. It does not declare an independent verdict, mark `B-FAULT-001` complete, push, open/update a PR, or claim publication. Those states remain for the controller after actual external actions and final review.
+This report records the independently reviewed and published task closure. It closes only `B-FAULT-001`; it does not start or pass `X-GATE-002`, create a selected-route map, or claim installation/product readiness.
 
 ## Final-fix technical delta
 
@@ -38,6 +39,12 @@ The final-fix candidate was built exactly once before evidence capture. From evi
 | Commands | `22`, sequences `001`–`022`, all exit `0` |
 
 The replacement run passed TypeScript no-emit; fault matrix 73/73; full plugin 8 files / 234 tests; both concurrency harnesses; crash main plus 9/9 self-tests; OpenClaw build-check and validation; shared protocol 15/15; B acceptance 7/7; B fault authority 2/2; trace 71 requirements / 144 cases / 59 tasks / 64 governance / 32 evidence / 7 mutations; and X-GATE-001 self-test 13 cases / 7 checks / 6 mutations. Every command boundary recorded pinned/task Node `0`/`[]` and new temp `0`/`[]`. Complete stdout/stderr and byte counts are retained. The adjacent SHA list binds the normalized committed bytes above.
+
+## Independent final rereview and publication
+
+The independent read-only rereviewer audited range `c21f10c..b0bf8d4`, the final-fix package, candidate/source/dist parity, the four real mixed failure paths, mutation dependency, and the committed replacement log. The rereview recorded the prior P1 as addressed, no open P0/P1, no new findings, and technical Ready YES. Its single remaining P2 was lifecycle-only: Plan 0.3 still named implementing B-FAULT as the next action. This publication closure replaces that row with the still-blocked `X-GATE-002` input-freeze action.
+
+The controller then verified the real publication state: `agent/b-fault-001` tracks `origin/agent/b-fault-001`, and draft PR [#11](https://github.com/Aim996/diet-manager-b/pull/11) is open against `main`. These facts satisfy the implementation plan's close-only-after-verdict-and-push boundary.
 
 ## Runtime and build ownership
 
@@ -149,6 +156,7 @@ Final-fix commits through immutable evidence freeze:
 552feee build(b-fault): regenerate mixed service artifact
 220088d docs(b-fault): reopen final review closure
 74d8193 test(b-fault): freeze final fix gate evidence
+b0bf8d4 docs(b-fault): bind final fix evidence
 ```
 
 Historical implementation chain:
@@ -179,4 +187,4 @@ b8bdbf2 build: freeze B fault candidate artifacts
 
 - Retained process concern: before Task 7, Task 6 and its first independent review each reported that a repository-wide search exclusion failed on Windows normalization and emitted matching `migration-v1.ts` lines. No direct read, hash, execution, modification, or use as technical evidence followed. Task 7 introduced no new such search/output concern: it used explicit safe paths and `Select-String` only.
 - The three scope-limited matrix cases remain limited as frozen: no public catalog claim for `CASE-EFFECT-002`, no upgrade/backup-restore product for `CASE-STORAGE-005`, and no full IssueResolution interaction for `CASE-INVENTORY-006`.
-- The first independent Task 7 review returned P0=0/P1=1/P2=1 because complete gate output was absent and the ledger lagged. The historical scoped rereview accepted that remediation for the old candidate. The later whole-branch review superseded its closure effect; no independent reviewer has yet accepted the final-fix candidate, so current Ready remains NO.
+- The first independent Task 7 review returned P0=0/P1=1/P2=1 because complete gate output was absent and the ledger lagged. The historical scoped rereview accepted that remediation for the old candidate. The later whole-branch review superseded its closure effect; the final whole-branch rereview has now accepted candidate `552feee` with P0=0/P1=0 and technical Ready YES.

@@ -6,9 +6,9 @@
 - milestone: `M4`
 - type: `B fault authority`
 - product_line: `B only`
-- status: `in_progress`
+- status: `completed — DONE_WITH_CONCERNS`
 - owner: `Codex /root`
-- reviewer: `pending independent B fault final review`
+- reviewer: `independent whole-branch final rereviewer`
 - requirements: `REQ-SAFE-002`, `REQ-SAFE-003`
 - cases: `CASE-EFFECT-001`, `CASE-EFFECT-002`, `CASE-EFFECT-003`, `CASE-STORAGE-005`, `CASE-STORAGE-006`, `CASE-STORAGE-007`, `CASE-INVENTORY-006`
 - roots: `ROOT-B`
@@ -17,7 +17,7 @@
 
 Freeze the seven-case, eighteen-row B fault authority as `diet-manager/b-fault-matrix/v1`. The matrix fixes each distinct write point, error code, failed/outbox state and attempt/reason, complete persistent observation vector, restart expectation, same-token retry boundary, redacted diagnostic constraint, frozen-result rule, forbidden outcome and assertion path. Its SHA-256 in the harness manifest binds the exact bytes used by future executable fault work.
 
-Current execution state: final-review finding remediation is implemented in candidate `552feee374fe3463f296bd4a110af11747a7ee29`, and replacement 22-gate evidence is frozen in commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828`. An independent whole-branch final verdict is still pending. Therefore this work item remains `in_progress`, Ready is NO, and neither the prior `EV-20260812-032` closure wording nor a future push/draft-PR state may be used to mark it complete.
+Final execution state: candidate `552feee374fe3463f296bd4a110af11747a7ee29` and replacement 22-gate evidence commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828` were independently rereviewed with P0=0/P1=0 and technical Ready YES. Branch `agent/b-fault-001` is published to `origin/agent/b-fault-001`; draft PR [#11](https://github.com/Aim996/diet-manager-b/pull/11) targets `main`. The work item is complete as `DONE_WITH_CONCERNS`; the historical Task 6 search-output concern remains traceable and non-blocking. This status does not start `X-GATE-002`, create a selected-route map, or claim product readiness.
 
 ## Frozen correction
 

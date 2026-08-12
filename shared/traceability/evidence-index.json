@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297906,
-      "sha256": "AFE8C21323D7D6A523ED8695B7C51F836C2060C1085D8C958E9463C70577258A"
+      "length": 298059,
+      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -562,16 +562,17 @@
     },
     {
       "id": "EV-20260812-032",
-      "scope": "B-FAULT-001 历史故障矩阵关闭证据（已重开）",
-      "result": "记录旧候选b8bdbf207e4eda52eb395989b42e159d554cb078及其当时的7案/18行、22 gate和scoped rereview结果；后续全分支复审发现mixed真实FactCommit/EffectBundle诊断覆盖P1及状态文档P2，故该关闭结论已superseded/reopened；历史字节与审阅链继续保留；当前候选的替换22-gate证据已在74d8193冻结",
-      "limitation": "当前不得作为B-FAULT-001完成证据；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29等待独立全分支复审，Ready=NO；不授权map、G2/G3、安装、部署或产品可用",
+      "scope": "B-FAULT-001 最终替换候选故障矩阵闭环",
+      "result": "最终候选552feee374fe3463f296bd4a110af11747a7ee29；替换22-gate证据74d8193debf1347b07a4c5e594f4b7c3f11c5828，71,063 bytes，SHA-256 ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91，22/22 exit 0且逐边界Node/新增temp为0；独立全分支复审P0=0/P1=0、technical Ready YES；分支已推送，draft PR #11目标main；旧候选与两轮审阅链继续作为历史保留",
+      "limitation": "关闭B-FAULT-001，结果DONE_WITH_CONCERNS并保留Task 6搜索输出过程concern；不授权map、X-GATE-002、G2/G3、安装、部署或产品可用",
       "reference_ids": [
-        "B-FAULT-001"
+        "B-FAULT-001",
+        "X-GATE-002"
       ],
       "file": {
         "path": "docs/evidence/EV-20260812-032-b-fault-001.md",
-        "length": 6833,
-        "sha256": "44EB05DEFB35379D62A911DB54B31B4AC33E02E26E235C9AC77C7398D896AAF0"
+        "length": 7324,
+        "sha256": "B7EFF9C7CCB6F566E2BA1AF553667C9986BB653511B8A7883DF65D322A9216A9"
       },
       "file_status": "present",
       "referenced_by_task_ids": [

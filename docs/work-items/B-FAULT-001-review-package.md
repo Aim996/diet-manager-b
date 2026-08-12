@@ -1,15 +1,16 @@
-# B-FAULT-001 Final Fix Independent Review Package
+# B-FAULT-001 Final Fix Reviewed Publication Package
 
 ## Candidate identity and verdict boundary
 
 - Implementation/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
 - Plan baseline: `1ee40731a6d90c43e016ab04eb37ba85a54992ae`
 - Expected branch: `agent/b-fault-001`
-- Current status: **in_progress; final fix candidate and frozen replacement gate evidence pending independent whole-branch review**
+- Current status: **completed — DONE_WITH_CONCERNS**
 - Final-review baseline: **P0=0, P1=1, P2=2**; P1 was uncovered mixed FactCommit/EffectBundle diagnostics, and P2 covered false completion plus Plan/brief/derived-status drift.
-- Ready: **NO** until an independent whole-branch reviewer accepts the final fix with P0=0/P1=0.
+- Final rereview: **P0=0/P1=0; technical Ready YES**; the sole remaining documentation P2 was the stale Plan next action and is corrected by the publication closure.
+- Publication: `agent/b-fault-001` tracks `origin/agent/b-fault-001`; draft PR [#11](https://github.com/Aim996/diet-manager-b/pull/11) targets `main`.
 
-The reviewer must treat `EV-20260812-032` as historical `SUPERSEDED_REOPENED` evidence, not current closure. The reviewer must not mark the task complete, write Ready YES on behalf of this package, push, or open/update a PR. Publication/PR completion may be written only by the controller after those external actions actually occur.
+The pre-rereview instructions below are retained as the exact review boundary. They were satisfied: the independent reviewer returned no open P0/P1 and technical Ready YES, then the controller verified the real upstream branch and draft PR before closing the task. `EV-20260812-032` now binds the final replacement candidate/log while preserving the superseded candidate chain as history.
 
 ## Safety boundary for the reviewer
 
@@ -111,6 +112,6 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 - Every old record names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`; these records do not validate the final-fix candidate.
 - Historical results included full plugin 230/230 and trace with 31 evidence records. They remain auditable history only.
 
-## Required verdict format
+## Final verdict received
 
-Perform an independent whole-branch final review of candidate `552feee374fe3463f296bd4a110af11747a7ee29` and the append-only replacement log. Recompute its committed length/SHA, verify all 22 structures and complete outputs, inspect the four new real-failure tests and mutation sensitivity, confirm boundary arrays/counts, audit deterministic redaction, and check Plan/brief/report/EV32/derived-ledger consistency. Return reviewed range/SHA, separate P0/P1/P2 counts, concrete evidence for any finding, concern assessment, and Ready YES/NO. Any P0 or P1 forces Ready NO and blocks closure.
+The independent rereviewer audited candidate `552feee374fe3463f296bd4a110af11747a7ee29`, the append-only replacement log, and range `c21f10c..b0bf8d4`. Result: prior P1 addressed, no open P0/P1, no new findings, technical Ready YES. The rereviewer left one documentation-only P2 for the stale Plan next-action row; publication closure corrects it. The retained Task 6 search-output concern remains disclosed, so final task wording is `DONE_WITH_CONCERNS` rather than a clean no-concern claim.

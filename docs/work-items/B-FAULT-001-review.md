@@ -4,12 +4,13 @@
 
 - Current code/test/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
 - Current replacement evidence: commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828`; 22/22 gates PASS; log `71,063` bytes; SHA-256 `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91`; Git blob `492d3b66bbf30fa4f1a22a351025bf999c6714af`
-- Whole-branch final-review source: `.superpowers/sdd/2026-08-12-b-fault-001-implementation/final-review.md`
-- Open baseline: P0=0, P1=1, P2=2
-- Ready: NO
-- Closure status: **in_progress — final fix candidate pending independent review**
+- Whole-branch final-rereview source: `.superpowers/sdd/2026-08-12-b-fault-001-implementation/final-rereview.md`
+- Final rereview: P0=0, P1=0, technical Ready YES; its sole remaining documentation P2 is addressed by the publication closure
+- Publication: `agent/b-fault-001` tracks `origin/agent/b-fault-001`; draft PR [#11](https://github.com/Aim996/diet-manager-b/pull/11) targets `main`
+- Ready: YES — technical candidate/evidence
+- Closure status: **DONE_WITH_CONCERNS — completed and published**
 
-The prior scoped rereview applied only to candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and its Stage A evidence. The later whole-branch final review superseded that closure decision by finding uncovered mixed-operation diagnostic boundaries and inconsistent closure/publication state. Candidate `552feee374fe3463f296bd4a110af11747a7ee29` contains the technical final-fix changes, but no independent reviewer has accepted it yet.
+The prior scoped rereview applied only to candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and its Stage A evidence. The later whole-branch final review superseded that closure decision. Candidate `552feee374fe3463f296bd4a110af11747a7ee29` then addressed the mixed-operation diagnostic finding, froze replacement evidence, and passed independent whole-branch rereview with no open P0/P1. The controller subsequently verified the real upstream branch and draft PR before writing this closure.
 
 ## Review history
 
@@ -19,7 +20,12 @@ The prior scoped rereview applied only to candidate `b8bdbf207e4eda52eb395989b42
 | Fix round 1 | Candidate unchanged; evidence and ledger only | Added the append-only 22-command gate log plus SHA binding, then corrected the binding to the normalized committed blob; no second formal build. |
 | Scoped rereview | P0=0, P1=0, P2=0, Ready=YES | Both prior findings ADDRESSED; no new P0/P1/P2; scoped spec, code/test quality, and evidence quality PASS. |
 | Whole-branch final review | P0=0, P1=1, P2=2, Ready=NO | Reopened B-FAULT: mixed purchase/meal FactCommit and EffectBundle diagnostic paths were not uniformly protected; closure, derived next action, and publication state were inconsistent. |
-| Final-fix candidate | `552feee374fe3463f296bd4a110af11747a7ee29`; independent verdict pending | Adds shared safe adapters and real four-boundary regression coverage. Replacement 22-gate evidence is frozen in `74d8193`; an independent whole-branch review is still required before closure. |
+| Final-fix candidate | `552feee374fe3463f296bd4a110af11747a7ee29`; P0=0/P1=0, technical Ready YES | Shared safe adapters and real four-boundary regression coverage accepted; replacement 22-gate evidence independently verified. |
+| Publication closure | DONE_WITH_CONCERNS | Corrected the stale Plan next action, verified upstream branch and draft PR #11, and retained the historical process concern. |
+
+## Current accepted evidence
+
+The independent whole-branch rereviewer recomputed the replacement log as 71,063 bytes, SHA-256 `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91`, Git blob `492d3b66bbf30fa4f1a22a351025bf999c6714af`, strict UTF-8/LF, and 22 contiguous serial records. All commands exited 0; all boundary Node and new-temp arrays/counts were empty/zero. The rereviewer also verified real mixed purchase/meal FactCommit and EffectBundle coverage, mutation dependency, exact four-key diagnostics, primary-error preservation, rollback authority, redaction, and source/dist parity.
 
 ## Historical evidence accepted by the scoped reviewer
 
@@ -38,10 +44,10 @@ The accepted gate families included the 7-case/18-row B fault authority, focused
 
 ## Concern assessment
 
-The retained process concern is unchanged: during Task 6 and its first independent review, two broad searches emitted matching `migration-v1.ts` lines because of Windows path normalization. No direct open, hash, execution, modification, or use as technical evidence followed. Task 7, fix round 1, and the scoped rereview introduced no new migration/protected-path occurrence. This concern remains historical and is not rewritten as a clean no-read attestation; there is currently no Ready verdict for the final-fix candidate.
+The retained process concern is unchanged: during Task 6 and its first independent review, two broad searches emitted matching `migration-v1.ts` lines because of Windows path normalization. No direct open, hash, execution, modification, or use as technical evidence followed. Task 7, final fix, rereview, and publication closure introduced no new occurrence. The concern remains historical and is not rewritten as a clean no-read attestation; it does not block the final technical Ready verdict.
 
 ## Decision boundary
 
-`B-FAULT-001` remains `in_progress` and Ready NO. Replacement full-gate evidence is frozen, but Stage closure must wait for an independent whole-branch review of candidate `552feee374fe3463f296bd4a110af11747a7ee29`. Push and draft-PR completion are separate controller-owned facts and may be recorded only after they actually occur. This work does not start or pass `X-GATE-002`, authorize `shared/selected-route-map.json`, freeze remaining CONTRACT-v2 inputs, prove installation/deployment, or make the product installable.
+`B-FAULT-001` is complete as `DONE_WITH_CONCERNS` for candidate `552feee374fe3463f296bd4a110af11747a7ee29`, replacement evidence commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828`, and draft PR #11. This closure does not start or pass `X-GATE-002`, authorize `shared/selected-route-map.json`, freeze remaining CONTRACT-v2 inputs, prove installation/deployment, or make the product installable. The next product action is to freeze the still-missing `X-GATE-002` inputs; the gate remains unstarted/blocked.
 
 not installable; public OpenClaw tool remains non-writing.
