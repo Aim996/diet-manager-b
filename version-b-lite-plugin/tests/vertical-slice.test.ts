@@ -15,6 +15,7 @@ import {
   preparePurchaseOperation,
 } from "../src/domain/effect-bundle.js";
 import { deriveDomainId } from "../src/domain/identity.js";
+import { createServerPreview } from "../src/preview/store.js";
 import { buildQuickPrompt, buildReceiptData } from "../src/domain/receipt.js";
 import {
   createDietDomainService,
@@ -30,8 +31,10 @@ import type {
 import { finalizeEnvelope } from "../src/repository/envelope-finalize.js";
 import {
   appendPreparedOperationFact,
+  commitPreparedFact,
   sealPreparedEnvelopeFacts,
 } from "../src/repository/fact-commit.js";
+import { computeRepositoryDataRevision } from "../src/repository/revision.js";
 import { openDietDatabase } from "../src/storage/database.js";
 
 const secret = Buffer.from("B-SLICE-001 purchase test secret 0001", "utf8");
@@ -715,44 +718,94 @@ describe("B-SLICE-001 purchase and inventory vertical slice", () => {
     }
   });
 
-  it("logs one redacted technical failure and leaves every business table empty", () => {
+  it("CASE-EFFECT-001 redacts a FactCommit failure and rolls back every business row", () => {
     const root = newTestRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });
-    const failures: DietDomainFailureEntry[] = [];
+    const failures: Array<{
+      phase: "fact_commit";
+      error_code: string;
+      trace_id: string;
+      input_digest: string;
+    }> = [];
     try {
-      const service = createDietDomainService({
+      const dataRevision = computeRepositoryDataRevision(runtime.database);
+      const preview = createServerPreview({
         database: runtime.database,
         secret,
-        now: () => "2026-08-12T01:00:01.000Z",
-        fault: "before_fact_commit",
-        failureSink: (entry) => failures.push(entry),
+        previewId: "preview-case-effect-001",
+        idempotencyKey: "idem-case-effect-001",
+        inputDigest: "A".repeat(64),
+        subjectScope: "user:self",
+        commandType: "add_inventory",
+        dataRevision,
+        sourceMessageId: "message-case-effect-001",
+        conversationId: "conversation-case-effect-001",
+        previewMaterial: { action: "add_inventory", synthetic: true },
+        now: "2026-08-12T01:00:00.000Z",
       });
-      const envelope = purchaseMilkEnvelope();
-      const preview = service.preview(envelope);
 
       expect(() =>
-        service.execute({
-          envelope,
+        commitPreparedFact({
+          database: runtime.database,
+          secret,
           token: preview.token,
-          input_digest: preview.input_digest,
-          data_revision: preview.data_revision,
+          inputDigest: "A".repeat(64),
+          subjectScope: "user:self",
+          commandType: "add_inventory",
+          dataRevision,
+          traceId: "trace-case-effect-001",
+          event: {
+            eventId: "event-case-effect-001",
+            operationId: "operation-case-effect-001",
+            schemaVersion: "domain/v2",
+            eventType: "inventory_stock",
+            factKind: "inventory",
+            sourceMessageId: "message-case-effect-001",
+            conversationId: "conversation-case-effect-001",
+            receivedAt: "2026-08-12T01:00:00.000Z",
+            committedAt: "2026-08-12T01:00:01.000Z",
+            occurredAtText: "2026-08-12T01:00:00.000Z",
+            mealId: null,
+            mealSlot: null,
+            payload: { authority_kind: "diet-manager/test-fact/v1" },
+          },
+          items: [],
+          effects: [{
+            outboxId: "outbox-case-effect-001",
+            effectId: "effect-case-effect-001",
+            effectKind: "inventory_add",
+            previousState: null,
+            reason: null,
+          }],
+        }, {
+          fault: "before_commit",
+          failureSink: (entry) => failures.push(entry),
         }),
-      ).toThrow("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+      ).toThrow("FACT_COMMIT_FAILED:before_commit");
       expect(Object.values(businessCounts(runtime.database)).every((count) => count === 0)).toBe(
         true,
       );
       expect(failures).toEqual([
         {
-          stage: "FactCommit",
-          error_code: "DIET_DOMAIN_EXECUTION_FAILED",
-          trace_id: expect.stringMatching(/^trace-[a-f0-9]{32}$/),
-          input_digest: preview.input_digest,
+          phase: "fact_commit",
+          error_code: "FACT_COMMIT_FAILED",
+          trace_id: "trace-case-effect-001",
+          input_digest: "A".repeat(64),
         },
       ]);
       const serialized = JSON.stringify(failures);
-      expect(serialized).not.toContain("milk");
-      expect(serialized).not.toContain(root);
-      expect(serialized).not.toContain(secret.toString("utf8"));
+      for (const forbidden of [
+        "milk",
+        "whole milk 250ml",
+        "24_000_000",
+        "inventory",
+        "SELECT",
+        "INSERT",
+        "B-SLICE-001 purchase test secret 0001",
+        root,
+      ]) {
+        expect(serialized).not.toContain(forbidden);
+      }
     } finally {
       runtime.close();
       removeOwnedRoot(root);
