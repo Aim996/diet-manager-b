@@ -260,6 +260,14 @@ function descriptors(value: object, path: string): PropertyDescriptorMap {
   }
 }
 
+function ownKeys(value: object, path: string): readonly PropertyKey[] {
+  try {
+    return Reflect.ownKeys(value);
+  } catch {
+    return unsafeClone(path, "clone");
+  }
+}
+
 function dataDescriptor(
   value: PropertyDescriptor | undefined,
   path: string,
@@ -282,21 +290,33 @@ function cloneUntrustedJson(value: unknown, path: string): unknown {
     const source = descriptors(value, path);
     const length = dataDescriptor(source.length, path);
     if (!Number.isSafeInteger(length) || (length as number) < 0) return unsafeClone(path, "length");
-    const names = Object.getOwnPropertyNames(source);
+    const keys = ownKeys(value, path);
+    if (keys.some((key) => typeof key === "symbol")) return unsafeClone(path, "symbols");
+    const names = keys as readonly string[];
     const expected = ["length", ...Array.from({ length: length as number }, (_, index) => String(index))];
     if (names.length !== expected.length || expected.some((name) => !Object.hasOwn(source, name))) {
       return unsafeClone(path, "shape");
     }
+    const lengthDescriptor = source.length;
+    if (!lengthDescriptor || lengthDescriptor.enumerable !== false || lengthDescriptor.configurable !== false || typeof lengthDescriptor.writable !== "boolean") {
+      return unsafeClone(path, "length_descriptor");
+    }
     const clone: unknown[] = [];
     for (let index = 0; index < (length as number); index += 1) {
-      clone.push(cloneUntrustedJson(dataDescriptor(source[String(index)], path), `${path}.${index}`));
+      const descriptor = source[String(index)];
+      if (!descriptor || descriptor.enumerable !== true || typeof descriptor.configurable !== "boolean" || typeof descriptor.writable !== "boolean") {
+        return unsafeClone(`${path}.${index}`, "descriptor");
+      }
+      clone.push(cloneUntrustedJson(dataDescriptor(descriptor, `${path}.${index}`), `${path}.${index}`));
     }
     return Object.freeze(clone);
   }
   if (objectPrototype(value, path) !== Object.prototype) return unsafeClone(path, "prototype");
   const source = descriptors(value, path);
   const clone: Record<string, unknown> = {};
-  for (const name of Object.getOwnPropertyNames(source)) {
+  const keys = ownKeys(value, path);
+  if (keys.some((key) => typeof key === "symbol")) return unsafeClone(path, "symbols");
+  for (const name of keys as readonly string[]) {
     const descriptor = source[name];
     if (descriptor?.enumerable !== true) return unsafeClone(path, "descriptor");
     Object.defineProperty(clone, name, {

@@ -1319,6 +1319,41 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     }
   });
 
+  it("rejects multi-item nutrition summation overflow before FactCommit and keeps it query-invisible", () => {
+    const fixture = createMealService();
+    try {
+      const maximum = Number.MAX_SAFE_INTEGER;
+      const item = (name: string) => mealItem({
+        name, unit: "piece", observed: 1, adopted: 1, deducted: null,
+        sources: [{
+          ...nutritionSource("public_fixture", `fixture-${name}-v1`, 1, null, {
+            kind: "per_item", microunits: 1, unit: "piece",
+          }),
+          nutrients: {
+            energy_kcal_milli: maximum, protein_mg: null, fat_mg: null,
+            carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+          },
+        }],
+      });
+      const envelope = mealEnvelope({
+        suffix: "nutrition-sum-overflow-before-fact-commit",
+        location: "outside",
+        items: [item("overflow one"), item("overflow two")],
+      });
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => fixture.service.preview(envelope)).toThrowError("DOMAIN_RULE_INVALID:nutrition_sum");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals", operation_id: "query-nutrition-sum-overflow",
+        date: "2026-08-12", timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("rejects an accessor envelope without reading it or writing business rows", () => {
     const fixture = createMealService();
     try {
@@ -1383,6 +1418,37 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         kind: "query_meals", operation_id: "query-custom-operations-array",
         date: "2026-08-12", timezone: "Asia/Shanghai",
       })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects envelope symbols and non-enumerable array indexes before reading or writing", () => {
+    const fixture = createMealService();
+    try {
+      const symbolEnvelope = mealEnvelope({
+        suffix: "symbol-envelope", location: "outside",
+        items: [mealItem({ name: "symbol meal", unit: "piece", observed: 1, adopted: null, deducted: null, sources: [] })],
+      });
+      Object.defineProperty(symbolEnvelope, Symbol("untrusted"), { value: "x", enumerable: true });
+      const before = businessCounts(fixture.runtime.database);
+      expect(() => fixture.service.preview(symbolEnvelope)).toThrowError(
+        "DIET_DOMAIN_REQUEST_INVALID:envelope_symbols",
+      );
+
+      const descriptorEnvelope = mealEnvelope({
+        suffix: "non-enumerable-operation", location: "outside",
+        items: [mealItem({ name: "descriptor meal", unit: "piece", observed: 1, adopted: null, deducted: null, sources: [] })],
+      });
+      const operation = descriptorEnvelope.operations[0]!;
+      Object.defineProperty(descriptorEnvelope.operations, "0", {
+        value: operation, enumerable: false, configurable: true, writable: true,
+      });
+      expect(() => fixture.service.preview(descriptorEnvelope)).toThrowError(
+        "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_0_descriptor",
+      );
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
@@ -2370,7 +2436,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
 });
 
 describe("B-SLICE-001 append-only corrections and effective views", () => {
-  function createCorrectionFixture() {
+  function createCorrectionFixture(options: { readonly sourceEnergy?: number } = {}) {
     const root = newTestRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });
     const service = createDietDomainService({
@@ -2396,13 +2462,24 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         observed: 2_000_000,
         adopted: 2_000_000,
         deducted: 2_000_000,
-        sources: [nutritionSource(
-          "product_label",
-          "label-product-correction-eggs-v1",
-          1,
-          "product-correction-eggs",
-          { kind: "per_item", microunits: 1_000_000, unit: "piece" },
-        )],
+        sources: [{
+          ...nutritionSource(
+            "product_label",
+            options.sourceEnergy === undefined
+              ? "label-product-correction-eggs-v1"
+              : "label-product-correction-eggs-overflow-v2",
+            options.sourceEnergy === undefined ? 1 : 2,
+            "product-correction-eggs",
+            { kind: "per_item", microunits: options.sourceEnergy === undefined ? 1_000_000 : 1, unit: "piece" },
+          ),
+          ...(options.sourceEnergy === undefined ? {} : {
+            nutrients: {
+              energy_kcal_milli: options.sourceEnergy,
+              protein_mg: null, fat_mg: null, carbohydrate_mg: null,
+              fiber_mg: null, water_ml_milli: null,
+            },
+          }),
+        }],
       })],
     });
     previewAndExecute(service, meal);
@@ -2470,6 +2547,40 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         data_revision: preview.data_revision,
       })).toEqual(result);
       expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects correction nutrition scaling overflow before FactCommit and keeps the correction query-invisible", () => {
+    const fixture = createCorrectionFixture({ sourceEnergy: 2 });
+    try {
+      const envelope = correctionEnvelope({
+        suffix: "nutrition-overflow-before-fact-commit",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: Number.MAX_SAFE_INTEGER,
+        adopted: Number.MAX_SAFE_INTEGER,
+        deducted: null,
+      });
+      const preview = fixture.service.preview(envelope);
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrowError("DOMAIN_RULE_INVALID:nutrition_scaled");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM correction_events",
+      ).get()).toEqual({ count: 0 });
+      expect(fixture.service.query({
+        kind: "query_meals", operation_id: "query-correction-overflow",
+        date: "2026-08-12", timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [{ items: [{ normalized_name: "eggs" }] }] });
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);

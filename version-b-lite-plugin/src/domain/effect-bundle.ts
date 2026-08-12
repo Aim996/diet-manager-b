@@ -318,6 +318,12 @@ export function prepareCorrectionOperation(
     : current.snapshot.items.map((item) => item.item_order);
   const beforeAmount = current.snapshot.items[itemOrder].amount;
   const afterAmount = afterSnapshot.items[itemOrder].amount;
+  preflightCorrectionNutrition(
+    input.database,
+    current.snapshot,
+    afterSnapshot,
+    affectedItemOrders,
+  );
   const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
@@ -912,6 +918,7 @@ export function preflightMealOperation(
   operation: RecordMealOperation,
   precedingCandidates: ReadonlyMap<string, readonly InventoryCandidate[]> = new Map(),
 ): void {
+  let preflightMealProgress: NutritionVector = zeroNutrition();
   for (const item of operation.items) {
     const candidates = operation.location === "outside"
       ? []
@@ -926,16 +933,19 @@ export function preflightMealOperation(
       candidates,
     });
     const selection = selectMealNutrition({ nutrition_sources: item.nutrition_sources }, decision);
-    if (
-      item.amount.nutrition_adoption_microunits !== null &&
-      selection.basis_microunits !== null
-    ) {
-      scaleNutritionVector(
-        selection.nutrients,
-        item.amount.nutrition_adoption_microunits,
-        selection.basis_microunits,
-      );
-    }
+    const scaled = item.amount.nutrition_adoption_microunits === null
+      ? Object.freeze({
+        energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+        carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+      })
+      : selection.basis_microunits === null
+        ? selection.nutrients
+        : scaleNutritionVector(
+          selection.nutrients,
+          item.amount.nutrition_adoption_microunits,
+          selection.basis_microunits,
+        );
+    preflightMealProgress = addNutritionVectors(preflightMealProgress, scaled);
   }
 }
 
@@ -1696,6 +1706,44 @@ function correctedNutrition(
     adoptedMicrounits,
     basis.microunits as number,
   );
+}
+
+function preflightCorrectionNutrition(
+  database: DatabaseSync,
+  beforeSnapshot: EffectiveMealSnapshot,
+  afterSnapshot: EffectiveMealSnapshot,
+  affectedItemOrders: readonly number[],
+): void {
+  let beforeNutrients: NutritionVector = zeroNutrition();
+  let afterNutrients: NutritionVector = zeroNutrition();
+  for (const itemOrder of affectedItemOrders) {
+    const item = beforeSnapshot.items[itemOrder];
+    const previousNutrition = database.prepare(
+      `SELECT payload_json FROM nutrition_snapshots
+       WHERE intake_item_id = ? ORDER BY rowid DESC LIMIT 1`,
+    ).get(item.item_id) as { payload_json: string } | undefined;
+    if (!previousNutrition) throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
+    const payload = parseCanonical(previousNutrition.payload_json, "correction_nutrition");
+    if (typeof payload.nutrients !== "object" || payload.nutrients === null) {
+      throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
+    }
+    beforeNutrients = addNutritionVectors(
+      beforeNutrients,
+      payload.nutrients as unknown as NutritionVector,
+    );
+    afterNutrients = addNutritionVectors(
+      afterNutrients,
+      correctedNutrition(
+        payload,
+        afterSnapshot.active
+          ? afterSnapshot.items[itemOrder].amount.nutrition_adoption_microunits
+          : 0,
+        afterSnapshot.active,
+      ),
+    );
+  }
+  void beforeNutrients;
+  void afterNutrients;
 }
 
 function replaceDailyProgress(

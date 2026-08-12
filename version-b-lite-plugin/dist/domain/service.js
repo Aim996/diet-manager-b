@@ -175,6 +175,14 @@ function descriptors(value, path) {
         return unsafeClone(path, "clone");
     }
 }
+function ownKeys(value, path) {
+    try {
+        return Reflect.ownKeys(value);
+    }
+    catch {
+        return unsafeClone(path, "clone");
+    }
+}
 function dataDescriptor(value, path) {
     if (!value || !("value" in value) || value.get !== undefined || value.set !== undefined) {
         return unsafeClone(path, "descriptor");
@@ -198,14 +206,25 @@ function cloneUntrustedJson(value, path) {
         const length = dataDescriptor(source.length, path);
         if (!Number.isSafeInteger(length) || length < 0)
             return unsafeClone(path, "length");
-        const names = Object.getOwnPropertyNames(source);
+        const keys = ownKeys(value, path);
+        if (keys.some((key) => typeof key === "symbol"))
+            return unsafeClone(path, "symbols");
+        const names = keys;
         const expected = ["length", ...Array.from({ length: length }, (_, index) => String(index))];
         if (names.length !== expected.length || expected.some((name) => !Object.hasOwn(source, name))) {
             return unsafeClone(path, "shape");
         }
+        const lengthDescriptor = source.length;
+        if (!lengthDescriptor || lengthDescriptor.enumerable !== false || lengthDescriptor.configurable !== false || typeof lengthDescriptor.writable !== "boolean") {
+            return unsafeClone(path, "length_descriptor");
+        }
         const clone = [];
         for (let index = 0; index < length; index += 1) {
-            clone.push(cloneUntrustedJson(dataDescriptor(source[String(index)], path), `${path}.${index}`));
+            const descriptor = source[String(index)];
+            if (!descriptor || descriptor.enumerable !== true || typeof descriptor.configurable !== "boolean" || typeof descriptor.writable !== "boolean") {
+                return unsafeClone(`${path}.${index}`, "descriptor");
+            }
+            clone.push(cloneUntrustedJson(dataDescriptor(descriptor, `${path}.${index}`), `${path}.${index}`));
         }
         return Object.freeze(clone);
     }
@@ -213,7 +232,10 @@ function cloneUntrustedJson(value, path) {
         return unsafeClone(path, "prototype");
     const source = descriptors(value, path);
     const clone = {};
-    for (const name of Object.getOwnPropertyNames(source)) {
+    const keys = ownKeys(value, path);
+    if (keys.some((key) => typeof key === "symbol"))
+        return unsafeClone(path, "symbols");
+    for (const name of keys) {
         const descriptor = source[name];
         if (descriptor?.enumerable !== true)
             return unsafeClone(path, "descriptor");
