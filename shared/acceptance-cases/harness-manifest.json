@@ -50,6 +50,12 @@
     "expected_count": 17,
     "sha256": "C6FE8A220D30D0C4B21E53D172F578B545847692096F984B14F8C0C72B8B99AF"
   },
+  "b_fault_matrix": {
+    "path": "shared/acceptance-cases/b-fault-matrix.json",
+    "matrix_id": "diet-manager/b-fault-matrix/v1",
+    "case_count": 7,
+    "sha256": "9DCF577D47C2187A19D0AD62C96C54EFDA7AEEF87D95A4019E812BCBC392C506"
+  },
   "route_policy": {
     "b_mode": "selected_execution_adapter",
     "a_mode": "read_only_no_writer",

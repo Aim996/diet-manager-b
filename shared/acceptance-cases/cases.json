@@ -357,12 +357,12 @@
         "failure": {
           "expected_error_code": "envelope_finalize_write_failed",
           "facts_and_effects_preserved": true,
-          "envelope_status": "effects_pending",
+          "envelope_status": "effects_stable",
           "success_receipt_visible": false,
           "daily_progress_visible": false,
           "terminal_idempotency_visible": false
         },
-        "state_after_restart": {"meal_fact_preserved": true, "nutrition_snapshot_count": 1, "inventory_effect_count": 1, "envelope_status": "effects_pending"},
+        "state_after_restart": {"meal_fact_preserved": true, "nutrition_snapshot_count": 1, "inventory_effect_count": 1, "envelope_status": "effects_stable"},
         "same_key_retry": {
           "action": "finalize_once",
           "current_turn_increments": {"energy_kcal": 100},

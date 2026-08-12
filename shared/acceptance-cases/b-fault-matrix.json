@@ -1,0 +1,296 @@
+{
+  "matrix_id": "diet-manager/b-fault-matrix/v1",
+  "case_order": [
+    "CASE-EFFECT-001",
+    "CASE-EFFECT-002",
+    "CASE-EFFECT-003",
+    "CASE-STORAGE-005",
+    "CASE-STORAGE-006",
+    "CASE-STORAGE-007",
+    "CASE-INVENTORY-006"
+  ],
+  "cases": [
+    {
+      "case_id": "CASE-EFFECT-001",
+      "faults": [
+        {
+          "fault_id": "effect_bundle_nutrition_snapshot_write",
+          "operation_kind": "record_meal",
+          "fault_point": "nutrition_snapshot_write",
+          "expected_error_code": "nutrition_effect_write_failed",
+          "failed_state": "effects_pending",
+          "outbox_state": "retryable_failed",
+          "restart": {
+            "meal_fact_preserved": true,
+            "outbox_state": "retryable_failed",
+            "envelope_state": "effects_pending"
+          },
+          "same_token_retry": {
+            "action": "retry_missing_effect_only",
+            "completed_effects_repeated": false,
+            "envelope_finalize_count": 1
+          },
+          "forbidden": [
+            "fact_commit_rollback",
+            "half_effect_bundle",
+            "premature_receipt",
+            "premature_progress",
+            "premature_terminal_idempotency"
+          ],
+          "assertion_paths": [
+            "/oracle/failure",
+            "/oracle/state_after_restart",
+            "/oracle/same_key_retry",
+            "/forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-EFFECT-002",
+      "scope_limitation": "The matrix freezes only the planned late EffectBundle rollback boundary; it does not claim an executable catalog case or add product semantics.",
+      "faults": [
+        {
+          "fault_id": "effect_bundle_late_write",
+          "operation_kind": "record_meal",
+          "fault_point": "effect_bundle_late_write",
+          "expected_error_code": "effect_bundle_write_failed",
+          "failed_state": "effects_pending",
+          "outbox_state": "retryable_failed",
+          "restart": {
+            "facts_preserved": true,
+            "outbox_state": "retryable_failed",
+            "envelope_state": "effects_pending"
+          },
+          "same_token_retry": {
+            "action": "retry_missing_effect_bundle_only",
+            "completed_effects_repeated": false,
+            "envelope_finalize_count": 1
+          },
+          "forbidden": [
+            "fact_commit_rollback",
+            "partial_effect_bundle",
+            "premature_receipt",
+            "premature_progress",
+            "premature_terminal_idempotency"
+          ],
+          "assertion_paths": [
+            "/effect_bundle/late_failure_full_rollback",
+            "/restart/effects_pending",
+            "/same_token_retry/missing_effect_only",
+            "/forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-EFFECT-003",
+      "faults": [
+        {
+          "fault_id": "envelope_finalize_write",
+          "operation_kind": "record_meal",
+          "fault_point": "envelope_finalize_write",
+          "expected_error_code": "envelope_finalize_write_failed",
+          "failed_state": "effects_stable",
+          "outbox_state": "succeeded",
+          "restart": {
+            "meal_fact_preserved": true,
+            "nutrition_snapshot_count": 1,
+            "inventory_effect_count": 1,
+            "envelope_state": "effects_stable"
+          },
+          "same_token_retry": {
+            "action": "finalize_once",
+            "completed_effects_repeated": false,
+            "envelope_finalize_count": 1
+          },
+          "forbidden": [
+            "duplicate_fact",
+            "duplicate_effect",
+            "lost_concurrent_contribution",
+            "premature_receipt",
+            "premature_progress",
+            "premature_terminal_idempotency"
+          ],
+          "assertion_paths": [
+            "/oracle/failure",
+            "/oracle/state_after_restart",
+            "/oracle/same_key_retry",
+            "/forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-STORAGE-005",
+      "scope_limitation": "The matrix covers the current migration publish-or-reject boundary only; it does not implement or claim a complete version-upgrade or backup-restore product.",
+      "faults": [
+        {
+          "fault_id": "migration_candidate_publish",
+          "operation_kind": "migration_bootstrap",
+          "fault_point": "candidate_publish",
+          "expected_error_code": "migration_candidate_publish_failed",
+          "failed_state": "migration_rejected",
+          "outbox_state": "not_applicable",
+          "restart": {
+            "final_database_published": false,
+            "existing_unknown_or_drifted_bytes_unchanged": true
+          },
+          "same_token_retry": {
+            "action": "fresh_candidate_required",
+            "resumes_partial_candidate": false
+          },
+          "forbidden": [
+            "candidate_database_published",
+            "existing_database_bytes_changed",
+            "partial_candidate_resumed"
+          ],
+          "assertion_paths": [
+            "/migration/failure_keeps_final_unpublished",
+            "/migration/failure_keeps_user_version_unadvanced",
+            "/scope_limitation"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-STORAGE-006",
+      "faults": [
+        {
+          "fault_id": "terminal_response_lost",
+          "operation_kind": "record_multi_date",
+          "fault_point": "terminal_response_delivery",
+          "expected_error_code": "response_lost",
+          "failed_state": "terminal_frozen",
+          "outbox_state": "not_applicable",
+          "restart": {
+            "original_result_frozen": true,
+            "later_unrelated_write_changes_result": false
+          },
+          "same_token_retry": {
+            "action": "return_exact_original_result",
+            "business_write_count": 0,
+            "returns_current_totals": false
+          },
+          "forbidden": [
+            "retry_recomputed_from_current_totals",
+            "retry_performed_business_write",
+            "duplicate_fact_or_effect"
+          ],
+          "assertion_paths": [
+            "/oracle/original_result",
+            "/oracle/later_unrelated_write",
+            "/oracle/same_key_retry",
+            "/forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-STORAGE-007",
+      "faults": [
+        {
+          "fault_id": "idempotency_identity_conflict",
+          "operation_kind": "record_meal",
+          "fault_point": "idempotency_identity_comparison",
+          "expected_error_code": "idempotency_conflict",
+          "failed_state": "idempotency_conflict",
+          "outbox_state": "not_applicable",
+          "restart": {
+            "original_result_unchanged": true,
+            "business_write_count": 0
+          },
+          "same_token_retry": {
+            "action": "reject_changed_digest_subject_or_command",
+            "business_write_count": 0,
+            "returns_original_result": false
+          },
+          "forbidden": [
+            "business_write_on_conflict",
+            "old_result_masquerades_as_new_result",
+            "original_record_mutation"
+          ],
+          "assertion_paths": [
+            "/oracle/idempotency/conflicts",
+            "/oracle/idempotency/business_write_count",
+            "/forbidden"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-INVENTORY-006",
+      "scope_limitation": "The matrix proves only the implemented preview/revision stale-selection rejection after a real inventory candidate change; it does not claim a complete IssueResolution interaction.",
+      "faults": [
+        {
+          "fault_id": "preview_revision_stale",
+          "operation_kind": "confirm_inventory_selection",
+          "fault_point": "preview_data_revision_comparison",
+          "expected_error_code": "stale_revision",
+          "failed_state": "stale_revision_rejected",
+          "outbox_state": "not_applicable",
+          "restart": {
+            "stale_selection_rejected": true,
+            "fact_commit_count": 0,
+            "derived_write_count": 0
+          },
+          "same_token_retry": {
+            "action": "require_fresh_preview",
+            "business_write_count": 0
+          },
+          "forbidden": [
+            "stale_selection_accepted",
+            "fact_commit_on_stale_selection",
+            "derived_write_on_stale_selection"
+          ],
+          "assertion_paths": [
+            "/preview/data_revision_stale_zero_write",
+            "/preview/caller_state_untrusted",
+            "/scope_limitation"
+          ]
+        }
+      ]
+    }
+  ],
+  "case_assertion_paths": {
+    "CASE-EFFECT-001": [
+      "/oracle/failure",
+      "/oracle/state_after_restart",
+      "/oracle/same_key_retry",
+      "/forbidden"
+    ],
+    "CASE-EFFECT-002": [
+      "/effect_bundle/late_failure_full_rollback",
+      "/restart/effects_pending",
+      "/same_token_retry/missing_effect_only",
+      "/forbidden"
+    ],
+    "CASE-EFFECT-003": [
+      "/oracle/failure",
+      "/oracle/state_after_restart",
+      "/oracle/same_key_retry",
+      "/forbidden"
+    ],
+    "CASE-STORAGE-005": [
+      "/migration/failure_keeps_final_unpublished",
+      "/migration/failure_keeps_user_version_unadvanced",
+      "/scope_limitation"
+    ],
+    "CASE-STORAGE-006": [
+      "/oracle/original_result",
+      "/oracle/later_unrelated_write",
+      "/oracle/same_key_retry",
+      "/forbidden"
+    ],
+    "CASE-STORAGE-007": [
+      "/oracle/idempotency/conflicts",
+      "/oracle/idempotency/business_write_count",
+      "/forbidden"
+    ],
+    "CASE-INVENTORY-006": [
+      "/preview/data_revision_stale_zero_write",
+      "/preview/caller_state_untrusted",
+      "/scope_limitation"
+    ]
+  }
+}
