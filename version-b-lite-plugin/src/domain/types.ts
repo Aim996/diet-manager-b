@@ -9,6 +9,14 @@ export interface NutritionVector {
   readonly water_ml_milli: number | null;
 }
 
+export type NutritionBasisKind =
+  | "per_100g"
+  | "per_100ml"
+  | "per_serving"
+  | "per_item"
+  | "per_package"
+  | "custom_recipe";
+
 export interface StructuredAmount {
   readonly unit: string;
   readonly observed_microunits: number;
@@ -30,7 +38,7 @@ export interface InventoryMatchInput {
   readonly requested_unit: string;
   readonly observed_microunits: number;
   readonly nutrition_adoption_microunits: number | null;
-  readonly inventory_deduction_microunits: number;
+  readonly inventory_deduction_microunits: number | null;
   readonly template_reference_microunits: number | null;
   readonly candidates: readonly InventoryCandidate[];
 }
@@ -40,7 +48,8 @@ export type InventoryMatchStatus =
   | "skipped_outside"
   | "skipped_ambiguous"
   | "skipped_insufficient"
-  | "skipped_unit_incompatible";
+  | "skipped_unit_incompatible"
+  | "skipped_amount_unknown";
 
 export interface InventoryMatchDecision {
   readonly status: InventoryMatchStatus;
@@ -52,6 +61,7 @@ export interface InventoryMatchDecision {
     | "inventory_multiple_candidates"
     | "inventory_insufficient"
     | "inventory_unit_incompatible"
+    | "inventory_amount_unknown"
     | null;
 }
 
@@ -60,6 +70,9 @@ export interface NutritionSourceCandidate {
   readonly source_ref: string;
   readonly profile_version: number;
   readonly applicable_product_id: string | null;
+  readonly basis_kind: NutritionBasisKind;
+  readonly basis_microunits: number;
+  readonly basis_unit: string;
   readonly nutrients: NutritionVector;
 }
 
@@ -68,6 +81,9 @@ export interface NutritionSelection {
   readonly source_ref: string;
   readonly profile_version: number;
   readonly applicable_product_id: string | null;
+  readonly basis_kind: NutritionBasisKind | null;
+  readonly basis_microunits: number | null;
+  readonly basis_unit: string | null;
   readonly nutrients: NutritionVector;
 }
 

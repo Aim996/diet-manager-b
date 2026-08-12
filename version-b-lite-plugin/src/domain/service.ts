@@ -9,7 +9,13 @@ import {
 } from "../repository/fact-commit.js";
 import { finalizeEnvelope } from "../repository/envelope-finalize.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
-import { applyPurchaseEffect, preparePurchaseOperation } from "./effect-bundle.js";
+import {
+  applyMealEffects,
+  applyPurchaseEffect,
+  prepareMealOperation,
+  preparePurchaseOperation,
+  type MealOperationResult,
+} from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { queryDomainReadModel, type DomainQueryResult } from "./read-model.js";
 import type {
@@ -17,6 +23,7 @@ import type {
   DomainEnvelopeInput,
   DomainExecutionResult,
   DomainQueryOperation,
+  RecordMealOperation,
 } from "./types.js";
 
 export interface DomainPreviewResult {
@@ -45,7 +52,11 @@ export interface CreateDietDomainServiceInput {
   readonly database: DatabaseSync;
   readonly secret: Uint8Array;
   readonly now: () => string;
-  readonly fault?: "before_fact_commit" | "after_inventory_business_writes";
+  readonly fault?:
+    | "before_fact_commit"
+    | "after_inventory_business_writes"
+    | "after_meal_nutrition"
+    | "after_meal_first_item";
   readonly failureSink?: (entry: DietDomainFailureEntry) => void;
 }
 
@@ -79,13 +90,16 @@ function emitFailure(
   }
 }
 
-function purchaseOperation(envelope: DomainEnvelopeInput): AddInventoryOperation {
-  if (envelope.command_type !== "add_inventory" || envelope.operations.length !== 1) {
-    return invalid("purchase_envelope");
-  }
+function writeOperation(
+  envelope: DomainEnvelopeInput,
+): AddInventoryOperation | RecordMealOperation {
+  if (envelope.operations.length !== 1) return invalid("operation_count");
   const operation = envelope.operations[0];
-  if (operation.kind !== "add_inventory") return invalid("purchase_operation");
-  return operation;
+  if (
+    (envelope.command_type === "add_inventory" && operation.kind === "add_inventory") ||
+    (envelope.command_type === "record_meal" && operation.kind === "record_meal")
+  ) return operation;
+  return invalid("command_operation");
 }
 
 function storedEnvelopeTime(database: DatabaseSync, envelopeId: string): string {
@@ -122,7 +136,11 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
   database: DatabaseSync;
   secret: Uint8Array;
   now: () => string;
-  fault?: "before_fact_commit" | "after_inventory_business_writes";
+  fault?:
+    | "before_fact_commit"
+    | "after_inventory_business_writes"
+    | "after_meal_nutrition"
+    | "after_meal_first_item";
   failureSink?: (entry: DietDomainFailureEntry) => void;
 } {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -136,7 +154,9 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
   if (
     input.fault !== undefined &&
     input.fault !== "before_fact_commit" &&
-    input.fault !== "after_inventory_business_writes"
+    input.fault !== "after_inventory_business_writes" &&
+    input.fault !== "after_meal_nutrition" &&
+    input.fault !== "after_meal_first_item"
   ) {
     return invalid("fault");
   }
@@ -158,7 +178,7 @@ export function createDietDomainService(
   const options = freezeCreator(input);
   return Object.freeze({
     preview(envelope: DomainEnvelopeInput): DomainPreviewResult {
-      purchaseOperation(envelope);
+      writeOperation(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       const dataRevision = computeRepositoryDataRevision(options.database);
       const now = timestamp(options.now(), "clock");
@@ -190,7 +210,7 @@ export function createDietDomainService(
 
     execute(execution: DomainExecuteInput): DomainExecutionResult {
       const envelope = execution.envelope;
-      const operation = purchaseOperation(envelope);
+      const operation = writeOperation(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
       const authority = authorizeRepositoryPreview({
@@ -206,6 +226,143 @@ export function createDietDomainService(
         return invalid("envelope_id");
       }
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
+      if (operation.kind === "record_meal") {
+        const preparedMeal = prepareMealOperation({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          dataRevision: execution.data_revision,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt,
+          sequence: 0,
+          operation,
+        });
+        if (authority.envelope_state === "finalized") {
+          const row = options.database
+            .prepare("SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?")
+            .get(envelope.envelope_id) as { payload_json: string } | undefined;
+          if (!row) throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_missing");
+          const parsed = JSON.parse(row.payload_json) as DomainExecutionResult;
+          if (canonicalJson(parsed) !== row.payload_json) {
+            throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_payload");
+          }
+          if (parsed.status !== "committed" && parsed.status !== "committed_with_issues") {
+            throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_status");
+          }
+          return finalizeEnvelope({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId: preparedMeal.fact.traceId,
+            resultStatus: parsed.status,
+            receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+            finalizedAt: committedAt,
+            frozenAt: committedAt,
+            payload: parsed,
+            mixedItems: Object.freeze([]),
+          }).payload as DomainExecutionResult;
+        }
+        if (authority.envelope_state !== "received") {
+          throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        }
+        if (options.fault === "before_fact_commit") {
+          emitFailure(options.failureSink, {
+            stage: "FactCommit",
+            error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+            trace_id: preparedMeal.fact.traceId,
+            input_digest: inputDigest,
+          });
+          throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+        }
+        appendPreparedOperationFact(preparedMeal.fact, {
+          failureSink: (entry) =>
+            emitFailure(options.failureSink, {
+              stage: "FactCommit",
+              error_code: entry.error_code,
+              trace_id: entry.trace_id,
+              input_digest: entry.input_digest,
+            }),
+        });
+        let mealResult: MealOperationResult;
+        try {
+          mealResult = applyMealEffects({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id,
+            operationSequence: 0,
+            idempotencyKey: envelope.idempotency_key,
+            now: committedAt,
+            location: operation.location,
+            ...(options.fault === "after_meal_nutrition"
+              ? { fault: "after_nutrition" as const }
+              : options.fault === "after_meal_first_item"
+                ? { fault: "after_first_item" as const }
+                : {}),
+          });
+        } catch (error) {
+          const code = (error instanceof Error ? error.message : "MEAL_EFFECT_FAILED").split(
+            ":",
+            1,
+          )[0];
+          emitFailure(options.failureSink, {
+            stage: "EffectBundle",
+            error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
+            trace_id: preparedMeal.fact.traceId,
+            input_digest: inputDigest,
+          });
+          throw error;
+        }
+        sealPreparedEnvelopeFacts({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          dataRevision: execution.data_revision,
+          traceId: preparedMeal.fact.traceId,
+          expectedOperationIds: Object.freeze([operation.operation_id]),
+          sealedAt: committedAt,
+        });
+        const mealExecution: DomainExecutionResult = Object.freeze({
+          envelope_id: envelope.envelope_id,
+          input_digest: inputDigest,
+          status: mealResult.status,
+          items: Object.freeze([mealResult]),
+          payload: Object.freeze({
+            authority_kind: "diet-manager/domain-execution/v1",
+            daily_progress: mealResult.daily_progress,
+            daily_progress_by_date: mealResult.daily_progress_by_date,
+          }),
+        });
+        const finalizedMeal = finalizeEnvelope({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          dataRevision: execution.data_revision,
+          traceId: preparedMeal.fact.traceId,
+          resultStatus: mealResult.status,
+          receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt: committedAt,
+          frozenAt: committedAt,
+          payload: mealExecution,
+          mixedItems: Object.freeze([]),
+        });
+        return finalizedMeal.payload as DomainExecutionResult;
+      }
       const prepared = preparePurchaseOperation({
         database: options.database,
         secret: options.secret,

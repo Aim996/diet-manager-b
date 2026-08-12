@@ -38,7 +38,7 @@ const BATCH_FIELDS = [
     "schema_version",
     "stocked_at",
 ];
-const NUTRITION_PROFILE_FIELDS = [
+const LEGACY_NUTRITION_PROFILE_FIELDS = [
     "applicable_product_id",
     "nutrients",
     "nutrition_profile_id",
@@ -46,6 +46,25 @@ const NUTRITION_PROFILE_FIELDS = [
     "source_ref",
     "source_type",
 ];
+const NUTRITION_PROFILE_FIELDS = [
+    "applicable_product_id",
+    "basis_kind",
+    "basis_microunits",
+    "basis_unit",
+    "nutrients",
+    "nutrition_profile_id",
+    "profile_version",
+    "source_ref",
+    "source_type",
+];
+const NUTRITION_BASIS_KINDS = new Set([
+    "per_100g",
+    "per_100ml",
+    "per_serving",
+    "per_item",
+    "per_package",
+    "custom_recipe",
+]);
 const NUTRIENT_FIELDS = [
     "carbohydrate_mg",
     "energy_kcal_milli",
@@ -292,7 +311,9 @@ function parseIntent(row) {
 function parsePreparedNutritionProfile(value, productId) {
     if (value === null)
         return null;
-    const profile = exactJsonObject(value, NUTRITION_PROFILE_FIELDS);
+    const sourceRecord = value;
+    const hasBasis = Object.hasOwn(sourceRecord, "basis_kind");
+    const profile = exactJsonObject(value, hasBasis ? NUTRITION_PROFILE_FIELDS : LEGACY_NUTRITION_PROFILE_FIELDS);
     const nutrients = exactJsonObject(profile.nutrients, NUTRIENT_FIELDS);
     if (profile.source_type !== "product_label" &&
         profile.source_type !== "public_fixture") {
@@ -303,6 +324,20 @@ function parsePreparedNutritionProfile(value, productId) {
     }
     if (!Number.isSafeInteger(profile.profile_version) || profile.profile_version < 1) {
         return authorityInvalid("nutrition_profile_version");
+    }
+    let basis = null;
+    if (hasBasis) {
+        if (!NUTRITION_BASIS_KINDS.has(String(profile.basis_kind))) {
+            return authorityInvalid("nutrition_basis_kind");
+        }
+        if (!Number.isSafeInteger(profile.basis_microunits) || profile.basis_microunits <= 0) {
+            return authorityInvalid("nutrition_basis_microunits");
+        }
+        basis = {
+            kind: String(profile.basis_kind),
+            microunits: profile.basis_microunits,
+            unit: ascii(profile.basis_unit, "nutrition_basis_unit", 128),
+        };
     }
     const frozenNutrients = Object.freeze({
         carbohydrate_mg: nullableNutrient(nutrients.carbohydrate_mg, "carbohydrate_mg"),
@@ -315,6 +350,7 @@ function parsePreparedNutritionProfile(value, productId) {
     const payloadJson = canonicalJson({
         applicable_product_id: productId,
         authority_kind: "diet-manager/nutrition-profile/v1",
+        ...(basis === null ? {} : { basis }),
         nutrients: frozenNutrients,
         source_ref: ascii(profile.source_ref, "nutrition_source_ref"),
         source_type: profile.source_type,
@@ -328,11 +364,16 @@ function parsePreparedNutritionProfile(value, productId) {
             ? "complete"
             : "partial",
         payloadJson,
+        legacy: !hasBasis,
     });
 }
 function writeNutritionProfile(database, intent, profile, now) {
     if (!profile)
         return;
+    const previous = database.prepare(`SELECT nutrition_profile_id FROM nutrition_profiles
+     WHERE subject_type = 'product' AND subject_id = ? AND CAST(profile_version AS INTEGER) < ?
+     ORDER BY CAST(profile_version AS INTEGER) DESC LIMIT 1`).get(intent.product.productId, profile.profileVersion);
+    const supersedesProfileId = previous?.nutrition_profile_id ?? null;
     const existing = database
         .prepare(`SELECT * FROM nutrition_profiles
        WHERE subject_type = 'product' AND subject_id = ? AND profile_version = ?`)
@@ -344,7 +385,8 @@ function writeNutritionProfile(database, intent, profile, now) {
             existing.source_ref !== profile.sourceRef ||
             existing.source_version !== String(profile.profileVersion) ||
             existing.coverage_status !== profile.coverageStatus ||
-            existing.supersedes_profile_id !== null ||
+            (existing.supersedes_profile_id !== supersedesProfileId &&
+                !(profile.legacy && existing.supersedes_profile_id === null)) ||
             existing.payload_json !== profile.payloadJson) {
             return authorityInvalid("nutrition_profile_conflict");
         }
@@ -355,8 +397,8 @@ function writeNutritionProfile(database, intent, profile, now) {
         nutrition_profile_id, schema_version, subject_type, subject_id,
         profile_version, source_type, source_ref, source_version, retrieved_at,
         coverage_status, created_at, supersedes_profile_id, payload_json
-      ) VALUES (?, 'domain/v2', 'product', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
-        .run(profile.nutritionProfileId, intent.product.productId, String(profile.profileVersion), profile.sourceType, profile.sourceRef, String(profile.profileVersion), now, profile.coverageStatus, now, profile.payloadJson);
+      ) VALUES (?, 'domain/v2', 'product', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(profile.nutritionProfileId, intent.product.productId, String(profile.profileVersion), profile.sourceType, profile.sourceRef, String(profile.profileVersion), now, profile.coverageStatus, now, supersedesProfileId, profile.payloadJson);
 }
 function projectionPayload(batchId, productId, quantityMicrounits, unit) {
     return canonicalJson({

@@ -1,6 +1,7 @@
 import { canonicalJson } from "../authority/canonical-json.js";
 import { dietManagerActions, } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
+import { deriveDomainId } from "../domain/identity.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 const INPUT_FIELDS = [
@@ -27,6 +28,14 @@ const MIXED_ITEM_FIELDS = [
     "payload",
     "sequence",
     "status",
+];
+const DAILY_NUTRIENT_FIELDS = [
+    "energy_kcal_milli",
+    "protein_mg",
+    "fat_mg",
+    "carbohydrate_mg",
+    "fiber_mg",
+    "water_ml_milli",
 ];
 function invalid(reason) {
     throw new TypeError(`ENVELOPE_FINALIZE_REQUEST_INVALID:${reason}`);
@@ -85,6 +94,196 @@ function deepFreezeJson(value) {
         return Object.freeze(value);
     }
     return value;
+}
+function plainRecord(value, fields, reason) {
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+        return authorityInvalid(reason);
+    const record = value;
+    if (Object.keys(record).sort().join("\u0000") !== [...fields].sort().join("\u0000")) {
+        return authorityInvalid(reason);
+    }
+    return record;
+}
+function parseDailyProgress(value, reason) {
+    const progress = plainRecord(value, ["coverage_status", "date", "nutrients", "timezone"], reason);
+    if (typeof progress.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(progress.date) ||
+        progress.timezone !== "Asia/Shanghai" ||
+        (progress.coverage_status !== "complete" && progress.coverage_status !== "partial"))
+        return authorityInvalid(reason);
+    const nutrients = plainRecord(progress.nutrients, DAILY_NUTRIENT_FIELDS, reason);
+    const frozenNutrients = {};
+    for (const field of DAILY_NUTRIENT_FIELDS) {
+        const candidate = nutrients[field];
+        if (candidate !== null && (!Number.isSafeInteger(candidate) || candidate < 0)) {
+            return authorityInvalid(reason);
+        }
+        frozenNutrients[field] = candidate;
+    }
+    return Object.freeze({
+        date: progress.date,
+        timezone: "Asia/Shanghai",
+        coverage_status: progress.coverage_status,
+        nutrients: Object.freeze(frozenNutrients),
+    });
+}
+function addDailyProgress(previous, contribution) {
+    if (previous !== null &&
+        (previous.date !== contribution.date || previous.timezone !== contribution.timezone))
+        return authorityInvalid("daily_progress_date");
+    const nutrients = {};
+    for (const field of DAILY_NUTRIENT_FIELDS) {
+        const left = previous === null ? 0 : previous.nutrients[field];
+        const right = contribution.nutrients[field];
+        if (left === null || right === null) {
+            nutrients[field] = null;
+            continue;
+        }
+        const sum = left + right;
+        if (!Number.isSafeInteger(sum))
+            return authorityInvalid("daily_progress_sum");
+        nutrients[field] = sum;
+    }
+    return Object.freeze({
+        date: contribution.date,
+        timezone: contribution.timezone,
+        coverage_status: Object.values(nutrients).every((value) => value !== null)
+            ? "complete"
+            : "partial",
+        nutrients: Object.freeze(nutrients),
+    });
+}
+function nextProgressGeneratedAt(database, date, timezone, baseTimestamp, previousTimestamp) {
+    const base = Date.parse(baseTimestamp);
+    if (!Number.isFinite(base))
+        return authorityInvalid("daily_progress_timestamp");
+    const previous = previousTimestamp === null ? null : Date.parse(previousTimestamp);
+    if (previousTimestamp !== null &&
+        (!Number.isFinite(previous) || new Date(previous).toISOString() !== previousTimestamp))
+        return authorityInvalid("daily_progress_timestamp");
+    const firstCandidate = previous === null ? base : Math.max(base, previous + 1);
+    const occupied = new Set(database.prepare("SELECT generated_at FROM daily_progress_snapshots WHERE date = ? AND timezone = ?").all(date, timezone).map((row) => row.generated_at));
+    for (let offset = 0; offset <= occupied.size; offset += 1) {
+        const candidate = new Date(firstCandidate + offset).toISOString();
+        if (!occupied.has(candidate))
+            return candidate;
+    }
+    return authorityInvalid("daily_progress_timestamp");
+}
+function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
+    if (input.commandType !== "record_meal")
+        return input;
+    if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload))
+        return input;
+    const execution = input.payload;
+    if (typeof execution.payload !== "object" || execution.payload === null || Array.isArray(execution.payload)) {
+        return input;
+    }
+    const domainPayload = execution.payload;
+    if (domainPayload.authority_kind !== "diet-manager/domain-execution/v1")
+        return input;
+    plainRecord(execution, ["envelope_id", "input_digest", "items", "payload", "status"], "daily_progress_execution");
+    plainRecord(domainPayload, ["authority_kind", "daily_progress", "daily_progress_by_date"], "daily_progress_payload");
+    const contribution = parseDailyProgress(domainPayload.daily_progress, "daily_progress_contribution");
+    if (!Array.isArray(domainPayload.daily_progress_by_date) ||
+        domainPayload.daily_progress_by_date.length !== 1 ||
+        canonicalJson(domainPayload.daily_progress_by_date[0]) !== canonicalJson(contribution))
+        return authorityInvalid("daily_progress_by_date");
+    const bundles = input.database.prepare(`SELECT operation_id, effect_state, result_status, completed_at, payload_json
+     FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id`).all(envelopeId);
+    if (bundles.length !== 1)
+        return authorityInvalid("daily_progress_bundle");
+    const bundle = bundles[0];
+    if (!bundle || bundle.completed_at === null ||
+        (bundle.effect_state !== "succeeded" && bundle.effect_state !== "permanent_business_skip") ||
+        (bundle.result_status !== "applied" && bundle.result_status !== "applied_with_issues"))
+        return authorityInvalid("daily_progress_bundle");
+    let bundleValue;
+    try {
+        bundleValue = JSON.parse(bundle.payload_json);
+    }
+    catch {
+        return authorityInvalid("daily_progress_bundle");
+    }
+    if (canonicalJson(bundleValue) !== bundle.payload_json)
+        return authorityInvalid("daily_progress_bundle");
+    const bundlePayload = plainRecord(bundleValue, ["authority_kind", "data_revision", "effects", "operation_sequence"], "daily_progress_bundle");
+    if (bundlePayload.authority_kind !== "diet-manager/effect-bundle/v1" ||
+        typeof bundlePayload.data_revision !== "string" ||
+        !bundlePayload.data_revision.startsWith("repository-v1:") ||
+        bundlePayload.operation_sequence !== 0 ||
+        !Array.isArray(bundlePayload.effects)) {
+        return authorityInvalid("daily_progress_bundle");
+    }
+    const outboxes = input.database.prepare(`SELECT effect_id, effect_kind, state FROM effect_outbox
+     WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(envelopeId, bundle.operation_id);
+    if (bundlePayload.effects.length !== outboxes.length ||
+        outboxes.length === 0 ||
+        new Set(outboxes.map((outbox) => outbox.effect_id)).size !== outboxes.length)
+        return authorityInvalid("daily_progress_bundle");
+    let boundContribution = null;
+    for (let index = 0; index < outboxes.length; index += 1) {
+        const outbox = outboxes[index];
+        const progressEffect = outbox.effect_kind === "daily_progress_contribution";
+        const effect = plainRecord(bundlePayload.effects[index], progressEffect ? ["contribution", "effect_id", "state"] : ["effect_id", "state"], "daily_progress_bundle_effect");
+        if (effect.effect_id !== outbox.effect_id ||
+            effect.state !== outbox.state ||
+            (outbox.state !== "succeeded" && outbox.state !== "permanent_business_skip"))
+            return authorityInvalid("daily_progress_bundle");
+        if (progressEffect) {
+            if (outbox.state !== "succeeded" || boundContribution !== null) {
+                return authorityInvalid("daily_progress_bundle");
+            }
+            boundContribution = parseDailyProgress(effect.contribution, "daily_progress_bundle");
+        }
+    }
+    if (boundContribution === null ||
+        canonicalJson(boundContribution) !== canonicalJson(contribution))
+        return authorityInvalid("daily_progress_bundle");
+    const previousRow = input.database.prepare(`SELECT generated_at, payload_json FROM daily_progress_snapshots
+     WHERE date = ? AND timezone = ?
+     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`).get(contribution.date, contribution.timezone);
+    let previous = null;
+    if (previousRow) {
+        let value;
+        try {
+            value = JSON.parse(previousRow.payload_json);
+        }
+        catch {
+            return authorityInvalid("daily_progress_previous");
+        }
+        if (canonicalJson(value) !== previousRow.payload_json)
+            return authorityInvalid("daily_progress_previous");
+        const record = plainRecord(value, ["authority_kind", "coverage_status", "date", "nutrients", "timezone"], "daily_progress_previous");
+        if (record.authority_kind !== "diet-manager/daily-progress/v1") {
+            return authorityInvalid("daily_progress_previous");
+        }
+        previous = parseDailyProgress({
+            coverage_status: record.coverage_status,
+            date: record.date,
+            nutrients: record.nutrients,
+            timezone: record.timezone,
+        }, "daily_progress_previous");
+    }
+    const cumulative = addDailyProgress(previous, contribution);
+    const generatedAt = nextProgressGeneratedAt(input.database, cumulative.date, cumulative.timezone, input.finalizedAt, previousRow?.generated_at ?? null);
+    input.database.prepare(`INSERT INTO daily_progress_snapshots(
+      progress_snapshot_id, idempotency_result_id, date, timezone,
+      goal_version_id, coverage_status, generated_at, payload_json
+    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`).run(deriveDomainId("progress", idempotencyKey, 0), idempotencyKey, cumulative.date, cumulative.timezone, cumulative.coverage_status, generatedAt, canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...cumulative }));
+    const finalExecution = {
+        ...execution,
+        payload: {
+            authority_kind: "diet-manager/domain-execution/v1",
+            daily_progress: cumulative,
+            daily_progress_by_date: [cumulative],
+        },
+    };
+    const payloadJson = canonicalJson(finalExecution);
+    return Object.freeze({
+        ...input,
+        payloadJson,
+        payload: deepFreezeJson(JSON.parse(payloadJson)),
+    });
 }
 function freezeMixedItems(value) {
     if (!Array.isArray(value) || value.length > 256)
@@ -294,40 +493,41 @@ export function finalizeEnvelope(input, options) {
         if (authority.envelope_state !== "effects_stable") {
             return authorityInvalid("effects_not_stable");
         }
-        const result = resultFor(frozen, authority.binding.preview_id, authority.idempotency_key);
-        assertMixedOperationAuthority(frozen, authority.binding.preview_id);
-        frozen.database
+        const finalizedInput = freezeMealDailyProgress(frozen, authority.binding.preview_id, authority.idempotency_key);
+        const result = resultFor(finalizedInput, authority.binding.preview_id, authority.idempotency_key);
+        assertMixedOperationAuthority(finalizedInput, authority.binding.preview_id);
+        finalizedInput.database
             .prepare(`INSERT INTO envelope_finalizations(
           envelope_id, idempotency_key, input_digest, envelope_state,
           result_status, stage, receipt_id, error_code, finalized_at,
           frozen_at, payload_json
         ) VALUES (?, ?, ?, 'finalized', ?, 'EnvelopeFinalize', ?, NULL, ?, ?, ?)`)
-            .run(authority.binding.preview_id, authority.idempotency_key, frozen.inputDigest, frozen.resultStatus, frozen.receiptId, frozen.finalizedAt, frozen.frozenAt, frozen.payloadJson);
+            .run(authority.binding.preview_id, authority.idempotency_key, finalizedInput.inputDigest, finalizedInput.resultStatus, finalizedInput.receiptId, finalizedInput.finalizedAt, finalizedInput.frozenAt, finalizedInput.payloadJson);
         injectFault(frozenOptions, "after_finalization_row");
-        const insertMixedItem = frozen.database.prepare(`INSERT INTO mixed_item_results(
+        const insertMixedItem = finalizedInput.database.prepare(`INSERT INTO mixed_item_results(
         envelope_id, sequence, operation_id, idempotency_key,
         command_type, status, error_code, payload_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-        for (const item of frozen.mixedItems) {
+        for (const item of finalizedInput.mixedItems) {
             insertMixedItem.run(authority.binding.preview_id, item.sequence, item.operation_id, item.idempotency_key, item.command_type, item.status, item.error_code, item.payloadJson);
         }
         assertEnvelopeTransition("effects_stable", "finalized");
-        frozen.database
+        finalizedInput.database
             .prepare(`UPDATE command_envelopes
          SET state = 'finalized', result_status = ?
          WHERE envelope_id = ? AND state = 'effects_stable'
            AND result_status = 'effects_stable'`)
-            .run(frozen.resultStatus, authority.binding.preview_id);
-        if (changes(frozen.database) !== 1)
+            .run(finalizedInput.resultStatus, authority.binding.preview_id);
+        if (changes(finalizedInput.database) !== 1)
             return authorityInvalid("envelope_compare_and_set");
         injectFault(frozenOptions, "after_envelope");
-        frozen.database
+        finalizedInput.database
             .prepare(`UPDATE idempotency_records
          SET state = 'finalized', terminal_result_json = ?, updated_at = ?
          WHERE idempotency_key = ? AND operation_id = ? AND input_digest = ?
            AND state = 'effects_stable' AND terminal_result_json IS NULL`)
-            .run(canonicalJson(result), frozen.finalizedAt, authority.idempotency_key, authority.binding.preview_id, frozen.inputDigest);
-        if (changes(frozen.database) !== 1) {
+            .run(canonicalJson(result), finalizedInput.finalizedAt, authority.idempotency_key, authority.binding.preview_id, finalizedInput.inputDigest);
+        if (changes(finalizedInput.database) !== 1) {
             return authorityInvalid("idempotency_compare_and_set");
         }
         injectFault(frozenOptions, "after_idempotency");

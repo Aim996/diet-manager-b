@@ -4,6 +4,7 @@ import { deriveDomainId, digestDomainEnvelope, toNaturalDate } from "../src/doma
 import {
   addNutritionVectors,
   resolveInventoryMatch,
+  scaleNutritionVector,
   selectNutritionSource,
 } from "../src/domain/rules.js";
 import {
@@ -81,6 +82,9 @@ describe("B-SLICE-001 pure domain rules", () => {
       source_ref: "label-whole-milk-250-v1",
       profile_version: 1,
       applicable_product_id: "product-milk-001",
+      basis_kind: "per_package",
+      basis_microunits: 1_000_000,
+      basis_unit: "carton",
       nutrients: {
         energy_kcal_milli: 160_000,
         protein_mg: 8_000,
@@ -119,6 +123,24 @@ describe("B-SLICE-001 pure domain rules", () => {
       carbohydrate_mg: 7_000,
       fiber_mg: null,
       water_ml_milli: 25_000,
+    });
+  });
+
+  it("scales a per-100ml nutrition vector to the adopted 250ml amount", () => {
+    expect(scaleNutritionVector({
+      energy_kcal_milli: 60_000,
+      protein_mg: 3_200,
+      fat_mg: 1_500,
+      carbohydrate_mg: 4_800,
+      fiber_mg: null,
+      water_ml_milli: 90_000,
+    }, 250_000_000, 100_000_000)).toEqual({
+      energy_kcal_milli: 150_000,
+      protein_mg: 8_000,
+      fat_mg: 3_750,
+      carbohydrate_mg: 12_000,
+      fiber_mg: null,
+      water_ml_milli: 225_000,
     });
   });
 });

@@ -5,6 +5,7 @@ import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 
 const QUERY_FIELDS = ["batchId", "database"] as const;
 const LIST_QUERY_FIELDS = ["database"] as const;
+const DATE_QUERY_FIELDS = ["database", "date", "timezone"] as const;
 const PROJECTION_PAYLOAD_FIELDS = [
   "authority_kind",
   "batch_id",
@@ -38,6 +39,36 @@ export interface InventoryProjectionListQuery {
   database: DatabaseSync;
 }
 
+export interface DateRangeQuery {
+  database: DatabaseSync;
+  date: string;
+  timezone: "Asia/Shanghai";
+}
+
+export interface MealListItem {
+  readonly occurred_at: string;
+  readonly meal_slot: string;
+  readonly location: "home" | "outside";
+  readonly items: readonly {
+    readonly item_order: number;
+    readonly item_type: string;
+    readonly normalized_name: string;
+    readonly amount: Readonly<Record<string, unknown>>;
+  }[];
+}
+
+export interface DailyNutritionSummary {
+  readonly coverage_status: "complete" | "partial" | "unknown";
+  readonly nutrients: {
+    readonly energy_kcal_milli: number | null;
+    readonly protein_mg: number | null;
+    readonly fat_mg: number | null;
+    readonly carbohydrate_mg: number | null;
+    readonly fiber_mg: number | null;
+    readonly water_ml_milli: number | null;
+  };
+}
+
 interface ProjectionRow {
   batch_id: string;
   last_event_id: string;
@@ -57,6 +88,20 @@ interface InventoryListRow extends ProjectionRow {
   product_type: string;
   product_payload_json: string;
   batch_payload_json: string;
+}
+
+interface MealQueryRow {
+  event_id: string;
+  occurred_at_text: string;
+  meal_slot: string;
+  payload_json: string;
+}
+
+interface MealItemQueryRow {
+  item_order: number;
+  item_type: string;
+  normalized_name: string;
+  payload_json: string;
 }
 
 function invalid(reason: string): never {
@@ -190,6 +235,181 @@ function assertCanonicalObject(value: string, label: string): void {
 
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function dateQuery(
+  input: DateRangeQuery,
+): { database: DatabaseSync; date: string; timezone: "Asia/Shanghai"; start: string; end: string } {
+  const fields = exactDataProperties(input, DATE_QUERY_FIELDS);
+  if (typeof fields.database.value !== "object" || fields.database.value === null) {
+    return invalid("database");
+  }
+  if (
+    typeof fields.date.value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(fields.date.value) ||
+    fields.timezone.value !== "Asia/Shanghai"
+  ) {
+    return invalid("date_query");
+  }
+  const dateProbe = new Date(`${fields.date.value}T00:00:00.000Z`);
+  if (
+    !Number.isFinite(dateProbe.valueOf()) ||
+    dateProbe.toISOString().slice(0, 10) !== fields.date.value
+  ) return invalid("date");
+  const startMilliseconds = Date.parse(`${fields.date.value}T00:00:00+08:00`);
+  if (!Number.isFinite(startMilliseconds)) return invalid("date");
+  const start = new Date(startMilliseconds).toISOString();
+  const end = new Date(startMilliseconds + 86_400_000).toISOString();
+  if (start.slice(0, 10) === end.slice(0, 10)) return invalid("date_range");
+  return {
+    database: fields.database.value as DatabaseSync,
+    date: fields.date.value,
+    timezone: "Asia/Shanghai",
+    start,
+    end,
+  };
+}
+
+function readOnly<T>(database: DatabaseSync, action: () => T): T {
+  let transactionOpen = false;
+  try {
+    database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(database);
+    const result = action();
+    database.exec("ROLLBACK");
+    transactionOpen = false;
+    return result;
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+        // Preserve the primary read-model error.
+      }
+    }
+    throw error;
+  }
+}
+
+function parseCanonicalRecord(value: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return invalid(`${label}_json`);
+  }
+  if (
+    typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
+    canonicalJson(parsed) !== value
+  ) return invalid(`${label}_canonical`);
+  return parsed as Record<string, unknown>;
+}
+
+export function listMealProjection(input: DateRangeQuery): readonly MealListItem[] {
+  const query = dateQuery(input);
+  return readOnly(query.database, () => {
+    const rows = query.database.prepare(
+      `SELECT event_id, occurred_at_text, meal_slot, payload_json
+       FROM event_records
+       WHERE event_type = 'diet_meal' AND lifecycle_status = 'active'
+         AND occurred_at_text >= ? AND occurred_at_text < ?
+       ORDER BY occurred_at_text, event_id`,
+    ).all(query.start, query.end) as unknown as MealQueryRow[];
+    return Object.freeze(rows.map((row) => {
+      const eventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
+      if (
+        eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
+        (eventPayload.location !== "home" && eventPayload.location !== "outside")
+      ) return invalid("meal_event_authority");
+      const itemRows = query.database.prepare(
+        `SELECT item_order, item_type, normalized_name, payload_json
+         FROM meal_items WHERE event_id = ? ORDER BY item_order`,
+      ).all(row.event_id) as unknown as MealItemQueryRow[];
+      const items = itemRows.map((item, index) => {
+        if (item.item_order !== index) return invalid("meal_item_order");
+        const payload = parseCanonicalRecord(item.payload_json, "meal_item");
+        if (
+          payload.authority_kind !== "diet-manager/meal-item/v1" ||
+          typeof payload.amount !== "object" || payload.amount === null ||
+          Array.isArray(payload.amount)
+        ) return invalid("meal_item_authority");
+        return Object.freeze({
+          item_order: item.item_order,
+          item_type: item.item_type,
+          normalized_name: item.normalized_name,
+          amount: Object.freeze({ ...(payload.amount as Record<string, unknown>) }),
+        });
+      });
+      return Object.freeze({
+        occurred_at: row.occurred_at_text,
+        meal_slot: row.meal_slot,
+        location: eventPayload.location,
+        items: Object.freeze(items),
+      }) as MealListItem;
+    }));
+  });
+}
+
+const NUTRIENT_FIELDS = [
+  "energy_kcal_milli",
+  "protein_mg",
+  "fat_mg",
+  "carbohydrate_mg",
+  "fiber_mg",
+  "water_ml_milli",
+] as const;
+
+export function summarizeDailyProgress(input: DateRangeQuery): DailyNutritionSummary {
+  const query = dateQuery(input);
+  return readOnly(query.database, () => {
+    const rows = query.database.prepare(
+      `SELECT coverage_status, payload_json FROM daily_progress_snapshots
+       WHERE date = ? AND timezone = ?
+       ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
+    ).all(query.date, query.timezone) as Array<{ coverage_status: string; payload_json: string }>;
+    const sums: Record<(typeof NUTRIENT_FIELDS)[number], number | null> = {
+      energy_kcal_milli: rows.length === 0 ? null : 0,
+      protein_mg: rows.length === 0 ? null : 0,
+      fat_mg: rows.length === 0 ? null : 0,
+      carbohydrate_mg: rows.length === 0 ? null : 0,
+      fiber_mg: rows.length === 0 ? null : 0,
+      water_ml_milli: rows.length === 0 ? null : 0,
+    };
+    let partial = rows.length === 0;
+    for (const row of rows) {
+      const payload = parseCanonicalRecord(row.payload_json, "daily_progress");
+      if (
+        payload.authority_kind !== "diet-manager/daily-progress/v1" ||
+        payload.date !== query.date || payload.timezone !== query.timezone ||
+        typeof payload.nutrients !== "object" || payload.nutrients === null ||
+        Array.isArray(payload.nutrients) ||
+        (row.coverage_status !== "complete" && row.coverage_status !== "partial") ||
+        payload.coverage_status !== row.coverage_status
+      ) return invalid("daily_progress_authority");
+      if (row.coverage_status === "partial") partial = true;
+      const nutrients = payload.nutrients as Record<string, unknown>;
+      if (Object.keys(nutrients).sort().join("\u0000") !== [...NUTRIENT_FIELDS].sort().join("\u0000")) {
+        return invalid("daily_progress_nutrients");
+      }
+      for (const field of NUTRIENT_FIELDS) {
+        const value = nutrients[field];
+        if (value !== null && (!Number.isSafeInteger(value) || (value as number) < 0)) {
+          return invalid(`daily_progress_${field}`);
+        }
+        sums[field] = sums[field] === null || value === null
+          ? null
+          : (sums[field] as number) + (value as number);
+        if (sums[field] !== null && !Number.isSafeInteger(sums[field])) {
+          return invalid(`daily_progress_${field}_sum`);
+        }
+      }
+    }
+    return Object.freeze({
+      coverage_status: rows.length === 0 ? "unknown" as const : partial ? "partial" as const : "complete" as const,
+      nutrients: Object.freeze({ ...sums }),
+    });
+  });
 }
 
 export function listInventoryProjection(

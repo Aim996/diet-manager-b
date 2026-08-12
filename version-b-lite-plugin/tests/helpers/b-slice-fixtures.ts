@@ -100,6 +100,9 @@ export function labelAndPublicNutrition(): readonly NutritionSourceCandidate[] {
       source_ref: "cn-food-rice-v1",
       profile_version: 1,
       applicable_product_id: null,
+      basis_kind: "per_100g",
+      basis_microunits: 100_000_000,
+      basis_unit: "g",
       nutrients: {
         energy_kcal_milli: 130_000,
         protein_mg: 2_700,
@@ -114,6 +117,9 @@ export function labelAndPublicNutrition(): readonly NutritionSourceCandidate[] {
       source_ref: "label-whole-milk-250-v1",
       profile_version: 1,
       applicable_product_id: "product-milk-001",
+      basis_kind: "per_package",
+      basis_microunits: 1_000_000,
+      basis_unit: "carton",
       nutrients: {
         energy_kcal_milli: 160_000,
         protein_mg: 8_000,

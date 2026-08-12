@@ -1338,6 +1338,69 @@ describe("B-STOR-002 FactCommit", () => {
 });
 
 describe("B-STOR-002 inventory EffectBundle", () => {
+  test("processes one legacy pending nutrition profile intent without inventing basis metadata", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({
+      privateRuntimeRoot: root,
+      now: () => "2026-08-12T02:00:00.000Z",
+    });
+    try {
+      const legacy = createInventoryFact(runtime.database, {
+        sequence: "1",
+        commandType: "add_inventory",
+        digestCharacter: "B",
+        effectInput: {
+          kind: "inventory_add",
+          transaction_id: "transaction-inventory-add-001",
+          reason_code: "initial_stock",
+          quantity_microunits: 10_000_000,
+          unit: "synthetic-unit",
+          product: {
+            product_id: "product-synthetic-001",
+            schema_version: "domain/v2",
+            normalized_name: "fixture-product",
+            product_type: "synthetic_product",
+            payload: { synthetic: true, authority: "fixture" },
+          },
+          batch: {
+            batch_id: "batch-synthetic-001",
+            schema_version: "domain/v2",
+            stocked_at: "2026-08-12T02:01:00.000Z",
+            explicit_expiration_at: null,
+            quantity_unit: "synthetic-unit",
+            payload: { synthetic: true, seal_status: "unknown" },
+          },
+          nutrition_profile: {
+            applicable_product_id: "product-synthetic-001",
+            nutrients: {
+              energy_kcal_milli: 100_000,
+              protein_mg: 5_000,
+              fat_mg: 2_000,
+              carbohydrate_mg: 12_000,
+              fiber_mg: null,
+              water_ml_milli: null,
+            },
+            nutrition_profile_id: "nutrition-legacy-profile-001",
+            profile_version: 1,
+            source_ref: "legacy-label-v1",
+            source_type: "product_label",
+          },
+        },
+      });
+      commitPreparedFact(legacy);
+      expect(processInventoryEffect(effectInput(runtime.database, "1"))).toMatchObject({
+        effect_state: "succeeded",
+      });
+      const profile = runtime.database.prepare(
+        "SELECT payload_json FROM nutrition_profiles WHERE nutrition_profile_id = ?",
+      ).get("nutrition-legacy-profile-001") as { payload_json: string };
+      expect(JSON.parse(profile.payload_json)).not.toHaveProperty("basis");
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
   test("adds one batch, applies one deduction and preserves the projection after reopen", () => {
     const root = newTestRoot();
     let runtime = openDietDatabase({
