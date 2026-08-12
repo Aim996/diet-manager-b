@@ -67,7 +67,7 @@
 - Produces: `DomainEnvelopeInput`, `DomainOperation`, `NutritionVector`, `InventoryMatchDecision`, `DomainExecutionResult`, `deriveDomainId()`, `digestDomainEnvelope()`, `resolveInventoryMatch()`, `selectNutritionSource()`, and `addNutritionVectors()`.
 - Test helpers produced: `sampleEnvelope()`, `riceBatch()`, `outsideApple()`, `twoMilkCandidates()`, `insufficientEggs()`, `labelAndPublicSource()`, `preparedMixedMilkEnvelope()`, `processAllOperationEffects()`, `mixedFinalizationInput()`, `createTestService()`, `previewAndExecute()`, `purchaseMilkEnvelope()`, `queryInventory()`, `countRows()`, `readEnvelopeState()`, `readMixedSequences()`, `readFinalPayload()`, `readInventorySequence()`, `readReceiptProgressBlockCount()`, `seedTwoEggMeal()`, `readEventBytes()`, `correctEggsToThree()`, `readCompensationMicrounits()`, `queryTodayMeals()`, `mixedPurchaseAndDrink()`, `frozenMultiDishResult()`, `ambiguousInventoryIssue()`, and `testRuntimeFactory()`.
 
-- [ ] **Step 1: Write failing tests for exact DTOs, deterministic IDs, and four-amount separation**
+- [x] **Step 1: Write failing tests for exact DTOs, deterministic IDs, and four-amount separation**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -111,7 +111,7 @@ describe("B-SLICE-001 pure domain rules", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify the missing-module RED**
+- [x] **Step 2: Run the focused test and verify the missing-module RED**
 
 Run:
 
@@ -121,7 +121,7 @@ Run:
 
 Expected: FAIL because `src/domain/identity.ts` and `src/domain/rules.ts` do not exist.
 
-- [ ] **Step 3: Add the exact internal types**
+- [x] **Step 3: Add the exact internal types**
 
 ```ts
 import type { DietManagerAction } from "../contracts.js";
@@ -163,7 +163,7 @@ Define every operation as an exact discriminated union with explicit fields; do 
 
 Create the test helper module in the same step. Every helper must return a fresh plain DTO or fresh test-owned database; it may not read expected values from a production result. `createTestService()` registers its database path for `afterEach` cleanup, and `countRows()` accepts only the frozen migration v1 table-name allowlist.
 
-- [ ] **Step 4: Implement deterministic helpers and pure rules**
+- [x] **Step 4: Implement deterministic helpers and pure rules**
 
 ```ts
 export function deriveDomainId(
@@ -184,11 +184,11 @@ export function digestDomainEnvelope(input: DomainEnvelopeInput): string {
 
 `resolveInventoryMatch()` must return exactly one of `matched`, `skipped_outside`, `skipped_ambiguous`, `skipped_insufficient`, or `skipped_unit_incompatible`. `selectNutritionSource()` must choose exact label, then frozen public fixture, then unknown; it must never replace `null` with zero.
 
-- [ ] **Step 5: Run focused tests, TypeScript, and the existing 69 tests**
+- [x] **Step 5: Run focused tests, TypeScript, and the existing 69 tests**
 
 Expected: new tests PASS, `tsc --noEmit` PASS, and 69 existing tests PASS.
 
-- [ ] **Step 6: Commit the protocol slice**
+- [x] **Step 6: Commit the protocol slice**
 
 ```powershell
 git add version-b-lite-plugin/src/domain version-b-lite-plugin/tests/domain-rules.test.ts version-b-lite-plugin/tests/helpers/b-slice-fixtures.ts
@@ -390,7 +390,7 @@ git commit -m "feat: add purchase and inventory slice"
 - Consumes: `resolveInventoryMatch()`, purchase projections, repository effect grouping.
 - Produces: meal execution, `query_meals`, `query_daily_summary`, nutrition snapshots, and one frozen single-day progress block.
 
-- [ ] **Step 1: Write the meal matrix RED tests**
+- [x] **Step 1: Write the meal matrix RED tests**
 
 Add named tests for:
 
@@ -422,27 +422,27 @@ expect(readFinalPayload(db).daily_progress).toEqual(
 );
 ```
 
-- [ ] **Step 2: Run focused tests and verify they fail at missing meal effects**
+- [x] **Step 2: Run focused tests and verify they fail at missing meal effects**
 
 Expected: purchase tests stay green; meal tests fail without meal EffectBundle behavior.
 
-- [ ] **Step 3: Implement meal FactCommit preparation**
+- [x] **Step 3: Implement meal FactCommit preparation**
 
 Prepare one immutable `diet_meal` event and ordered `meal_items`. Each item payload stores all four amount roles and evidence. Create outboxes only for the effects that the item requires: `inventory_deduct`, `nutrition_snapshot`, `issue_projection`, and `daily_progress_contribution`.
 
-- [ ] **Step 4: Implement one atomic operation EffectBundle**
+- [x] **Step 4: Implement one atomic operation EffectBundle**
 
 Within `BEGIN IMMEDIATE`, load the committed fact and authoritative current projections, recompute the match decision, write inventory transaction or stable skip reason, write nutrition profile/snapshot, write Issues, write the operation contribution to `effect_bundle_commits.payload_json`, and mark all operation outboxes terminal together. Injected nutrition failure must roll back every effect write from this operation.
 
-- [ ] **Step 5: Implement current meal and daily queries**
+- [x] **Step 5: Implement current meal and daily queries**
 
 `query_meals` uses `[start,end)` in `Asia/Shanghai`, excludes voided/superseded records, orders by resolved occurrence then event ID, and returns no internal IDs in the user-facing view. `query_daily_summary` aggregates the six metrics once and sets unknown fields to `null`, never zero.
 
-- [ ] **Step 6: Run the focused matrix and regression suite**
+- [x] **Step 6: Run the focused matrix and regression suite**
 
 Expected: all named meal/nutrition/inventory/progress tests PASS; no negative inventory; no query writes.
 
-- [ ] **Step 7: Commit the meal slice**
+- [x] **Step 7: Commit the meal slice**
 
 ```powershell
 git add version-b-lite-plugin/src/domain version-b-lite-plugin/tests
@@ -462,7 +462,7 @@ git commit -m "feat: add meal nutrition and progress slice"
 - Consumes: frozen operation results, Issue rows, and single-envelope progress.
 - Produces: `buildReceiptData()` and `buildQuickPrompt()`.
 
-- [ ] **Step 1: Write receipt RED tests**
+- [x] **Step 1: Write receipt RED tests**
 
 ```ts
 it("builds one title, one line per dish or item, and progress last", () => {
@@ -484,21 +484,21 @@ it("offers 2-4 stable options with free text last", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests and verify missing receipt module RED**
+- [x] **Step 2: Run tests and verify missing receipt module RED**
 
-- [ ] **Step 3: Implement pure receipt builders**
+- [x] **Step 3: Implement pure receipt builders**
 
 Builders accept only frozen result DTOs. Explicit values have no estimate marker; inferred fields carry `estimated`; technical pending returns a pending status object and no success title/progress. Never include raw source text, internal IDs, SQL, secret, or file path.
 
-- [ ] **Step 4: Store receipt only through EnvelopeFinalize**
+- [x] **Step 4: Store receipt only through EnvelopeFinalize**
 
 Pass the structured receipt and progress in `FinalizeEnvelopeInput.payload`; do not write a second receipt table or query progress after finalization.
 
-- [ ] **Step 5: Run receipt, replay, and privacy assertions**
+- [x] **Step 5: Run receipt, replay, and privacy assertions**
 
 Expected: exact structured assertions for `CASE-RECEIPT-001` and `CASE-RECEIPT-003` PASS; same-key replay returns the identical frozen payload.
 
-- [ ] **Step 6: Commit receipt behavior**
+- [x] **Step 6: Commit receipt behavior**
 
 ```powershell
 git add version-b-lite-plugin/src/domain/receipt.ts version-b-lite-plugin/src/domain/service.ts version-b-lite-plugin/tests/vertical-slice.test.ts
@@ -519,7 +519,7 @@ git commit -m "feat: add slice receipt data"
 - Consumes: committed meal facts and real prior inventory transaction IDs.
 - Produces: `correct_record`, `undo_record`, append-only correction rows, compensation effects, and effective-view queries.
 
-- [ ] **Step 1: Write `CASE-CORR-001` and undo RED tests**
+- [x] **Step 1: Write `CASE-CORR-001` and undo RED tests**
 
 ```ts
 it("changes two eggs to three by appending one correction and one-unit compensation", () => {
@@ -537,25 +537,25 @@ it("changes two eggs to three by appending one correction and one-unit compensat
 
 Also assert same-key retry adds no correction/compensation, `undo_record` appends `void_event`, and undo never physically deletes the original meal.
 
-- [ ] **Step 2: Run focused tests and verify correction RED**
+- [x] **Step 2: Run focused tests and verify correction RED**
 
-- [ ] **Step 3: Commit CorrectionEvent in FactCommit**
+- [x] **Step 3: Commit CorrectionEvent in FactCommit**
 
 Create an immutable correction fact with `before_snapshot`, `after_snapshot`, `change_set`, `affected_dates`, nutrition delta, and inventory compensation intent. Reject ambiguous target, stale base revision, and no-change before any business write.
 
-- [ ] **Step 4: Apply compensation in one EffectBundle**
+- [x] **Step 4: Apply compensation in one EffectBundle**
 
 Only compensate inventory that the original active fact actually changed. Add quantity uses an inventory-out compensation of one egg; void returns exactly the prior real deduction; restore reevaluates current inventory and does not reactivate old transactions.
 
-- [ ] **Step 5: Project current effective meals and progress**
+- [x] **Step 5: Project current effective meals and progress**
 
 Fold the correction chain by `base_revision` and correction order, keep the complete audit chain, generate a new nutrition snapshot, and recalculate every `affected_dates` entry before finalization.
 
-- [ ] **Step 6: Run correction, query, replay, and regression tests**
+- [x] **Step 6: Run correction, query, replay, and regression tests**
 
 Expected: `CASE-CORR-001` PASS; original bytes unchanged; effective view shows three eggs; no duplicate compensation.
 
-- [ ] **Step 7: Commit correction behavior**
+- [x] **Step 7: Commit correction behavior**
 
 ```powershell
 git add version-b-lite-plugin/src/domain version-b-lite-plugin/tests/vertical-slice.test.ts
