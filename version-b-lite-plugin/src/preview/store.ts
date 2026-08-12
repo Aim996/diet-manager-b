@@ -412,6 +412,33 @@ function assertPreviewReadyRow(row: ExistingAuthorityRow | undefined): ExistingA
   return row;
 }
 
+function assertPreviewIdentityConflicts(
+  row: ExistingAuthorityRow,
+  inputDigest: string,
+  subjectScope: string,
+  commandType: DietManagerAction,
+): void {
+  if (row.idempotency_input_digest !== inputDigest) {
+    throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
+  }
+  const binding = storedBinding(row.payload_json);
+  if (binding.subject_scope !== subjectScope) {
+    throw new Error("IDEMPOTENCY_CONFLICT:subject_scope");
+  }
+  if (binding.command_type !== commandType) {
+    throw new Error("IDEMPOTENCY_CONFLICT:command_type");
+  }
+}
+
+function isTerminalAuthority(row: ExistingAuthorityRow): boolean {
+  return (
+    row.envelope_state === "finalized" &&
+    row.idempotency_state === "finalized" &&
+    typeof row.terminal_result_json === "string" &&
+    row.terminal_result_json.length > 0
+  );
+}
+
 function bindingEquals(left: PreviewBindingV1, right: PreviewBindingV1): boolean {
   return canonicalJson(left) === canonicalJson(right);
 }
@@ -423,6 +450,14 @@ export function reuseServerPreview(
   assertCurrentMigrationAuthority(frozen.database);
   const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
   if (!existing) return undefined;
+  if (isTerminalAuthority(existing)) {
+    assertPreviewIdentityConflicts(
+      existing,
+      frozen.inputDigest,
+      frozen.subjectScope,
+      frozen.commandType,
+    );
+  }
   const row = assertPreviewReadyRow(existing);
   const binding = storedBinding(row.payload_json);
   if (row.envelope_id !== frozen.previewId) throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
@@ -482,6 +517,14 @@ export function createServerPreview(
       frozen.idempotencyKey,
     );
     if (existing) {
+      if (isTerminalAuthority(existing)) {
+        assertPreviewIdentityConflicts(
+          existing,
+          frozen.inputDigest,
+          frozen.subjectScope,
+          frozen.commandType,
+        );
+      }
       const row = assertPreviewReadyRow(existing);
       const originalBinding = storedBinding(row.payload_json);
       if (row.idempotency_input_digest !== frozen.inputDigest) {

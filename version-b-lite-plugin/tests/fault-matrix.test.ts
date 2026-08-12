@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -10,7 +11,9 @@ import { canonicalJson } from "../src/authority/canonical-json.js";
 import {
   prepareCorrectionOperation,
   prepareMealOperation,
+  preparePurchaseOperation,
   preflightMealOperation,
+  applyPurchaseEffect,
 } from "../src/domain/effect-bundle.js";
 import { deriveDomainId } from "../src/domain/identity.js";
 import {
@@ -23,11 +26,23 @@ import type {
   MealItemInput,
   NutritionSourceCandidate,
 } from "../src/domain/types.js";
-import { appendPreparedOperationFact } from "../src/repository/fact-commit.js";
+import {
+  appendPreparedOperationFact,
+  sealPreparedEnvelopeFacts,
+} from "../src/repository/fact-commit.js";
+import { finalizeEnvelope } from "../src/repository/envelope-finalize.js";
 import { createContributionProgressReservation } from "../src/repository/progress-reservation.js";
-import { openDietDatabase } from "../src/storage/database.js";
+import { computeRepositoryDataRevision } from "../src/repository/revision.js";
+import { reuseServerPreview } from "../src/preview/store.js";
+import {
+  DIET_DATABASE_FILENAME,
+  openDietDatabase,
+  type MigrationFault,
+} from "../src/storage/database.js";
 
 const secret = Buffer.from("B-FAULT-001 test secret material 0001", "utf8");
+const requireNode = createRequire(import.meta.url);
+const { DatabaseSync } = requireNode("node:sqlite") as typeof import("node:sqlite");
 const ownedRoots = new Set<string>();
 const diagnosticKeys = ["error_code", "input_digest", "stage", "trace_id"];
 const allForbiddenDiagnosticContent = [
@@ -152,6 +167,83 @@ interface FaultRow {
     readonly forbidden_content: readonly (
       "source_text" | "sql" | "secret" | "absolute_path"
     )[];
+  };
+  readonly frozen_result: {
+    readonly present: boolean;
+    readonly payload_bytes_unchanged: boolean;
+    readonly returns_old_result_as_new: boolean;
+    readonly date_order: readonly string[];
+    readonly single_day_alias_present: boolean | null;
+  };
+  readonly forbidden: readonly string[];
+  readonly assertion_paths: readonly string[];
+}
+
+type Task6CaseId =
+  | "CASE-STORAGE-005"
+  | "CASE-STORAGE-006"
+  | "CASE-STORAGE-007"
+  | "CASE-INVENTORY-006";
+
+interface Task6FaultRow {
+  readonly case_id: Task6CaseId;
+  readonly fault_id: string;
+  readonly operation_kind: string;
+  readonly fault_point: string;
+  readonly expected_error_code: string;
+  readonly failed_state: string;
+  readonly outbox_state: string;
+  readonly observations: {
+    readonly command_envelope: { readonly state: string; readonly result_status: string };
+    readonly outbox: {
+      readonly state: string;
+      readonly attempt_count: number;
+      readonly reason: string | null;
+      readonly count: number;
+    };
+    readonly facts: {
+      readonly event_records: number;
+      readonly meal_items: number;
+      readonly effect_bundle_commits: number;
+      readonly unchanged_from_pre_fault: boolean;
+    };
+    readonly effect_bundle_checkpoints: CountObservation;
+    readonly inventory_transactions: CountObservation;
+    readonly nutrition_profiles: CountObservation;
+    readonly nutrition_snapshots: CountObservation;
+    readonly issues: CountObservation;
+    readonly daily_progress_snapshots: CountObservation;
+    readonly envelope_finalizations: CountObservation;
+    readonly success_receipts: CountObservation;
+  };
+  readonly restart: {
+    readonly sqlite_reopen_state: string;
+    readonly only_unfinished_stage_may_change: boolean;
+    readonly completed_effects_repeated: boolean;
+  };
+  readonly same_token_retry: {
+    readonly action: string;
+    readonly business_writes: string;
+    readonly completed_effects_repeated: boolean;
+    readonly finalizations_added: number;
+    readonly frozen_result_bytes_unchanged: boolean;
+    readonly post_retry: {
+      readonly outbox_terminal_count: number | null;
+      readonly outbox_attempt_count: number | null;
+      readonly fact_event_records: number;
+      readonly fact_meal_items: number;
+      readonly terminal_effect_bundle_count: number;
+      readonly daily_progress_snapshot_count: number;
+      readonly envelope_finalization_count: number;
+      readonly success_receipt_count: number;
+    };
+  };
+  readonly diagnostic: {
+    readonly stage: string;
+    readonly error_code: string;
+    readonly trace_id: string;
+    readonly input_digest: string;
+    readonly forbidden_content: readonly string[];
   };
   readonly frozen_result: {
     readonly present: boolean;
@@ -471,6 +563,136 @@ function parseEffectRows(value: unknown): readonly FaultRow[] {
   return Object.freeze(rows);
 }
 
+function matrixNullableCount(value: unknown, reason: string): number | null {
+  return value === null ? null : matrixCount(value, reason);
+}
+
+function validateTask6Row(value: unknown): Task6FaultRow {
+  const row = matrixRecord(value, [
+    "assertion_paths", "case_id", "diagnostic", "expected_error_code", "failed_state",
+    "fault_id", "fault_point", "forbidden", "frozen_result", "observations",
+    "operation_kind", "outbox_state", "restart", "same_token_retry",
+  ], "task6.row_shape");
+  for (const name of [
+    "case_id", "fault_id", "operation_kind", "fault_point", "expected_error_code",
+    "failed_state", "outbox_state",
+  ] as const) matrixString(row[name], `task6.${name}`);
+
+  const observations = matrixRecord(row.observations, [
+    "command_envelope", "daily_progress_snapshots", "effect_bundle_checkpoints",
+    "envelope_finalizations", "facts", "inventory_transactions", "issues",
+    "nutrition_profiles", "nutrition_snapshots", "outbox", "success_receipts",
+  ], "task6.observations");
+  const command = matrixRecord(
+    observations.command_envelope,
+    ["result_status", "state"],
+    "task6.observations.command_envelope",
+  );
+  matrixString(command.state, "task6.observations.command_envelope.state");
+  matrixString(command.result_status, "task6.observations.command_envelope.result_status");
+  const outbox = matrixRecord(
+    observations.outbox,
+    ["attempt_count", "count", "reason", "state"],
+    "task6.observations.outbox",
+  );
+  matrixString(outbox.state, "task6.observations.outbox.state");
+  matrixCount(outbox.attempt_count, "task6.observations.outbox.attempt_count");
+  matrixCount(outbox.count, "task6.observations.outbox.count");
+  if (outbox.reason !== null) matrixString(outbox.reason, "task6.observations.outbox.reason");
+  const facts = matrixRecord(observations.facts, [
+    "effect_bundle_commits", "event_records", "meal_items", "unchanged_from_pre_fault",
+  ], "task6.observations.facts");
+  matrixCount(facts.event_records, "task6.observations.facts.event_records");
+  matrixCount(facts.meal_items, "task6.observations.facts.meal_items");
+  matrixCount(facts.effect_bundle_commits, "task6.observations.facts.effect_bundle_commits");
+  matrixBoolean(facts.unchanged_from_pre_fault, "task6.observations.facts.unchanged_from_pre_fault");
+  for (const name of [
+    "effect_bundle_checkpoints", "inventory_transactions", "nutrition_profiles",
+    "nutrition_snapshots", "issues", "daily_progress_snapshots",
+    "envelope_finalizations", "success_receipts",
+  ] as const) validateCountObservation(observations[name], `task6.observations.${name}`);
+
+  const restart = matrixRecord(row.restart, [
+    "completed_effects_repeated", "only_unfinished_stage_may_change", "sqlite_reopen_state",
+  ], "task6.restart");
+  matrixString(restart.sqlite_reopen_state, "task6.restart.sqlite_reopen_state");
+  matrixBoolean(restart.only_unfinished_stage_may_change, "task6.restart.only_unfinished_stage_may_change");
+  matrixBoolean(restart.completed_effects_repeated, "task6.restart.completed_effects_repeated");
+  const retry = matrixRecord(row.same_token_retry, [
+    "action", "business_writes", "completed_effects_repeated", "finalizations_added",
+    "frozen_result_bytes_unchanged", "post_retry",
+  ], "task6.same_token_retry");
+  matrixString(retry.action, "task6.same_token_retry.action");
+  matrixString(retry.business_writes, "task6.same_token_retry.business_writes");
+  matrixBoolean(retry.completed_effects_repeated, "task6.same_token_retry.completed_effects_repeated");
+  matrixCount(retry.finalizations_added, "task6.same_token_retry.finalizations_added");
+  matrixBoolean(retry.frozen_result_bytes_unchanged, "task6.same_token_retry.frozen_result_bytes_unchanged");
+  const post = matrixRecord(retry.post_retry, [
+    "daily_progress_snapshot_count", "envelope_finalization_count", "fact_event_records",
+    "fact_meal_items", "outbox_attempt_count", "outbox_terminal_count",
+    "success_receipt_count", "terminal_effect_bundle_count",
+  ], "task6.same_token_retry.post_retry");
+  for (const name of Object.keys(post)) {
+    if (name === "outbox_attempt_count" || name === "outbox_terminal_count") {
+      matrixNullableCount(post[name], `task6.same_token_retry.post_retry.${name}`);
+    } else {
+      matrixCount(post[name], `task6.same_token_retry.post_retry.${name}`);
+    }
+  }
+
+  const diagnostic = matrixRecord(row.diagnostic, [
+    "error_code", "forbidden_content", "input_digest", "stage", "trace_id",
+  ], "task6.diagnostic");
+  matrixString(diagnostic.error_code, "task6.diagnostic.error_code");
+  matrixString(diagnostic.stage, "task6.diagnostic.stage");
+  matrixString(diagnostic.trace_id, "task6.diagnostic.trace_id");
+  matrixString(diagnostic.input_digest, "task6.diagnostic.input_digest");
+  matrixStrings(diagnostic.forbidden_content, "task6.diagnostic.forbidden_content");
+  const frozen = matrixRecord(row.frozen_result, [
+    "date_order", "payload_bytes_unchanged", "present", "returns_old_result_as_new",
+    "single_day_alias_present",
+  ], "task6.frozen_result");
+  matrixBoolean(frozen.present, "task6.frozen_result.present");
+  matrixBoolean(frozen.payload_bytes_unchanged, "task6.frozen_result.payload_bytes_unchanged");
+  matrixBoolean(frozen.returns_old_result_as_new, "task6.frozen_result.returns_old_result_as_new");
+  matrixStrings(frozen.date_order, "task6.frozen_result.date_order");
+  if (frozen.single_day_alias_present !== null && typeof frozen.single_day_alias_present !== "boolean") {
+    return matrixInvalid("task6.frozen_result.single_day_alias_present");
+  }
+  matrixStrings(row.forbidden, "task6.forbidden");
+  matrixStrings(row.assertion_paths, "task6.assertion_paths");
+  return row as unknown as Task6FaultRow;
+}
+
+function parseTask6Rows(value: unknown): readonly Task6FaultRow[] {
+  const root = matrixRecord(value, [
+    "case_assertion_paths", "case_order", "fault_rows", "matrix_id", "scope_limitations",
+  ], "root");
+  const caseOrder = matrixStrings(root.case_order, "case_order");
+  const task6CaseOrder = caseOrder.filter((caseId) => !caseId.startsWith("CASE-EFFECT-"));
+  const casePaths = matrixRecord(root.case_assertion_paths, caseOrder, "case_assertion_paths");
+  if (!Array.isArray(root.fault_rows)) return matrixInvalid("fault_rows");
+  const task6Cases = new Set(task6CaseOrder);
+  const rows = root.fault_rows
+    .filter((candidate) =>
+      typeof candidate === "object" && candidate !== null &&
+      task6Cases.has(String((candidate as Record<string, unknown>).case_id)))
+    .map(validateTask6Row);
+  const observedCaseOrder = [...new Set(rows.map((row) => row.case_id))];
+  if (canonicalJson(observedCaseOrder) !== canonicalJson(task6CaseOrder)) {
+    return matrixInvalid("task6.case_coverage");
+  }
+  if (new Set(rows.map((row) => row.fault_id)).size !== rows.length) {
+    return matrixInvalid("task6.fault_id_uniqueness");
+  }
+  for (const row of rows) {
+    if (canonicalJson(row.assertion_paths) !== canonicalJson(casePaths[row.case_id])) {
+      return matrixInvalid("task6.assertion_paths");
+    }
+  }
+  return Object.freeze(rows);
+}
+
 function assertExactBusinessSnapshot(
   expected: Record<string, unknown>,
   actual: Record<string, unknown>,
@@ -486,6 +708,7 @@ function assertExactBusinessSnapshot(
 }
 
 const effectRows = parseEffectRows(matrix);
+const task6Rows = parseTask6Rows(matrix);
 
 function newTestRoot(): string {
   const root = join(tmpdir(), `diet-manager-b-fault-${randomUUID().replaceAll("-", "")}`);
@@ -504,7 +727,7 @@ afterEach(() => {
   for (const root of [...ownedRoots]) removeOwnedRoot(root);
 });
 
-function businessSnapshot(database: DatabaseSync): Record<string, unknown> {
+function businessSnapshot(database: DatabaseSyncType): Record<string, unknown> {
   const tables = database.prepare(
     `SELECT name FROM sqlite_schema
      WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'
@@ -653,7 +876,7 @@ function attempt(service: DietDomainService, envelope: DomainEnvelopeInput) {
 }
 
 function prepareMealFactBoundary(
-  database: DatabaseSync,
+  database: DatabaseSyncType,
   service: DietDomainService,
   envelope: DomainEnvelopeInput,
 ) {
@@ -689,7 +912,7 @@ function prepareMealFactBoundary(
 }
 
 function prepareCorrectionFactBoundary(
-  database: DatabaseSync,
+  database: DatabaseSyncType,
   service: DietDomainService,
   envelope: DomainEnvelopeInput,
 ) {
@@ -720,6 +943,50 @@ function prepareCorrectionFactBoundary(
   });
   appendPreparedOperationFact(prepared.fact);
   return preparedAttempt;
+}
+
+function preparePurchaseEffectBoundary(
+  database: DatabaseSyncType,
+  service: DietDomainService,
+  envelope: DomainEnvelopeInput,
+) {
+  const preparedAttempt = attempt(service, envelope);
+  const operation = envelope.operations[0];
+  if (operation?.kind !== "add_inventory") throw new Error("test purchase operation mismatch");
+  const committedAt = (database.prepare(
+    "SELECT received_at FROM command_envelopes WHERE envelope_id = ?",
+  ).get(envelope.envelope_id) as { received_at: string }).received_at;
+  const prepared = preparePurchaseOperation({
+    database,
+    secret,
+    token: preparedAttempt.preview.token,
+    inputDigest: preparedAttempt.preview.input_digest,
+    dataRevision: preparedAttempt.preview.data_revision,
+    subjectScope: envelope.subject_scope,
+    commandType: envelope.command_type,
+    idempotencyKey: envelope.idempotency_key,
+    sourceMessageId: envelope.source_message_id,
+    conversationId: envelope.conversation_id,
+    receivedAt: envelope.received_at,
+    committedAt,
+    sequence: 0,
+    operation,
+  });
+  appendPreparedOperationFact(prepared.fact);
+  applyPurchaseEffect(database, prepared.outbox_id, committedAt);
+  sealPreparedEnvelopeFacts({
+    database,
+    secret,
+    token: preparedAttempt.preview.token,
+    inputDigest: preparedAttempt.preview.input_digest,
+    dataRevision: preparedAttempt.preview.data_revision,
+    subjectScope: envelope.subject_scope,
+    commandType: envelope.command_type,
+    traceId: prepared.fact.traceId,
+    expectedOperationIds: [operation.operation_id],
+    sealedAt: committedAt,
+  });
+  return { committedAt, operation, prepared, preparedAttempt };
 }
 
 function expectedFailureFromFactBaseline(
@@ -776,9 +1043,53 @@ function errorPublicCode(error: unknown): string {
       return "effect_bundle_write_failed";
     case "ENVELOPE_FINALIZE_FAILED":
       return "envelope_finalize_write_failed";
+    case "STORAGE_MIGRATION_FAILED":
+      return "storage_migration_failed";
+    case "STORAGE_IDENTITY_INVALID":
+      return "storage_identity_invalid";
+    case "ENVELOPE_FINALIZE_RESPONSE_LOST":
+      return "response_lost";
+    case "IDEMPOTENCY_CONFLICT":
+      return "idempotency_conflict";
+    case "PREVIEW_STALE":
+      return "stale_revision";
     default:
       return `unclassified:${code}`;
   }
+}
+
+function task6CaseRows(caseId: Task6CaseId): readonly Task6FaultRow[] {
+  const rows = task6Rows.filter((row) => row.case_id === caseId);
+  if (rows.length === 0) throw new Error(`B_FAULT_MATRIX_INVALID:missing_${caseId}`);
+  return rows;
+}
+
+function fileSha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex").toUpperCase();
+}
+
+function readUserVersion(path: string): number {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    return (database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+  } finally {
+    database.close();
+  }
+}
+
+function scopedWriteCounts(database: DatabaseSyncType, envelopeId: string) {
+  const count = (sql: string) =>
+    (database.prepare(sql).get(envelopeId) as { count: number }).count;
+  return {
+    event_records: count("SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ?"),
+    meal_items: count(
+      "SELECT COUNT(*) AS count FROM meal_items m JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ?",
+    ),
+    outbox: count("SELECT COUNT(*) AS count FROM effect_outbox WHERE envelope_id = ?"),
+    effect_bundle_commits: count(
+      "SELECT COUNT(*) AS count FROM effect_bundle_commits WHERE envelope_id = ?",
+    ),
+  };
 }
 
 function captureError(run: () => unknown): unknown {
@@ -814,7 +1125,7 @@ function expectDiagnostic(
   }
 }
 
-function scopedState(database: DatabaseSync, envelopeId: string) {
+function scopedState(database: DatabaseSyncType, envelopeId: string) {
   const count = (sql: string, ...parameters: unknown[]) =>
     (database.prepare(sql).get(...parameters) as { count: number }).count;
   return {
@@ -1189,6 +1500,337 @@ describe("B-FAULT-001 frozen EffectBundle matrix", () => {
       }
     });
   }
+});
+
+describe("B-FAULT-001 storage and stale-preview matrix aggregation", () => {
+  const mutatedMatrix = (): {
+    fault_rows: Array<Record<string, unknown>>;
+  } => structuredClone(matrix) as {
+    fault_rows: Array<Record<string, unknown>>;
+  };
+
+  it("executes every frozen non-Effect case in matrix order", () => {
+    const root = matrix as { case_order: readonly string[] };
+    expect([
+      ...new Set([...effectRows, ...task6Rows].map((row) => row.case_id)),
+    ]).toEqual(root.case_order);
+  });
+
+  it("rejects deletion, observation-shape drift, and detached assertion authority", () => {
+    const deleted = mutatedMatrix();
+    deleted.fault_rows = deleted.fault_rows.filter(
+      (row) => row.case_id !== "CASE-INVENTORY-006",
+    );
+    expect(() => parseTask6Rows(deleted)).toThrow("B_FAULT_MATRIX_INVALID:task6.case_coverage");
+
+    const observationDrift = mutatedMatrix();
+    const observationRow = observationDrift.fault_rows.find(
+      (row) => row.case_id === "CASE-STORAGE-006",
+    )!;
+    delete (observationRow.observations as {
+      facts: Record<string, unknown>;
+    }).facts.unchanged_from_pre_fault;
+    expect(() => parseTask6Rows(observationDrift)).toThrow(
+      "B_FAULT_MATRIX_INVALID:task6.observations.facts",
+    );
+
+    const detached = mutatedMatrix();
+    detached.fault_rows.find((row) => row.case_id === "CASE-STORAGE-007")!
+      .assertion_paths = ["/detached/oracle"];
+    expect(() => parseTask6Rows(detached)).toThrow(
+      "B_FAULT_MATRIX_INVALID:task6.assertion_paths",
+    );
+  });
+
+  it("CASE-STORAGE-005 keeps failed candidates unpublished and rejected files byte-exact", () => {
+    for (const row of task6CaseRows("CASE-STORAGE-005")) {
+      const root = newTestRoot();
+      const databasePath = join(root, DIET_DATABASE_FILENAME);
+      if (["after_schema", "before_history", "before_commit"].includes(row.fault_point)) {
+        const error = captureError(() => openDietDatabase({
+          privateRuntimeRoot: root,
+          now: () => "2026-08-12T00:00:00.000Z",
+          migrationFault: row.fault_point as MigrationFault,
+        }));
+        expect(errorPublicCode(error)).toBe(row.expected_error_code);
+        expect(existsSync(databasePath)).toBe(false);
+        expect(readdirSync(root)).toEqual([]);
+      } else {
+        if (row.fault_point === "unknown_existing_database") {
+          const foreign = new DatabaseSync(databasePath);
+          foreign.exec("PRAGMA user_version = 17");
+          foreign.exec("CREATE TABLE foreign_records (id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
+          foreign.prepare("INSERT INTO foreign_records(value) VALUES (?)").run("byte sentinel");
+          foreign.close();
+        } else if (row.fault_point === "drifted_v1_index") {
+          const created = openDietDatabase({ privateRuntimeRoot: root });
+          created.close();
+          const drifted = new DatabaseSync(databasePath);
+          drifted.exec("DROP INDEX ux_mixed_item_idempotency");
+          drifted.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+          drifted.close();
+        } else {
+          throw new Error(`B_FAULT_MATRIX_INVALID:storage_fault_point:${row.fault_point}`);
+        }
+        const beforeBytes = readFileSync(databasePath);
+        const beforeSha = fileSha256(databasePath);
+        const beforeVersion = readUserVersion(databasePath);
+        const error = captureError(() => openDietDatabase({ privateRuntimeRoot: root }));
+        expect(errorPublicCode(error)).toBe(row.expected_error_code);
+        expect(readFileSync(databasePath)).toEqual(beforeBytes);
+        expect(fileSha256(databasePath)).toBe(beforeSha);
+        expect(readUserVersion(databasePath)).toBe(beforeVersion);
+      }
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("CASE-STORAGE-006 replays terminal bytes after response loss and an unrelated fact", () => {
+    const [row] = task6CaseRows("CASE-STORAGE-006");
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T04:00:00.000Z",
+      });
+      const envelope = purchaseEnvelope(
+        "terminal-multi-date",
+        "terminal replay product",
+        "product-terminal-replay",
+      );
+      const prepared = preparePurchaseEffectBoundary(runtime.database, service, envelope);
+      const payload = Object.freeze({
+        authority_kind: "diet-manager/storage-replay-evidence/v1",
+        daily_progress_by_date: row!.frozen_result.date_order.map((date) => ({ date })),
+      });
+      const finalizeInput = {
+        database: runtime.database,
+        secret,
+        token: prepared.preparedAttempt.preview.token,
+        inputDigest: prepared.preparedAttempt.preview.input_digest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision: prepared.preparedAttempt.preview.data_revision,
+        traceId: prepared.prepared.fact.traceId,
+        resultStatus: "committed" as const,
+        receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+        finalizedAt: prepared.committedAt,
+        frozenAt: prepared.committedAt,
+        payload,
+        mixedItems: Object.freeze([]),
+      };
+      const lost = captureError(() => finalizeEnvelope(
+        finalizeInput,
+        { fault: "after_commit_before_reply" },
+      ));
+      expect(errorPublicCode(lost)).toBe(row!.expected_error_code);
+      const terminalBytes = (runtime.database.prepare(
+        "SELECT terminal_result_json FROM idempotency_records WHERE idempotency_key = ?",
+      ).get(envelope.idempotency_key) as { terminal_result_json: string }).terminal_result_json;
+      expect(typeof terminalBytes).toBe("string");
+
+      attempt(service, purchaseEnvelope(
+        "later-unrelated",
+        "later unrelated product",
+        "product-later-unrelated",
+      )).run();
+      const beforeRetry = businessSnapshot(runtime.database);
+      const replay = finalizeEnvelope(finalizeInput);
+      const afterRetry = businessSnapshot(runtime.database);
+      expect(canonicalJson(replay)).toBe(terminalBytes);
+      expect(afterRetry).toEqual(beforeRetry);
+      expect((replay.payload as { daily_progress_by_date: Array<{ date: string }> })
+        .daily_progress_by_date.map(({ date }) => date)).toEqual(row!.frozen_result.date_order);
+      expect(Object.hasOwn(replay.payload as object, "daily_progress")).toBe(
+        row!.frozen_result.single_day_alias_present,
+      );
+      expect(scopedWriteCounts(runtime.database, envelope.envelope_id)).toMatchObject({
+        effect_bundle_commits: row!.same_token_retry.post_retry.terminal_effect_bundle_count,
+      });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({
+        count: row!.same_token_retry.post_retry.envelope_finalization_count,
+      });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM idempotency_records WHERE operation_id = ? AND state = 'finalized' AND terminal_result_json IS NOT NULL",
+      ).get(envelope.envelope_id)).toEqual({
+        count: row!.same_token_retry.post_retry.success_receipt_count,
+      });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("CASE-STORAGE-007 rejects each changed terminal identity without leaking or writing", () => {
+    const rows = task6CaseRows("CASE-STORAGE-007");
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T05:00:00.000Z",
+      });
+      const original = purchaseEnvelope(
+        "terminal-conflict",
+        "terminal conflict product",
+        "product-terminal-conflict",
+      );
+      const originalAttempt = attempt(service, original);
+      originalAttempt.run();
+      const terminalBytes = (runtime.database.prepare(
+        "SELECT terminal_result_json FROM idempotency_records WHERE idempotency_key = ?",
+      ).get(original.idempotency_key) as { terminal_result_json: string }).terminal_result_json;
+      const before = businessSnapshot(runtime.database);
+      const originalPreviewMaterial = {
+        authority_kind: "diet-manager/domain-preview/v1",
+        envelope: original,
+      };
+
+      for (const row of rows) {
+        const override: {
+          inputDigest?: string;
+          subjectScope?: string;
+          commandType?: "record_meal" | "add_inventory";
+        } = {};
+        let expectedDetail: string;
+        if (row.fault_point === "changed_digest") {
+          override.inputDigest = "F".repeat(64);
+          expectedDetail = "input_digest";
+        } else if (row.fault_point === "changed_subject") {
+          override.subjectScope = "user:changed-subject";
+          expectedDetail = "subject_scope";
+        } else if (row.fault_point === "changed_command") {
+          override.commandType = "record_meal";
+          expectedDetail = "command_type";
+        } else {
+          throw new Error(`B_FAULT_MATRIX_INVALID:terminal_fault_point:${row.fault_point}`);
+        }
+        const changed = {
+          database: runtime.database,
+          secret,
+          previewId: original.envelope_id,
+          idempotencyKey: original.idempotency_key,
+          inputDigest: originalAttempt.preview.input_digest,
+          subjectScope: original.subject_scope,
+          commandType: original.command_type,
+          sourceMessageId: original.source_message_id,
+          conversationId: original.conversation_id,
+          previewMaterial: originalPreviewMaterial,
+          ...override,
+        };
+        const first = captureError(() => reuseServerPreview(changed));
+        const second = captureError(() => reuseServerPreview(changed));
+        expect(errorPublicCode(first)).toBe(row.expected_error_code);
+        expect(first).toEqual(new Error(`IDEMPOTENCY_CONFLICT:${expectedDetail}`));
+        expect(String(second)).toBe(String(first));
+        expect(String(first)).not.toContain(terminalBytes);
+        assertExactBusinessSnapshot(before, businessSnapshot(runtime.database));
+      }
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("preserves nonterminal preview-state precedence over changed identity conflicts", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T05:30:00.000Z",
+      });
+      const envelope = purchaseEnvelope(
+        "nonterminal-precedence",
+        "nonterminal precedence product",
+        "product-nonterminal-precedence",
+      );
+      const preview = service.preview(envelope);
+      runtime.database.prepare(
+        `UPDATE command_envelopes
+         SET state = 'effects_pending', result_status = 'facts_committed_effects_pending',
+             committed_at = received_at
+         WHERE envelope_id = ?`,
+      ).run(envelope.envelope_id);
+      runtime.database.prepare(
+        "UPDATE idempotency_records SET state = 'effects_pending' WHERE idempotency_key = ?",
+      ).run(envelope.idempotency_key);
+
+      expect(() => reuseServerPreview({
+        database: runtime.database,
+        secret,
+        previewId: envelope.envelope_id,
+        idempotencyKey: envelope.idempotency_key,
+        inputDigest: "F".repeat(64),
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        previewMaterial: {
+          authority_kind: "diet-manager/domain-preview/v1",
+          envelope,
+        },
+      })).toThrow("PREVIEW_AUTHORITY_INVALID:state");
+      expect(preview.reused).toBe(false);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("CASE-INVENTORY-006 rejects the one-to-two-candidate stale preview with zero writes", () => {
+    const [row] = task6CaseRows("CASE-INVENTORY-006");
+    const root = newTestRoot();
+    let runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      let service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T06:00:00.000Z",
+      });
+      const name = "candidate revision oats";
+      attempt(service, purchaseEnvelope("candidate-a", name, "product-candidate-a")).run();
+      const envelope = mealEnvelope(
+        "candidate-stale-preview",
+        "home",
+        mealItem(name, 1_000_000, "public-candidate-stale"),
+      );
+      const preview = service.preview(envelope);
+      attempt(service, purchaseEnvelope("candidate-b", name, "product-candidate-b")).run();
+      expect(computeRepositoryDataRevision(runtime.database)).not.toBe(preview.data_revision);
+      const before = businessSnapshot(runtime.database);
+      runtime.close();
+      runtime = openDietDatabase({ privateRuntimeRoot: root });
+      service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T06:00:01.000Z",
+      });
+      const error = captureError(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      }));
+      expect(errorPublicCode(error)).toBe(row!.expected_error_code);
+      expect(scopedWriteCounts(runtime.database, envelope.envelope_id)).toEqual({
+        event_records: row!.observations.facts.event_records,
+        meal_items: row!.observations.facts.meal_items,
+        outbox: row!.observations.outbox.count,
+        effect_bundle_commits: row!.observations.facts.effect_bundle_commits,
+      });
+      assertExactBusinessSnapshot(before, businessSnapshot(runtime.database));
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
 });
 
 describe("B-FAULT-001 EnvelopeFinalize matrix", () => {
