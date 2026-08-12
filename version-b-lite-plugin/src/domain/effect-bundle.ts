@@ -1291,7 +1291,11 @@ export interface ApplyMealEffectsInput {
   readonly idempotencyKey: string;
   readonly now: string;
   readonly location: "home" | "outside";
-  readonly fault?: "after_nutrition" | "after_first_item";
+  readonly fault?:
+    | "after_nutrition"
+    | "after_first_item"
+    | "after_issue_write"
+    | "after_progress_contribution_prepared";
 }
 
 /**
@@ -1796,6 +1800,9 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       }
       const transactionId = writeMealDeduction(input.database, input, event, item, decision);
       writeMealIssue(input.database, input, event, item, decision);
+      if (input.fault === "after_issue_write") {
+        throw new Error("MEAL_EFFECT_FAILED:after_issue_write");
+      }
       progress = addNutritionVectors(progress, scaledNutrients);
       results.push(Object.freeze({
         item_order: item.item_order,
@@ -1822,6 +1829,9 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       date, timezone: "Asia/Shanghai" as const, coverage_status: coverage as "complete" | "partial",
       nutrients: Object.freeze(progress),
     });
+    if (input.fault === "after_progress_contribution_prepared") {
+      throw new Error("MEAL_EFFECT_FAILED:after_progress_contribution_prepared");
+    }
     updateMealOutboxes(input.database, input, results);
     const effectRows = input.database.prepare(
       `SELECT effect_id, effect_kind, state FROM effect_outbox
@@ -1898,7 +1908,10 @@ export type ReadAppliedCorrectionResultInput = Omit<ApplyCorrectionEffectsInput,
 
 /** Internal test seam: proves the transaction rolls back claimed effects. */
 type CorrectionEffectFaultInput = ApplyCorrectionEffectsInput & {
-  readonly fault?: "after_claim";
+  readonly fault?:
+    | "after_claim"
+    | "after_compensation"
+    | "after_nutrition_progress";
 };
 
 interface NutritionSnapshotRow {
@@ -2093,7 +2106,7 @@ function finalizeCorrectionOutboxes(
 }
 
 export function applyCorrectionEffects(
-  input: ApplyCorrectionEffectsInput,
+  input: CorrectionEffectFaultInput,
 ): CorrectionOperationResult {
   let transactionOpen = false;
   try {
@@ -2488,6 +2501,9 @@ export function applyCorrectionEffects(
           inventoryOutbox.state !== "permanent_business_skip"
         ) throw new Error("CORRECTION_EFFECT_INVALID:original_transaction");
       }
+      if (input.fault === "after_compensation") {
+        throw new Error("CORRECTION_EFFECT_FAILED:after_compensation");
+      }
 
       const item = beforeSnapshot.items[itemOrder];
       const previousNutrition = input.database.prepare(
@@ -2567,6 +2583,9 @@ export function applyCorrectionEffects(
       beforeNutrients,
       afterNutrients,
     );
+    if (input.fault === "after_nutrition_progress") {
+      throw new Error("CORRECTION_EFFECT_FAILED:after_nutrition_progress");
+    }
 
     finalizeCorrectionOutboxes(
       input.database,

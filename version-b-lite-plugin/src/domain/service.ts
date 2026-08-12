@@ -13,6 +13,9 @@ import {
 } from "../repository/fact-commit.js";
 import {
   finalizeEnvelope,
+  type EnvelopeFinalizeOptions,
+  type FinalizeEnvelopeInput,
+  type FinalizedEnvelopeResult,
   type PreparedMixedItemResult,
 } from "../repository/envelope-finalize.js";
 import {
@@ -74,18 +77,29 @@ export interface DietDomainFailureEntry {
   readonly input_digest: string;
 }
 
+type DietDomainFault =
+  | "before_fact_commit"
+  | "after_inventory_business_writes"
+  | "after_meal_nutrition"
+  | "after_meal_first_item"
+  | "after_meal_issue_write"
+  | "after_meal_progress_contribution_prepared"
+  | "after_correction_claim"
+  | "after_correction_compensation"
+  | "after_correction_nutrition_progress"
+  | "after_mixed_meal_effect_commit"
+  | "after_mixed_seal"
+  | "after_mixed_finalize_commit"
+  | "after_finalization_row"
+  | "after_envelope"
+  | "after_idempotency"
+  | "before_commit";
+
 export interface CreateDietDomainServiceInput {
   readonly database: DatabaseSync;
   readonly secret: Uint8Array;
   readonly now: () => string;
-  readonly fault?:
-    | "before_fact_commit"
-    | "after_inventory_business_writes"
-    | "after_meal_nutrition"
-    | "after_meal_first_item"
-    | "after_mixed_meal_effect_commit"
-    | "after_mixed_seal"
-    | "after_mixed_finalize_commit";
+  readonly fault?: DietDomainFault;
   readonly failureSink?: (entry: DietDomainFailureEntry) => void;
 }
 
@@ -460,6 +474,44 @@ function emitFailure(
   }
 }
 
+function failureCode(error: unknown, fallback: string): string {
+  const code = (error instanceof Error ? error.message : fallback).split(":", 1)[0];
+  return /^[A-Z][A-Z0-9_]*$/.test(code) ? code : fallback;
+}
+
+function envelopeFinalizeOptions(
+  fault: DietDomainFault | undefined,
+): EnvelopeFinalizeOptions | undefined {
+  if (
+    fault === "after_finalization_row" ||
+    fault === "after_envelope" ||
+    fault === "after_idempotency" ||
+    fault === "before_commit"
+  ) return Object.freeze({ fault });
+  if (fault === "after_mixed_finalize_commit") {
+    return Object.freeze({ fault: "after_commit_before_reply" });
+  }
+  return undefined;
+}
+
+function finalizeWithFailure(
+  input: FinalizeEnvelopeInput,
+  fault: DietDomainFault | undefined,
+  sink: CreateDietDomainServiceInput["failureSink"],
+): FinalizedEnvelopeResult {
+  try {
+    return finalizeEnvelope(input, envelopeFinalizeOptions(fault));
+  } catch (error) {
+    emitFailure(sink, {
+      stage: "EnvelopeFinalize",
+      error_code: failureCode(error, "ENVELOPE_FINALIZE_FAILED"),
+      trace_id: input.traceId,
+      input_digest: input.inputDigest,
+    });
+    throw error;
+  }
+}
+
 type WriteOperation =
   | AddInventoryOperation
   | RecordMealOperation
@@ -603,14 +655,7 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
   database: DatabaseSync;
   secret: Uint8Array;
   now: () => string;
-  fault?:
-    | "before_fact_commit"
-    | "after_inventory_business_writes"
-    | "after_meal_nutrition"
-    | "after_meal_first_item"
-    | "after_mixed_meal_effect_commit"
-    | "after_mixed_seal"
-    | "after_mixed_finalize_commit";
+  fault?: DietDomainFault;
   failureSink?: (entry: DietDomainFailureEntry) => void;
 } {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -627,9 +672,18 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
     input.fault !== "after_inventory_business_writes" &&
     input.fault !== "after_meal_nutrition" &&
     input.fault !== "after_meal_first_item" &&
+    input.fault !== "after_meal_issue_write" &&
+    input.fault !== "after_meal_progress_contribution_prepared" &&
+    input.fault !== "after_correction_claim" &&
+    input.fault !== "after_correction_compensation" &&
+    input.fault !== "after_correction_nutrition_progress" &&
     input.fault !== "after_mixed_meal_effect_commit" &&
     input.fault !== "after_mixed_seal" &&
-    input.fault !== "after_mixed_finalize_commit"
+    input.fault !== "after_mixed_finalize_commit" &&
+    input.fault !== "after_finalization_row" &&
+    input.fault !== "after_envelope" &&
+    input.fault !== "after_idempotency" &&
+    input.fault !== "before_commit"
   ) {
     return invalid("fault");
   }
@@ -649,6 +703,8 @@ export function createDietDomainService(
   input: CreateDietDomainServiceInput,
 ): DietDomainService {
   const options = freezeCreator(input);
+  const finalize = (finalizerInput: FinalizeEnvelopeInput): FinalizedEnvelopeResult =>
+    finalizeWithFailure(finalizerInput, options.fault, options.failureSink);
   return Object.freeze({
     preview(envelope: DomainEnvelopeInput): DomainPreviewResult {
       const validatedEnvelope = validateAndFreezeEnvelope(envelope);
@@ -722,20 +778,24 @@ export function createDietDomainService(
       if (authority.binding.preview_id !== envelope.envelope_id) {
         return invalid("envelope_id");
       }
-      const progressReservation = authority.envelope_state === "received"
-        ? readEnvelopeProgressReservation(options.database, envelope.envelope_id) ??
-          createMealProgressReservation(
-            options.database,
-            preflightWriteOperations(options.database, operations),
-          )
-        : undefined;
+      const existingProgressReservation = readEnvelopeProgressReservation(
+        options.database,
+        envelope.envelope_id,
+      );
+      const progressReservation = existingProgressReservation ??
+        (authority.envelope_state === "received"
+          ? createMealProgressReservation(
+              options.database,
+              preflightWriteOperations(options.database, operations),
+            )
+          : undefined);
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
       if (operations.length === 2) {
         const [purchaseOperation, mealOperation] = operations;
         const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
         if (authority.envelope_state === "finalized") {
           const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
-          return finalizeEnvelope({
+          return finalize({
             database: options.database,
             secret: options.secret,
             token: execution.token,
@@ -841,7 +901,11 @@ export function createDietDomainService(
             ? { fault: "after_nutrition" as const }
             : options.fault === "after_meal_first_item"
               ? { fault: "after_first_item" as const }
-              : {}),
+              : options.fault === "after_meal_issue_write"
+                ? { fault: "after_issue_write" as const }
+                : options.fault === "after_meal_progress_contribution_prepared"
+                  ? { fault: "after_progress_contribution_prepared" as const }
+                  : {}),
         });
         if (
           authority.envelope_state === "received" &&
@@ -897,7 +961,7 @@ export function createDietDomainService(
             receipt_data: receiptData,
           }),
         });
-        return finalizeEnvelope({
+        return finalize({
           database: options.database,
           secret: options.secret,
           token: execution.token,
@@ -931,9 +995,7 @@ export function createDietDomainService(
               payload: mealResult,
             }),
           ]),
-        }, options.fault === "after_mixed_finalize_commit"
-          ? { fault: "after_commit_before_reply" }
-          : undefined).payload as DomainExecutionResult;
+        }).payload as DomainExecutionResult;
       }
       const operation = operations[0];
       if (operation.kind === "correct_record" || operation.kind === "undo_record") {
@@ -950,7 +1012,7 @@ export function createDietDomainService(
           ) {
             throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_payload");
           }
-          return finalizeEnvelope({
+          return finalize({
             database: options.database,
             secret: options.secret,
             token: execution.token,
@@ -1040,6 +1102,13 @@ export function createDietDomainService(
               operationSequence: 0,
               idempotencyKey: envelope.idempotency_key,
               now: committedAt,
+              ...(options.fault === "after_correction_claim"
+                ? { fault: "after_claim" as const }
+                : options.fault === "after_correction_compensation"
+                  ? { fault: "after_compensation" as const }
+                  : options.fault === "after_correction_nutrition_progress"
+                    ? { fault: "after_nutrition_progress" as const }
+                    : {}),
             });
           } catch (error) {
             const code = (error instanceof Error ? error.message : "CORRECTION_EFFECT_FAILED")
@@ -1076,7 +1145,7 @@ export function createDietDomainService(
             daily_progress_by_date: correctionResult.daily_progress_by_date,
           }),
         });
-        return finalizeEnvelope({
+        return finalize({
           database: options.database,
           secret: options.secret,
           token: execution.token,
@@ -1123,7 +1192,7 @@ export function createDietDomainService(
           if (parsed.status !== "committed" && parsed.status !== "committed_with_issues") {
             throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_status");
           }
-          return finalizeEnvelope({
+          return finalize({
             database: options.database,
             secret: options.secret,
             token: execution.token,
@@ -1192,7 +1261,11 @@ export function createDietDomainService(
                 ? { fault: "after_nutrition" as const }
                 : options.fault === "after_meal_first_item"
                   ? { fault: "after_first_item" as const }
-                  : {}),
+                  : options.fault === "after_meal_issue_write"
+                    ? { fault: "after_issue_write" as const }
+                    : options.fault === "after_meal_progress_contribution_prepared"
+                      ? { fault: "after_progress_contribution_prepared" as const }
+                      : {}),
             });
           } catch (error) {
             const code = (error instanceof Error ? error.message : "MEAL_EFFECT_FAILED").split(
@@ -1260,7 +1333,7 @@ export function createDietDomainService(
             receipt_data: receiptData,
           }),
         });
-        const finalizedMeal = finalizeEnvelope({
+        const finalizedMeal = finalize({
           database: options.database,
           secret: options.secret,
           token: execution.token,
@@ -1314,7 +1387,7 @@ export function createDietDomainService(
       };
 
       if (authority.envelope_state === "finalized") {
-        return finalizeEnvelope(finalizerInput).payload as DomainExecutionResult;
+        return finalize(finalizerInput).payload as DomainExecutionResult;
       }
       if (authority.envelope_state === "received") {
         if (options.fault === "before_fact_commit") {
@@ -1380,7 +1453,7 @@ export function createDietDomainService(
       if (state.envelope_state !== "effects_stable") {
         throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${state.envelope_state}`);
       }
-      const finalized = finalizeEnvelope(finalizerInput);
+      const finalized = finalize(finalizerInput);
       if (canonicalJson(finalized.payload) !== canonicalJson(result)) {
         throw new Error("DIET_DOMAIN_RESULT_INVALID:finalized_payload");
       }

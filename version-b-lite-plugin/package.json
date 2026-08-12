@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:b-fault": "vitest run tests/fault-matrix.test.ts --maxWorkers=1 --minWorkers=1 && node tests/b-slice-crash-harness.mjs",
     "test:b-slice-crash": "npm run build && node tests/b-slice-crash-harness.mjs",
     "test:progress-reservation-concurrency": "npm run build && node tests/progress-reservation-concurrency.mjs",
     "test:repository-concurrency": "npm run build && node tests/repository-concurrency.mjs",
