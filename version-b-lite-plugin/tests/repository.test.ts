@@ -15,8 +15,12 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { createServerPreview } from "../src/preview/store.js";
 import {
+  appendPreparedOperationFact,
   commitPreparedFact,
+  sealPreparedEnvelopeFacts,
   type FactCommitFailureEntry,
+  type PreparedEnvelopeOperation,
+  type PreparedEnvelopeSeal,
   type PreparedFactCommit,
 } from "../src/repository/fact-commit.js";
 import {
@@ -354,6 +358,206 @@ function finalizerInput(
       items: [],
       synthetic: true,
     },
+    mixedItems: [],
+  };
+}
+
+interface MixedFixture {
+  root: string;
+  runtime: ReturnType<typeof openDietDatabase>;
+  operations: readonly [PreparedEnvelopeOperation, PreparedEnvelopeOperation];
+  seal: PreparedEnvelopeSeal;
+  finalization: FinalizeEnvelopeInput;
+}
+
+function createMixedFixture(): MixedFixture {
+  const root = newTestRoot();
+  const runtime = openDietDatabase({
+    privateRuntimeRoot: root,
+    now: () => "2026-08-12T05:00:00.000Z",
+  });
+  const database = runtime.database;
+  const dataRevision = computeRepositoryDataRevision(database);
+  const inputDigest = "E".repeat(64);
+  const preview = createServerPreview({
+    database,
+    secret,
+    previewId: "preview-mixed-001",
+    idempotencyKey: "idem-mixed-001",
+    inputDigest,
+    subjectScope: "user:synthetic-subject",
+    commandType: "record_meal",
+    dataRevision,
+    sourceMessageId: "message-mixed-001",
+    conversationId: "conversation-mixed-001",
+    previewMaterial: {
+      action: "record_meal",
+      operation_ids: ["operation-mixed-purchase", "operation-mixed-meal"],
+      synthetic: true,
+    },
+    now: "2026-08-12T05:00:01.000Z",
+  });
+  const common = {
+    database,
+    secret,
+    token: preview.token,
+    inputDigest,
+    subjectScope: "user:synthetic-subject",
+    commandType: "record_meal" as const,
+    dataRevision,
+  };
+  const purchaseEffectId = "effect-mixed-purchase";
+  const mealEffectId = "effect-mixed-meal";
+  const operations = [
+    {
+      ...common,
+      traceId: "trace-mixed-purchase",
+      sequence: 0,
+      operationId: "operation-mixed-purchase",
+      event: {
+        eventId: "event-mixed-purchase",
+        operationId: "operation-mixed-purchase",
+        schemaVersion: "domain/v2",
+        eventType: "inventory_stock",
+        factKind: "inventory",
+        sourceMessageId: "message-mixed-001",
+        conversationId: "conversation-mixed-001",
+        receivedAt: "2026-08-12T05:00:01.000Z",
+        committedAt: "2026-08-12T05:00:02.000Z",
+        occurredAtText: "2026-08-12T13:00:00+08:00",
+        mealId: null,
+        mealSlot: null,
+        payload: {
+          contract: "B-SLICE-001/mixed-purchase/v1",
+          effect_inputs: {
+            [purchaseEffectId]: {
+              kind: "inventory_add",
+              transaction_id: "transaction-mixed-purchase",
+              reason_code: "purchase",
+              quantity_microunits: 24_000_000,
+              unit: "carton",
+              product: {
+                product_id: "product-mixed-milk",
+                schema_version: "domain/v2",
+                normalized_name: "whole-milk-250ml",
+                product_type: "milk",
+                payload: { synthetic: true },
+              },
+              batch: {
+                batch_id: "batch-mixed-milk",
+                schema_version: "domain/v2",
+                stocked_at: "2026-08-12T05:00:02.000Z",
+                explicit_expiration_at: null,
+                quantity_unit: "carton",
+                payload: { synthetic: true },
+              },
+            },
+          },
+        },
+      },
+      items: [],
+      effects: [
+        {
+          outboxId: "outbox-mixed-purchase",
+          effectId: purchaseEffectId,
+          effectKind: "inventory_add",
+          previousState: null,
+          reason: null,
+        },
+      ],
+    },
+    {
+      ...common,
+      traceId: "trace-mixed-meal",
+      sequence: 1,
+      operationId: "operation-mixed-meal",
+      event: {
+        eventId: "event-mixed-meal",
+        operationId: "operation-mixed-meal",
+        schemaVersion: "domain/v2",
+        eventType: "diet_meal",
+        factKind: "meal",
+        sourceMessageId: "message-mixed-001",
+        conversationId: "conversation-mixed-001",
+        receivedAt: "2026-08-12T05:00:01.000Z",
+        committedAt: "2026-08-12T05:00:04.000Z",
+        occurredAtText: "2026-08-12T13:05:00+08:00",
+        mealId: "meal-mixed-001",
+        mealSlot: "lunch",
+        payload: {
+          contract: "B-SLICE-001/mixed-meal/v1",
+          effect_inputs: {
+            [mealEffectId]: {
+              kind: "inventory_deduct",
+              transaction_id: "transaction-mixed-meal",
+              reason_code: "meal_consumption",
+              product_id: "product-mixed-milk",
+              batch_id: "batch-mixed-milk",
+              quantity_microunits: 1_000_000,
+              unit: "carton",
+            },
+          },
+        },
+      },
+      items: [
+        {
+          itemId: "item-mixed-milk",
+          itemOrder: 0,
+          itemType: "drink",
+          normalizedName: "whole-milk-250ml",
+          payload: { synthetic: true },
+        },
+      ],
+      effects: [
+        {
+          outboxId: "outbox-mixed-meal",
+          effectId: mealEffectId,
+          effectKind: "inventory_deduct",
+          previousState: null,
+          reason: null,
+        },
+      ],
+    },
+  ] as const satisfies readonly [PreparedEnvelopeOperation, PreparedEnvelopeOperation];
+  return {
+    root,
+    runtime,
+    operations,
+    seal: {
+      ...common,
+      traceId: "trace-mixed-seal",
+      expectedOperationIds: ["operation-mixed-purchase", "operation-mixed-meal"],
+      sealedAt: "2026-08-12T05:00:06.000Z",
+    },
+    finalization: {
+      ...common,
+      traceId: "trace-mixed-finalize",
+      resultStatus: "committed",
+      receiptId: "receipt-mixed-001",
+      finalizedAt: "2026-08-12T05:00:07.000Z",
+      frozenAt: "2026-08-12T05:00:07.000Z",
+      payload: { contract: "B-SLICE-001/mixed-terminal/v1", items: [] },
+      mixedItems: [
+        {
+          sequence: 0,
+          operation_id: "operation-mixed-purchase",
+          idempotency_key: "idem-mixed-child-purchase",
+          command_type: "add_inventory",
+          status: "committed",
+          error_code: null,
+          payload: { inventory_quantity_microunits: 24_000_000 },
+        },
+        {
+          sequence: 1,
+          operation_id: "operation-mixed-meal",
+          idempotency_key: "idem-mixed-child-meal",
+          command_type: "record_meal",
+          status: "committed",
+          error_code: null,
+          payload: { inventory_quantity_microunits: 23_000_000 },
+        },
+      ],
+    },
   };
 }
 
@@ -361,6 +565,457 @@ function disposeFixture(fixture: Fixture): void {
   fixture.runtime.close();
   removeOwnedRoot(fixture.root);
 }
+
+describe("B-SLICE-001 ordered envelope operations", () => {
+  test("commits purchase then meal under one authority and freezes ordered mixed results", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, meal] = fixture.operations;
+      expect(appendPreparedOperationFact(purchase)).toEqual(
+        expect.objectContaining({
+          envelope_id: "preview-mixed-001",
+          sequence: 0,
+          operation_id: "operation-mixed-purchase",
+        }),
+      );
+      expect(appendPreparedOperationFact(purchase)).toEqual(
+        expect.objectContaining({
+          envelope_id: "preview-mixed-001",
+          sequence: 0,
+          operation_id: "operation-mixed-purchase",
+        }),
+      );
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(24_000_000);
+
+      appendPreparedOperationFact(meal);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-meal",
+          now: "2026-08-12T05:00:05.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(23_000_000);
+
+      expect(sealPreparedEnvelopeFacts(fixture.seal)).toEqual({
+        envelope_id: "preview-mixed-001",
+        idempotency_key: "idem-mixed-001",
+        input_digest: "E".repeat(64),
+        envelope_state: "effects_stable",
+        result_status: "effects_stable",
+        operation_ids: ["operation-mixed-purchase", "operation-mixed-meal"],
+      });
+      expect(() =>
+        finalizeEnvelope({ ...fixture.finalization, mixedItems: [] }),
+      ).toThrow("ENVELOPE_FINALIZE_AUTHORITY_INVALID:mixed_item_operations");
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM envelope_finalizations")).toBe(
+        0,
+      );
+      expect(() =>
+        finalizeEnvelope(fixture.finalization, { fault: "before_commit" }),
+      ).toThrow("ENVELOPE_FINALIZE_FAILED:before_commit");
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM envelope_finalizations")).toBe(
+        0,
+      );
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM mixed_item_results")).toBe(0);
+      expect(finalizeEnvelope(fixture.finalization)).toEqual(
+        expect.objectContaining({
+          envelope_id: "preview-mixed-001",
+          envelope_state: "finalized",
+          result_status: "committed",
+        }),
+      );
+      expect(
+        fixture.runtime.database
+          .prepare(
+            "SELECT sequence, operation_id, status FROM mixed_item_results ORDER BY sequence",
+          )
+          .all(),
+      ).toEqual([
+        { sequence: 0, operation_id: "operation-mixed-purchase", status: "committed" },
+        { sequence: 1, operation_id: "operation-mixed-meal", status: "committed" },
+      ]);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM event_records")).toBe(2);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM idempotency_records")).toBe(1);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM effect_bundle_commits")).toBe(
+        2,
+      );
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("rolls back one later EffectBundle without undoing earlier facts or effects", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, meal] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      appendPreparedOperationFact(meal);
+      const beforeEvents = fixture.runtime.database
+        .prepare("SELECT * FROM event_records ORDER BY committed_at, event_id")
+        .all();
+      const beforePurchaseTransaction = fixture.runtime.database
+        .prepare("SELECT * FROM inventory_transactions ORDER BY transaction_id")
+        .all();
+
+      expect(() =>
+        processInventoryEffect(
+          {
+            database: fixture.runtime.database,
+            outboxId: "outbox-mixed-meal",
+            now: "2026-08-12T05:00:05.000Z",
+          },
+          { deferEnvelopeStability: true, fault: "before_commit" },
+        ),
+      ).toThrow("INVENTORY_EFFECT_FAILED:before_commit");
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT * FROM event_records ORDER BY committed_at, event_id")
+          .all(),
+      ).toEqual(beforeEvents);
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT * FROM inventory_transactions ORDER BY transaction_id")
+          .all(),
+      ).toEqual(beforePurchaseTransaction);
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(24_000_000);
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT state, attempt_count FROM effect_outbox WHERE outbox_id = ?")
+          .get("outbox-mixed-meal"),
+      ).toEqual({ state: "pending", attempt_count: 0 });
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM envelope_finalizations")).toBe(
+        0,
+      );
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("can seal pending facts and let the last operation stabilize the envelope later", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, meal] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      appendPreparedOperationFact(meal);
+      expect(sealPreparedEnvelopeFacts(fixture.seal)).toEqual(
+        expect.objectContaining({
+          envelope_state: "effects_pending",
+          result_status: "facts_committed_effects_pending",
+        }),
+      );
+
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-meal",
+          now: "2026-08-12T05:00:05.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?")
+          .get("preview-mixed-001"),
+      ).toEqual({
+        state: "effects_pending",
+        result_status: "facts_committed_effects_pending",
+      });
+      expect(sealPreparedEnvelopeFacts(fixture.seal)).toEqual(
+        expect.objectContaining({
+          envelope_state: "effects_stable",
+          result_status: "effects_stable",
+        }),
+      );
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?")
+          .get("preview-mixed-001"),
+      ).toEqual({ state: "effects_stable", result_status: "effects_stable" });
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(23_000_000);
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("advances the revision checkpoint between effects in the same operation", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, originalMeal] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      const originalPayload = originalMeal.event.payload as {
+        contract: string;
+        effect_inputs: Record<string, unknown>;
+      };
+      const secondEffectId = "effect-mixed-meal-second";
+      const meal: PreparedEnvelopeOperation = {
+        ...originalMeal,
+        event: {
+          ...originalMeal.event,
+          payload: {
+            ...originalPayload,
+            effect_inputs: {
+              ...originalPayload.effect_inputs,
+              [secondEffectId]: {
+                kind: "inventory_deduct",
+                transaction_id: "transaction-mixed-meal-second",
+                reason_code: "meal_consumption",
+                product_id: "product-mixed-milk",
+                batch_id: "batch-mixed-milk",
+                quantity_microunits: 1_000_000,
+                unit: "carton",
+              },
+            },
+          },
+        },
+        effects: [
+          ...originalMeal.effects,
+          {
+            outboxId: "outbox-mixed-meal-second",
+            effectId: secondEffectId,
+            effectKind: "inventory_deduct",
+            previousState: null,
+            reason: null,
+          },
+        ],
+      };
+      appendPreparedOperationFact(meal);
+
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-meal",
+          now: "2026-08-12T05:00:05.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(23_000_000);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-meal-second",
+          now: "2026-08-12T05:00:05.500Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      expect(
+        getInventoryProjection({
+          database: fixture.runtime.database,
+          batchId: "batch-mixed-milk",
+        }).quantity_microunits,
+      ).toBe(22_000_000);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM effect_bundle_commits")).toBe(
+        2,
+      );
+      expect(sealPreparedEnvelopeFacts(fixture.seal)).toEqual(
+        expect.objectContaining({ envelope_state: "effects_stable" }),
+      );
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("rolls back only the failing later child and retains the earlier operation byte-for-byte", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, meal] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      const before = fixture.runtime.database
+        .prepare(
+          `SELECT event_id, operation_id, committed_at, payload_json
+           FROM event_records ORDER BY committed_at, event_id`,
+        )
+        .all();
+      const beforeRevision = computeRepositoryDataRevision(fixture.runtime.database);
+
+      expect(() =>
+        appendPreparedOperationFact(meal, { fault: "before_commit" }),
+      ).toThrow("FACT_COMMIT_FAILED:before_commit");
+      expect(
+        fixture.runtime.database
+          .prepare(
+            `SELECT event_id, operation_id, committed_at, payload_json
+             FROM event_records ORDER BY committed_at, event_id`,
+          )
+          .all(),
+      ).toEqual(before);
+      expect(computeRepositoryDataRevision(fixture.runtime.database)).toBe(beforeRevision);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM event_records")).toBe(1);
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM effect_outbox")).toBe(1);
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("rejects an unrelated repository write between ordered children", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase, meal] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      processInventoryEffect(
+        {
+          database: fixture.runtime.database,
+          outboxId: "outbox-mixed-purchase",
+          now: "2026-08-12T05:00:03.000Z",
+        },
+        { deferEnvelopeStability: true },
+      );
+      fixture.runtime.database
+        .prepare(
+          `INSERT INTO products(
+             product_id, schema_version, normalized_name, product_type,
+             brand, manufacturer, barcode, sku, payload_json
+           ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`,
+        )
+        .run(
+          "product-unrelated-write",
+          "domain/v2",
+          "unrelated",
+          "synthetic_product",
+          JSON.stringify({ synthetic: true }),
+        );
+      const before = tableCounts(fixture.runtime.database);
+
+      expect(() => appendPreparedOperationFact(meal)).toThrow(
+        "PREVIEW_STALE:data_revision",
+      );
+      expect(tableCounts(fixture.runtime.database)).toEqual(before);
+      expect(
+        scalar(
+          fixture.runtime.database,
+          "SELECT COUNT(*) FROM event_records WHERE operation_id = 'operation-mixed-meal'",
+        ),
+      ).toBe(0);
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  test("rejects an unrelated repository write between one child fact and its effects", () => {
+    const fixture = createMixedFixture();
+    try {
+      const [purchase] = fixture.operations;
+      appendPreparedOperationFact(purchase);
+      fixture.runtime.database
+        .prepare(
+          `INSERT INTO products(
+             product_id, schema_version, normalized_name, product_type,
+             brand, manufacturer, barcode, sku, payload_json
+           ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`,
+        )
+        .run(
+          "product-unrelated-before-effect",
+          "domain/v2",
+          "unrelated-before-effect",
+          "synthetic_product",
+          JSON.stringify({ synthetic: true }),
+        );
+      const before = tableCounts(fixture.runtime.database);
+
+      expect(() =>
+        processInventoryEffect(
+          {
+            database: fixture.runtime.database,
+            outboxId: "outbox-mixed-purchase",
+            now: "2026-08-12T05:00:03.000Z",
+          },
+          { deferEnvelopeStability: true },
+        ),
+      ).toThrow("PREVIEW_STALE:data_revision");
+      expect(tableCounts(fixture.runtime.database)).toEqual(before);
+      expect(
+        fixture.runtime.database
+          .prepare("SELECT state, attempt_count FROM effect_outbox WHERE outbox_id = ?")
+          .get("outbox-mixed-purchase"),
+      ).toEqual({ state: "pending", attempt_count: 0 });
+      expect(scalar(fixture.runtime.database, "SELECT COUNT(*) FROM inventory_transactions")).toBe(
+        0,
+      );
+      expectIntegrity(fixture.runtime.database);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+});
 
 describe("B-STOR-002 FactCommit", () => {
   test("commits one complete fact and durable effect checkpoint atomically", () => {
@@ -701,6 +1356,16 @@ describe("B-STOR-002 inventory EffectBundle", () => {
         transaction_id: "transaction-inventory-add-001",
         quantity_microunits: 10_000_000,
         unit: "synthetic-unit",
+      });
+      expect(
+        runtime.database
+          .prepare(
+            "SELECT payload_json FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?",
+          )
+          .get("preview-inventory-1", "operation-inventory-1"),
+      ).toEqual({
+        payload_json:
+          '{"authority_kind":"diet-manager/effect-bundle/v1","effects":[{"effect_id":"effect-inventory-1","state":"succeeded"}]}',
       });
       expect(getInventoryProjection({
         database: runtime.database,

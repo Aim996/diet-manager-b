@@ -209,7 +209,7 @@ git commit -m "feat: define B slice domain protocol"
 - Consumes: current `PreparedFactCommit`, `PreparedEffectIntent`, `commitPreparedFact()`, `processInventoryEffect()`, and `finalizeEnvelope()`.
 - Produces: `PreparedEnvelopeOperation`, `appendPreparedOperationFact()`, `sealPreparedEnvelopeFacts()`, operation-scoped EffectBundle rows, deferred envelope-stability support, and `FinalizeEnvelopeInput.mixedItems`.
 
-- [ ] **Step 1: Add repository RED tests for two ordered operations in one envelope**
+- [x] **Step 1: Add repository RED tests for two ordered operations in one envelope**
 
 ```ts
 it("commits two ordered child facts and freezes one envelope result", () => {
@@ -233,11 +233,11 @@ it("commits two ordered child facts and freezes one envelope result", () => {
 
 Add failure assertions: an append fault rolls back only that child transaction and leaves every earlier committed child byte-identical; an operation EffectBundle fault preserves prior facts/effects, rolls back only that operation's nutrition/inventory/Issue writes, and prevents success finalization.
 
-- [ ] **Step 2: Run the repository test and verify the API RED**
+- [x] **Step 2: Run the repository test and verify the API RED**
 
 Expected: FAIL because `appendPreparedOperationFact()`, `sealPreparedEnvelopeFacts()`, and operation grouping are absent.
 
-- [ ] **Step 3: Add the multi-operation FactCommit input without breaking the old API**
+- [x] **Step 3: Add the multi-operation FactCommit input without breaking the old API**
 
 ```ts
 export interface PreparedEnvelopeOperation {
@@ -272,11 +272,11 @@ export interface PreparedEnvelopeSeal {
 
 `appendPreparedOperationFact()` validates one child completely before SQL, then performs one `BEGIN IMMEDIATE` that inserts only that child's immutable event/items/outboxes and creates or checks the parent idempotency identity. The parent stays `received` while more children may append. Every child commit is durable before the next child starts, so a later child failure cannot roll back an earlier child.
 
-The first child must still match the signed preview `data_revision`. Each completed child freezes its post-effect `data_revision` in that child's existing `effect_bundle_commits.payload_json`. A later child is accepted only when all earlier sequences have exact operation-scoped bundle markers and the current repository revision equals the immediately preceding marker. This is the parent-local revision handoff: it permits the previous child's own committed inventory/nutrition changes, rejects unrelated writes inserted between children, does not mutate the signed preview payload, and requires no migration-v1 change. A child with no durable effect creates the same operation-scoped empty bundle marker during its append transaction.
+The first child must still match the signed preview `data_revision`. Its append transaction creates that operation's single `effect_bundle_commits` checkpoint in a pending state with the post-fact revision; the EffectBundle transaction verifies this revision before business writes and atomically upgrades the same row to the terminal post-effect revision. Each completed child therefore freezes its post-effect `data_revision` in that child's existing checkpoint payload. A later child is accepted only when all earlier sequences have exact terminal operation-scoped bundle markers and the current repository revision equals the immediately preceding marker. This is the parent-local revision handoff: it permits the previous child's own committed inventory/nutrition changes, rejects unrelated writes inserted between FactCommit/EffectBundle or between children, does not mutate the signed preview payload, and requires no migration-v1 change. A child with no durable effect creates the same operation-scoped checkpoint directly in its terminal state during append.
 
-`sealPreparedEnvelopeFacts()` verifies the exact dense operation sequence against committed rows, rejects missing/extra/reordered children, then moves the parent through the existing fact states. If every outbox is already terminal it ends at `effects_stable`; otherwise it ends at `effects_pending`. `commitPreparedFact()` remains the compatibility wrapper: append one child, then seal it.
+`sealPreparedEnvelopeFacts()` verifies the exact dense operation sequence against committed rows, rejects missing/extra/reordered children, then moves the parent through the existing fact states. If every outbox is already terminal it ends at `effects_stable`; otherwise it ends at `effects_pending`. `commitPreparedFact()` remains the compatibility API with its existing one-child transaction, replay identity, fault points, and legacy terminal bundle bytes; the new checkpoint/revision fields are emitted only when the multi-operation staged API created the operation checkpoint.
 
-- [ ] **Step 4: Make EffectBundle completion operation-scoped**
+- [x] **Step 4: Make EffectBundle completion operation-scoped**
 
 Change the terminal check to query `WHERE envelope_id = ? AND operation_id = ?`, insert exactly one `effect_bundle_commits` row per `(envelope_id, operation_id)`, freeze the operation sequence and post-effect repository revision in its canonical payload, then query all envelope outboxes. Add `deferEnvelopeStability?: boolean` to the strict options DTO. With `true`, the operation transaction commits without changing the parent; `sealPreparedEnvelopeFacts()` performs the final parent transition. With `false`, preserve current single-operation behavior. Only when every committed operation is sealed and every outbox is terminal may the parent move to `effects_stable`.
 
@@ -287,15 +287,15 @@ WHERE envelope_id = ? AND operation_id = ?
 ORDER BY effect_id;
 ```
 
-- [ ] **Step 5: Extend finalization to persist ordered mixed rows atomically**
+- [x] **Step 5: Extend finalization to persist ordered mixed rows atomically**
 
 Add exact `mixedItems` input with `sequence`, `operation_id`, `idempotency_key`, `command_type`, `status`, `error_code`, and payload. Validate dense zero-based ordering and insert `mixed_item_results` inside the existing finalization transaction before the injected `before_commit` point.
 
-- [ ] **Step 6: Run repository focused tests and all 69+ regressions**
+- [x] **Step 6: Run repository focused tests and all 69+ regressions**
 
 Expected: existing single-operation identities and replay remain byte-for-byte equal; new mixed tests PASS.
 
-- [ ] **Step 7: Commit repository grouping**
+- [x] **Step 7: Commit repository grouping**
 
 ```powershell
 git add version-b-lite-plugin/src/repository version-b-lite-plugin/tests/repository.test.ts

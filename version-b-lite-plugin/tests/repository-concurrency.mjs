@@ -195,6 +195,7 @@ async function runWorker() {
             event_id: fact.event.eventId,
             items: [],
           },
+          mixedItems: [],
         },
         { fault: "before_commit" },
       );
