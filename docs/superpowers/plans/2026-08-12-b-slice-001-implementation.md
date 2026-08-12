@@ -729,7 +729,7 @@ git commit -m "test: bind B vertical slice cases"
 - Consumes: service fault seams already defined for tests; no new production fault API.
 - Produces: real process-crash/restart evidence and redacted-log assertions.
 
-- [ ] **Step 1: Write the failure-boundary RED**
+- [x] **Step 1: Write the failure-boundary RED**
 
 Assert a FactCommit fault leaves zero rows in every business table; the only sink entry is exactly:
 
@@ -744,15 +744,15 @@ Assert a FactCommit fault leaves zero rows in every business table; the only sin
 
 Assert it contains no source text, food name, quantity, inventory, SQL, secret, or absolute path.
 
-- [ ] **Step 2: Add crash worker modes**
+- [x] **Step 2: Add crash worker modes**
 
 The worker accepts only `after_fact_commit`, `after_effect_bundle`, and `after_finalize_before_reply`; it opens a test-owned database, executes one fixed fixture, exits with code 73 at the selected checkpoint, and never accepts a production database path.
 
-- [ ] **Step 3: Add restart assertions**
+- [x] **Step 3: Add restart assertions**
 
 After `after_fact_commit`, restart processes only pending effects. After `after_effect_bundle`, restart only finalizes. After `after_finalize_before_reply`, same-key replay returns identical frozen JSON and adds zero rows.
 
-- [ ] **Step 4: Add the package script and run it**
+- [x] **Step 4: Add the package script and run it**
 
 ```json
 "test:b-slice-crash": "npm run build && node tests/b-slice-crash-harness.mjs"
@@ -760,7 +760,7 @@ After `after_fact_commit`, restart processes only pending effects. After `after_
 
 Run with the verified Node executable. Expected: PASS, no surviving child, and no temporary database/log residue.
 
-- [ ] **Step 5: Commit failure evidence harness**
+- [x] **Step 5: Commit failure evidence harness**
 
 ```powershell
 git add version-b-lite-plugin/tests version-b-lite-plugin/package.json
