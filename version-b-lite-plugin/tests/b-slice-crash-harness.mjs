@@ -24,6 +24,19 @@ const databaseFile = "diet-manager-b.sqlite3";
 const crashExit = 73;
 const childTimeoutMs = 30_000;
 const roots = new Map();
+const expandedCrashMatrix = Object.freeze([
+  Object.freeze({ kind: "meal", boundary: "after_finalize_before_reply" }),
+  Object.freeze({ kind: "meal", boundary: "after_effect_before_seal" }),
+  Object.freeze({ kind: "meal", boundary: "after_fact" }),
+  Object.freeze({ kind: "purchase", boundary: "after_finalize_before_reply" }),
+  Object.freeze({ kind: "purchase", boundary: "after_effect_before_seal" }),
+  Object.freeze({ kind: "purchase", boundary: "after_fact" }),
+  Object.freeze({ kind: "correction", boundary: "after_finalize_before_reply" }),
+  Object.freeze({ kind: "correction", boundary: "after_effect_before_seal" }),
+  Object.freeze({ kind: "correction", boundary: "after_fact" }),
+  Object.freeze({ kind: "mixed", boundary: "after_finalize_before_reply" }),
+  Object.freeze({ kind: "mixed", boundary: "after_seal_before_finalize" }),
+]);
 const expectedFinalizationSnapshots = Object.freeze({
   command_envelopes: "d1045e31409a2daef86a6a675e9d305d44051a8a87592d168ad61c89267f0a20",
   idempotency_records: "78444d24787f5b7138d1ea5e12e86938df80d1984dd610790d3f0e55b9a211f4",
@@ -131,6 +144,7 @@ function runWorker(root, token, mode) {
     throw new Error(`B_SLICE_CRASH_HARNESS_FAILED:child_timeout:${mode}`);
   }
   assert(result.error === undefined, `child_spawn:${mode}`);
+  assertNoSurvivingChild(result.pid, mode);
   assert(result.status === crashExit, `child_exit:${mode}:${result.status}`);
   assert(result.signal === null, `child_signal:${mode}:${result.signal}`);
   assert(result.stderr === "", `child_stderr:${mode}`);
@@ -312,6 +326,200 @@ async function runCase(mode, verify) {
   }
 }
 
+function envelopeIdentitySnapshot(database, envelopeId) {
+  return Object.freeze({
+    events: database.prepare(
+      `SELECT event_id, operation_id FROM event_records
+       WHERE envelope_id = ? ORDER BY event_id`,
+    ).all(envelopeId),
+    items: database.prepare(
+      `SELECT m.item_id, m.event_id FROM meal_items m
+       JOIN event_records e ON e.event_id = m.event_id
+       WHERE e.envelope_id = ? ORDER BY m.item_id`,
+    ).all(envelopeId),
+    corrections: database.prepare(
+      `SELECT c.correction_id, c.request_id FROM correction_events c
+       JOIN event_records e ON e.operation_id = c.request_id
+       WHERE e.envelope_id = ? ORDER BY c.correction_id`,
+    ).all(envelopeId),
+    outboxes: database.prepare(
+      `SELECT outbox_id, effect_id, operation_id FROM effect_outbox
+       WHERE envelope_id = ? ORDER BY outbox_id`,
+    ).all(envelopeId),
+  });
+}
+
+function assertCrashBoundary(database, input, kind, boundary) {
+  const envelopeId = input.envelope.envelope_id;
+  const envelope = database.prepare(
+    "SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?",
+  ).get(envelopeId);
+  const expectedState = boundary === "after_fact" ||
+      boundary === "after_effect_before_seal"
+    ? Object.freeze({ state: "received", result_status: "preview_ready" })
+    : boundary === "after_seal_before_finalize"
+      ? Object.freeze({ state: "effects_stable", result_status: "effects_stable" })
+      : Object.freeze({ state: "finalized", result_status: "committed" });
+  assert(
+    JSON.stringify(envelope) === JSON.stringify(expectedState),
+    `crash_boundary_envelope:${kind}:${boundary}:${JSON.stringify(envelope)}`,
+  );
+  const eventCount = database.prepare(
+    "SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ?",
+  ).get(envelopeId).count;
+  assert(eventCount === (kind === "mixed" ? 2 : 1), `crash_boundary_events:${kind}:${boundary}`);
+  const finalizationCount = database.prepare(
+    "SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?",
+  ).get(envelopeId).count;
+  assert(
+    finalizationCount === (boundary === "after_finalize_before_reply" ? 1 : 0),
+    `crash_boundary_finalization:${kind}:${boundary}`,
+  );
+  const outboxes = database.prepare(
+    `SELECT state, attempt_count FROM effect_outbox
+     WHERE envelope_id = ? ORDER BY effect_id`,
+  ).all(envelopeId);
+  const expectedOutboxCount = Object.freeze({
+    meal: 2,
+    purchase: 1,
+    correction: 2,
+    mixed: 5,
+  })[kind];
+  assert(outboxes.length === expectedOutboxCount, `crash_boundary_outbox_count:${kind}:${boundary}`);
+  const factsOnly = boundary === "after_fact";
+  assert(
+    outboxes.every((row) => row.state === (factsOnly ? "pending" : "succeeded")),
+    `crash_boundary_outbox_state:${kind}:${boundary}`,
+  );
+  const expectedAttemptCount = factsOnly || kind === "correction" ? 0 : 1;
+  assert(
+    outboxes.every((row) => row.attempt_count === expectedAttemptCount),
+    `crash_boundary_outbox_attempt:${kind}:${boundary}:${JSON.stringify(outboxes)}`,
+  );
+  const checkpoints = database.prepare(
+    `SELECT effect_state, result_status, completed_at FROM effect_bundle_commits
+     WHERE envelope_id = ? ORDER BY operation_id`,
+  ).all(envelopeId);
+  assert(checkpoints.length === (kind === "mixed" ? 2 : 1),
+    `crash_boundary_checkpoint_count:${kind}:${boundary}`);
+  assert(
+    checkpoints.every((row) => factsOnly
+      ? row.effect_state === "pending" &&
+        row.result_status === "facts_committed_effects_pending" &&
+        row.completed_at === null
+      : row.effect_state === "succeeded" &&
+        row.result_status === "applied" &&
+        typeof row.completed_at === "string"),
+    `crash_boundary_checkpoint_state:${kind}:${boundary}`,
+  );
+  if (kind === "meal") {
+    const nutritionCount = database.prepare(
+      `SELECT COUNT(*) AS count FROM nutrition_snapshots n
+       JOIN event_records e ON e.event_id = n.meal_event_id
+       WHERE e.envelope_id = ?`,
+    ).get(envelopeId).count;
+    assert(nutritionCount === (factsOnly ? 0 : 1),
+      `crash_boundary_meal_effect:${boundary}`);
+  }
+  if (kind === "purchase" || kind === "correction") {
+    const transactionCount = database.prepare(
+      `SELECT COUNT(*) AS count FROM inventory_transactions t
+       JOIN event_records e ON e.event_id = t.event_id
+       WHERE e.envelope_id = ?`,
+    ).get(envelopeId).count;
+    assert(transactionCount === (factsOnly ? 0 : 1),
+      `crash_boundary_inventory_effect:${kind}:${boundary}`);
+  }
+}
+
+async function runExpandedRecoveryCase(spec, expectedTerminal) {
+  const mode = `${spec.kind}_${spec.boundary}`;
+  const { root, token } = newRoot();
+  let database;
+  try {
+    const input = runWorker(root, token, mode);
+    database = databaseFor(root);
+    assertCrashBoundary(database, input, spec.kind, spec.boundary);
+    const crashSnapshot = tableSnapshot(database);
+    const crashIdentities = envelopeIdentitySnapshot(database, input.envelope.envelope_id);
+    database.close();
+    database = databaseFor(root);
+    const reopenedSnapshot = tableSnapshot(database);
+    assert(snapshotEquals(reopenedSnapshot, crashSnapshot), `reopen_snapshot:${mode}`);
+
+    const { createDietDomainService } = await import("../dist/domain/service.js");
+    const service = createDietDomainService({
+      database,
+      secret: Buffer.from("B-SLICE-001 crash harness secret 0001", "utf8"),
+      now: () => "2026-08-12T10:00:01.000Z",
+    });
+    const result = service.execute(input);
+    assert(result.status === "committed", `recovery_result:${mode}`);
+    const recoveredSnapshot = tableSnapshot(database);
+    const recoveredIdentities = envelopeIdentitySnapshot(database, input.envelope.envelope_id);
+    assert(
+      snapshotEquals(crashIdentities, recoveredIdentities),
+      `recovery_repeated_identity:${mode}`,
+    );
+    if (
+      spec.boundary === "after_effect_before_seal" ||
+      spec.boundary === "after_seal_before_finalize"
+    ) {
+      const recoveryTables = new Set([
+        "command_envelopes",
+        "daily_progress_snapshots",
+        "effect_bundle_commits",
+        "envelope_finalizations",
+        "event_records",
+        "idempotency_records",
+        "mixed_item_results",
+      ]);
+      if (spec.boundary === "after_seal_before_finalize") {
+        recoveryTables.delete("effect_bundle_commits");
+        recoveryTables.delete("event_records");
+      }
+      assertSnapshotUnchanged(
+        crashSnapshot,
+        recoveredSnapshot,
+        databaseTables(database).filter((table) => !recoveryTables.has(table)),
+        `recovery_repeated_effect:${mode}`,
+      );
+    }
+    if (spec.boundary === "after_finalize_before_reply") {
+      assert(snapshotEquals(recoveredSnapshot, crashSnapshot), `recovery_finalized_write:${mode}`);
+    }
+    const finalization = database.prepare(
+      "SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?",
+    ).get(input.envelope.envelope_id);
+    assert(finalization !== undefined, `recovery_finalization_missing:${mode}`);
+    const frozenBytes = Buffer.from(finalization.payload_json, "utf8");
+    assert(
+      frozenBytes.equals(Buffer.from(JSON.stringify(result), "utf8")),
+      `recovery_frozen_payload:${mode}`,
+    );
+    if (expectedTerminal !== undefined) {
+      assertSnapshotUnchanged(
+        expectedTerminal.snapshot,
+        recoveredSnapshot,
+        databaseTables(database).filter((table) => table !== "schema_migrations"),
+        `recovery_exact:${mode}`,
+      );
+      assert(frozenBytes.equals(expectedTerminal.frozen_bytes), `recovery_exact_payload:${mode}`);
+    }
+    const replay = service.execute(input);
+    const replaySnapshot = tableSnapshot(database);
+    assert(JSON.stringify(replay) === frozenBytes.toString("utf8"), `replay_frozen_payload:${mode}`);
+    assert(snapshotEquals(replaySnapshot, recoveredSnapshot), `replay_zero_writes:${mode}`);
+    return Object.freeze({
+      snapshot: recoveredSnapshot,
+      frozen_bytes: Buffer.from(frozenBytes),
+    });
+  } finally {
+    database?.close();
+    removeRoot(root);
+  }
+}
+
 function assertExpectedFinalization(database, input, before, after) {
   const finalizerTables = new Set([
     "command_envelopes",
@@ -431,6 +639,16 @@ try {
   }
   if (process.env.B_SLICE_CRASH_SELFTEST !== undefined) {
     throw new Error("B_SLICE_CRASH_HARNESS_FAILED:selftest_unknown");
+  }
+  const terminalByKind = new Map();
+  for (const spec of expandedCrashMatrix) {
+    const expectedTerminal = terminalByKind.get(spec.kind);
+    const terminal = await runExpandedRecoveryCase(spec, expectedTerminal);
+    if (spec.boundary === "after_finalize_before_reply") {
+      terminalByKind.set(spec.kind, terminal);
+    } else {
+      assert(expectedTerminal !== undefined, `terminal_reference_missing:${spec.kind}`);
+    }
   }
   await runCase("after_fact_commit", async (database, input) => {
     const before = counts(database);
