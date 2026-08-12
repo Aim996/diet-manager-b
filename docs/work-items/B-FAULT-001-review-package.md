@@ -99,4 +99,3 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 ## Required verdict format
 
 Return one independent review document with reviewed range/SHA, spec compliance, code/test quality, separate P0/P1/P2 counts, concrete file/line evidence for every finding, concern assessment, and a final Ready YES/NO. Any P0 or P1 forces Ready NO and blocks Stage B closure.
-

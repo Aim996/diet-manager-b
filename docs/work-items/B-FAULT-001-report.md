@@ -121,4 +121,3 @@ b8bdbf2 build: freeze B fault candidate artifacts
 - Retained process concern: before Task 7, Task 6 and its first independent review each reported that a repository-wide search exclusion failed on Windows normalization and emitted matching `migration-v1.ts` lines. No direct read, hash, execution, modification, or use as technical evidence followed. Task 7 introduced no new such search/output concern: it used explicit safe paths and `Select-String` only.
 - The three scope-limited matrix cases remain limited as frozen: no public catalog claim for `CASE-EFFECT-002`, no upgrade/backup-restore product for `CASE-STORAGE-005`, and no full IssueResolution interaction for `CASE-INVENTORY-006`.
 - Stage A has no independent Task 7 verdict. P0/P1 remain unassessed, so Ready remains NO.
-
