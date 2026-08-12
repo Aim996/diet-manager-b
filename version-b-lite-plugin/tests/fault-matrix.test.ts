@@ -36,6 +36,49 @@ const allForbiddenDiagnosticContent = [
   "secret",
   "absolute_path",
 ] as const;
+const frozenEffectRowIdentities = [
+  ["CASE-EFFECT-001", "effect-001-after-nutrition", "after_nutrition"],
+  ["CASE-EFFECT-002", "effect-002-after-inventory-write", "after_inventory_write"],
+  ["CASE-EFFECT-002", "effect-002-after-issue-write", "after_issue_write"],
+  [
+    "CASE-EFFECT-002",
+    "effect-002-after-progress-contribution-prepared",
+    "after_progress_contribution_prepared",
+  ],
+  ["CASE-EFFECT-003", "effect-003-after-finalization-row", "after_finalization_row"],
+  ["CASE-EFFECT-003", "effect-003-after-envelope", "after_envelope"],
+  ["CASE-EFFECT-003", "effect-003-after-idempotency", "after_idempotency"],
+  ["CASE-EFFECT-003", "effect-003-before-commit", "before_commit"],
+] as const;
+const frozenEffectCaseAuthority = {
+  "CASE-EFFECT-001": {
+    assertion_paths: [
+      "/oracle/failure",
+      "/oracle/state_after_restart",
+      "/oracle/same_key_retry",
+      "/forbidden",
+    ],
+    forbidden: ["fact_commit_rollback", "half_effect_bundle"],
+  },
+  "CASE-EFFECT-002": {
+    assertion_paths: [
+      "/effect_bundle/late_failure_full_rollback",
+      "/restart/effects_pending",
+      "/same_token_retry/missing_effect_only",
+      "/forbidden",
+    ],
+    forbidden: ["partial_effect_bundle"],
+  },
+  "CASE-EFFECT-003": {
+    assertion_paths: [
+      "/oracle/failure",
+      "/oracle/state_after_restart",
+      "/oracle/same_key_retry",
+      "/forbidden",
+    ],
+    forbidden: ["duplicate_effect", "premature_receipt"],
+  },
+} as const;
 
 interface CountObservation {
   readonly count: number;
@@ -165,6 +208,48 @@ function validateCountObservation(value: unknown, reason: string): void {
   const row = matrixRecord(value, ["count", "unchanged_from_pre_fault"], reason);
   matrixCount(row.count, `${reason}.count`);
   matrixBoolean(row.unchanged_from_pre_fault, `${reason}.unchanged_from_pre_fault`);
+}
+
+function validateFrozenEffectAuthority(row: FaultRow): void {
+  const stable = row.case_id === "CASE-EFFECT-003";
+  const expectedUnchanged = {
+    effect_bundle_checkpoints: stable,
+    inventory_transactions: stable,
+    nutrition_profiles: stable,
+    nutrition_snapshots: stable,
+    issues: stable,
+    daily_progress_snapshots: false,
+    envelope_finalizations: false,
+    success_receipts: false,
+  } as const;
+  if (row.observations.facts.unchanged_from_pre_fault !== stable) {
+    return matrixInvalid("frozen_authority");
+  }
+  for (const [name, unchanged] of Object.entries(expectedUnchanged)) {
+    if (
+      row.observations[name as keyof typeof expectedUnchanged]
+        .unchanged_from_pre_fault !== unchanged
+    ) return matrixInvalid("frozen_authority");
+  }
+  if (
+    row.restart.sqlite_reopen_state !== "same_as_failure" ||
+    row.restart.only_unfinished_stage_may_change !== true ||
+    row.restart.completed_effects_repeated !== false ||
+    row.same_token_retry.completed_effects_repeated !== false ||
+    row.same_token_retry.finalizations_added !== 1 ||
+    row.same_token_retry.frozen_result_bytes_unchanged !== true ||
+    row.frozen_result.present !== false ||
+    row.frozen_result.payload_bytes_unchanged !== true ||
+    row.frozen_result.returns_old_result_as_new !== false ||
+    row.frozen_result.date_order.length !== 0 ||
+    row.frozen_result.single_day_alias_present !== null ||
+    canonicalJson(row.diagnostic.forbidden_content) !==
+      canonicalJson(allForbiddenDiagnosticContent) ||
+    canonicalJson(row.forbidden) !==
+      canonicalJson(frozenEffectCaseAuthority[row.case_id].forbidden) ||
+    canonicalJson(row.assertion_paths) !==
+      canonicalJson(frozenEffectCaseAuthority[row.case_id].assertion_paths)
+  ) return matrixInvalid("frozen_authority");
 }
 
 function validateEffectRow(value: unknown): FaultRow {
@@ -353,6 +438,11 @@ function parseEffectRows(value: unknown): readonly FaultRow[] {
   const caseOrder = matrixStrings(root.case_order, "case_order");
   const casePaths = matrixRecord(root.case_assertion_paths, caseOrder, "case_assertion_paths");
   for (const caseId of caseOrder) matrixStrings(casePaths[caseId], `case_assertion_paths.${caseId}`);
+  for (const [caseId, authority] of Object.entries(frozenEffectCaseAuthority)) {
+    if (canonicalJson(casePaths[caseId]) !== canonicalJson(authority.assertion_paths)) {
+      return matrixInvalid("frozen_authority");
+    }
+  }
   if (
     typeof root.scope_limitations !== "object" ||
     root.scope_limitations === null ||
@@ -369,9 +459,15 @@ function parseEffectRows(value: unknown): readonly FaultRow[] {
       String((candidate as Record<string, unknown>).case_id).startsWith("CASE-EFFECT-")
     )
     .map(validateEffectRow);
-  if (rows.length === 0 || new Set(rows.map((row) => row.fault_id)).size !== rows.length) {
-    return matrixInvalid("effect_rows");
+  const identities = rows.map((row) => [
+    row.case_id,
+    row.fault_id,
+    row.fault_point,
+  ]);
+  if (canonicalJson(identities) !== canonicalJson(frozenEffectRowIdentities)) {
+    return matrixInvalid("effect_row_identities");
   }
+  for (const row of rows) validateFrozenEffectAuthority(row);
   return Object.freeze(rows);
 }
 
@@ -851,10 +947,70 @@ function seedCorrectionTarget(service: DietDomainService, suffix: string): strin
 }
 
 describe("B-FAULT-001 frozen EffectBundle matrix", () => {
+  const mutatedMatrix = (): {
+    fault_rows: Array<Record<string, unknown>>;
+  } => structuredClone(matrix) as {
+    fault_rows: Array<Record<string, unknown>>;
+  };
+
+  it.each(frozenEffectRowIdentities.map((identity, index) => [identity[1], index] as const))(
+    "rejects deletion of frozen %s row",
+    (_faultId, index) => {
+      const mutated = mutatedMatrix();
+      mutated.fault_rows.splice(index, 1);
+      expect(() => parseEffectRows(mutated)).toThrow(
+        "B_FAULT_MATRIX_INVALID:effect_row_identities",
+      );
+    },
+  );
+
+  it.each([
+    ["fault_id", (row: Record<string, unknown>) => {
+      row.fault_id = "effect-002-unique-but-unfrozen";
+    }],
+    ["fault_point", (row: Record<string, unknown>) => {
+      row.fault_point = "after_unique_but_unfrozen";
+    }],
+    ["case_mapping", (row: Record<string, unknown>) => {
+      row.case_id = "CASE-EFFECT-001";
+    }],
+  ])("rejects an exact %s identity mutation", (_name, mutate) => {
+    const mutated = mutatedMatrix();
+    mutate(mutated.fault_rows[2]!);
+    expect(() => parseEffectRows(mutated)).toThrow(
+      "B_FAULT_MATRIX_INVALID:effect_row_identities",
+    );
+  });
+
+  it.each([
+    ["facts unchanged", (row: Record<string, unknown>) => {
+      const observations = row.observations as Record<string, Record<string, unknown>>;
+      observations.facts!.unchanged_from_pre_fault =
+        !observations.facts!.unchanged_from_pre_fault;
+    }],
+    ["table unchanged", (row: Record<string, unknown>) => {
+      const observations = row.observations as Record<string, Record<string, unknown>>;
+      observations.inventory_transactions!.unchanged_from_pre_fault =
+        !observations.inventory_transactions!.unchanged_from_pre_fault;
+    }],
+    ["frozen payload bytes", (row: Record<string, unknown>) => {
+      const frozen = row.frozen_result as Record<string, unknown>;
+      frozen.payload_bytes_unchanged = !frozen.payload_bytes_unchanged;
+    }],
+    ["single-day alias", (row: Record<string, unknown>) => {
+      const frozen = row.frozen_result as Record<string, unknown>;
+      frozen.single_day_alias_present = true;
+    }],
+  ])("rejects a frozen %s authority flip", (_name, mutate) => {
+    const mutated = mutatedMatrix();
+    mutate(mutated.fault_rows[1]!);
+    expect(() => parseEffectRows(mutated)).toThrow(
+      "B_FAULT_MATRIX_INVALID:frozen_authority",
+    );
+  });
+
   it("rejects a mutation of a previously unconsumed operation_kind", () => {
-    const mutated = structuredClone(matrix) as {
-      fault_rows: Array<Record<string, unknown>>;
-    };
+    const mutated = mutatedMatrix();
     mutated.fault_rows[0]!.operation_kind = "add_inventory";
     expect(() => parseEffectRows(mutated)).toThrow(
       "B_FAULT_MATRIX_INVALID:operation_kind",
