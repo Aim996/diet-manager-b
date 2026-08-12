@@ -3,7 +3,7 @@
 ## Current result
 
 - Current code/test/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
-- Current replacement evidence: pending
+- Current replacement evidence: commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828`; 22/22 gates PASS; log `71,063` bytes; SHA-256 `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91`; Git blob `492d3b66bbf30fa4f1a22a351025bf999c6714af`
 - Whole-branch final-review source: `.superpowers/sdd/2026-08-12-b-fault-001-implementation/final-review.md`
 - Open baseline: P0=0, P1=1, P2=2
 - Ready: NO
@@ -19,7 +19,7 @@ The prior scoped rereview applied only to candidate `b8bdbf207e4eda52eb395989b42
 | Fix round 1 | Candidate unchanged; evidence and ledger only | Added the append-only 22-command gate log plus SHA binding, then corrected the binding to the normalized committed blob; no second formal build. |
 | Scoped rereview | P0=0, P1=0, P2=0, Ready=YES | Both prior findings ADDRESSED; no new P0/P1/P2; scoped spec, code/test quality, and evidence quality PASS. |
 | Whole-branch final review | P0=0, P1=1, P2=2, Ready=NO | Reopened B-FAULT: mixed purchase/meal FactCommit and EffectBundle diagnostic paths were not uniformly protected; closure, derived next action, and publication state were inconsistent. |
-| Final-fix candidate | `552feee374fe3463f296bd4a110af11747a7ee29`; independent verdict pending | Adds shared safe adapters and real four-boundary regression coverage. Replacement 22-gate evidence and an independent whole-branch review are required before closure. |
+| Final-fix candidate | `552feee374fe3463f296bd4a110af11747a7ee29`; independent verdict pending | Adds shared safe adapters and real four-boundary regression coverage. Replacement 22-gate evidence is frozen in `74d8193`; an independent whole-branch review is still required before closure. |
 
 ## Historical evidence accepted by the scoped reviewer
 
@@ -42,6 +42,6 @@ The retained process concern is unchanged: during Task 6 and its first independe
 
 ## Decision boundary
 
-`B-FAULT-001` remains `in_progress` and Ready NO. Stage closure must wait for replacement full-gate evidence plus an independent whole-branch review of candidate `552feee374fe3463f296bd4a110af11747a7ee29`. Push and draft-PR completion are separate controller-owned facts and may be recorded only after they actually occur. This work does not start or pass `X-GATE-002`, authorize `shared/selected-route-map.json`, freeze remaining CONTRACT-v2 inputs, prove installation/deployment, or make the product installable.
+`B-FAULT-001` remains `in_progress` and Ready NO. Replacement full-gate evidence is frozen, but Stage closure must wait for an independent whole-branch review of candidate `552feee374fe3463f296bd4a110af11747a7ee29`. Push and draft-PR completion are separate controller-owned facts and may be recorded only after they actually occur. This work does not start or pass `X-GATE-002`, authorize `shared/selected-route-map.json`, freeze remaining CONTRACT-v2 inputs, prove installation/deployment, or make the product installable.
 
 not installable; public OpenClaw tool remains non-writing.

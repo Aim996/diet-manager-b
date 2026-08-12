@@ -17,7 +17,7 @@
 
 Freeze the seven-case, eighteen-row B fault authority as `diet-manager/b-fault-matrix/v1`. The matrix fixes each distinct write point, error code, failed/outbox state and attempt/reason, complete persistent observation vector, restart expectation, same-token retry boundary, redacted diagnostic constraint, frozen-result rule, forbidden outcome and assertion path. Its SHA-256 in the harness manifest binds the exact bytes used by future executable fault work.
 
-Current execution state: final-review finding remediation is implemented in candidate `552feee374fe3463f296bd4a110af11747a7ee29`, but replacement full-gate evidence and an independent whole-branch final verdict are still pending. Therefore this work item remains `in_progress`, Ready is NO, and neither the prior `EV-20260812-032` closure wording nor a future push/draft-PR state may be used to mark it complete.
+Current execution state: final-review finding remediation is implemented in candidate `552feee374fe3463f296bd4a110af11747a7ee29`, and replacement 22-gate evidence is frozen in commit `74d8193debf1347b07a4c5e594f4b7c3f11c5828`. An independent whole-branch final verdict is still pending. Therefore this work item remains `in_progress`, Ready is NO, and neither the prior `EV-20260812-032` closure wording nor a future push/draft-PR state may be used to mark it complete.
 
 ## Frozen correction
 

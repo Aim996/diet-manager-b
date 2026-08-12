@@ -4,11 +4,11 @@
 
 ## Status
 
-- Stage: **final fix candidate pending replacement gates and independent whole-branch review**
+- Stage: **final fix candidate with replacement gates pending independent whole-branch review**
 - Code/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
 - Final-review finding baseline: **P0=0, P1=1, P2=2**; the technical P1 is implemented and locally verified, but no independent final verdict has accepted it.
 - Ready: **NO**
-- Formal closure evidence: **not available**; `EV-20260812-032` is retained as `SUPERSEDED_REOPENED`, and replacement gate-log identity is pending.
+- Formal closure evidence: **not yet available**; `EV-20260812-032` is retained as `SUPERSEDED_REOPENED`. Replacement gate evidence is frozen, but it has not yet been accepted by an independent whole-branch reviewer.
 
 This report records a technical final-fix candidate only. It does not declare an independent verdict, mark `B-FAULT-001` complete, push, open/update a PR, or claim publication. Those states remain for the controller after actual external actions and final review.
 
@@ -20,6 +20,24 @@ This report records a technical final-fix candidate only. It does not declare an
 - TDD RED was 4/4 failures at the missing diagnostics; focused GREEN is 4/4. Temporarily deleting the mixed purchase Effect wrapper made its dedicated case RED, and restoring it returned GREEN.
 
 The remaining sections describe the prior Stage A evidence history unless explicitly marked as final-fix evidence.
+
+## Final-fix replacement gate evidence
+
+The final-fix candidate was built exactly once before evidence capture. From evidence-run HEAD `220088dc857f1f09fe31796fa841e9afe91838f2`, the existing capture authority then ran the complete 22-command suite strictly serially without another formal build. The normalized committed artifact is:
+
+| Field | Frozen value |
+| --- | --- |
+| Candidate | `552feee374fe3463f296bd4a110af11747a7ee29` |
+| Evidence-run HEAD | `220088dc857f1f09fe31796fa841e9afe91838f2` |
+| Evidence commit | `74d8193debf1347b07a4c5e594f4b7c3f11c5828` |
+| Log | `docs/evidence/B-FAULT-001-final-fix-gates.txt` |
+| SHA list | `docs/evidence/B-FAULT-001-final-fix-gates.sha256` |
+| Byte length | `71,063` |
+| SHA-256 | `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91` |
+| Git blob | `492d3b66bbf30fa4f1a22a351025bf999c6714af` |
+| Commands | `22`, sequences `001`–`022`, all exit `0` |
+
+The replacement run passed TypeScript no-emit; fault matrix 73/73; full plugin 8 files / 234 tests; both concurrency harnesses; crash main plus 9/9 self-tests; OpenClaw build-check and validation; shared protocol 15/15; B acceptance 7/7; B fault authority 2/2; trace 71 requirements / 144 cases / 59 tasks / 64 governance / 32 evidence / 7 mutations; and X-GATE-001 self-test 13 cases / 7 checks / 6 mutations. Every command boundary recorded pinned/task Node `0`/`[]` and new temp `0`/`[]`. Complete stdout/stderr and byte counts are retained. The adjacent SHA list binds the normalized committed bytes above.
 
 ## Runtime and build ownership
 
@@ -42,7 +60,7 @@ Historical Task 7 build record: Task 7 was the sole build/dist writer for the su
 
 Explicit `Select-String` checks found the stable-meal reader, legal correction claim/finalize transitions, late EffectBundle seams, failure wrapper, and terminal repository-authority validator in both source and corresponding dist. `git diff --check` passed.
 
-## Fresh serial gate evidence
+## Historical Task 7 fresh serial gate evidence
 
 The suites ran strictly serially. Full Vitest never overlapped a concurrency or crash harness.
 
@@ -64,7 +82,7 @@ The suites ran strictly serially. Full Vitest never overlapped a concurrency or 
 | 14 | Trace self-test | PASS: requirements `71`, cases `144`, tasks `59`, governance `64`, evidence `31`, mutations `7` |
 | 15 | X-GATE-001 self-test | PASS: cases `13`, checks `7`, decision `pass_b_safety`, mutations `6` |
 
-## Fix round 1 immutable gate-output freeze
+## Historical fix round 1 immutable gate-output freeze
 
 The Stage A review found that the table above summarized results but did not freeze complete command output. The unchanged code/dist candidate was therefore rerun from evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`. No second formal build was run; command 001 reran noEmit and OpenClaw command 016 used `plugins build --check`.
 
@@ -124,6 +142,17 @@ No production source was changed by this gate repair.
 
 ## Commit chain
 
+Final-fix commits through immutable evidence freeze:
+
+```text
+31f3541 fix(b-fault): cover mixed failure diagnostics
+552feee build(b-fault): regenerate mixed service artifact
+220088d docs(b-fault): reopen final review closure
+74d8193 test(b-fault): freeze final fix gate evidence
+```
+
+Historical implementation chain:
+
 The candidate contains the following B-FAULT implementation chain after the plan baseline `1ee40731a6d90c43e016ab04eb37ba85a54992ae`:
 
 ```text
@@ -150,4 +179,4 @@ b8bdbf2 build: freeze B fault candidate artifacts
 
 - Retained process concern: before Task 7, Task 6 and its first independent review each reported that a repository-wide search exclusion failed on Windows normalization and emitted matching `migration-v1.ts` lines. No direct read, hash, execution, modification, or use as technical evidence followed. Task 7 introduced no new such search/output concern: it used explicit safe paths and `Select-String` only.
 - The three scope-limited matrix cases remain limited as frozen: no public catalog claim for `CASE-EFFECT-002`, no upgrade/backup-restore product for `CASE-STORAGE-005`, and no full IssueResolution interaction for `CASE-INVENTORY-006`.
-- The first independent Task 7 review returned P0=0/P1=1/P2=1 because complete gate output was absent and the ledger lagged. Fix round 1 addresses those evidence/status findings, but no scoped rereview has accepted the remediation, so Ready remains NO.
+- The first independent Task 7 review returned P0=0/P1=1/P2=1 because complete gate output was absent and the ledger lagged. The historical scoped rereview accepted that remediation for the old candidate. The later whole-branch review superseded its closure effect; no independent reviewer has yet accepted the final-fix candidate, so current Ready remains NO.

@@ -5,7 +5,7 @@
 - Implementation/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
 - Plan baseline: `1ee40731a6d90c43e016ab04eb37ba85a54992ae`
 - Expected branch: `agent/b-fault-001`
-- Current status: **in_progress; final fix candidate and replacement gate evidence pending independent whole-branch review**
+- Current status: **in_progress; final fix candidate and frozen replacement gate evidence pending independent whole-branch review**
 - Final-review baseline: **P0=0, P1=1, P2=2**; P1 was uncovered mixed FactCommit/EffectBundle diagnostics, and P2 covered false completion plus Plan/brief/derived-status drift.
 - Ready: **NO** until an independent whole-branch reviewer accepts the final fix with P0=0/P1=0.
 
@@ -29,8 +29,8 @@ Do not inspect `version-b-lite-plugin/src/storage/migration-v1.ts` content. Do n
 
 Read the B-FAULT plan/spec, final whole-branch review, `docs/work-items/B-FAULT-001-brief.md`, this package, `docs/work-items/B-FAULT-001-report.md`, and the Task 1–7 reports/reviews in `.superpowers/sdd/2026-08-12-b-fault-001-implementation/`. Review the final-fix delta and retained history, with particular attention to:
 
-- `docs/evidence/B-FAULT-001-final-fix-gates.txt` — append-only replacement output; identity pending the final-fix serial run
-- `docs/evidence/B-FAULT-001-final-fix-gates.sha256` — replacement identity list, pending generation
+- `docs/evidence/B-FAULT-001-final-fix-gates.txt` — append-only replacement output; committed length `71,063`, SHA-256 `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91`, Git blob `492d3b66bbf30fa4f1a22a351025bf999c6714af`
+- `docs/evidence/B-FAULT-001-final-fix-gates.sha256` — replacement normalized-byte identity list
 - `docs/evidence/B-FAULT-001-stage-a-gates.txt` and adjacent SHA list — superseded candidate history only
 
 - `shared/acceptance-cases/b-fault-matrix.json`
@@ -89,20 +89,27 @@ Test-Path -LiteralPath .\shared\selected-route-map.json
 
 Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` values `hang`, `root-replace`, `snapshot-mutation`, `emergency-cleanup`, `allowed-mutation`, `expanded-fact-mutation`, `expanded-effect-mutation`, `expanded-finalize-mutation`, and `canonical-order`. Clear the environment variable after each run.
 
-## Recorded superseded Stage A evidence
+## Recorded evidence identities
 
-- Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`; SHA list at the adjacent `.sha256` path.
-- Historical candidate binding: every one of the old 22 command records names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`; these records do not validate the final-fix candidate.
+### Current replacement evidence
+
+- Immutable output identity: `docs/evidence/B-FAULT-001-final-fix-gates.txt`, `71,063` committed bytes, SHA-256 `ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91`, Git blob `492d3b66bbf30fa4f1a22a351025bf999c6714af`; SHA list at the adjacent `.sha256` path.
+- Candidate binding: all 22 records name candidate `552feee374fe3463f296bd4a110af11747a7ee29` and evidence-run HEAD `220088dc857f1f09fe31796fa841e9afe91838f2`; evidence commit is `74d8193debf1347b07a4c5e594f4b7c3f11c5828`.
 - Completeness structure: 22 command begin/end records, exact commands, start/end timestamps, stdout/stderr begin/end sections and byte counts, 22 exit codes, and 22 full Node/temp boundaries. All exits, pinned/task Node counts, and new-temp counts are zero.
-- Sanitization: stdout/stderr are complete after deterministic absolute-prefix substitution only; no lines were omitted. Audit found no unredacted worktree or user-profile prefix and no protected/migration name or credential-shaped value.
-- noEmit/build: exit 0; sole formal build generated 3 matching dist files.
-- B fault matrix: 73/73.
-- full plugin Vitest: 230/230 in 8 files.
-- crash: main harness plus 9/9 self-tests PASS after one documented RED/fix cycle.
+- Sanitization: stdout/stderr are complete after deterministic absolute-prefix substitution only; no lines were omitted. Audit found no unredacted worktree or user-profile prefix outside the explicitly recorded pinned Node executable, and no credential-shaped value.
+- noEmit: exit 0. The run did not rebuild dist; the sole prior final-fix formal build changed only `dist/domain/service.js`.
+- B fault matrix: 73/73; full plugin Vitest: 234/234 in 8 files.
+- crash: main harness plus 9/9 self-tests PASS.
 - shared protocol/B/B-fault acceptance: 15 + 7 + 2 tests PASS; B suite includes exact 17/17 cases.
-- trace: 71 requirements / 144 cases / 59 tasks / 64 governance / 31 evidence / 7 mutations.
+- trace: 71 requirements / 144 cases / 59 tasks / 64 governance / 32 evidence / 7 mutations.
 - X-GATE: 13 cases / 7 checks / 6 mutations.
-- every boundary: pinned/task Node `0`; new temp residue relative to frozen baseline `0`.
+- every boundary: pinned/task Node `0`/`[]`; new temp residue relative to frozen baseline `0`/`[]`.
+
+### Superseded historical Stage A evidence
+
+- Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`.
+- Every old record names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`; these records do not validate the final-fix candidate.
+- Historical results included full plugin 230/230 and trace with 31 evidence records. They remain auditable history only.
 
 ## Required verdict format
 

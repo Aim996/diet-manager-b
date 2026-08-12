@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297747,
-      "sha256": "97BADE15825C8A7FD1F59F7586F4D65731E48AFE50DE3B8BF18A3B603F743CBD"
+      "length": 297906,
+      "sha256": "AFE8C21323D7D6A523ED8695B7C51F836C2060C1085D8C958E9463C70577258A"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -563,15 +563,15 @@
     {
       "id": "EV-20260812-032",
       "scope": "B-FAULT-001 历史故障矩阵关闭证据（已重开）",
-      "result": "记录旧候选b8bdbf207e4eda52eb395989b42e159d554cb078及其当时的7案/18行、22 gate和scoped rereview结果；后续全分支复审发现mixed真实FactCommit/EffectBundle诊断覆盖P1及状态文档P2，故该关闭结论已superseded/reopened；历史字节与审阅链继续保留",
-      "limitation": "当前不得作为B-FAULT-001完成证据；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29等待替换gate证据和独立全分支复审，Ready=NO；不授权map、G2/G3、安装、部署或产品可用",
+      "result": "记录旧候选b8bdbf207e4eda52eb395989b42e159d554cb078及其当时的7案/18行、22 gate和scoped rereview结果；后续全分支复审发现mixed真实FactCommit/EffectBundle诊断覆盖P1及状态文档P2，故该关闭结论已superseded/reopened；历史字节与审阅链继续保留；当前候选的替换22-gate证据已在74d8193冻结",
+      "limitation": "当前不得作为B-FAULT-001完成证据；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29等待独立全分支复审，Ready=NO；不授权map、G2/G3、安装、部署或产品可用",
       "reference_ids": [
         "B-FAULT-001"
       ],
       "file": {
         "path": "docs/evidence/EV-20260812-032-b-fault-001.md",
-        "length": 5662,
-        "sha256": "36C82C81132EFB570356F8549F441ACAA3A649B7F59F7ED4BFA91900EEE78224"
+        "length": 6833,
+        "sha256": "44EB05DEFB35379D62A911DB54B31B4AC33E02E26E235C9AC77C7398D896AAF0"
       },
       "file_status": "present",
       "referenced_by_task_ids": [

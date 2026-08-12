@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297747,
-      "sha256": "97BADE15825C8A7FD1F59F7586F4D65731E48AFE50DE3B8BF18A3B603F743CBD"
+      "length": 297906,
+      "sha256": "AFE8C21323D7D6A523ED8695B7C51F836C2060C1085D8C958E9463C70577258A"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -7623,7 +7623,7 @@
       ],
       "owner_reviewer": "Codex /root实现 / 独立B故障复核",
       "status": "进行中",
-      "next_reopen": "旧EV32关闭已被最终全分支复审P1/P2 finding supersede；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29技术修复完成，替换证据与独立复审待完成，Ready=NO；只有真实push与draft PR完成后才由controller写发布状态",
+      "next_reopen": "旧EV32关闭已被最终全分支复审P1/P2 finding supersede；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29及替换22-gate证据74d8193debf1347b07a4c5e594f4b7c3f11c5828已冻结，独立复审待完成，Ready=NO；只有真实push与draft PR完成后才由controller写发布状态",
       "brief_path": "docs/work-items/B-FAULT-001-brief.md",
       "case_assertion_paths": {
         "CASE-EFFECT-001": [
