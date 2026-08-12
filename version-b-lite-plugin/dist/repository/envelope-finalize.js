@@ -10,6 +10,7 @@ const INPUT_FIELDS = [
     "finalizedAt",
     "frozenAt",
     "inputDigest",
+    "mixedItems",
     "payload",
     "receiptId",
     "resultStatus",
@@ -17,6 +18,15 @@ const INPUT_FIELDS = [
     "subjectScope",
     "token",
     "traceId",
+];
+const MIXED_ITEM_FIELDS = [
+    "command_type",
+    "error_code",
+    "idempotency_key",
+    "operation_id",
+    "payload",
+    "sequence",
+    "status",
 ];
 function invalid(reason) {
     throw new TypeError(`ENVELOPE_FINALIZE_REQUEST_INVALID:${reason}`);
@@ -76,6 +86,47 @@ function deepFreezeJson(value) {
     }
     return value;
 }
+function freezeMixedItems(value) {
+    if (!Array.isArray(value) || value.length > 256)
+        return invalid("mixed_items");
+    const items = value.map((candidate, index) => {
+        if (!Object.hasOwn(value, index))
+            return invalid("mixed_items");
+        const fields = exactDataProperties(candidate, MIXED_ITEM_FIELDS);
+        if (fields.sequence.value !== index)
+            return invalid("mixed_item_sequence");
+        if (typeof fields.command_type.value !== "string" ||
+            !dietManagerActions.includes(fields.command_type.value)) {
+            return invalid("mixed_item_command_type");
+        }
+        if (fields.status.value !== "committed" &&
+            fields.status.value !== "committed_with_issues" &&
+            fields.status.value !== "failed") {
+            return invalid("mixed_item_status");
+        }
+        const errorCode = fields.error_code.value === null
+            ? null
+            : ascii(fields.error_code.value, "mixed_item_error_code", 128);
+        if ((fields.status.value === "failed" && errorCode === null) ||
+            (fields.status.value !== "failed" && errorCode !== null)) {
+            return invalid("mixed_item_error_code");
+        }
+        return Object.freeze({
+            sequence: index,
+            operation_id: ascii(fields.operation_id.value, "mixed_item_operation_id"),
+            idempotency_key: ascii(fields.idempotency_key.value, "mixed_item_idempotency_key"),
+            command_type: fields.command_type.value,
+            status: fields.status.value,
+            error_code: errorCode,
+            payloadJson: canonicalJson(fields.payload.value),
+        });
+    });
+    if (new Set(items.map((item) => item.operation_id)).size !== items.length ||
+        new Set(items.map((item) => item.idempotency_key)).size !== items.length) {
+        return invalid("mixed_item_identity");
+    }
+    return Object.freeze(items);
+}
 function freezeInput(value) {
     const fields = exactDataProperties(value, INPUT_FIELDS);
     if (typeof fields.database.value !== "object" || fields.database.value === null) {
@@ -112,6 +163,7 @@ function freezeInput(value) {
         frozenAt: timestamp(fields.frozenAt.value, "frozen_at"),
         payloadJson,
         payload,
+        mixedItems: freezeMixedItems(fields.mixedItems.value),
     });
 }
 function freezeOptions(value) {
@@ -154,6 +206,43 @@ function readFinalization(database, envelopeId) {
        WHERE f.envelope_id = ?`)
         .get(envelopeId);
 }
+function assertMixedOperationAuthority(input, envelopeId) {
+    const events = input.database
+        .prepare(`SELECT operation_id FROM event_records
+       WHERE envelope_id = ?
+       ORDER BY committed_at, event_id`)
+        .all(envelopeId);
+    if (input.mixedItems.length === 0) {
+        if (events.length > 1)
+            return authorityInvalid("mixed_item_operations");
+        return;
+    }
+    if (events.length !== input.mixedItems.length ||
+        events.some((event, index) => event.operation_id !== input.mixedItems[index].operation_id)) {
+        return authorityInvalid("mixed_item_operations");
+    }
+}
+function assertMixedReplayRows(input, envelopeId) {
+    const rows = input.database
+        .prepare(`SELECT * FROM mixed_item_results
+       WHERE envelope_id = ?
+       ORDER BY sequence`)
+        .all(envelopeId);
+    if (rows.length !== input.mixedItems.length ||
+        rows.some((row, index) => {
+            const expected = input.mixedItems[index];
+            return (row.envelope_id !== envelopeId ||
+                row.sequence !== expected.sequence ||
+                row.operation_id !== expected.operation_id ||
+                row.idempotency_key !== expected.idempotency_key ||
+                row.command_type !== expected.command_type ||
+                row.status !== expected.status ||
+                row.error_code !== expected.error_code ||
+                row.payload_json !== expected.payloadJson);
+        })) {
+        throw new Error("IDEMPOTENCY_CONFLICT:mixed_items");
+    }
+}
 function assertReplay(input, envelopeId, idempotencyKey) {
     const row = readFinalization(input.database, envelopeId);
     const expected = resultFor(input, envelopeId, idempotencyKey);
@@ -171,6 +260,8 @@ function assertReplay(input, envelopeId, idempotencyKey) {
         row.terminal_result_json !== canonicalJson(expected)) {
         throw new Error("IDEMPOTENCY_CONFLICT:terminal_result");
     }
+    assertMixedOperationAuthority(input, envelopeId);
+    assertMixedReplayRows(input, envelopeId);
     return expected;
 }
 function changes(database) {
@@ -204,6 +295,7 @@ export function finalizeEnvelope(input, options) {
             return authorityInvalid("effects_not_stable");
         }
         const result = resultFor(frozen, authority.binding.preview_id, authority.idempotency_key);
+        assertMixedOperationAuthority(frozen, authority.binding.preview_id);
         frozen.database
             .prepare(`INSERT INTO envelope_finalizations(
           envelope_id, idempotency_key, input_digest, envelope_state,
@@ -212,6 +304,13 @@ export function finalizeEnvelope(input, options) {
         ) VALUES (?, ?, ?, 'finalized', ?, 'EnvelopeFinalize', ?, NULL, ?, ?, ?)`)
             .run(authority.binding.preview_id, authority.idempotency_key, frozen.inputDigest, frozen.resultStatus, frozen.receiptId, frozen.finalizedAt, frozen.frozenAt, frozen.payloadJson);
         injectFault(frozenOptions, "after_finalization_row");
+        const insertMixedItem = frozen.database.prepare(`INSERT INTO mixed_item_results(
+        envelope_id, sequence, operation_id, idempotency_key,
+        command_type, status, error_code, payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const item of frozen.mixedItems) {
+            insertMixedItem.run(authority.binding.preview_id, item.sequence, item.operation_id, item.idempotency_key, item.command_type, item.status, item.error_code, item.payloadJson);
+        }
         assertEnvelopeTransition("effects_stable", "finalized");
         frozen.database
             .prepare(`UPDATE command_envelopes

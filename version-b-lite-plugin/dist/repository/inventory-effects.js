@@ -2,6 +2,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { assertEffectTransition, assertEnvelopeTransition, } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { parseInventoryProjectionRow, } from "./query.js";
+import { computeRepositoryDataRevision } from "./revision.js";
 const INPUT_FIELDS = ["database", "now", "outboxId"];
 const ADD_FIELDS = [
     "batch",
@@ -119,19 +120,42 @@ function freezeInput(value) {
 }
 function freezeOptions(value) {
     if (value === undefined)
-        return Object.freeze({});
-    const fields = exactDataProperties(value, ["fault"]);
-    if (![
-        "after_claim",
-        "after_business_writes",
-        "after_outbox",
-        "after_bundle",
-        "before_commit",
-        "after_commit_before_reply",
-    ].includes(String(fields.fault.value))) {
+        return Object.freeze({ deferEnvelopeStability: false });
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        return invalid("options");
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== "string") ||
+        keys.some((key) => key !== "fault" && key !== "deferEnvelopeStability")) {
+        return invalid("options");
+    }
+    for (const key of keys) {
+        const descriptor = descriptors[key];
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+            return invalid("options");
+        }
+    }
+    const fault = descriptors.fault?.value;
+    if (fault !== undefined &&
+        ![
+            "after_claim",
+            "after_business_writes",
+            "after_outbox",
+            "after_bundle",
+            "before_commit",
+            "after_commit_before_reply",
+        ].includes(String(fault))) {
         return invalid("fault");
     }
-    return Object.freeze({ fault: fields.fault.value });
+    const deferEnvelopeStability = descriptors.deferEnvelopeStability?.value ?? false;
+    if (typeof deferEnvelopeStability !== "boolean") {
+        return invalid("defer_envelope_stability");
+    }
+    return Object.freeze({
+        ...(fault === undefined ? {} : { fault: fault }),
+        deferEnvelopeStability,
+    });
 }
 function injectFault(options, point) {
     if (options.fault === point)
@@ -407,23 +431,158 @@ function updateOutbox(database, result, now) {
     if (changes.count !== 1)
         return authorityInvalid("outbox_compare_and_set");
 }
-function finalizeBundleIfTerminal(database, row, now) {
-    const effects = database
-        .prepare("SELECT effect_id, state FROM effect_outbox WHERE envelope_id = ? ORDER BY effect_id")
+function operationSequence(database, row) {
+    const operations = database
+        .prepare(`SELECT operation_id FROM event_records
+       WHERE envelope_id = ?
+       ORDER BY committed_at, event_id`)
         .all(row.envelope_id);
+    const sequence = operations.findIndex((candidate) => candidate.operation_id === row.operation_id);
+    if (sequence < 0 ||
+        operations.filter((candidate) => candidate.operation_id === row.operation_id).length !== 1) {
+        return authorityInvalid("operation_sequence");
+    }
+    return sequence;
+}
+function readBundleCheckpoint(database, row) {
+    return database
+        .prepare(`SELECT operation_id, effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits
+       WHERE envelope_id = ? AND operation_id = ?`)
+        .get(row.envelope_id, row.operation_id);
+}
+function parseBundleCheckpoint(checkpoint, expectedAuthorityKind, expectedSequence) {
+    let parsed;
+    try {
+        parsed = JSON.parse(checkpoint.payload_json);
+    }
+    catch {
+        return authorityInvalid("bundle_checkpoint_payload");
+    }
+    if (canonicalJson(parsed) !== checkpoint.payload_json) {
+        return authorityInvalid("bundle_checkpoint_payload");
+    }
+    const payload = exactJsonObject(parsed, [
+        "authority_kind",
+        "data_revision",
+        "effects",
+        "operation_sequence",
+    ]);
+    if (payload.authority_kind !== expectedAuthorityKind ||
+        typeof payload.data_revision !== "string" ||
+        !payload.data_revision.startsWith("repository-v1:") ||
+        !Array.isArray(payload.effects) ||
+        payload.operation_sequence !== expectedSequence) {
+        return authorityInvalid("bundle_checkpoint_payload");
+    }
+    return payload;
+}
+function assertDeferredRevisionCheckpoint(database, row) {
+    const sequence = operationSequence(database, row);
+    const checkpoint = readBundleCheckpoint(database, row);
+    if (!checkpoint ||
+        checkpoint.operation_id !== row.operation_id ||
+        checkpoint.effect_state !== "pending" ||
+        checkpoint.result_status !== "facts_committed_effects_pending" ||
+        checkpoint.completed_at !== null) {
+        return authorityInvalid("bundle_checkpoint");
+    }
+    const payload = parseBundleCheckpoint(checkpoint, "diet-manager/effect-bundle-checkpoint/v1", sequence);
+    if (computeRepositoryDataRevision(database) !== payload.data_revision) {
+        throw new Error("PREVIEW_STALE:data_revision");
+    }
+}
+function finalizeBundleIfTerminal(database, row, now, deferEnvelopeStability) {
+    const effects = database
+        .prepare(`SELECT effect_id, state FROM effect_outbox
+       WHERE envelope_id = ? AND operation_id = ?
+       ORDER BY effect_id`)
+        .all(row.envelope_id, row.operation_id);
+    const checkpoint = readBundleCheckpoint(database, row);
     if (effects.some((effect) => effect.state !== "succeeded" && effect.state !== "permanent_business_skip")) {
+        if (checkpoint) {
+            const sequence = operationSequence(database, row);
+            if (checkpoint.effect_state !== "pending" ||
+                checkpoint.result_status !== "facts_committed_effects_pending" ||
+                checkpoint.completed_at !== null) {
+                return authorityInvalid("bundle_checkpoint_state");
+            }
+            parseBundleCheckpoint(checkpoint, "diet-manager/effect-bundle-checkpoint/v1", sequence);
+            database
+                .prepare(`UPDATE effect_bundle_commits
+           SET payload_json = ?
+           WHERE envelope_id = ? AND operation_id = ?
+             AND effect_state = 'pending'
+             AND result_status = 'facts_committed_effects_pending'
+             AND completed_at IS NULL`)
+                .run(canonicalJson({
+                authority_kind: "diet-manager/effect-bundle-checkpoint/v1",
+                data_revision: computeRepositoryDataRevision(database),
+                effects,
+                operation_sequence: sequence,
+            }), row.envelope_id, row.operation_id);
+            const changes = database.prepare("SELECT changes() AS count").get();
+            if (changes.count !== 1)
+                return authorityInvalid("bundle_compare_and_set");
+        }
         return;
     }
     const skipped = effects.some((effect) => effect.state === "permanent_business_skip");
-    database
-        .prepare(`INSERT INTO effect_bundle_commits(
-        envelope_id, operation_id, stage, effect_state, result_status,
-        completed_at, payload_json
-      ) VALUES (?, ?, 'EffectBundle', ?, ?, ?, ?)`)
-        .run(row.envelope_id, row.operation_id, skipped ? "permanent_business_skip" : "succeeded", skipped ? "applied_with_issues" : "applied", now, canonicalJson({
-        authority_kind: "diet-manager/effect-bundle/v1",
-        effects,
-    }));
+    if (checkpoint) {
+        const sequence = operationSequence(database, row);
+        const payloadJson = canonicalJson({
+            authority_kind: "diet-manager/effect-bundle/v1",
+            data_revision: computeRepositoryDataRevision(database),
+            effects,
+            operation_sequence: sequence,
+        });
+        if (checkpoint.effect_state !== "pending" ||
+            checkpoint.result_status !== "facts_committed_effects_pending" ||
+            checkpoint.completed_at !== null) {
+            return authorityInvalid("bundle_checkpoint_state");
+        }
+        parseBundleCheckpoint(checkpoint, "diet-manager/effect-bundle-checkpoint/v1", sequence);
+        database
+            .prepare(`UPDATE effect_bundle_commits
+         SET effect_state = ?, result_status = ?, completed_at = ?, payload_json = ?
+         WHERE envelope_id = ? AND operation_id = ?
+           AND effect_state = 'pending'
+           AND result_status = 'facts_committed_effects_pending'
+           AND completed_at IS NULL`)
+            .run(skipped ? "permanent_business_skip" : "succeeded", skipped ? "applied_with_issues" : "applied", now, payloadJson, row.envelope_id, row.operation_id);
+        const changes = database.prepare("SELECT changes() AS count").get();
+        if (changes.count !== 1)
+            return authorityInvalid("bundle_compare_and_set");
+    }
+    else {
+        const payloadJson = canonicalJson({
+            authority_kind: "diet-manager/effect-bundle/v1",
+            effects,
+        });
+        database
+            .prepare(`INSERT INTO effect_bundle_commits(
+          envelope_id, operation_id, stage, effect_state, result_status,
+          completed_at, payload_json
+        ) VALUES (?, ?, 'EffectBundle', ?, ?, ?, ?)`)
+            .run(row.envelope_id, row.operation_id, skipped ? "permanent_business_skip" : "succeeded", skipped ? "applied_with_issues" : "applied", now, payloadJson);
+    }
+    if (deferEnvelopeStability)
+        return;
+    const envelopeEffects = database
+        .prepare("SELECT state FROM effect_outbox WHERE envelope_id = ?")
+        .all(row.envelope_id);
+    if (envelopeEffects.some((effect) => effect.state !== "succeeded" && effect.state !== "permanent_business_skip")) {
+        return;
+    }
+    const eventCount = database
+        .prepare("SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ?")
+        .get(row.envelope_id).count;
+    const bundleCount = database
+        .prepare(`SELECT COUNT(*) AS count FROM effect_bundle_commits
+         WHERE envelope_id = ? AND completed_at IS NOT NULL`)
+        .get(row.envelope_id).count;
+    if (bundleCount !== eventCount)
+        return;
     assertEnvelopeTransition("effects_pending", "effects_stable");
     database
         .prepare(`UPDATE command_envelopes
@@ -575,6 +734,10 @@ export function processInventoryEffect(input, options) {
         if (row.state !== "pending" && row.state !== "retryable_failed") {
             return authorityInvalid("state");
         }
+        if (frozenOptions.deferEnvelopeStability ||
+            readBundleCheckpoint(frozen.database, row) !== undefined) {
+            assertDeferredRevisionCheckpoint(frozen.database, row);
+        }
         assertEffectTransition(row.state, "processing");
         frozen.database
             .prepare(`UPDATE effect_outbox
@@ -592,7 +755,7 @@ export function processInventoryEffect(input, options) {
         injectFault(frozenOptions, "after_business_writes");
         updateOutbox(frozen.database, result, frozen.now);
         injectFault(frozenOptions, "after_outbox");
-        finalizeBundleIfTerminal(frozen.database, row, frozen.now);
+        finalizeBundleIfTerminal(frozen.database, row, frozen.now, frozenOptions.deferEnvelopeStability);
         injectFault(frozenOptions, "after_bundle");
         injectFault(frozenOptions, "before_commit");
         frozen.database.exec("COMMIT");
