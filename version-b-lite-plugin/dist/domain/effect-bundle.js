@@ -232,6 +232,8 @@ function positive(value, field) {
 }
 export function preparePurchaseOperation(input) {
     const { operation } = input;
+    const effectIdentityKey = input.effectIdentityKey ?? input.idempotencyKey;
+    const effectIdentitySequence = input.effectIdentityKey === undefined ? input.sequence : 0;
     if (operation.kind !== "add_inventory")
         return invalid("operation_kind");
     if (operation.amount.evidence !== "explicit")
@@ -246,9 +248,9 @@ export function preparePurchaseOperation(input) {
         ? null
         : deriveDomainId("nutrition", `${operation.product.product_id}:${nutrition.profile_version}`, 0);
     const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
-    const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
-    const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
-    const transactionId = deriveDomainId("transaction", input.idempotencyKey, input.sequence);
+    const effectId = deriveDomainId("effect", effectIdentityKey, effectIdentitySequence);
+    const outboxId = deriveDomainId("outbox", effectIdentityKey, effectIdentitySequence);
+    const transactionId = deriveDomainId("transaction", effectIdentityKey, effectIdentitySequence);
     const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
     const effectInput = Object.freeze({
         kind: "inventory_add",
@@ -358,6 +360,7 @@ function mealEffectId(idempotencyKey, itemOrder, effectOrder) {
 }
 export function prepareMealOperation(input) {
     const { operation } = input;
+    const effectIdentityKey = input.effectIdentityKey ?? input.idempotencyKey;
     if (operation.kind !== "record_meal" || operation.items.length === 0) {
         return invalid("meal_operation");
     }
@@ -368,31 +371,31 @@ export function prepareMealOperation(input) {
     for (let itemOrder = 0; itemOrder < operation.items.length; itemOrder += 1) {
         if (operation.location === "home") {
             effects.push(Object.freeze({
-                outboxId: deriveDomainId("outbox", input.idempotencyKey, itemOrder * 10),
-                effectId: mealEffectId(input.idempotencyKey, itemOrder, 0),
+                outboxId: deriveDomainId("outbox", effectIdentityKey, itemOrder * 10),
+                effectId: mealEffectId(effectIdentityKey, itemOrder, 0),
                 effectKind: "inventory_deduct",
                 previousState: null,
                 reason: null,
             }));
             effects.push(Object.freeze({
-                outboxId: deriveDomainId("outbox", input.idempotencyKey, itemOrder * 10 + 1),
-                effectId: mealEffectId(input.idempotencyKey, itemOrder, 1),
+                outboxId: deriveDomainId("outbox", effectIdentityKey, itemOrder * 10 + 1),
+                effectId: mealEffectId(effectIdentityKey, itemOrder, 1),
                 effectKind: "issue_projection",
                 previousState: null,
                 reason: null,
             }));
         }
         effects.push(Object.freeze({
-            outboxId: deriveDomainId("outbox", input.idempotencyKey, itemOrder * 10 + 2),
-            effectId: mealEffectId(input.idempotencyKey, itemOrder, 2),
+            outboxId: deriveDomainId("outbox", effectIdentityKey, itemOrder * 10 + 2),
+            effectId: mealEffectId(effectIdentityKey, itemOrder, 2),
             effectKind: "nutrition_snapshot",
             previousState: null,
             reason: null,
         }));
     }
     effects.push(Object.freeze({
-        outboxId: deriveDomainId("outbox", input.idempotencyKey, operation.items.length * 10 + 9),
-        effectId: mealEffectId(input.idempotencyKey, operation.items.length, 9),
+        outboxId: deriveDomainId("outbox", effectIdentityKey, operation.items.length * 10 + 9),
+        effectId: mealEffectId(effectIdentityKey, operation.items.length, 9),
         effectKind: "daily_progress_contribution",
         previousState: null,
         reason: null,
@@ -691,6 +694,187 @@ function updateMealOutboxes(database, input, itemResults) {
     if (changed(database) !== 1)
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:progress_outbox_compare_and_set");
 }
+function freezeStoredNutritionVector(value, label) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+    }
+    const record = value;
+    exactKeys(record, [
+        "energy_kcal_milli",
+        "protein_mg",
+        "fat_mg",
+        "carbohydrate_mg",
+        "fiber_mg",
+        "water_ml_milli",
+    ], label);
+    for (const candidate of Object.values(record)) {
+        if (candidate !== null && (!Number.isSafeInteger(candidate) || candidate < 0)) {
+            throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+        }
+    }
+    return Object.freeze({
+        energy_kcal_milli: record.energy_kcal_milli,
+        protein_mg: record.protein_mg,
+        fat_mg: record.fat_mg,
+        carbohydrate_mg: record.carbohydrate_mg,
+        fiber_mg: record.fiber_mg,
+        water_ml_milli: record.water_ml_milli,
+    });
+}
+function readAppliedMealResultInTransaction(input, checkpoint) {
+    if (checkpoint.operation_id !== input.operationId || checkpoint.completed_at === null ||
+        !(checkpoint.effect_state === "succeeded" && checkpoint.result_status === "applied" ||
+            checkpoint.effect_state === "permanent_business_skip" &&
+                checkpoint.result_status === "applied_with_issues")) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+    }
+    const bundle = parseCanonical(checkpoint.payload_json, "terminal_checkpoint");
+    exactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "terminal_checkpoint");
+    if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
+        bundle.operation_sequence !== input.operationSequence ||
+        typeof bundle.data_revision !== "string" ||
+        !bundle.data_revision.startsWith("repository-v1:") ||
+        !Array.isArray(bundle.effects)) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+    }
+    const event = input.database.prepare(`SELECT * FROM event_records WHERE envelope_id = ? AND operation_id = ?`).get(input.envelopeId, input.operationId);
+    if (!event)
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
+    const eventPayload = parseCanonical(event.payload_json, "terminal_event");
+    if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
+        eventPayload.location !== input.location) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
+    }
+    const items = input.database.prepare(`SELECT item_id, item_order, normalized_name, payload_json FROM meal_items
+     WHERE event_id = ? ORDER BY item_order`).all(event.event_id);
+    const outboxes = input.database.prepare(`SELECT effect_id, effect_kind, state FROM effect_outbox
+     WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(input.envelopeId, input.operationId);
+    if (bundle.effects.length !== outboxes.length) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+    }
+    let dailyProgress = null;
+    bundle.effects.forEach((candidate, index) => {
+        if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+        }
+        const effect = candidate;
+        const outbox = outboxes[index];
+        if (!outbox || effect.effect_id !== outbox.effect_id || effect.state !== outbox.state) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+        }
+        if (outbox.effect_kind === "daily_progress_contribution") {
+            exactKeys(effect, ["contribution", "effect_id", "state"], "terminal_progress_effect");
+            if (dailyProgress !== null || typeof effect.contribution !== "object" ||
+                effect.contribution === null || Array.isArray(effect.contribution)) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_progress_effect");
+            }
+            const progress = effect.contribution;
+            exactKeys(progress, ["coverage_status", "date", "nutrients", "timezone"], "terminal_progress");
+            if (typeof progress.date !== "string" || progress.timezone !== "Asia/Shanghai" ||
+                (progress.coverage_status !== "complete" && progress.coverage_status !== "partial")) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_progress");
+            }
+            dailyProgress = Object.freeze({
+                date: progress.date,
+                timezone: "Asia/Shanghai",
+                coverage_status: progress.coverage_status,
+                nutrients: freezeStoredNutritionVector(progress.nutrients, "terminal_progress_nutrients"),
+            });
+        }
+        else {
+            exactKeys(effect, ["effect_id", "state"], "terminal_effects");
+        }
+    });
+    if (dailyProgress === null) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_progress_missing");
+    }
+    const results = items.map((item) => {
+        const itemPayload = parseCanonical(item.payload_json, "terminal_item");
+        if (typeof itemPayload.amount !== "object" || itemPayload.amount === null ||
+            Array.isArray(itemPayload.amount)) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
+        }
+        const amount = itemPayload.amount;
+        const snapshots = input.database.prepare(`SELECT source_type, profile_version, payload_json FROM nutrition_snapshots
+       WHERE intake_item_id = ? ORDER BY snapshot_id`).all(item.item_id);
+        if (snapshots.length !== 1) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
+        }
+        const snapshot = snapshots[0];
+        const snapshotPayload = parseCanonical(snapshot.payload_json, "terminal_snapshot");
+        exactKeys(snapshotPayload, [
+            "amount", "authority_kind", "basis", "conversion", "nutrients", "source_nutrients",
+        ], "terminal_snapshot");
+        if (snapshotPayload.authority_kind !== "diet-manager/nutrition-snapshot/v1" ||
+            canonicalJson(snapshotPayload.amount) !== canonicalJson(amount)) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
+        }
+        const issues = input.database.prepare(`SELECT issue_code FROM issues WHERE entity_type = 'meal_item' AND entity_id = ?
+       ORDER BY issue_id`).all(item.item_id);
+        if (issues.length > 1)
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_issues");
+        const issueCodes = Object.freeze(issues.map((issue) => issue.issue_code));
+        const transactions = input.database.prepare(`SELECT transaction_id FROM inventory_transactions
+       WHERE event_id = ? AND idempotency_key = ? ORDER BY transaction_id`).all(event.event_id, mealEffectId(input.idempotencyKey, item.item_order, 0));
+        if (transactions.length > 1) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+        }
+        const transactionId = transactions[0]?.transaction_id ?? null;
+        const inventoryMatch = transactionId !== null
+            ? "matched"
+            : input.location === "outside"
+                ? "skipped_outside"
+                : issueCodes[0] === "inventory_multiple_candidates"
+                    ? "skipped_ambiguous"
+                    : issueCodes[0] === "inventory_insufficient"
+                        ? "skipped_insufficient"
+                        : issueCodes[0] === "inventory_unit_incompatible"
+                            ? "skipped_unit_incompatible"
+                            : issueCodes[0] === "inventory_amount_unknown"
+                                ? "skipped_amount_unknown"
+                                : (() => { throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_inventory"); })();
+        const profileVersion = Number(snapshot.profile_version);
+        if (!Number.isSafeInteger(profileVersion) || profileVersion < 1) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
+        }
+        const adoption = amount.nutrition_adoption_microunits;
+        const deduction = amount.inventory_deduction_microunits;
+        return Object.freeze({
+            item_order: item.item_order,
+            normalized_name: item.normalized_name,
+            unit: String(amount.unit),
+            inventory_match: inventoryMatch,
+            inventory_transaction_id: transactionId,
+            issue_codes: issueCodes,
+            observed_microunits: Number(amount.observed_microunits),
+            nutrition_adoption_microunits: adoption === null ? null : Number(adoption),
+            inventory_deduction_microunits: deduction === null ? null : Number(deduction),
+            estimated_fields: Object.freeze(amount.evidence === "estimated_upper_bound"
+                ? ["nutrition_adoption_microunits"] : []),
+            nutrition_source_type: snapshot.source_type,
+            nutrition_profile_version: profileVersion,
+            nutrients: freezeStoredNutritionVector(snapshotPayload.nutrients, "terminal_snapshot_nutrients"),
+        });
+    });
+    const issueCodes = Object.freeze(results.flatMap((result) => [...result.issue_codes]));
+    const hasIssues = checkpoint.result_status === "applied_with_issues";
+    if (hasIssues !== (issueCodes.length > 0) || results.length === 0) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_status");
+    }
+    return Object.freeze({
+        sequence: input.operationSequence,
+        operation_id: input.operationId,
+        status: hasIssues ? "committed_with_issues" : "committed",
+        error_code: null,
+        fact_status: "committed",
+        inventory_match: results[0].inventory_match,
+        inventory_transaction_id: results[0].inventory_transaction_id,
+        issue_codes: issueCodes,
+        meal_items: Object.freeze(results),
+        daily_progress: dailyProgress,
+        daily_progress_by_date: Object.freeze([dailyProgress]),
+    });
+}
 export function applyMealEffects(input) {
     let transactionOpen = false;
     try {
@@ -701,6 +885,12 @@ export function applyMealEffects(input) {
        FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`).get(input.envelopeId, input.operationId);
         if (!checkpoint)
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:checkpoint");
+        if (checkpoint.effect_state !== "pending") {
+            const replay = readAppliedMealResultInTransaction(input, checkpoint);
+            input.database.exec("ROLLBACK");
+            transactionOpen = false;
+            return replay;
+        }
         assertPendingMealCheckpoint(input.database, checkpoint, input.envelopeId, input.operationId, input.operationSequence, input.idempotencyKey, input.location);
         const checkpointPayload = parseCanonical(checkpoint.payload_json, "checkpoint");
         if (checkpointPayload.data_revision !== computeRepositoryDataRevision(input.database)) {
@@ -810,7 +1000,7 @@ export function applyMealEffects(input) {
         }
         const issueCodes = Object.freeze(results.flatMap((result) => [...result.issue_codes]));
         const operationResult = Object.freeze({
-            sequence: 0,
+            sequence: input.operationSequence,
             operation_id: input.operationId,
             status: hasIssues ? "committed_with_issues" : "committed",
             error_code: null,

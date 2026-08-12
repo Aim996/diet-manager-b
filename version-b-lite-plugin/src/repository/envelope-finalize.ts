@@ -420,8 +420,17 @@ function freezeMealDailyProgress(
     completed_at: string | null;
     payload_json: string;
   }>;
-  if (bundles.length !== 1) return authorityInvalid("daily_progress_bundle");
-  const bundle = bundles[0];
+  const progressOperations = input.database.prepare(
+    `SELECT DISTINCT operation_id FROM effect_outbox
+     WHERE envelope_id = ? AND effect_kind = 'daily_progress_contribution'
+     ORDER BY operation_id`,
+  ).all(envelopeId) as Array<{ operation_id: string }>;
+  if (bundles.length === 0 || progressOperations.length !== 1) {
+    return authorityInvalid("daily_progress_bundle");
+  }
+  const bundle = bundles.find(
+    (candidate) => candidate.operation_id === progressOperations[0]?.operation_id,
+  );
   if (
     !bundle || bundle.completed_at === null ||
     (bundle.effect_state !== "succeeded" && bundle.effect_state !== "permanent_business_skip") ||
@@ -439,11 +448,15 @@ function freezeMealDailyProgress(
     ["authority_kind", "data_revision", "effects", "operation_sequence"],
     "daily_progress_bundle",
   );
+  const mixedMeal = input.mixedItems.find(
+    (item) => item.operation_id === bundle.operation_id,
+  );
+  const expectedSequence = input.mixedItems.length === 0 ? 0 : mixedMeal?.sequence;
   if (
     bundlePayload.authority_kind !== "diet-manager/effect-bundle/v1" ||
     typeof bundlePayload.data_revision !== "string" ||
     !bundlePayload.data_revision.startsWith("repository-v1:") ||
-    bundlePayload.operation_sequence !== 0 ||
+    expectedSequence === undefined || bundlePayload.operation_sequence !== expectedSequence ||
     !Array.isArray(bundlePayload.effects)
   ) {
     return authorityInvalid("daily_progress_bundle");

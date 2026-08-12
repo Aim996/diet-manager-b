@@ -12,6 +12,7 @@ import {
   applyMealEffects,
   prepareCorrectionOperation,
   prepareMealOperation,
+  preparePurchaseOperation,
 } from "../src/domain/effect-bundle.js";
 import { deriveDomainId } from "../src/domain/identity.js";
 import { buildQuickPrompt, buildReceiptData } from "../src/domain/receipt.js";
@@ -251,6 +252,52 @@ function mealEnvelope(options: {
         items: options.items,
       },
     ],
+  };
+}
+
+function mixedPurchaseAndDrinkEnvelope(
+  options: { suffix?: string; mealUnit?: string } = {},
+): DomainEnvelopeInput {
+  const suffix = options.suffix ?? "001";
+  const purchase = purchaseMilkEnvelope({ suffix: `mixed-${suffix}` });
+  const meal = mealEnvelope({
+    suffix: `mixed-${suffix}`,
+    location: "home",
+    items: [mealItem({
+      name: "whole milk 250ml",
+      unit: options.mealUnit ?? "carton",
+      observed: 1_000_000,
+      adopted: 1_000_000,
+      deducted: 1_000_000,
+      sources: [{
+        source_type: "product_label",
+        source_ref: "label-whole-milk-250-v1",
+        profile_version: 1,
+        applicable_product_id: "fixture-product-milk-whole-250",
+        basis_kind: "per_package",
+        basis_microunits: 1_000_000,
+        basis_unit: "carton",
+        nutrients: {
+          energy_kcal_milli: 160_000,
+          protein_mg: 8_000,
+          fat_mg: 9_000,
+          carbohydrate_mg: 12_000,
+          fiber_mg: null,
+          water_ml_milli: null,
+        },
+      }],
+    })],
+  });
+  return {
+    envelope_id: `envelope-mixed-purchase-drink-${suffix}`,
+    idempotency_key: `idem-mixed-purchase-drink-${suffix}`,
+    command_type: "record_meal",
+    subject_scope: "user:self",
+    source_message_id: `message-mixed-purchase-drink-${suffix}`,
+    conversation_id: "conversation-mixed-purchase-drink-001",
+    received_at: "2026-08-12T03:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: Object.freeze([purchase.operations[0]!, meal.operations[0]!]),
   };
 }
 
@@ -762,6 +809,367 @@ describe("B-SLICE-001 purchase and inventory vertical slice", () => {
           input_digest: preview.input_digest,
         },
       ]);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+});
+
+describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
+  it("preserves legacy purchase effect identities when no scoped child key is supplied", () => {
+    const envelope = purchaseMilkEnvelope({ suffix: "legacy-sequence" });
+    const operation = envelope.operations[0];
+    if (operation?.kind !== "add_inventory") throw new Error("expected purchase operation");
+    const sequence = 7;
+    const prepared = preparePurchaseOperation({
+      database: {} as DatabaseSync,
+      secret,
+      token: "token-legacy-purchase-sequence",
+      inputDigest: "A".repeat(64),
+      dataRevision: "B".repeat(64),
+      subjectScope: envelope.subject_scope,
+      commandType: envelope.command_type,
+      idempotencyKey: envelope.idempotency_key,
+      sourceMessageId: envelope.source_message_id,
+      conversationId: envelope.conversation_id,
+      receivedAt: envelope.received_at,
+      committedAt: "2026-08-12T03:00:00.000Z",
+      sequence,
+      operation,
+    });
+
+    const expectedEffectId = deriveDomainId("effect", envelope.idempotency_key, sequence);
+    expect(prepared.fact.effects).toEqual([
+      expect.objectContaining({
+        effectId: expectedEffectId,
+        outboxId: deriveDomainId("outbox", envelope.idempotency_key, sequence),
+      }),
+    ]);
+    expect(
+      (prepared.fact.event.payload as {
+        effect_inputs: Record<string, { transaction_id: string }>;
+      }).effect_inputs[expectedEffectId]?.transaction_id,
+    ).toBe(deriveDomainId("transaction", envelope.idempotency_key, sequence));
+  });
+
+  it("CASE-MIXED-001 adds 24 cartons, drinks one, and finalizes once at 23", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+      const result = previewAndExecute(service, mixedPurchaseAndDrinkEnvelope());
+
+      expect(result.status).toBe("committed");
+      expect(result.items.map((item) => [item.sequence, item.status])).toEqual([
+        [0, "committed"],
+        [1, "committed"],
+      ]);
+      expect(service.query(queryInventory())).toEqual({
+        kind: "inventory",
+        batches: [expect.objectContaining({
+          batch_id: "batch-purchase-milk-mixed-001",
+          product_id: "fixture-product-milk-whole-250",
+          quantity_microunits: 23_000_000,
+          unit: "carton",
+        })],
+      });
+      expect(
+        runtime.database.prepare(
+          "SELECT direction, payload_json FROM inventory_transactions ORDER BY committed_at, transaction_id",
+        ).all().map((row) => {
+          const transaction = row as { direction: string; payload_json: string };
+          return {
+            direction: transaction.direction,
+            quantity_delta_microunits: (JSON.parse(transaction.payload_json) as {
+              quantity_delta_microunits: number;
+            }).quantity_delta_microunits,
+          };
+        }),
+      ).toEqual([
+        { direction: "in", quantity_delta_microunits: 24_000_000 },
+        { direction: "out", quantity_delta_microunits: -1_000_000 },
+      ]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare(
+        "SELECT sequence, status FROM mixed_item_results ORDER BY sequence",
+      ).all()).toEqual([
+        { sequence: 0, status: "committed" },
+        { sequence: 1, status: "committed" },
+      ]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM daily_progress_snapshots",
+      ).get()).toEqual({ count: 1 });
+      const payload = result.payload as {
+        daily_progress_by_date: readonly unknown[];
+        receipt_data: { blocks: readonly { kind: string }[] };
+      };
+      expect(payload.daily_progress_by_date).toHaveLength(1);
+      expect(payload.receipt_data.blocks.filter((block) => block.kind === "progress")).toHaveLength(1);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("replays the frozen mixed result without adding any row", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+      const envelope = mixedPurchaseAndDrinkEnvelope();
+      const preview = service.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+      const first = service.execute(input);
+      const beforeReplay = tableCounts(runtime.database);
+
+      expect(service.execute(input)).toEqual(first);
+      expect(tableCounts(runtime.database)).toEqual(beforeReplay);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("keeps the earlier purchase when the later child needs clarification", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+      const result = previewAndExecute(
+        service,
+        mixedPurchaseAndDrinkEnvelope({ suffix: "issue", mealUnit: "g" }),
+      );
+
+      expect(result.status).toBe("committed_with_issues");
+      expect(result.items.map((item) => [item.sequence, item.status])).toEqual([
+        [0, "committed"],
+        [1, "committed_with_issues"],
+      ]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records",
+      ).get()).toEqual({ count: 2 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
+      expect(service.query(queryInventory())).toEqual({
+        kind: "inventory",
+        batches: [expect.objectContaining({ quantity_microunits: 24_000_000 })],
+      });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("recovers the finalized mixed result after a crash before the reply", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "reply-crash" });
+      const faultingService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+        fault: "after_mixed_finalize_commit",
+      });
+      const preview = faultingService.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+
+      expect(() => faultingService.execute(input)).toThrow(
+        "ENVELOPE_FINALIZE_RESPONSE_LOST:after_commit_before_reply",
+      );
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
+      const beforeRetry = tableCounts(runtime.database);
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:02.000Z",
+      }).execute(input);
+
+      expect(recovered.status).toBe("committed");
+      expect(recovered.items.map((item) => item.sequence)).toEqual([0, 1]);
+      expect(tableCounts(runtime.database)).toEqual(beforeRetry);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("keeps a technical child pending without a success result and resumes by the same token", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "effect-retry" });
+      const faultingService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+        fault: "after_meal_nutrition",
+      });
+      const preview = faultingService.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+
+      expect(() => faultingService.execute(input)).toThrow(
+        "MEAL_EFFECT_FAILED:after_nutrition",
+      );
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 0 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM nutrition_snapshots",
+      ).get()).toEqual({ count: 0 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records",
+      ).get()).toEqual({ count: 2 });
+      expect(faultingService.query(queryInventory())).toEqual({
+        kind: "inventory",
+        batches: [expect.objectContaining({ quantity_microunits: 24_000_000 })],
+      });
+
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:02.000Z",
+      }).execute(input);
+      expect(recovered.status).toBe("committed");
+      expect(recovered.items.map((item) => item.sequence)).toEqual([0, 1]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions",
+      ).get()).toEqual({ count: 2 });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("resumes after the mixed meal EffectBundle committed before sealing", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "effect-commit-crash" });
+      const faultingService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+        fault: "after_mixed_meal_effect_commit",
+      });
+      const preview = faultingService.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+
+      expect(() => faultingService.execute(input)).toThrow(
+        "DIET_DOMAIN_EXECUTION_FAILED:after_mixed_meal_effect_commit",
+      );
+      expect(runtime.database.prepare(
+        "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ state: "received" });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 0 });
+
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:02.000Z",
+      }).execute(input);
+      expect(recovered.status).toBe("committed");
+      expect(recovered.items.map((item) => item.sequence)).toEqual([0, 1]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions",
+      ).get()).toEqual({ count: 2 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("resumes an effects_stable mixed envelope directly into finalization", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "seal-crash" });
+      const faultingService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+        fault: "after_mixed_seal",
+      });
+      const preview = faultingService.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+
+      expect(() => faultingService.execute(input)).toThrow(
+        "DIET_DOMAIN_EXECUTION_FAILED:after_mixed_seal",
+      );
+      expect(runtime.database.prepare(
+        "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ state: "effects_stable" });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 0 });
+
+      const beforeRetryTransactions = runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions",
+      ).get();
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:02.000Z",
+      }).execute(input);
+      expect(recovered.status).toBe("committed");
+      expect(recovered.items.map((item) => item.sequence)).toEqual([0, 1]);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions",
+      ).get()).toEqual(beforeRetryTransactions);
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations",
+      ).get()).toEqual({ count: 1 });
     } finally {
       runtime.close();
       removeOwnedRoot(root);
