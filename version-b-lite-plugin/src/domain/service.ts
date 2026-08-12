@@ -1176,6 +1176,7 @@ export function createDietDomainService(
             operationSequence: 0,
             idempotencyKey: envelope.idempotency_key,
             location: operation.location,
+            expectedFact: preparedMeal.fact,
           });
         } else {
           try {

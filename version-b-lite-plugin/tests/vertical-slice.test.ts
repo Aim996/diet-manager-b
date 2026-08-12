@@ -57,6 +57,18 @@ afterEach(() => {
   for (const root of [...ownedRoots]) removeOwnedRoot(root);
 });
 
+function canonicalBusinessSnapshot(database: DatabaseSync): Record<string, unknown> {
+  const tables = database.prepare(
+    `SELECT name FROM sqlite_schema
+     WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'
+     ORDER BY name`,
+  ).all() as Array<{ name: string }>;
+  return Object.fromEntries(tables.map(({ name }) => [
+    name,
+    database.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+  ]));
+}
+
 describe("B-FAULT-001 single-meal stable finalization recovery", () => {
   it("finalizes an already sealed home meal without rewriting its Fact or Effect rows", () => {
     const root = newTestRoot();
@@ -80,13 +92,16 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
       const preview = service.preview(envelope);
       const operation = envelope.operations[0];
       if (operation.kind !== "record_meal") throw new Error("test operation mismatch");
+      const factTime = (runtime.database.prepare(
+        "SELECT received_at FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { received_at: string }).received_at;
       const prepared = prepareMealOperation({
         database: runtime.database, secret, token: preview.token,
         inputDigest: preview.input_digest, dataRevision: preview.data_revision,
         subjectScope: envelope.subject_scope, commandType: envelope.command_type,
         idempotencyKey: envelope.idempotency_key, sourceMessageId: envelope.source_message_id,
         conversationId: envelope.conversation_id, receivedAt: envelope.received_at,
-        committedAt: envelope.received_at, sequence: 0, operation,
+        committedAt: factTime, sequence: 0, operation,
       });
       appendPreparedOperationFact(prepared.fact);
       applyMealEffects({
@@ -100,6 +115,29 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
         dataRevision: preview.data_revision, traceId: prepared.fact.traceId,
         expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: envelope.received_at,
       });
+      expect(runtime.database.prepare(
+        "SELECT received_at, committed_at FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ received_at: envelope.received_at, committed_at: factTime });
+      const unrelatedBase = mealEnvelope({
+        suffix: "stable-finalization-later",
+        location: "outside",
+        items: [mealItem({
+          name: "later pear", unit: "piece", observed: 1_000_000,
+          adopted: 1_000_000, deducted: null,
+          sources: [nutritionSource("public_fixture", "stable-finalization-later-v1", 1, null, { kind: "per_item", microunits: 1_000_000, unit: "piece" })],
+        })],
+      });
+      const unrelated = {
+        ...unrelatedBase,
+        operations: [{
+          ...unrelatedBase.operations[0],
+          occurred_at: "2026-08-13T12:00:00.000Z",
+        }],
+      };
+      expect(previewAndExecute(service, unrelated).status).toBe("committed");
+      expect(runtime.database.prepare(
+        "SELECT received_at FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ received_at: factTime });
       const rows = (sql: string) => runtime.database.prepare(sql).all(envelope.envelope_id);
       const before = canonicalJson({
         events: rows("SELECT * FROM event_records WHERE envelope_id = ? ORDER BY event_id"),
@@ -112,11 +150,13 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
         bundles: rows("SELECT * FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id"),
       });
       const input = { envelope, token: preview.token, input_digest: preview.input_digest, data_revision: preview.data_revision } as const;
+      const beforeRecovery = canonicalBusinessSnapshot(runtime.database);
 
       const recovered = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T04:00:02.000Z" }).execute(input);
       expect(recovered.status).toBe("committed");
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id)).toEqual({ count: 1 });
-      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 2 });
+      expect((recovered.payload as { daily_progress: { nutrients: { energy_kcal_milli: number } } }).daily_progress.nutrients.energy_kcal_milli).toBe(100_000);
       expect(canonicalJson({
         events: rows("SELECT * FROM event_records WHERE envelope_id = ? ORDER BY event_id"),
         items: rows("SELECT m.* FROM meal_items m JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ? ORDER BY m.item_id"),
@@ -127,9 +167,124 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
         outbox: rows("SELECT * FROM effect_outbox WHERE envelope_id = ? ORDER BY outbox_id"),
         bundles: rows("SELECT * FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id"),
       })).toBe(before);
+      const afterRecovery = canonicalBusinessSnapshot(runtime.database);
+      const finalizerTables = new Set([
+        "command_envelopes",
+        "daily_progress_snapshots",
+        "envelope_finalizations",
+        "idempotency_records",
+      ]);
+      for (const [table, rowsBefore] of Object.entries(beforeRecovery)) {
+        if (!finalizerTables.has(table)) expect(afterRecovery[table]).toEqual(rowsBefore);
+      }
+      const beforeFrozenReplay = canonicalJson(afterRecovery);
       const frozen = service.execute(input);
       expect(frozen).toEqual(recovered);
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id)).toEqual({ count: 1 });
+      expect(canonicalJson(canonicalBusinessSnapshot(runtime.database))).toBe(beforeFrozenReplay);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("rejects tampered stable meal event, item, effect, and bundle authority", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T04:00:01.000Z",
+      });
+      const envelope = mealEnvelope({
+        suffix: "stable-terminal-event-tamper",
+        location: "outside",
+        items: [mealItem({
+          name: "tampered terminal pear", unit: "piece", observed: 1_000_000,
+          adopted: 1_000_000, deducted: null,
+          sources: [nutritionSource("public_fixture", "stable-terminal-tamper-v1", 1, null, { kind: "per_item", microunits: 1_000_000, unit: "piece" })],
+        })],
+      });
+      const preview = service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "record_meal") throw new Error("test operation mismatch");
+      const factTime = (runtime.database.prepare(
+        "SELECT received_at FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { received_at: string }).received_at;
+      const prepared = prepareMealOperation({
+        database: runtime.database, secret, token: preview.token,
+        inputDigest: preview.input_digest, dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key, sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id, receivedAt: envelope.received_at,
+        committedAt: factTime, sequence: 0, operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      applyMealEffects({
+        database: runtime.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+        operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: factTime,
+        location: operation.location,
+      });
+      sealPreparedEnvelopeFacts({
+        database: runtime.database, secret, token: preview.token, inputDigest: preview.input_digest,
+        subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+        dataRevision: preview.data_revision, traceId: prepared.fact.traceId,
+        expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: factTime,
+      });
+      runtime.database.prepare(
+        "UPDATE event_records SET source_message_id = ? WHERE envelope_id = ?",
+      ).run("tampered-source", envelope.envelope_id);
+
+      expect(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_source");
+      runtime.database.prepare(
+        "UPDATE event_records SET source_message_id = ? WHERE envelope_id = ?",
+      ).run(envelope.source_message_id, envelope.envelope_id);
+      runtime.database.prepare(
+        "UPDATE meal_items SET normalized_name = ? WHERE event_id = ?",
+      ).run("tampered-item", prepared.fact.event.eventId);
+      expect(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
+      runtime.database.prepare(
+        "UPDATE meal_items SET normalized_name = ? WHERE event_id = ?",
+      ).run(operation.items[0].normalized_name, prepared.fact.event.eventId);
+      runtime.database.prepare(
+        `UPDATE effect_outbox SET effect_kind = 'tampered_effect'
+         WHERE envelope_id = ? AND effect_kind = 'nutrition_snapshot'`,
+      ).run(envelope.envelope_id);
+      expect(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+      runtime.database.prepare(
+        `UPDATE effect_outbox SET effect_kind = 'nutrition_snapshot'
+         WHERE envelope_id = ? AND effect_kind = 'tampered_effect'`,
+      ).run(envelope.envelope_id);
+      runtime.database.prepare(
+        `UPDATE effect_bundle_commits
+         SET payload_json = REPLACE(payload_json, 'diet-manager/effect-bundle/v1', 'tampered/bundle')
+         WHERE envelope_id = ?`,
+      ).run(envelope.envelope_id);
+      expect(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ count: 0 });
     } finally {
       runtime.close();
       removeOwnedRoot(root);
