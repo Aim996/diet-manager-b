@@ -55,7 +55,7 @@
     "matrix_id": "diet-manager/b-fault-matrix/v1",
     "case_count": 7,
     "fault_count": 18,
-    "sha256": "57E4D5BBD618F3A52CC2FC124ABCE77C3CD5E7E7342101C4B3E458A07F3E4ACB"
+    "sha256": "DEF9BA3477CE95E5DA591D4A1F988309FC7050CE8784471C49E8714D87B91423"
   },
   "route_policy": {
     "b_mode": "selected_execution_adapter",
