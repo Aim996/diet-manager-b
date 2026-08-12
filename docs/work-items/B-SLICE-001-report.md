@@ -2,7 +2,7 @@
 
 ## Result
 
-Candidate `0e98f0cc47895e5c03dab19a65a93ce43145d326` on `agent/b-slice-001-vertical` passed the complete allowed local gate without a source change between the first and last gate commands. Beginning and ending Git status were clean. This is a review-input report only; it is not final E-STOR/E-CASE evidence and does not complete the work item.
+Candidate `3a253b854059f42dd3e3954ff9d0796e56591be8` on `agent/b-slice-001-vertical` passed the complete allowed local gate without a source change between the first and last gate commands. Beginning and ending Git status were clean. This is a review-input report only; it is not final E-STOR/E-CASE evidence and does not complete the work item.
 
 not installable; public OpenClaw tool remains non-writing.
 
@@ -11,7 +11,7 @@ not installable; public OpenClaw tool remains non-writing.
 | Gate | Result |
 | --- | --- |
 | Node runtime | `v24.15.0` verified before every command block |
-| Plugin full Vitest | PASS: 7 files, 139 tests (`vitest 2.1.9`) |
+| Plugin full Vitest | PASS: 7 files, 142 tests (`vitest 2.1.9`) |
 | TypeScript no-emit | PASS (`typescript 5.9.3`) |
 | Repository concurrency harness | PASS: same identity 2; conflict 1+1; effects 2; finalizer failure 1; other fact 1; uncommitted crash visibility 0; business rows exactly once |
 | B-slice crash harness | PASS: no surviving child, temporary database, or log residue |
@@ -54,15 +54,16 @@ Each case is asserted independently by the `EXPECTED` observation map and the `e
 
 | RED/fault name | Fix commit | GREEN assertion path/command |
 | --- | --- | --- |
-| deterministic protocol and four-amount separation | `7283e3a` | `tests/domain-rules.test.ts`; plugin Vitest |
-| ordered child FactCommit/EffectBundle/finalization | `ddf3ed0` | `tests/repository.test.ts`; plugin Vitest |
-| purchase and inventory projection | `4503be6` | `tests/vertical-slice.test.ts`; plugin Vitest |
-| meal nutrition/progress and receipt finalization | `d9ccaeb`, `007afdc` | `tests/vertical-slice.test.ts`; plugin Vitest |
-| append-only correction/undo | `1748548` | `tests/vertical-slice.test.ts`; plugin Vitest |
-| ordered mixed envelope | `54af295` | `tests/vertical-slice.test.ts`; shared `b-slice.test.ts` |
-| 17-case authority and mutation rejection | `4dad227` | `shared/acceptance-cases/tests/b-slice.test.ts`; 17/17 exact cases |
-| crash, restart, redacted failure and cleanup faults | `569a3e3`, `c5ac0b9`, `37e3030` | `tests/b-slice-crash-harness.mjs` |
-| P1-1 negative observed amount became FactCommit/query-visible | `4fd6ab7`, artifact `7b83215` | `rejects an invalid meal amount before FactCommit and keeps it query-invisible`; focused Vitest then 139-test full gate |
+| deterministic protocol and four-amount separation | `7283e3a` | historical RED title unavailable in retained artifacts; GREEN `B-SLICE-001 pure domain rules`; `vitest run tests/domain-rules.test.ts` |
+| ordered child FactCommit/EffectBundle/finalization | `ddf3ed0` | historical RED title unavailable; GREEN `commits two ordered child facts and freezes one envelope result`; `vitest run tests/repository.test.ts` |
+| purchase and inventory projection | `4503be6` | historical RED title unavailable; GREEN `CASE-INVENTORY-001`; `vitest run tests/vertical-slice.test.ts` |
+| meal nutrition/progress and receipt finalization | `d9ccaeb`, `007afdc` | historical RED title unavailable; GREEN `CASE-MEAL-006` / `CASE-RECEIPT-001`; `vitest run tests/vertical-slice.test.ts` |
+| append-only correction/undo | `1748548` | historical RED title unavailable; GREEN `CASE-CORR-001`; `vitest run tests/vertical-slice.test.ts` |
+| ordered mixed envelope | `54af295` | historical RED title unavailable; GREEN `CASE-MIXED-001 adds 24 cartons, drinks one, and finalizes once at 23`; focused `vitest run tests/vertical-slice.test.ts -t "CASE-MIXED-001"` |
+| 17-case authority and mutation rejection | `4dad227` | GREEN `executes exactly the G2 B-only responsibility set` and `the independent expectations reject mutations at the real observation boundary`; Node `--test shared/acceptance-cases/tests/b-slice.test.ts` |
+| crash/restart/redaction/cleanup | `569a3e3`, `c5ac0b9`, `37e3030` | fault knob `after_fact_commit` / `after_effect_bundle` / `after_finalize_before_reply`; `node tests/b-slice-crash-harness.mjs` |
+| P1-1 negative observed amount visible after FactCommit | `4fd6ab7`, artifact `7b83215` | RED `DOMAIN_RULE_INVALID:observed_microunits` with event/item/outbox/checkpoint rows; GREEN `rejects an invalid meal amount before FactCommit and keeps it query-invisible`; focused Vitest then 139-test gate |
+| Fix2 overflow/accessor/custom-array preflight | `3a253b8` | RED: `DOMAIN_RULE_INVALID:nutrition_scaled` after FactCommit, getter hit 1, custom `entries` hit 1; GREEN named Fix2 regressions; focused 4 tests then 142-test gate |
 
 ## Deferred work
 
