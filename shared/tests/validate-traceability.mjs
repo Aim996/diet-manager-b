@@ -30,7 +30,7 @@ const EXPECTED_COUNTS = Object.freeze({
   debts: 7,
   changes: 6,
   governance: 69,
-  evidence: 33,
+  evidence: 34,
   catalogCases: 27,
 });
 
@@ -787,7 +787,23 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 69, evidence: 33 });
+  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 69, evidence: 34 });
+  assert.deepEqual(baseline.mirrors.tasks.counts.status, {
+    '未开始': 26,
+    '已完成': 28,
+    '进行中': 1,
+    '已取消': 8,
+  });
+  assert.deepEqual(
+    baseline.mirrors.tasks.tasks.filter((task) => task.status === '进行中').map((task) => task.id),
+    ['X-GATE-002'],
+  );
+  const traceTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SH-TRACE-001');
+  assert.equal(traceTask?.status, '已完成');
+  assert.deepEqual(traceTask?.actual_evidence_ids, ['EV-20260813-034']);
+  const closureEvidence = baseline.mirrors.evidence.evidence.find((record) => record.id === 'EV-20260813-034');
+  assert.equal(closureEvidence?.file_status, 'present');
+  assert.equal(closureEvidence?.file?.path, 'docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md');
 
   const planBytes = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH));
   const historicalPlanPath = '总功能开发计划0.3.md';

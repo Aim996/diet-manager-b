@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 319869,
-      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
+      "length": 320962,
+      "sha256": "ADA422998E3A95AF0994B34F9C273E14680B4C343D9F3FF5A548412FEAADF8A2"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41127,
-      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
+      "length": 41907,
+      "sha256": "EF2E811F11FEEB258A60F59E135EAA914950CDA357D6D8BFE363E3682A35B604"
     }
   },
   "counts": {
-    "evidence": 33,
-    "files_present": 31,
+    "evidence": 34,
+    "files_present": 32,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -464,9 +464,7 @@
         "sha256": "C70477E9C5FE6479A674CFCC4B1148F968D775A657EDCD1E992B11F7C7427410"
       },
       "file_status": "present",
-      "referenced_by_task_ids": [
-        "SH-TRACE-001"
-      ]
+      "referenced_by_task_ids": []
     },
     {
       "id": "EV-20260812-027",
@@ -599,6 +597,26 @@
       "referenced_by_task_ids": [
         "DOC-004-001",
         "DOC-004-002"
+      ]
+    },
+    {
+      "id": "EV-20260813-034",
+      "scope": "SH-TRACE-001 DOC-0.4机器追踪闭合",
+      "result": "74 REQ、153 CASE、63 TASK、69 governance和34 EV由DOC-0.4确定性生成；G1/G2=13/17、累计发布集=124/152，15个mutation、镜像字节/身份一致和独立复核P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭SH-TRACE-001与RISK-010，将X-GATE-002转为唯一WIP；不创建selected-route-map、不修改产品/manifest、不证明安装或发布",
+      "reference_ids": [
+        "SH-TRACE-001",
+        "RISK-010",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
+        "length": 8502,
+        "sha256": "C146431BE6A961C6EBB232EFBCA8659EEB6137B19DDEF2C19281D943C00D5DE3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-TRACE-001"
       ]
     }
   ]

@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 319869,
-      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
+      "length": 320962,
+      "sha256": "ADA422998E3A95AF0994B34F9C273E14680B4C343D9F3FF5A548412FEAADF8A2"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41127,
-      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
+      "length": 41907,
+      "sha256": "EF2E811F11FEEB258A60F59E135EAA914950CDA357D6D8BFE363E3682A35B604"
     }
   },
   "counts": {

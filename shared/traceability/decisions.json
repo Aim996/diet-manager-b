@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 319869,
-      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
+      "length": 320962,
+      "sha256": "ADA422998E3A95AF0994B34F9C273E14680B4C343D9F3FF5A548412FEAADF8A2"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41127,
-      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
+      "length": 41907,
+      "sha256": "EF2E811F11FEEB258A60F59E135EAA914950CDA357D6D8BFE363E3682A35B604"
     }
   },
   "counts": {
@@ -661,13 +661,14 @@
       "kind": "RISK",
       "reference_ids": [
         "SH-TRACE-001",
+        "EV-20260813-034",
         "EV-20260812-026"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
-      "status_owner": "open / 治理负责人",
+      "status_owner": "closed / 治理负责人",
       "task": "SH-TRACE-001",
-      "mitigation": "DOC-0.4结构已改变；重生成四份镜像并完成独立复核前，不得复用0.3镜像或其关闭结论",
-      "evidence": "未来0.4追踪EV：确定性镜像、零孤儿、状态/证据一致和独立复核通过；EV-20260812-026仅为0.3历史"
+      "mitigation": "DOC-0.4四镜像已按当前计划/校验器/案例目录确定性重生成，状态/证据一致并通过独立复核；输入再变立即重开",
+      "evidence": "EV-20260813-034：74 REQ/153 CASE/63 TASK/69 governance/34 EV、124/152发布集、15个mutation、四镜像字节一致与独立复核Ready=YES；EV-20260812-026仅为0.3历史"
     },
     {
       "id": "RISK-011",
@@ -985,13 +986,14 @@
         "SEL-NUTR-001",
         "SEL-RESEARCH-001",
         "SEL-NUTR-WATCH-001",
-        "EV-20260813-033"
+        "EV-20260813-033",
+        "EV-20260813-034"
       ],
       "source_change": "第49轮用户提供Agent Reach/last30days两份说明并明确批准0.4作为现行入口并继续按其实施；L2新增兼容能力，含后续模型影响",
       "impact": "从最新DOC-0.3/B-FAULT闭环生成独立DOC-0.4；新增来源能力、研究证据、Watchlist和Profile更新预览边界；0.1只扩来源可靠性，0.2才扩研究；不改当前业务实现、不创建map、不宣称可安装",
       "owner_approver": "计划负责人 / 用户直接批准",
       "tasks": "DOC-004-001、DOC-004-002、SH-TRACE-001、SEL-NUTR-001、SEL-RESEARCH-001、SEL-NUTR-WATCH-001",
-      "status_evidence": "已验证；EV-20260813-033记录文档结构检查、批准留档和现行入口切换；SH-TRACE-001仍须重生成并独立复核镜像，未产生产品功能EV"
+      "status_evidence": "已验证；EV-20260813-033记录文档结构检查、批准留档和现行入口切换，EV-20260813-034记录DOC-0.4追踪镜像重生成和独立复核；未产生产品功能EV"
     }
   ]
 }
