@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const THIS_FILE = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(THIS_FILE), '..', '..');
-const PLAN_RELATIVE_PATH = '总功能开发计划0.3.md';
+const PLAN_RELATIVE_PATH = '总功能开发计划0.4.md';
 const CATALOG_RELATIVE_PATH = 'shared/acceptance-cases/cases.json';
 const TRACE_DIRECTORY = 'shared/traceability';
 const GENERATOR_RELATIVE_PATH = 'shared/tests/validate-traceability.mjs';
@@ -21,25 +21,31 @@ const MIRROR_PATHS = Object.freeze({
 });
 
 const EXPECTED_COUNTS = Object.freeze({
-  requirements: 71,
-  cases: 144,
-  tasks: 59,
-  decisions: 28,
+  requirements: 74,
+  cases: 153,
+  tasks: 63,
+  decisions: 29,
   questions: 7,
-  risks: 17,
+  risks: 20,
   debts: 7,
-  changes: 5,
-  governance: 64,
-  evidence: 32,
+  changes: 6,
+  governance: 69,
+  evidence: 33,
   catalogCases: 27,
 });
 
 const EXPECTED_SELECTOR_COUNTS = Object.freeze({
   G1_COMMON_B_ONLY: 13,
   G2_VERTICAL_SLICE_B_ONLY: 17,
-  RELEASE_0_1_MUST: 121,
-  RELEASE_0_2_MUST: 143,
+  RELEASE_0_1_MUST: 124,
+  RELEASE_0_2_MUST: 152,
 });
+
+const REQUIRED_DOC04_REQUIREMENT_IDS = Object.freeze([
+  'REQ-SOURCE-001',
+  'REQ-RESEARCH-001',
+  'REQ-RESEARCH-002',
+]);
 
 const FIXED_FULL_CASE_RESPONSIBILITIES = Object.freeze({
   'X-GATE-001': 'G1_COMMON_B_ONLY',
@@ -167,6 +173,29 @@ function extractSelector(planText, name) {
   return values;
 }
 
+function validateSelectorCountProse(planText) {
+  const patterns = [
+    /RELEASE_0_1_MUST=(\d+)[^\n]*RELEASE_0_2_MUST=(\d+)/g,
+    /G3-0\.1累计(\d+)案、G3-0\.2累计(\d+)案/g,
+    /(\d+)\/(\d+)发布选择器/g,
+    /不把(\d+)或(\d+)个B发布案例复制进C\[\]/g,
+  ];
+  for (const pattern of patterns) {
+    const claims = [...planText.matchAll(pattern)];
+    requireTrace(claims.length > 0, 'TRACE_SELECTOR_PROSE_MISSING', pattern.source);
+    for (const claim of claims) {
+      const release01 = Number(claim[1]);
+      const release02 = Number(claim[2]);
+      requireTrace(
+        release01 === EXPECTED_SELECTOR_COUNTS.RELEASE_0_1_MUST
+          && release02 === EXPECTED_SELECTOR_COUNTS.RELEASE_0_2_MUST,
+        'TRACE_SELECTOR_PROSE_COUNT_MISMATCH',
+        `${release01}/${release02}`,
+      );
+    }
+  }
+}
+
 function parseCaseAssertionMetadata(projectRoot, taskId) {
   const candidates = [
     `docs/work-items/${taskId}-v2-brief.md`,
@@ -242,6 +271,10 @@ function parseRequirements(planText, catalog) {
 
   requireUnique(requirements, 'requirements');
   requireTrace(requirements.length === EXPECTED_COUNTS.requirements, 'TRACE_REQUIREMENT_COUNT', `${requirements.length}`);
+  const requirementIds = new Set(requirements.map((requirement) => requirement.id));
+  for (const requirementId of REQUIRED_DOC04_REQUIREMENT_IDS) {
+    requireTrace(requirementIds.has(requirementId), 'TRACE_REQUIRED_REQUIREMENT_MISSING', requirementId);
+  }
 
   const caseMap = new Map();
   for (const requirement of requirements) {
@@ -627,6 +660,7 @@ export function buildTraceability(projectRoot = PROJECT_ROOT, overrides = {}) {
   const catalog = overrides.catalog ?? JSON.parse(catalogBytes.toString('utf8'));
 
   const requirements = parseRequirements(planText, catalog);
+  validateSelectorCountProse(planText);
   const requirementIds = new Set(requirements.requirements.map((row) => row.id));
   const tasks = parseTasks(planText, projectRoot, requirementIds, requirements.caseIds, requirements.selectors);
   const governance = parseGovernance(planText);
@@ -753,7 +787,71 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 71, cases: 144, tasks: 59, governance: 64, evidence: 32 });
+  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 69, evidence: 33 });
+
+  const planBytes = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH));
+  const historicalPlanPath = '总功能开发计划0.3.md';
+  const historicalPlanBytes = fs.readFileSync(path.join(projectRoot, historicalPlanPath));
+  const expectedPlanIdentity = {
+    path: '总功能开发计划0.4.md',
+    length: planBytes.length,
+    sha256: sha256Bytes(planBytes),
+  };
+  for (const [name, mirror] of Object.entries(baseline.mirrors)) {
+    assert.deepEqual(mirror.generated_from.plan, expectedPlanIdentity, `${name} mirror has stale plan identity`);
+    assert.notEqual(mirror.generated_from.plan.sha256, sha256Bytes(historicalPlanBytes), `${name} mirror still identifies DOC-0.3`);
+  }
+
+  expectFailure('TRACE_REQUIREMENT_COUNT', () => buildTraceability(projectRoot, {
+    planText: historicalPlanBytes.toString('utf8'),
+  }));
+
+  expectFailure('TRACE_SELECTOR_PROSE_COUNT_MISMATCH', () => buildTraceability(projectRoot, {
+    planText: planText.replace(
+      'RELEASE_0_1_MUST=124',
+      'RELEASE_0_1_MUST=121',
+    ).replace(
+      'RELEASE_0_2_MUST=152',
+      'RELEASE_0_2_MUST=143',
+    ),
+  }));
+
+  expectFailure('TRACE_SELECTOR_PROSE_COUNT_MISMATCH', () => buildTraceability(projectRoot, {
+    planText: planText.replace(
+      'G3-0.1累计124案、G3-0.2累计152案',
+      'G3-0.1累计121案、G3-0.2累计143案',
+    ),
+  }));
+
+  expectFailure('TRACE_SELECTOR_PROSE_COUNT_MISMATCH', () => buildTraceability(projectRoot, {
+    planText: planText.replace('124/152发布选择器', '121/143发布选择器'),
+  }));
+
+  expectFailure('TRACE_SELECTOR_PROSE_COUNT_MISMATCH', () => buildTraceability(projectRoot, {
+    planText: planText.replace('124或152个B发布案例', '121或143个B发布案例'),
+  }));
+
+  for (const requirementId of ['REQ-SOURCE-001', 'REQ-RESEARCH-001', 'REQ-RESEARCH-002']) {
+    expectFailure('TRACE_REQUIRED_REQUIREMENT_MISSING', () => buildTraceability(projectRoot, {
+      planText: planText.replace(`| \`${requirementId}\` |`, `| \`${requirementId}-MISSING\` |`),
+    }));
+  }
+
+  const release01 = new Set(baseline.mirrors.requirements.selectors.RELEASE_0_1_MUST);
+  for (const caseId of ['CASE-SOURCE-001', 'CASE-SOURCE-002', 'CASE-SOURCE-003']) {
+    assert.equal(release01.has(caseId), true, `${caseId} missing from RELEASE_0_1_MUST`);
+  }
+  const release02 = new Set(baseline.mirrors.requirements.selectors.RELEASE_0_2_MUST);
+  for (const caseId of [
+    'CASE-RESEARCH-001',
+    'CASE-RESEARCH-002',
+    'CASE-RESEARCH-003',
+    'CASE-RESEARCH-004',
+    'CASE-RESEARCH-005',
+    'CASE-RESEARCH-006',
+  ]) {
+    assert.equal(release02.has(caseId), true, `${caseId} missing from RELEASE_0_2_MUST`);
+  }
 
   const firstRequirement = planText.split('\n').find((line) => line.startsWith('| `REQ-SCOPE-001` |'));
   expectFailure('TRACE_DUPLICATE_ID', () => buildTraceability(projectRoot, {
@@ -797,7 +895,7 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const bytes = mirrorBytes(baseline.mirrors);
   assert.equal(bytes.requirements.includes(projectRoot), false, 'generated mirror leaked an absolute project path');
   assert.equal(bytes.tasks.includes('oracle"'), false, 'task mirror leaked an Oracle payload');
-  return 7;
+  return 15;
 }
 
 function printPass(mode, summary, mutations = null) {

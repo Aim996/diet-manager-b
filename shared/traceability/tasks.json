@@ -2,9 +2,9 @@
   "schema_version": "diet-manager/traceability-tasks/v1",
   "generated_from": {
     "plan": {
-      "path": "总功能开发计划0.3.md",
-      "length": 298059,
-      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
+      "path": "总功能开发计划0.4.md",
+      "length": 319869,
+      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,20 +13,21 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 37212,
-      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
+      "length": 41127,
+      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
     }
   },
   "counts": {
-    "tasks": 59,
+    "tasks": 63,
     "status": {
-      "未开始": 26,
-      "已完成": 25,
+      "未开始": 27,
+      "已完成": 27,
+      "进行中": 1,
       "已取消": 8
     },
-    "case_producer_rows": 144,
+    "case_producer_rows": 153,
     "full_case_responsibility_assignments": 5,
-    "full_case_responsibility_rows": 144
+    "full_case_responsibility_rows": 153
   },
   "full_case_responsibilities": [
     {
@@ -207,6 +208,9 @@
         "CASE-RECEIPT-005",
         "CASE-RECEIPT-006",
         "CASE-SCOPE-001",
+        "CASE-SOURCE-001",
+        "CASE-SOURCE-002",
+        "CASE-SOURCE-003",
         "CASE-STORAGE-001",
         "CASE-STORAGE-002",
         "CASE-STORAGE-004",
@@ -345,12 +349,21 @@
         "CASE-RECEIPT-004",
         "CASE-RECEIPT-005",
         "CASE-RECEIPT-006",
+        "CASE-RESEARCH-001",
+        "CASE-RESEARCH-002",
+        "CASE-RESEARCH-003",
+        "CASE-RESEARCH-004",
+        "CASE-RESEARCH-005",
+        "CASE-RESEARCH-006",
         "CASE-REVIEW-001",
         "CASE-REVIEW-002",
         "CASE-REVIEW-003",
         "CASE-REVIEW-004",
         "CASE-REVIEW-005",
         "CASE-SCOPE-001",
+        "CASE-SOURCE-001",
+        "CASE-SOURCE-002",
+        "CASE-SOURCE-003",
         "CASE-STORAGE-001",
         "CASE-STORAGE-002",
         "CASE-STORAGE-004",
@@ -2161,6 +2174,66 @@
       "exclusion": null
     },
     {
+      "case_id": "CASE-RESEARCH-001",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-RESEARCH-002",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-RESEARCH-003",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-RESEARCH-004",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-RESEARCH-005",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-RESEARCH-006",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
       "case_id": "CASE-REVIEW-001",
       "assignments": [
         {
@@ -2212,6 +2285,48 @@
     },
     {
       "case_id": "CASE-SCOPE-001",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-001",
+          "selector": "RELEASE_0_1_MUST"
+        },
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-SOURCE-001",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-001",
+          "selector": "RELEASE_0_1_MUST"
+        },
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-SOURCE-002",
+      "assignments": [
+        {
+          "task_id": "SEL-RELEASE-001",
+          "selector": "RELEASE_0_1_MUST"
+        },
+        {
+          "task_id": "SEL-RELEASE-002",
+          "selector": "RELEASE_0_2_MUST"
+        }
+      ],
+      "exclusion": null
+    },
+    {
+      "case_id": "CASE-SOURCE-003",
       "assignments": [
         {
           "task_id": "SEL-RELEASE-001",
@@ -5122,6 +5237,78 @@
       ]
     },
     {
+      "case_id": "CASE-RESEARCH-001",
+      "producers": [
+        {
+          "task_id": "SEL-RESEARCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-RESEARCH-002",
+      "producers": [
+        {
+          "task_id": "SEL-RESEARCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-RESEARCH-003",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-WATCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-RESEARCH-004",
+      "producers": [
+        {
+          "task_id": "SEL-RESEARCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-RESEARCH-005",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-WATCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        },
+        {
+          "task_id": "SEL-UPGRADE-002",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-RESEARCH-006",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-WATCH-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
       "case_id": "CASE-REVIEW-001",
       "producers": [
         {
@@ -5187,6 +5374,39 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-SOURCE-001",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-SOURCE-002",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-001",
+          "task_status": "未开始",
+          "assertion_state": "brief_pending",
+          "assertion_paths": []
+        }
+      ]
+    },
+    {
+      "case_id": "CASE-SOURCE-003",
+      "producers": [
+        {
+          "task_id": "SEL-NUTR-001",
           "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
@@ -5944,9 +6164,60 @@
       "assertion_state": "brief_pending"
     },
     {
+      "id": "DOC-004-001",
+      "milestone_type_scope": "M1/document/shared",
+      "objective": "从最新DOC-0.3与两份冻结技术说明生成DOC-0.4，吸收来源能力/研究证据边界并保持B进度和门顺序",
+      "requirement_ids": [],
+      "case_ids": [],
+      "na_reason": "governance",
+      "dependency_task_ids": [
+        "DOC-003-002",
+        "B-FAULT-001"
+      ],
+      "dependency_evidence_ids": [],
+      "deliverables": "总功能开发计划0.4.md、0.3基线/资料hash、影响分析和复核包",
+      "verification": "0.3不变、ID唯一、需求/案例/任务闭合、范围无偷跑；E-DOC",
+      "roots": "ROOT-DOC",
+      "actual_evidence_ids": [
+        "EV-20260813-033"
+      ],
+      "owner_reviewer": "Codex /root / 独立文档与产品边界复核",
+      "status": "已完成",
+      "next_reopen": "已完成结构校验与批准前治理修订；0.3基线、资料hash或吸收边界变化即重开",
+      "brief_path": null,
+      "case_assertion_paths": {},
+      "full_case_set": null,
+      "assertion_state": "not_applicable"
+    },
+    {
+      "id": "DOC-004-002",
+      "milestone_type_scope": "M1/approval/shared",
+      "objective": "用户审阅并批准DOC-0.4成为新计划入口",
+      "requirement_ids": [],
+      "case_ids": [],
+      "na_reason": "user_approval",
+      "dependency_task_ids": [
+        "DOC-004-001"
+      ],
+      "dependency_evidence_ids": [],
+      "deliverables": "docs/work-items/DOC-004-approval.md、计划入口切换授权",
+      "verification": "用户明确批准；E-DOC",
+      "roots": "ROOT-DOC",
+      "actual_evidence_ids": [
+        "EV-20260813-033"
+      ],
+      "owner_reviewer": "用户/独立文档复核者",
+      "status": "已完成",
+      "next_reopen": "用户批准已记录，DOC-0.4已切换为唯一现行入口；用户撤回/改变研究边界即重开",
+      "brief_path": null,
+      "case_assertion_paths": {},
+      "full_case_set": null,
+      "assertion_state": "not_applicable"
+    },
+    {
       "id": "DOC-003-001",
       "milestone_type_scope": "M1/document/shared",
-      "objective": "46/46会话覆盖、SSOT、§30全部71条REQ、59项任务/文件图和独立一致性复核",
+      "objective": "DOC-0.3历史治理：初始会话重建、SSOT、旧需求/任务/文件图一致性",
       "requirement_ids": [],
       "case_ids": [],
       "na_reason": "governance",
@@ -5954,16 +6225,16 @@
         "SH-FND-REFRESH-001"
       ],
       "dependency_evidence_ids": [],
-      "deliverables": "本文件、附录A、校验报告",
-      "verification": "ID唯一、46/46、无重复规范、链接和表结构；E-DOC",
+      "deliverables": "总功能开发计划0.3.md、附录A、历史校验报告",
+      "verification": "只读历史身份和引用完整；E-DOC",
       "roots": "ROOT-DOC",
       "actual_evidence_ids": [
         "EV-20260809-010",
         "EV-20260809-011"
       ],
       "owner_reviewer": "Codex /root / 独立文档复核",
-      "status": "未开始",
-      "next_reopen": "已按重开条件回到待复核队列；reason=CHG-20260810-001路线/任务/路径变化；next=SH-SAFE终态后再启动并验证本次收敛，遵守共享WIP=1",
+      "status": "已完成",
+      "next_reopen": "0.3已冻结为0.4基线；只有基线身份或历史引用损坏才重开，不再承载现行新增需求",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,
@@ -5972,7 +6243,7 @@
     {
       "id": "DOC-003-002",
       "milestone_type_scope": "M1/approval/shared",
-      "objective": "用户审阅并批准DOC-0.3成为计划入口",
+      "objective": "历史用户批准DOC-0.3成为当时计划入口",
       "requirement_ids": [],
       "case_ids": [],
       "na_reason": "user_approval",
@@ -5980,7 +6251,7 @@
         "DOC-003-001"
       ],
       "dependency_evidence_ids": [],
-      "deliverables": "批准记录、START-HERE.md入口变更任务授权",
+      "deliverables": "批准记录、START-HERE.md历史入口变更授权",
       "verification": "用户明确批准；E-DOC",
       "roots": "ROOT-DOC",
       "actual_evidence_ids": [
@@ -5988,7 +6259,7 @@
       ],
       "owner_reviewer": "用户/独立文档复核者",
       "status": "已完成",
-      "next_reopen": "无；用户撤回批准或改变 Skill-first 边界则重开DOC-003-001与本任务",
+      "next_reopen": "历史批准不再赋予DOC-0.3当前权威；现行入口唯一为DOC-0.4。用户撤回批准或改变 Skill-first 边界则重开DOC-003-001与本任务",
       "brief_path": "docs/work-items/DOC-003-002-brief.md",
       "case_assertion_paths": {},
       "full_case_set": "none",
@@ -6890,7 +7161,7 @@
       "case_ids": [],
       "na_reason": "governance",
       "dependency_task_ids": [
-        "DOC-003-002",
+        "DOC-004-002",
         "SH-CONTRACT-001",
         "SH-CONTRACT-002",
         "SH-CONTRACT-003",
@@ -6900,14 +7171,14 @@
       ],
       "dependency_evidence_ids": [],
       "deliverables": "trace JSON镜像+validator",
-      "verification": "ID唯一、引用存在、状态证据一致、无复合伪ID；E-DOC",
+      "verification": "ID唯一、引用存在、状态证据一致、0.1/0.2选择器更新、无复合伪ID；E-DOC",
       "roots": "ROOT-DOC",
       "actual_evidence_ids": [
         "EV-20260812-026"
       ],
-      "owner_reviewer": "Codex /root / OpenClaw 02独立治理复核",
-      "status": "已完成",
-      "next_reopen": "71/144/59/63/26、7项mutation、确定性重生成和独立复核PASS；台账结构、选择器、证据或生成器变化重开",
+      "owner_reviewer": "Codex /root / 独立治理复核",
+      "status": "进行中",
+      "next_reopen": "唯一WIP；DOC-0.4已批准，须重生成四份镜像和124/152发布选择器并完成独立复核；EV-20260812-026不得当作0.4关闭证据",
       "brief_path": "docs/work-items/SH-TRACE-001-brief.md",
       "case_assertion_paths": {},
       "full_case_set": "none",
@@ -7720,6 +7991,7 @@
       ],
       "na_reason": null,
       "dependency_task_ids": [
+        "SH-TRACE-001",
         "X-GATE-001",
         "B-SLICE-001",
         "B-FAULT-001"
@@ -7731,7 +8003,7 @@
       "actual_evidence_ids": [],
       "owner_reviewer": "门主持人/至少两名复核",
       "status": "未开始",
-      "next_reopen": "B-FAULT-001依赖已关闭；剩余CONTRACT-v2版本/hash与§29.6精确路径输入仍未全部冻结，故继续阻塞且不得创建map。全部输入齐全后才可启动门并选择bind_b_ready或return_to_b_slice；输入变化重开",
+      "next_reopen": "SH-TRACE-001未关闭，故本门不得启动；其后仍须冻结CONTRACT-v2版本/hash与§29.6精确路径输入，全部满足后才可选择bind_b_ready或return_to_b_slice；输入变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,
@@ -7848,7 +8120,7 @@
     {
       "id": "SEL-NUTR-001",
       "milestone_type_scope": "M5/nutrition",
-      "objective": "来源客户端、缓存、Profile/Snapshot、估算和unknown",
+      "objective": "来源适配器/主备后端/Tier、真实Probe/Doctor、安全配置、缓存、Profile/Snapshot、估算和unknown",
       "requirement_ids": [
         "REQ-NUTR-001",
         "REQ-NUTR-002",
@@ -7856,6 +8128,7 @@
         "REQ-NUTR-004",
         "REQ-NUTR-005",
         "REQ-NUTR-006",
+        "REQ-SOURCE-001",
         "REQ-MEAL-003"
       ],
       "case_ids": [
@@ -7869,7 +8142,10 @@
         "CASE-MEAL-008",
         "CASE-NUTR-003",
         "CASE-NUTR-008",
-        "CASE-NUTR-009"
+        "CASE-NUTR-009",
+        "CASE-SOURCE-001",
+        "CASE-SOURCE-002",
+        "CASE-SOURCE-003"
       ],
       "na_reason": null,
       "dependency_task_ids": [
@@ -7877,13 +8153,13 @@
         "SH-CONTRACT-003"
       ],
       "dependency_evidence_ids": [],
-      "deliverables": "selected nutrition service",
-      "verification": "来源/许可/失败/快照；E-CASE+E-STOR",
+      "deliverables": "selected nutrition service+source capability contract+doctor",
+      "verification": "来源/许可/真实Probe/降级/配置安全/失败/快照；E-CASE+E-STOR",
       "roots": "选中路线根",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立来源复核",
+      "owner_reviewer": "未分配/独立来源与安全复核",
       "status": "未开始",
-      "next_reopen": "Q-001；next=先实现启用来源与离线降级；来源变化重开",
+      "next_reopen": "Q-001；next=先冻结能力契约，再实现2—3个启用来源、Doctor与离线降级；来源/后端/Tier变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,
@@ -8477,6 +8753,67 @@
       "assertion_state": "brief_pending"
     },
     {
+      "id": "SEL-RESEARCH-001",
+      "milestone_type_scope": "M8/research",
+      "objective": "多来源营养证据、实体锚定、聚类、可信度门、部分覆盖和nothing_solid",
+      "requirement_ids": [
+        "REQ-RESEARCH-001"
+      ],
+      "case_ids": [
+        "CASE-RESEARCH-001",
+        "CASE-RESEARCH-002",
+        "CASE-RESEARCH-004"
+      ],
+      "na_reason": null,
+      "dependency_task_ids": [
+        "SEL-RELEASE-001",
+        "SEL-NUTR-001"
+      ],
+      "dependency_evidence_ids": [],
+      "deliverables": "research evidence Schema+2—3来源研究适配器+confidence policy+20—50条金标集",
+      "verification": "精确C字段、来源冲突/空结果/mutation和业务库零写；E-CASE+E-STOR",
+      "roots": "ROOT-B",
+      "actual_evidence_ids": [],
+      "owner_reviewer": "未分配/独立研究质量与安全复核",
+      "status": "未开始",
+      "next_reopen": "next=0.1发布后先冻结Schema/策略；来源、权重、阈值或公共形状变化重开",
+      "brief_path": null,
+      "case_assertion_paths": {},
+      "full_case_set": null,
+      "assertion_state": "brief_pending"
+    },
+    {
+      "id": "SEL-NUTR-WATCH-001",
+      "milestone_type_scope": "M8/research-state",
+      "objective": "历史去重、Watchlist、sighting、资料变更预览和确认后Profile版本更新",
+      "requirement_ids": [
+        "REQ-RESEARCH-002",
+        "REQ-NUTR-003"
+      ],
+      "case_ids": [
+        "CASE-RESEARCH-003",
+        "CASE-RESEARCH-005",
+        "CASE-RESEARCH-006"
+      ],
+      "na_reason": null,
+      "dependency_task_ids": [
+        "SEL-RESEARCH-001",
+        "SEL-REVIEW-001"
+      ],
+      "dependency_evidence_ids": [],
+      "deliverables": "research state store+watchlist/diff/preview commands+confirmed update bridge",
+      "verification": "离线零网络、重复运行不重复通知、确认前业务全表零写、历史Snapshot不变；E-CASE+E-STOR",
+      "roots": "ROOT-B",
+      "actual_evidence_ids": [],
+      "owner_reviewer": "未分配/独立数据与隐私复核",
+      "status": "未开始",
+      "next_reopen": "next=先做本地preview，不建默认定时推送；状态/确认桥/调度边界变化重开",
+      "brief_path": null,
+      "case_assertion_paths": {},
+      "full_case_set": null,
+      "assertion_state": "brief_pending"
+    },
+    {
       "id": "SEL-UPGRADE-002",
       "milestone_type_scope": "M9/upgrade",
       "objective": "0.1→0.2迁移、回滚、备份恢复和0.1无退化",
@@ -8485,25 +8822,29 @@
         "REQ-TEMPLATE-001",
         "REQ-REVIEW-001",
         "REQ-LIFE-001",
-        "REQ-EXPORT-RICH-001"
+        "REQ-EXPORT-RICH-001",
+        "REQ-RESEARCH-001",
+        "REQ-RESEARCH-002"
       ],
       "case_ids": [
         "CASE-OPS-002",
         "CASE-OPS-003",
         "CASE-EXPORT-003",
         "CASE-REVIEW-004",
-        "CASE-LIFE-003"
+        "CASE-LIFE-003",
+        "CASE-RESEARCH-005"
       ],
       "na_reason": null,
       "dependency_task_ids": [
         "SEL-TEMPLATE-001",
         "SEL-REVIEW-001",
         "SEL-LIFE-001",
-        "SEL-EXPORT-001"
+        "SEL-EXPORT-001",
+        "SEL-NUTR-WATCH-001"
       ],
       "dependency_evidence_ids": [],
       "deliverables": "0.2 migrations+compat matrix",
-      "verification": "旧候选升级/失败/恢复；E-REL",
+      "verification": "旧候选升级/失败/恢复、研究库可独立重建且业务库无退化；E-REL",
       "roots": "ROOT-REL",
       "actual_evidence_ids": [],
       "owner_reviewer": "未分配/独立数据复核",

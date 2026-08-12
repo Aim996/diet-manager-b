@@ -2,9 +2,9 @@
   "schema_version": "diet-manager/traceability-requirements/v1",
   "generated_from": {
     "plan": {
-      "path": "总功能开发计划0.3.md",
-      "length": 298059,
-      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
+      "path": "总功能开发计划0.4.md",
+      "length": 319869,
+      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 37212,
-      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
+      "length": 41127,
+      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
     }
   },
   "counts": {
-    "requirements": 71,
-    "cases": 144,
+    "requirements": 74,
+    "cases": 153,
     "shared_catalog_cases": 27
   },
   "selectors": {
@@ -170,6 +170,9 @@
       "CASE-RECEIPT-005",
       "CASE-RECEIPT-006",
       "CASE-SCOPE-001",
+      "CASE-SOURCE-001",
+      "CASE-SOURCE-002",
+      "CASE-SOURCE-003",
       "CASE-STORAGE-001",
       "CASE-STORAGE-002",
       "CASE-STORAGE-004",
@@ -304,12 +307,21 @@
       "CASE-RECEIPT-004",
       "CASE-RECEIPT-005",
       "CASE-RECEIPT-006",
+      "CASE-RESEARCH-001",
+      "CASE-RESEARCH-002",
+      "CASE-RESEARCH-003",
+      "CASE-RESEARCH-004",
+      "CASE-RESEARCH-005",
+      "CASE-RESEARCH-006",
       "CASE-REVIEW-001",
       "CASE-REVIEW-002",
       "CASE-REVIEW-003",
       "CASE-REVIEW-004",
       "CASE-REVIEW-005",
       "CASE-SCOPE-001",
+      "CASE-SOURCE-001",
+      "CASE-SOURCE-002",
+      "CASE-SOURCE-003",
       "CASE-STORAGE-001",
       "CASE-STORAGE-002",
       "CASE-STORAGE-004",
@@ -862,6 +874,54 @@
       "case_ids": [
         "CASE-NUTR-006",
         "CASE-QUERY-002"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-SOURCE-001",
+      "stage": "PRODUCT-0.1",
+      "status": "approved_active",
+      "disposition": "0.1 必须",
+      "title": "营养来源适配器、主备后端、Tier、真实Probe/Doctor、显式授权与安全配置",
+      "source": "会话49批准、Agent Reach说明",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.20—§13.22、§21.17、§23.7",
+      "case_ids": [
+        "CASE-SOURCE-001",
+        "CASE-SOURCE-002",
+        "CASE-SOURCE-003"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-RESEARCH-001",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "多来源证据先行、实体锚定、聚类、可信度门、部分覆盖与nothing_solid",
+      "source": "会话49批准、last30days说明",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.23—§13.25、§23.7",
+      "case_ids": [
+        "CASE-RESEARCH-001",
+        "CASE-RESEARCH-002",
+        "CASE-RESEARCH-004"
+      ],
+      "reference_ids": []
+    },
+    {
+      "id": "REQ-RESEARCH-002",
+      "stage": "PRODUCT-0.2",
+      "status": "approved_active",
+      "disposition": "0.2 必须",
+      "title": "研究历史、去重、Watchlist、变更预览及确认后Profile更新边界",
+      "source": "会话49批准、两份技术说明",
+      "contract_version": "CONTRACT-v2",
+      "normative_sections": "§13.26—§13.28、§23.7",
+      "case_ids": [
+        "CASE-RESEARCH-003",
+        "CASE-RESEARCH-005",
+        "CASE-RESEARCH-006"
       ],
       "reference_ids": []
     },
@@ -1423,7 +1483,7 @@
       "title": "日期/字段筛选、CSV/分析导出与匿名化选项",
       "source": "会话8推理、43",
       "contract_version": "CONTRACT-v2",
-      "normative_sections": "§22.18、§25.7",
+      "normative_sections": "§22.18、§25.8",
       "case_ids": [
         "CASE-EXPORT-001",
         "CASE-PRIV-001",
@@ -2880,6 +2940,72 @@
       ]
     },
     {
+      "id": "CASE-RESEARCH-001",
+      "requirement_ids": [
+        "REQ-RESEARCH-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RESEARCH-002",
+      "requirement_ids": [
+        "REQ-RESEARCH-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RESEARCH-003",
+      "requirement_ids": [
+        "REQ-RESEARCH-002"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RESEARCH-004",
+      "requirement_ids": [
+        "REQ-RESEARCH-001"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RESEARCH-005",
+      "requirement_ids": [
+        "REQ-RESEARCH-002"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-RESEARCH-006",
+      "requirement_ids": [
+        "REQ-RESEARCH-002"
+      ],
+      "stages": [
+        "PRODUCT-0.2"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
       "id": "CASE-REVIEW-001",
       "requirement_ids": [
         "REQ-REVIEW-001"
@@ -2941,6 +3067,39 @@
       ],
       "stages": [
         "EXCLUDED"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-SOURCE-001",
+      "requirement_ids": [
+        "REQ-SOURCE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-SOURCE-002",
+      "requirement_ids": [
+        "REQ-SOURCE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
+      ],
+      "shared_catalog_status": "planned",
+      "shared_catalog_requirement_ids": []
+    },
+    {
+      "id": "CASE-SOURCE-003",
+      "requirement_ids": [
+        "REQ-SOURCE-001"
+      ],
+      "stages": [
+        "PRODUCT-0.1"
       ],
       "shared_catalog_status": "planned",
       "shared_catalog_requirement_ids": []

@@ -2,9 +2,9 @@
   "schema_version": "diet-manager/traceability-decisions/v1",
   "generated_from": {
     "plan": {
-      "path": "总功能开发计划0.3.md",
-      "length": 298059,
-      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
+      "path": "总功能开发计划0.4.md",
+      "length": 319869,
+      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,16 +13,16 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 37212,
-      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
+      "length": 41127,
+      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
     }
   },
   "counts": {
-    "DEC": 28,
+    "DEC": 29,
     "Q": 7,
-    "RISK": 17,
+    "RISK": 20,
     "DEBT": 7,
-    "CHG": 5
+    "CHG": 6
   },
   "entries": [
     {
@@ -44,13 +44,15 @@
       "kind": "DEC",
       "reference_ids": [
         "DOC-003-001",
+        "DOC-004-001",
+        "DOC-004-002",
         "SH-TRACE-001"
       ],
       "options": "多文档分管状态或单一总控",
-      "decision": "DOC-0.3为权威计划，任务/证据/决定各有唯一台账",
-      "references": "DOC-003-001、SH-TRACE-001",
-      "replaces": "替代多份人工状态快照",
-      "reopen_condition": "文档拆分时仍须保持机器SSOT"
+      "decision": "DOC-0.4是唯一现行权威计划；任务/证据/决定各有唯一台账。DOC-0.3保留为只读、冻结SHA-256的历史基线，不再与0.4竞争当前SSOT",
+      "references": "DOC-003-001、DOC-004-001、DOC-004-002、SH-TRACE-001",
+      "replaces": "替代多份人工状态快照；更新原“DOC-0.3为权威计划”的已过时表述",
+      "reopen_condition": "文档拆分时仍须保持机器SSOT；0.4结构变更后须重生成并独立复核追踪镜像"
     },
     {
       "id": "DEC-003",
@@ -294,11 +296,13 @@
       "id": "DEC-020",
       "kind": "DEC",
       "reference_ids": [
-        "DOC-003-001"
+        "DOC-003-001",
+        "DOC-004-001",
+        "DOC-004-002"
       ],
       "options": "用压缩摘要或逐轮读取写0.3",
-      "decision": "从初始完整44轮逐段读取、逐段写入；后续批准与纠正继续追加，当前48/48已登记",
-      "references": "DOC-003-001、附录A",
+      "decision": "从初始完整44轮逐段读取、逐段写入；后续批准与纠正继续追加，当前50/50已登记",
+      "references": "DOC-003-001、DOC-004-001、DOC-004-002、附录A",
       "replaces": "替代摘要式重写",
       "reopen_condition": "新会话要求并入时继续追加，不改写初始44轮历史"
     },
@@ -433,6 +437,24 @@
       "reopen_condition": "新证据表明deferred项会导致业务数据错误、路径逃逸、命令逃逸或部署不可用时重开"
     },
     {
+      "id": "DEC-029",
+      "kind": "DEC",
+      "reference_ids": [
+        "CHG-20260813-001",
+        "REQ-SOURCE-001",
+        "REQ-RESEARCH-001",
+        "REQ-RESEARCH-002",
+        "SEL-NUTR-001",
+        "SEL-RESEARCH-001",
+        "SEL-NUTR-WATCH-001"
+      ],
+      "options": "原样引入两个外部Skill、只吸收架构或完全不吸收",
+      "decision": "采用“吸收架构、不复制产品”：0.1纳入营养来源适配器/真实Probe/Doctor/显式授权；0.2纳入证据研究、去重、部分覆盖、Watchlist和资料更新预览；核心饮食记录不依赖研究，研究不得直接写业务",
+      "references": "CHG-20260813-001、REQ-SOURCE-001、REQ-RESEARCH-001、REQ-RESEARCH-002、SEL-NUTR-001、SEL-RESEARCH-001、SEL-NUTR-WATCH-001",
+      "replaces": "新增决定；不替代B唯一主线、FactCommit分层或历史快照规则",
+      "reopen_condition": "用户扩大为通用互联网Skill，或来源/研究证据显示当前边界无法满足营养资料质量时重开"
+    },
+    {
       "id": "Q-001",
       "kind": "Q",
       "reference_ids": [
@@ -522,15 +544,15 @@
       "id": "RISK-001",
       "kind": "RISK",
       "reference_ids": [
-        "DOC-003-001",
+        "EV-20260813-033",
         "EV-20260809-010",
         "EV-20260809-011"
       ],
-      "risk": "46轮会话因压缩或路线裁决遗漏；高/DOC批准",
-      "status_owner": "open / Codex",
-      "task": "DOC-003-001",
-      "mitigation": "46/46落点；前45轮保留旧EV，第46轮静态登记后待新鲜文档复核",
-      "evidence": "EV-20260809-010覆盖初始44轮；EV-20260809-011覆盖第45轮；本轮关闭需未来新EV"
+      "risk": "50轮会话因压缩、路线裁决或资料吸收遗漏；高/DOC批准",
+      "status_owner": "closed / Codex",
+      "task": "无",
+      "mitigation": "50/50落点；前48轮保留0.3历史，第49轮资料吸收与第50轮DOC-0.4现行入口批准均已复核",
+      "evidence": "EV-20260813-033；EV-20260809-010覆盖初始44轮，EV-20260809-011覆盖第45轮"
     },
     {
       "id": "RISK-002",
@@ -642,10 +664,10 @@
         "EV-20260812-026"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
-      "status_owner": "closed / 治理负责人",
+      "status_owner": "open / 治理负责人",
       "task": "SH-TRACE-001",
-      "mitigation": "机器追踪和新鲜度校验",
-      "evidence": "EV-20260812-026：确定性镜像、零孤儿、状态/证据一致和独立复核通过；计划结构变化即重开"
+      "mitigation": "DOC-0.4结构已改变；重生成四份镜像并完成独立复核前，不得复用0.3镜像或其关闭结论",
+      "evidence": "未来0.4追踪EV：确定性镜像、零孤儿、状态/证据一致和独立复核通过；EV-20260812-026仅为0.3历史"
     },
     {
       "id": "RISK-011",
@@ -741,6 +763,44 @@
       "task": "X-GATE-001、X-GATE-002",
       "mitigation": "门只绑定B且保持未开始；contract hash未知时拒绝map",
       "evidence": "B硬安全与纵切新鲜EV、冻结contract hash和B-only map"
+    },
+    {
+      "id": "RISK-018",
+      "kind": "RISK",
+      "reference_ids": [
+        "SEL-RESEARCH-001"
+      ],
+      "risk": "将搜索热度、转载或单一弱来源误作营养真值；高/G3-0.2",
+      "status_owner": "open / 研究负责人",
+      "task": "SEL-RESEARCH-001",
+      "mitigation": "实体锚定、来源权威、交叉佐证、冲突降级与金标回归",
+      "evidence": "研究CASE与独立来源质量EV"
+    },
+    {
+      "id": "RISK-019",
+      "kind": "RISK",
+      "reference_ids": [
+        "SEL-NUTR-001",
+        "SEL-RELIABILITY-001"
+      ],
+      "risk": "来源凭据、Cookie、代理或带认证URL进入日志/配置错误位置；严重/G3",
+      "status_owner": "open / 安全复核者",
+      "task": "SEL-NUTR-001、SEL-RELIABILITY-001",
+      "mitigation": "Tier显式授权、私有原子配置、Probe/Doctor脱敏、安全失败案例",
+      "evidence": "SOURCE/PRIV CASE与正式候选隐私EV"
+    },
+    {
+      "id": "RISK-020",
+      "kind": "RISK",
+      "reference_ids": [
+        "SEL-RESEARCH-001",
+        "SEL-NUTR-WATCH-001"
+      ],
+      "risk": "研究任务阻塞核心记录或未经确认改写Profile/历史快照；严重/G3-0.2",
+      "status_owner": "open / 产品与存储负责人",
+      "task": "SEL-RESEARCH-001、SEL-NUTR-WATCH-001",
+      "mitigation": "独立状态根、preview默认、业务全表零写、确认后追加版本",
+      "evidence": "RESEARCH故障/确认/E2E EV"
     },
     {
       "id": "DEBT-001",
@@ -914,6 +974,24 @@
       "owner_approver": "Codex / 复审冻结",
       "tasks": "B-FAULT-001、DEC-023、CASE-EFFECT-003",
       "status_evidence": "已验证；最终EV-20260812-032绑定候选552feee、替换22-gate日志与独立全分支P0=0/P1=0复审；旧关闭链作为superseded历史保留"
+    },
+    {
+      "id": "CHG-20260813-001",
+      "kind": "CHG",
+      "reference_ids": [
+        "DOC-004-001",
+        "DOC-004-002",
+        "SH-TRACE-001",
+        "SEL-NUTR-001",
+        "SEL-RESEARCH-001",
+        "SEL-NUTR-WATCH-001",
+        "EV-20260813-033"
+      ],
+      "source_change": "第49轮用户提供Agent Reach/last30days两份说明并明确批准0.4作为现行入口并继续按其实施；L2新增兼容能力，含后续模型影响",
+      "impact": "从最新DOC-0.3/B-FAULT闭环生成独立DOC-0.4；新增来源能力、研究证据、Watchlist和Profile更新预览边界；0.1只扩来源可靠性，0.2才扩研究；不改当前业务实现、不创建map、不宣称可安装",
+      "owner_approver": "计划负责人 / 用户直接批准",
+      "tasks": "DOC-004-001、DOC-004-002、SH-TRACE-001、SEL-NUTR-001、SEL-RESEARCH-001、SEL-NUTR-WATCH-001",
+      "status_evidence": "已验证；EV-20260813-033记录文档结构检查、批准留档和现行入口切换；SH-TRACE-001仍须重生成并独立复核镜像，未产生产品功能EV"
     }
   ]
 }

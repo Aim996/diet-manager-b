@@ -2,9 +2,9 @@
   "schema_version": "diet-manager/traceability-evidence/v1",
   "generated_from": {
     "plan": {
-      "path": "总功能开发计划0.3.md",
-      "length": 298059,
-      "sha256": "9914C27DD653AF757DDF58FAC3273C11E91AAC7C9D5D1D95583FF27CDACC8C79"
+      "path": "总功能开发计划0.4.md",
+      "length": 319869,
+      "sha256": "D36699B92BA40CC120A41E661CEDED666899BD5D2EF96EBB60E299541E0C2609"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 37212,
-      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
+      "length": 41127,
+      "sha256": "743893AC0E653E0D0AF44B92DFD675A8118B54ABA6D2752B3F89DC328F76195A"
     }
   },
   "counts": {
-    "evidence": 32,
-    "files_present": 30,
+    "evidence": 33,
+    "files_present": 31,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -577,6 +577,28 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "B-FAULT-001"
+      ]
+    },
+    {
+      "id": "EV-20260813-033",
+      "scope": "DOC-004-001、DOC-004-002 DOC-0.4治理与用户批准",
+      "result": "50/50会话台账、唯一DOC-0.4权威、0.3冻结SHA-256、74 REQ/153 CASE/63 TASK、27/1/27/0/8状态、唯一WIP=SH-TRACE-001、X-GATE-002显式依赖与四份陈旧镜像事实均经只读结构检查；批准记录已锁定",
+      "limitation": "关闭DOC-004文档/批准治理；不重生成追踪JSON、不关闭SH-TRACE-001或X-GATE-002，不证明产品实现、可安装性或发布",
+      "reference_ids": [
+        "DOC-004-001",
+        "DOC-004-002",
+        "SH-TRACE-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-033-doc-004-governance.md",
+        "length": 7591,
+        "sha256": "95F9C4D9942BF7D4697B68D9E6488CC3C80A47C7429AF7E0EF1D220AA171546F"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "DOC-004-001",
+        "DOC-004-002"
       ]
     }
   ]
