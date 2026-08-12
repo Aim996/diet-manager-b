@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297697,
-      "sha256": "3A8859EAAF480B58C631F1564E83BD38EF9C2280A38C129137E3BCE5BCB12BFE"
+      "length": 297747,
+      "sha256": "97BADE15825C8A7FD1F59F7586F4D65731E48AFE50DE3B8BF18A3B603F743CBD"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -911,7 +911,7 @@
       "impact": "全部子效果已耐久而仅EnvelopeFinalize失败时，信封及重启状态从effects_pending更正为effects_stable；同token只允许最终器继续，不得重复效果",
       "owner_approver": "Codex / 复审冻结",
       "tasks": "B-FAULT-001、DEC-023、CASE-EFFECT-003",
-      "status_evidence": "已验证；EV-20260812-032以18行B故障矩阵、catalog SHA绑定、完整不可变gate log与独立scoped rereview关闭，技术Ready且过程concern保留"
+      "status_evidence": "Oracle校正本身已验证；原EV-20260812-032关闭结论被后续全分支复审supersede，B-FAULT-001已重开并等待最终修复候选的独立复审"
     }
   ]
 }

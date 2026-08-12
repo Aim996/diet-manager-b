@@ -1,16 +1,25 @@
-# B-FAULT-001 Stage A Candidate Report
+# B-FAULT-001 Final Fix Candidate Report
 
-> Stage B closure update: the independent scoped rereview subsequently recorded P0=0/P1=0/P2=0 and Ready=YES for frozen candidate `b8bdbf207e4eda52eb395989b42e159d554cb078`. `B-FAULT-001` is now **DONE_WITH_CONCERNS — 技术 Ready，过程 concern 保留**; formal closure evidence is `EV-20260812-032`. The Stage A status below is retained as the historical pre-rereview posture.
+> Final whole-branch review superseded the prior Stage B closure after finding one P1 in mixed-operation diagnostics and two P2 documentation inconsistencies. The old candidate/evidence chain remains below as history; it no longer establishes current completion.
 
 ## Status
 
-- Stage: **A — evidence refrozen; scoped rereview pending**
-- Code/dist candidate: `b8bdbf207e4eda52eb395989b42e159d554cb078`
-- Prior Stage A review: **P0=0, P1=1, P2=1**; P1 evidence remediation and P2 ledger remediation await scoped rereview.
+- Stage: **final fix candidate pending replacement gates and independent whole-branch review**
+- Code/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
+- Final-review finding baseline: **P0=0, P1=1, P2=2**; the technical P1 is implemented and locally verified, but no independent final verdict has accepted it.
 - Ready: **NO**
-- Formal closure evidence: **not written**; `EV-20260812-032` is intentionally absent.
+- Formal closure evidence: **not available**; `EV-20260812-032` is retained as `SUPERSEDED_REOPENED`, and replacement gate-log identity is pending.
 
-This report records an implementation candidate and fresh local gate evidence. It does not declare an independent verdict, mark `B-FAULT-001` complete, update progress/Plan 0.3 closure state, regenerate closure trace mirrors, push, or open a PR.
+This report records a technical final-fix candidate only. It does not declare an independent verdict, mark `B-FAULT-001` complete, push, open/update a PR, or claim publication. Those states remain for the controller after actual external actions and final review.
+
+## Final-fix technical delta
+
+- Every production `appendPreparedOperationFact` call now uses one `appendFactWithFailure` adapter, including both real mixed purchase/meal repository append locations.
+- Mixed purchase and meal effects now use one `runEffectWithFailure` catch/emit path with the exact four-field public diagnostic.
+- A four-row mutation-sensitive test uses real SQLite repository append failures for both FactCommit positions and real effect transaction faults for both EffectBundle positions. It asserts exact stage/code/trace/digest, forbidden source/SQL/secret/path content, throwing-sink primary-error preservation, and all-business-table rollback on same-token retry.
+- TDD RED was 4/4 failures at the missing diagnostics; focused GREEN is 4/4. Temporarily deleting the mixed purchase Effect wrapper made its dedicated case RED, and restoring it returned GREEN.
+
+The remaining sections describe the prior Stage A evidence history unless explicitly marked as final-fix evidence.
 
 ## Runtime and build ownership
 
@@ -21,7 +30,9 @@ C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.
 v24.15.0
 ```
 
-Task 7 was the sole build/dist writer. It ran TypeScript `--noEmit` first and then exactly one formal `tsc -p tsconfig.json` build. Both exited 0. The build changed exactly these generated files, matching the three changed source modules:
+For the final-fix wave, `--noEmit` and the focused/full relevant tests passed before one and only one formal `tsc -p tsconfig.json` build. That build changed only `version-b-lite-plugin/dist/domain/service.js`, matching the only changed production source module. Candidate `552feee374fe3463f296bd4a110af11747a7ee29` binds the source, tests, and generated artifact.
+
+Historical Task 7 build record: Task 7 was the sole build/dist writer for the superseded candidate. It ran TypeScript `--noEmit` first and then exactly one formal build, which changed these generated files:
 
 | Source | Generated artifact |
 | --- | --- |

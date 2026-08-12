@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 297697,
-      "sha256": "3A8859EAAF480B58C631F1564E83BD38EF9C2280A38C129137E3BCE5BCB12BFE"
+      "length": 297747,
+      "sha256": "97BADE15825C8A7FD1F59F7586F4D65731E48AFE50DE3B8BF18A3B603F743CBD"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -21,8 +21,9 @@
     "tasks": 59,
     "status": {
       "未开始": 26,
-      "已完成": 25,
-      "已取消": 8
+      "已完成": 24,
+      "已取消": 8,
+      "进行中": 1
     },
     "case_producer_rows": 144,
     "full_case_responsibility_assignments": 5,
@@ -2729,7 +2730,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/oracle/failure",
@@ -2777,7 +2778,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/effect_bundle/late_failure_full_rollback",
@@ -2877,7 +2878,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/oracle/failure",
@@ -3284,7 +3285,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/preview/data_revision_stale_zero_write",
@@ -5415,7 +5416,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/migration/failure_keeps_final_unpublished",
@@ -5501,7 +5502,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/oracle/original_result",
@@ -5626,7 +5627,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "已完成",
+          "task_status": "进行中",
           "assertion_state": "declared",
           "assertion_paths": [
             "/oracle/idempotency/conflicts",
@@ -7621,8 +7622,8 @@
         "EV-20260812-032"
       ],
       "owner_reviewer": "Codex /root实现 / 独立B故障复核",
-      "status": "已完成",
-      "next_reopen": "候选b8bdbf207e4eda52eb395989b42e159d554cb078的7案/18行矩阵、完整门与独立scoped rereview P0=0/P1=0/P2=0、Ready=YES；DONE_WITH_CONCERNS，候选、矩阵、catalog或证据变化重开",
+      "status": "进行中",
+      "next_reopen": "旧EV32关闭已被最终全分支复审P1/P2 finding supersede；最终修复候选552feee374fe3463f296bd4a110af11747a7ee29技术修复完成，替换证据与独立复审待完成，Ready=NO；只有真实push与draft PR完成后才由controller写发布状态",
       "brief_path": "docs/work-items/B-FAULT-001-brief.md",
       "case_assertion_paths": {
         "CASE-EFFECT-001": [
@@ -7731,7 +7732,7 @@
       "actual_evidence_ids": [],
       "owner_reviewer": "门主持人/至少两名复核",
       "status": "未开始",
-      "next_reopen": "B纵切/故障依赖已关闭，但剩余CONTRACT-v2版本/hash与§29.6精确路径输入未全部冻结；继续阻塞且不得创建map，输入齐全后才可选择bind_b_ready或return_to_b_slice；输入变化重开",
+      "next_reopen": "B-FAULT-001尚待最终独立复审关闭，且剩余CONTRACT-v2版本/hash与§29.6精确路径输入仍未全部冻结；继续阻塞且不得创建map，全部输入齐全后才可选择bind_b_ready或return_to_b_slice；输入变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

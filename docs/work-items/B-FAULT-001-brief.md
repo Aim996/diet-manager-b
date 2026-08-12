@@ -3,19 +3,21 @@
 ## Identity
 
 - task_id: `B-FAULT-001`
-- milestone: `M3`
+- milestone: `M4`
 - type: `B fault authority`
 - product_line: `B only`
 - status: `in_progress`
 - owner: `Codex /root`
-- reviewer: `pending independent review`
-- requirements: `REQ-SAFE-002`, `REQ-SAFE-003`, `REQ-PROGRESS-002`, `REQ-PROGRESS-004`
+- reviewer: `pending independent B fault final review`
+- requirements: `REQ-SAFE-002`, `REQ-SAFE-003`
 - cases: `CASE-EFFECT-001`, `CASE-EFFECT-002`, `CASE-EFFECT-003`, `CASE-STORAGE-005`, `CASE-STORAGE-006`, `CASE-STORAGE-007`, `CASE-INVENTORY-006`
 - roots: `ROOT-B`
 
 ## Objective
 
 Freeze the seven-case, eighteen-row B fault authority as `diet-manager/b-fault-matrix/v1`. The matrix fixes each distinct write point, error code, failed/outbox state and attempt/reason, complete persistent observation vector, restart expectation, same-token retry boundary, redacted diagnostic constraint, frozen-result rule, forbidden outcome and assertion path. Its SHA-256 in the harness manifest binds the exact bytes used by future executable fault work.
+
+Current execution state: final-review finding remediation is implemented in candidate `552feee374fe3463f296bd4a110af11747a7ee29`, but replacement full-gate evidence and an independent whole-branch final verdict are still pending. Therefore this work item remains `in_progress`, Ready is NO, and neither the prior `EV-20260812-032` closure wording nor a future push/draft-PR state may be used to mark it complete.
 
 ## Frozen correction
 

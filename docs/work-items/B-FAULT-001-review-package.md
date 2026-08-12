@@ -1,15 +1,15 @@
-# B-FAULT-001 Stage A Independent Review Package
+# B-FAULT-001 Final Fix Independent Review Package
 
 ## Candidate identity and verdict boundary
 
-- Implementation/dist candidate: `b8bdbf207e4eda52eb395989b42e159d554cb078`
+- Implementation/dist candidate: `552feee374fe3463f296bd4a110af11747a7ee29`
 - Plan baseline: `1ee40731a6d90c43e016ab04eb37ba85a54992ae`
 - Expected branch: `agent/b-fault-001`
-- Current status: **Stage A evidence refrozen; scoped rereview pending**
-- Prior review: **P0=0, P1=1, P2=1**; P1-1 was missing complete immutable gate output and P2-1 was stale ledger phase text.
-- Ready: **NO** until the scoped rereviewer accepts P1/P2 remediation and returns P0=0/P1=0.
+- Current status: **in_progress; final fix candidate and replacement gate evidence pending independent whole-branch review**
+- Final-review baseline: **P0=0, P1=1, P2=2**; P1 was uncovered mixed FactCommit/EffectBundle diagnostics, and P2 covered false completion plus Plan/brief/derived-status drift.
+- Ready: **NO** until an independent whole-branch reviewer accepts the final fix with P0=0/P1=0.
 
-The reviewer must not create `EV-20260812-032`, mark the task complete, write Ready YES on behalf of this package, update closure progress/trace files, push, or open a PR.
+The reviewer must treat `EV-20260812-032` as historical `SUPERSEDED_REOPENED` evidence, not current closure. The reviewer must not mark the task complete, write Ready YES on behalf of this package, push, or open/update a PR. Publication/PR completion may be written only by the controller after those external actions actually occur.
 
 ## Safety boundary for the reviewer
 
@@ -27,10 +27,11 @@ Do not inspect `version-b-lite-plugin/src/storage/migration-v1.ts` content. Do n
 
 ## Review inputs
 
-Read the B-FAULT plan/spec, `docs/work-items/B-FAULT-001-brief.md`, this package, `docs/work-items/B-FAULT-001-report.md`, and the Task 1–7 reports/reviews in `.superpowers/sdd/2026-08-12-b-fault-001-implementation/`. Review the candidate delta from the plan baseline, with particular attention to:
+Read the B-FAULT plan/spec, final whole-branch review, `docs/work-items/B-FAULT-001-brief.md`, this package, `docs/work-items/B-FAULT-001-report.md`, and the Task 1–7 reports/reviews in `.superpowers/sdd/2026-08-12-b-fault-001-implementation/`. Review the final-fix delta and retained history, with particular attention to:
 
-- `docs/evidence/B-FAULT-001-stage-a-gates.txt` — complete captured output, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`
-- `docs/evidence/B-FAULT-001-stage-a-gates.sha256` — committed identity list
+- `docs/evidence/B-FAULT-001-final-fix-gates.txt` — append-only replacement output; identity pending the final-fix serial run
+- `docs/evidence/B-FAULT-001-final-fix-gates.sha256` — replacement identity list, pending generation
+- `docs/evidence/B-FAULT-001-stage-a-gates.txt` and adjacent SHA list — superseded candidate history only
 
 - `shared/acceptance-cases/b-fault-matrix.json`
 - `shared/acceptance-cases/tests/b-fault-matrix.test.ts`
@@ -50,10 +51,10 @@ The independent verdict must explicitly assess:
 1. All seven frozen case observations and all 18 ordered fault rows are executable, mutation-sensitive, and use the matrix rather than a weaker handwritten oracle.
 2. Stable single-meal recovery reconstructs terminal result from frozen Fact/Effect authority without rerunning effects and permits unrelated later repository revision changes.
 3. Correction outboxes follow guarded `pending|retryable_failed -> processing -> terminal` transitions, with correct attempts/reasons and full rollback.
-4. EffectBundle/finalizer fault diagnostics contain exactly `stage`, `error_code`, `trace_id`, and `input_digest`; sink failure cannot replace the primary error; source/SQL/secret/path are not leaked.
+4. Both real mixed repository append positions use the same safe FactCommit adapter, and both mixed EffectBundle positions use the same safe catch/emit path. All four locations emit exactly `stage`, `error_code`, `trace_id`, and `input_digest`; sink failure cannot replace the primary error; source/SQL/secret/path are not leaked; failed transactions roll back across every business table. The two repository tests must fail inside actual `appendPreparedOperationFact`, not at the synthetic `before_fact_commit` service seam.
 5. Storage, stale-preview, terminal-conflict, and response-loss observations do not invent deferred product features.
 6. Crash modes prove real process termination, exact immutable state, one-time recovery, frozen bytes, timeout/no-survivor behavior, and fail-closed cleanup. Review the Task 7 correction digest refresh as a consequence of Task 3's newly built legal attempt count, not as an automatically learned oracle.
-7. `src` and `dist` are synchronized for the three changed modules; no extra generated or dependency artifact exists.
+7. `src` and `dist` are synchronized for the final-fix `service` module; the sole formal final-fix build changed only `dist/domain/service.js`; no extra generated or dependency artifact exists.
 8. Public OpenClaw action schema and `src/index.ts` remain unchanged; internal fault seams are not public; selected-route map remains absent; no model/network call was added.
 9. Task-owned Node/process/temp residue is zero and the 20 pre-existing temp paths were correctly treated as unowned baseline rather than silently deleted.
 10. The retained migration search-output concern is disclosed accurately, and Task 7 introduced no new occurrence.
@@ -88,10 +89,10 @@ Test-Path -LiteralPath .\shared\selected-route-map.json
 
 Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` values `hang`, `root-replace`, `snapshot-mutation`, `emergency-cleanup`, `allowed-mutation`, `expanded-fact-mutation`, `expanded-effect-mutation`, `expanded-finalize-mutation`, and `canonical-order`. Clear the environment variable after each run.
 
-## Recorded Stage A evidence
+## Recorded superseded Stage A evidence
 
 - Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `70,879` bytes, SHA-256 `433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F`; SHA list at the adjacent `.sha256` path.
-- Candidate binding: every one of 22 command records names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`.
+- Historical candidate binding: every one of the old 22 command records names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`; these records do not validate the final-fix candidate.
 - Completeness structure: 22 command begin/end records, exact commands, start/end timestamps, stdout/stderr begin/end sections and byte counts, 22 exit codes, and 22 full Node/temp boundaries. All exits, pinned/task Node counts, and new-temp counts are zero.
 - Sanitization: stdout/stderr are complete after deterministic absolute-prefix substitution only; no lines were omitted. Audit found no unredacted worktree or user-profile prefix and no protected/migration name or credential-shaped value.
 - noEmit/build: exit 0; sole formal build generated 3 matching dist files.
@@ -105,4 +106,4 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 
 ## Required verdict format
 
-Perform a scoped evidence rereview of P1-1 and P2-1 while retaining the prior static code/test PASS. Recompute the committed log length/SHA, verify all 22 structures and complete outputs, sample every gate family, confirm boundary arrays/counts, audit deterministic redaction, and check the ledger phase. Return reviewed range/SHA, separate P0/P1/P2 counts, concrete evidence for any finding, concern assessment, and Ready YES/NO. Any P0 or P1 forces Ready NO and blocks Stage B closure.
+Perform an independent whole-branch final review of candidate `552feee374fe3463f296bd4a110af11747a7ee29` and the append-only replacement log. Recompute its committed length/SHA, verify all 22 structures and complete outputs, inspect the four new real-failure tests and mutation sensitivity, confirm boundary arrays/counts, audit deterministic redaction, and check Plan/brief/report/EV32/derived-ledger consistency. Return reviewed range/SHA, separate P0/P1/P2 counts, concrete evidence for any finding, concern assessment, and Ready YES/NO. Any P0 or P1 forces Ready NO and blocks closure.
