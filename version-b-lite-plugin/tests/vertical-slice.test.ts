@@ -1278,6 +1278,117 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     }
   });
 
+  it("rejects nutrition scaling overflow before FactCommit and keeps it query-invisible", () => {
+    const fixture = createMealService();
+    try {
+      const maximum = Number.MAX_SAFE_INTEGER;
+      const envelope = mealEnvelope({
+        suffix: "nutrition-overflow-before-fact-commit",
+        location: "outside",
+        items: [mealItem({
+          name: "overflow meal", unit: "piece", observed: 1,
+          adopted: maximum, deducted: null,
+          sources: [{
+            ...nutritionSource("public_fixture", "fixture-overflow-v1", 1, null, {
+              kind: "per_item", microunits: 1, unit: "piece",
+            }),
+            nutrients: {
+              energy_kcal_milli: maximum,
+              protein_mg: maximum,
+              fat_mg: maximum,
+              carbohydrate_mg: maximum,
+              fiber_mg: maximum,
+              water_ml_milli: maximum,
+            },
+          }],
+        })],
+      });
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => fixture.service.preview(envelope)).toThrowError("DOMAIN_RULE_INVALID:nutrition_scaled");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-nutrition-overflow-before-fact-commit",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects an accessor envelope without reading it or writing business rows", () => {
+    const fixture = createMealService();
+    try {
+      const envelope = mealEnvelope({
+        suffix: "accessor-envelope", location: "outside",
+        items: [mealItem({ name: "accessor meal", unit: "piece", observed: 1, adopted: null, deducted: null, sources: [] })],
+      });
+      const expectedEnvelopeId = envelope.envelope_id;
+      let getterHits = 0;
+      Object.defineProperty(envelope, "envelope_id", {
+        enumerable: true,
+        get: () => {
+          getterHits += 1;
+          return expectedEnvelopeId;
+        },
+      });
+      const before = businessCounts(fixture.runtime.database);
+      let thrown: unknown;
+      try { fixture.service.preview(envelope); } catch (error) { thrown = error; }
+
+      expect(getterHits).toBe(0);
+      expect((thrown as Error | undefined)?.message).toBe(
+        "DIET_DOMAIN_REQUEST_INVALID:envelope_descriptor",
+      );
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals", operation_id: "query-accessor-envelope",
+        date: "2026-08-12", timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects a custom operations array prototype without calling entries or writing rows", () => {
+    const fixture = createMealService();
+    try {
+      const envelope = mealEnvelope({
+        suffix: "custom-operations-array", location: "outside",
+        items: [mealItem({ name: "custom array meal", unit: "piece", observed: 1, adopted: null, deducted: null, sources: [] })],
+      });
+      let entriesHits = 0;
+      const customArrayPrototype = Object.create(Array.prototype) as object;
+      Object.defineProperty(customArrayPrototype, "entries", {
+        value(this: unknown[]) {
+          entriesHits += 1;
+          return Array.prototype.entries.call(this);
+        },
+      });
+      Object.setPrototypeOf(envelope.operations, customArrayPrototype);
+      const before = businessCounts(fixture.runtime.database);
+      let thrown: unknown;
+      try { fixture.service.preview(envelope); } catch (error) { thrown = error; }
+
+      expect(entriesHits).toBe(0);
+      expect((thrown as Error | undefined)?.message).toBe(
+        "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_prototype",
+      );
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals", operation_id: "query-custom-operations-array",
+        date: "2026-08-12", timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("CASE-MEAL-006 records explicit rice and chicken without estimated flags", () => {
     const fixture = createMealService();
     try {

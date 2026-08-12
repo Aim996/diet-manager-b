@@ -907,6 +907,38 @@ function selectMealNutrition(
   );
 }
 
+export function preflightMealOperation(
+  database: DatabaseSync,
+  operation: RecordMealOperation,
+  precedingCandidates: ReadonlyMap<string, readonly InventoryCandidate[]> = new Map(),
+): void {
+  for (const item of operation.items) {
+    const candidates = operation.location === "outside"
+      ? []
+      : [...inventoryCandidates(database, item.normalized_name), ...(precedingCandidates.get(item.normalized_name) ?? [])];
+    const decision = resolveInventoryMatch({
+      location: operation.location,
+      requested_unit: item.amount.unit,
+      observed_microunits: item.amount.observed_microunits,
+      nutrition_adoption_microunits: item.amount.nutrition_adoption_microunits,
+      inventory_deduction_microunits: item.amount.inventory_deduction_microunits,
+      template_reference_microunits: item.amount.template_reference_microunits,
+      candidates,
+    });
+    const selection = selectMealNutrition({ nutrition_sources: item.nutrition_sources }, decision);
+    if (
+      item.amount.nutrition_adoption_microunits !== null &&
+      selection.basis_microunits !== null
+    ) {
+      scaleNutritionVector(
+        selection.nutrients,
+        item.amount.nutrition_adoption_microunits,
+        selection.basis_microunits,
+      );
+    }
+  }
+}
+
 function writeMealNutritionProfile(
   database: DatabaseSync,
   idempotencyKey: string,

@@ -19,6 +19,7 @@ import {
   applyCorrectionEffects,
   prepareCorrectionOperation,
   readAppliedCorrectionResult,
+  preflightMealOperation,
   prepareMealOperation,
   preparePurchaseOperation,
   type MealOperationResult,
@@ -239,20 +240,78 @@ function validateOperation(value: unknown, field: string): void {
   return invalid(`${field}.kind`);
 }
 
-function freezeJson<T>(value: T): T {
+function unsafeClone(path: string, reason: string): never {
+  return invalid(`${path.replaceAll(".", "_")}_${reason}`);
+}
+
+function objectPrototype(value: object, path: string): object | null {
+  try {
+    return Object.getPrototypeOf(value);
+  } catch {
+    return unsafeClone(path, "clone");
+  }
+}
+
+function descriptors(value: object, path: string): PropertyDescriptorMap {
+  try {
+    return Object.getOwnPropertyDescriptors(value);
+  } catch {
+    return unsafeClone(path, "clone");
+  }
+}
+
+function dataDescriptor(
+  value: PropertyDescriptor | undefined,
+  path: string,
+): unknown {
+  if (!value || !("value" in value) || value.get !== undefined || value.set !== undefined) {
+    return unsafeClone(path, "descriptor");
+  }
+  return value.value;
+}
+
+function cloneUntrustedJson(value: unknown, path: string): unknown {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return unsafeClone(path, "number");
+    return value;
+  }
+  if (typeof value !== "object") return unsafeClone(path, "value");
   if (Array.isArray(value)) {
-    for (const item of value) freezeJson(item);
-    return Object.freeze(value) as T;
+    if (objectPrototype(value, path) !== Array.prototype) return unsafeClone(path, "prototype");
+    const source = descriptors(value, path);
+    const length = dataDescriptor(source.length, path);
+    if (!Number.isSafeInteger(length) || (length as number) < 0) return unsafeClone(path, "length");
+    const names = Object.getOwnPropertyNames(source);
+    const expected = ["length", ...Array.from({ length: length as number }, (_, index) => String(index))];
+    if (names.length !== expected.length || expected.some((name) => !Object.hasOwn(source, name))) {
+      return unsafeClone(path, "shape");
+    }
+    const clone: unknown[] = [];
+    for (let index = 0; index < (length as number); index += 1) {
+      clone.push(cloneUntrustedJson(dataDescriptor(source[String(index)], path), `${path}.${index}`));
+    }
+    return Object.freeze(clone);
   }
-  if (typeof value === "object" && value !== null) {
-    for (const item of Object.values(value)) freezeJson(item);
-    return Object.freeze(value);
+  if (objectPrototype(value, path) !== Object.prototype) return unsafeClone(path, "prototype");
+  const source = descriptors(value, path);
+  const clone: Record<string, unknown> = {};
+  for (const name of Object.getOwnPropertyNames(source)) {
+    const descriptor = source[name];
+    if (descriptor?.enumerable !== true) return unsafeClone(path, "descriptor");
+    Object.defineProperty(clone, name, {
+      value: cloneUntrustedJson(dataDescriptor(descriptor, path), `${path}.${name}`),
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
   }
-  return value;
+  return Object.freeze(clone);
 }
 
 function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
-  const envelope = record(value, [
+  const cloned = cloneUntrustedJson(value, "envelope");
+  const envelope = record(cloned, [
     "envelope_id", "idempotency_key", "command_type", "subject_scope", "source_message_id",
     "conversation_id", "received_at", "timezone", "operations",
   ], "envelope");
@@ -268,10 +327,29 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
   timestamp(envelope.received_at, "envelope.received_at");
   enumValue(envelope.timezone, ["Asia/Shanghai"], "envelope.timezone");
   if (!Array.isArray(envelope.operations) || envelope.operations.length === 0) return invalid("envelope.operations");
-  for (const [index, operation] of envelope.operations.entries()) {
-    validateOperation(operation, `envelope.operations.${index}`);
+  for (let index = 0; index < envelope.operations.length; index += 1) {
+    validateOperation(envelope.operations[index], `envelope.operations.${index}`);
   }
-  return freezeJson(JSON.parse(canonicalJson(value)) as DomainEnvelopeInput);
+  return envelope as unknown as DomainEnvelopeInput;
+}
+
+function preflightWriteOperations(
+  database: DatabaseSync,
+  operations: ValidatedWriteOperations,
+): void {
+  if (operations.length === 2) {
+    const [purchase, meal] = operations;
+    preflightMealOperation(database, meal, new Map([[purchase.product.normalized_name, Object.freeze([{
+      batch_id: purchase.batch_id,
+      product_id: purchase.product.product_id,
+      available_microunits: purchase.amount.observed_microunits,
+      unit: purchase.amount.unit,
+    }])]]));
+    return;
+  }
+  for (const operation of operations) {
+    if (operation.kind === "record_meal") preflightMealOperation(database, operation);
+  }
 }
 
 function quickPromptIssueCode(value: string): QuickPromptIssueCode {
@@ -522,7 +600,8 @@ export function createDietDomainService(
   return Object.freeze({
     preview(envelope: DomainEnvelopeInput): DomainPreviewResult {
       const validatedEnvelope = validateAndFreezeEnvelope(envelope);
-      writeOperations(validatedEnvelope);
+      const operations = writeOperations(validatedEnvelope);
+      preflightWriteOperations(options.database, operations);
       const inputDigest = digestDomainEnvelope(validatedEnvelope);
       const dataRevision = computeRepositoryDataRevision(options.database);
       const now = timestamp(options.now(), "clock");
@@ -555,6 +634,7 @@ export function createDietDomainService(
     execute(execution: DomainExecuteInput): DomainExecutionResult {
       const envelope = validateAndFreezeEnvelope(execution.envelope);
       const operations = writeOperations(envelope);
+      preflightWriteOperations(options.database, operations);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
       const authority = authorizeRepositoryPreview({
