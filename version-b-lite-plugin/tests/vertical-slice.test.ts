@@ -3132,6 +3132,102 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     };
   }
 
+  function preparePendingCorrection(
+    fixture: ReturnType<typeof createCorrectionFixture>,
+    suffix: string,
+  ) {
+    const envelope = correctionEnvelope({
+      suffix,
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    const preview = fixture.service.preview(envelope);
+    const operation = envelope.operations[0];
+    if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+    const prepared = prepareCorrectionOperation({
+      database: fixture.runtime.database,
+      secret,
+      token: preview.token,
+      inputDigest: preview.input_digest,
+      dataRevision: preview.data_revision,
+      subjectScope: envelope.subject_scope,
+      commandType: envelope.command_type,
+      idempotencyKey: envelope.idempotency_key,
+      sourceMessageId: envelope.source_message_id,
+      conversationId: envelope.conversation_id,
+      receivedAt: envelope.received_at,
+      committedAt: envelope.received_at,
+      sequence: 0,
+      operation,
+    });
+    appendPreparedOperationFact(prepared.fact);
+    return { envelope, operation, preview };
+  }
+
+  it("claims retryable correction outboxes once, clears the old reason, and finishes attempt two", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const { envelope, operation, preview } = preparePendingCorrection(
+        fixture,
+        "retryable-effect-claim",
+      );
+      fixture.runtime.database.prepare(
+        `UPDATE effect_outbox
+         SET state = 'retryable_failed', attempt_count = 1, reason = 'old_retryable_reason'
+         WHERE envelope_id = ?`,
+      ).run(envelope.envelope_id);
+
+      const result = applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      });
+
+      expect(result.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        `SELECT state, attempt_count, reason FROM effect_outbox
+         WHERE envelope_id = ? ORDER BY effect_id`,
+      ).all(envelope.envelope_id)).toEqual([
+        { state: "succeeded", attempt_count: 2, reason: null },
+        { state: "succeeded", attempt_count: 2, reason: null },
+      ]);
+      expect(preview.token).toEqual(expect.any(String));
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rolls back every correction claim and business write when claim injection fails", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const { envelope, operation } = preparePendingCorrection(fixture, "claim-rollback");
+      const before = canonicalJson(canonicalBusinessSnapshot(fixture.runtime.database));
+
+      expect(() => applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+        fault: "after_claim",
+      } as unknown as Parameters<typeof applyCorrectionEffects>[0])).toThrow(
+        "CORRECTION_EFFECT_FAILED:after_claim",
+      );
+      expect(canonicalJson(canonicalBusinessSnapshot(fixture.runtime.database))).toBe(before);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("CASE-CORR-001 changes two eggs to three with one append-only correction and one-unit compensation", () => {
     const fixture = createCorrectionFixture();
     try {
@@ -3154,6 +3250,23 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         data_revision: preview.data_revision,
       });
       expect(result.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        `SELECT effect_kind, state, attempt_count, reason FROM effect_outbox
+         WHERE envelope_id = ? ORDER BY effect_kind`,
+      ).all(envelope.envelope_id)).toEqual([
+        {
+          effect_kind: "correction_inventory_compensation",
+          state: "succeeded",
+          attempt_count: 1,
+          reason: null,
+        },
+        {
+          effect_kind: "daily_progress_replacement",
+          state: "succeeded",
+          attempt_count: 1,
+          reason: null,
+        },
+      ]);
       expect(fixture.runtime.database.prepare(
         "SELECT operation, base_revision FROM correction_events ORDER BY base_revision",
       ).all()).toEqual([{ operation: "change_amount", base_revision: 1 }]);
@@ -3636,6 +3749,23 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
       const result = previewAndExecute(fixture.service, envelope);
 
       expect(result.status).toBe("committed_with_issues");
+      expect(fixture.runtime.database.prepare(
+        `SELECT effect_kind, state, attempt_count, reason FROM effect_outbox
+         WHERE envelope_id = ? ORDER BY effect_kind`,
+      ).all(envelope.envelope_id)).toEqual([
+        {
+          effect_kind: "correction_inventory_compensation",
+          state: "permanent_business_skip",
+          attempt_count: 1,
+          reason: "inventory_insufficient",
+        },
+        {
+          effect_kind: "daily_progress_replacement",
+          state: "succeeded",
+          attempt_count: 1,
+          reason: null,
+        },
+      ]);
       expect(result.items).toMatchObject([{
         status: "committed_with_issues",
         issue_codes: ["inventory_insufficient"],

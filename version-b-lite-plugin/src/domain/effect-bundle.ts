@@ -1896,6 +1896,11 @@ export interface ApplyCorrectionEffectsInput {
 
 export type ReadAppliedCorrectionResultInput = Omit<ApplyCorrectionEffectsInput, "now">;
 
+/** Internal test seam: proves the transaction rolls back claimed effects. */
+type CorrectionEffectFaultInput = ApplyCorrectionEffectsInput & {
+  readonly fault?: "after_claim";
+};
+
 interface NutritionSnapshotRow {
   snapshot_id: string;
   meal_event_id: string;
@@ -2023,6 +2028,70 @@ export function replaceDailyProgress(
   });
 }
 
+interface CorrectionOutboxRow {
+  readonly effect_id: string;
+  readonly effect_kind: string;
+  readonly state: string;
+}
+
+function claimCorrectionOutboxes(
+  database: DatabaseSync,
+  input: ApplyCorrectionEffectsInput,
+  outboxes: readonly CorrectionOutboxRow[],
+): void {
+  if (
+    outboxes.length === 0 || outboxes.some((outbox) =>
+      outbox.state !== "pending" && outbox.state !== "retryable_failed")
+  ) {
+    throw new Error("CORRECTION_EFFECT_INVALID:claim_state");
+  }
+  for (const outbox of outboxes) {
+    assertEffectTransition(outbox.state as "pending" | "retryable_failed", "processing");
+    database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+         reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = ?`,
+    ).run(
+      input.now,
+      input.envelopeId,
+      input.operationId,
+      outbox.effect_id,
+      outbox.state,
+    );
+    if (changed(database) !== 1) {
+      throw new Error("CORRECTION_EFFECT_INVALID:claim_cas");
+    }
+  }
+}
+
+function finalizeCorrectionOutboxes(
+  database: DatabaseSync,
+  input: ApplyCorrectionEffectsInput,
+  outboxes: readonly CorrectionOutboxRow[],
+  skippedCompensationEffectIds: ReadonlySet<string>,
+): void {
+  for (const outbox of outboxes) {
+    const terminal = skippedCompensationEffectIds.has(outbox.effect_id)
+      ? "permanent_business_skip" as const
+      : "succeeded" as const;
+    assertEffectTransition("processing", terminal);
+    database.prepare(
+      `UPDATE effect_outbox SET state = ?, reason = ?, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = 'processing'`,
+    ).run(
+      terminal,
+      terminal === "succeeded" ? null : "inventory_insufficient",
+      input.now,
+      input.envelopeId,
+      input.operationId,
+      outbox.effect_id,
+    );
+    if (changed(database) !== 1) {
+      throw new Error("CORRECTION_EFFECT_INVALID:terminal_cas");
+    }
+  }
+}
+
 export function applyCorrectionEffects(
   input: ApplyCorrectionEffectsInput,
 ): CorrectionOperationResult {
@@ -2066,11 +2135,7 @@ export function applyCorrectionEffects(
     const outboxes = input.database.prepare(
       `SELECT effect_id, effect_kind, state FROM effect_outbox
        WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`,
-    ).all(input.envelopeId, input.operationId) as Array<{
-      effect_id: string;
-      effect_kind: string;
-      state: string;
-    }>;
+    ).all(input.envelopeId, input.operationId) as unknown as CorrectionOutboxRow[];
     const operations = input.database.prepare(
       "SELECT operation_id FROM event_records WHERE envelope_id = ? ORDER BY committed_at, event_id",
     ).all(input.envelopeId) as Array<{ operation_id: string }>;
@@ -2115,18 +2180,23 @@ export function applyCorrectionEffects(
       operations.filter((operation) => operation.operation_id === input.operationId).length !== 1 ||
       outboxes.length !== expectedKinds.size ||
       outboxes.some((outbox) =>
-        outbox.state !== "pending" || expectedKinds.get(outbox.effect_id) !== outbox.effect_kind) ||
+        (outbox.state !== "pending" && outbox.state !== "retryable_failed") ||
+        expectedKinds.get(outbox.effect_id) !== outbox.effect_kind) ||
       checkpointPayload.effects.some((effect, index) => {
         if (typeof effect !== "object" || effect === null || Array.isArray(effect)) return true;
         const value = effect as Record<string, unknown>;
         return Object.keys(value).sort().join("\u0000") !== "effect_id\u0000state" ||
-          value.effect_id !== outboxes[index]?.effect_id || value.state !== outboxes[index]?.state;
+          value.effect_id !== outboxes[index]?.effect_id || value.state !== "pending";
       })
     ) {
       if (checkpointPayload.data_revision !== computeRepositoryDataRevision(input.database)) {
         throw new Error("PREVIEW_STALE:data_revision");
       }
       throw new Error("CORRECTION_EFFECT_INVALID:checkpoint_payload");
+    }
+    claimCorrectionOutboxes(input.database, input, outboxes);
+    if ((input as CorrectionEffectFaultInput).fault === "after_claim") {
+      throw new Error("CORRECTION_EFFECT_FAILED:after_claim");
     }
 
     const correctionEvent = input.database.prepare(
@@ -2498,18 +2568,12 @@ export function applyCorrectionEffects(
       afterNutrients,
     );
 
-    for (const outbox of outboxes) {
-      const nextState = skippedCompensationEffectIds.has(outbox.effect_id)
-        ? "permanent_business_skip"
-        : "succeeded";
-      input.database.prepare(
-        `UPDATE effect_outbox SET state = ?, updated_at = ?
-         WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = 'pending'`,
-      ).run(nextState, input.now, input.envelopeId, input.operationId, outbox.effect_id);
-      if (changed(input.database) !== 1) {
-        throw new Error("CORRECTION_EFFECT_INVALID:outbox_cas");
-      }
-    }
+    finalizeCorrectionOutboxes(
+      input.database,
+      input,
+      outboxes,
+      skippedCompensationEffectIds,
+    );
     const terminalEffects = input.database.prepare(
       `SELECT effect_id, effect_kind, state FROM effect_outbox
        WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`,
