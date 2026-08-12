@@ -145,6 +145,9 @@ export interface PreparedCorrection {
   readonly fact: PreparedEnvelopeOperation;
   readonly correction_id: string;
   readonly operation: CorrectRecordOperation | UndoRecordOperation;
+  readonly progress_date: string;
+  readonly progress_before: NutritionVector;
+  readonly progress_after: NutritionVector;
 }
 
 export interface CorrectionOperationResult {
@@ -318,7 +321,7 @@ export function prepareCorrectionOperation(
     : current.snapshot.items.map((item) => item.item_order);
   const beforeAmount = current.snapshot.items[itemOrder].amount;
   const afterAmount = afterSnapshot.items[itemOrder].amount;
-  preflightCorrectionNutrition(
+  const progressPreflight = preflightCorrectionNutrition(
     input.database,
     current.snapshot,
     afterSnapshot,
@@ -370,6 +373,9 @@ export function prepareCorrectionOperation(
   return Object.freeze({
     correction_id: correctionId,
     operation,
+    progress_date: date,
+    progress_before: progressPreflight.before,
+    progress_after: progressPreflight.after,
     fact: Object.freeze({
       database: input.database,
       secret: Uint8Array.from(input.secret),
@@ -917,7 +923,7 @@ export function preflightMealOperation(
   database: DatabaseSync,
   operation: RecordMealOperation,
   precedingCandidates: ReadonlyMap<string, readonly InventoryCandidate[]> = new Map(),
-): void {
+): DailyProgressResult {
   let preflightMealProgress: NutritionVector = zeroNutrition();
   for (const item of operation.items) {
     const candidates = operation.location === "outside"
@@ -947,6 +953,14 @@ export function preflightMealOperation(
         );
     preflightMealProgress = addNutritionVectors(preflightMealProgress, scaled);
   }
+  return Object.freeze({
+    date: toNaturalDate(operation.occurred_at, "Asia/Shanghai"),
+    timezone: "Asia/Shanghai" as const,
+    coverage_status: Object.values(preflightMealProgress).every((value) => value !== null)
+      ? "complete" as const
+      : "partial" as const,
+    nutrients: Object.freeze(preflightMealProgress),
+  });
 }
 
 function writeMealNutritionProfile(
@@ -1713,7 +1727,7 @@ function preflightCorrectionNutrition(
   beforeSnapshot: EffectiveMealSnapshot,
   afterSnapshot: EffectiveMealSnapshot,
   affectedItemOrders: readonly number[],
-): void {
+): { readonly before: NutritionVector; readonly after: NutritionVector } {
   let beforeNutrients: NutritionVector = zeroNutrition();
   let afterNutrients: NutritionVector = zeroNutrition();
   for (const itemOrder of affectedItemOrders) {
@@ -1742,11 +1756,13 @@ function preflightCorrectionNutrition(
       ),
     );
   }
-  void beforeNutrients;
-  void afterNutrients;
+  return Object.freeze({
+    before: Object.freeze(beforeNutrients),
+    after: Object.freeze(afterNutrients),
+  });
 }
 
-function replaceDailyProgress(
+export function replaceDailyProgress(
   previous: DailyProgressResult,
   before: NutritionVector,
   after: NutritionVector,

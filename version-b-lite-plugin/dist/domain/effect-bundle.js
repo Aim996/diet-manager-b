@@ -131,7 +131,7 @@ export function prepareCorrectionOperation(input) {
         : current.snapshot.items.map((item) => item.item_order);
     const beforeAmount = current.snapshot.items[itemOrder].amount;
     const afterAmount = afterSnapshot.items[itemOrder].amount;
-    preflightCorrectionNutrition(input.database, current.snapshot, afterSnapshot, affectedItemOrders);
+    const progressPreflight = preflightCorrectionNutrition(input.database, current.snapshot, afterSnapshot, affectedItemOrders);
     const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
     const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
     const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
@@ -178,6 +178,9 @@ export function prepareCorrectionOperation(input) {
     return Object.freeze({
         correction_id: correctionId,
         operation,
+        progress_date: date,
+        progress_before: progressPreflight.before,
+        progress_after: progressPreflight.after,
         fact: Object.freeze({
             database: input.database,
             secret: Uint8Array.from(input.secret),
@@ -632,6 +635,14 @@ export function preflightMealOperation(database, operation, precedingCandidates 
                 : scaleNutritionVector(selection.nutrients, item.amount.nutrition_adoption_microunits, selection.basis_microunits);
         preflightMealProgress = addNutritionVectors(preflightMealProgress, scaled);
     }
+    return Object.freeze({
+        date: toNaturalDate(operation.occurred_at, "Asia/Shanghai"),
+        timezone: "Asia/Shanghai",
+        coverage_status: Object.values(preflightMealProgress).every((value) => value !== null)
+            ? "complete"
+            : "partial",
+        nutrients: Object.freeze(preflightMealProgress),
+    });
 }
 function writeMealNutritionProfile(database, idempotencyKey, itemOrder, normalizedName, selection, now) {
     const subjectType = selection.applicable_product_id === null ? "food" : "product";
@@ -1188,10 +1199,12 @@ function preflightCorrectionNutrition(database, beforeSnapshot, afterSnapshot, a
             ? afterSnapshot.items[itemOrder].amount.nutrition_adoption_microunits
             : 0, afterSnapshot.active));
     }
-    void beforeNutrients;
-    void afterNutrients;
+    return Object.freeze({
+        before: Object.freeze(beforeNutrients),
+        after: Object.freeze(afterNutrients),
+    });
 }
-function replaceDailyProgress(previous, before, after) {
+export function replaceDailyProgress(previous, before, after) {
     const nutrients = {};
     for (const field of Object.keys(previous.nutrients)) {
         const current = previous.nutrients[field];

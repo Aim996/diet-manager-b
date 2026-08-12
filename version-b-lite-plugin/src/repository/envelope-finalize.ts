@@ -141,11 +141,16 @@ const DAILY_NUTRIENT_FIELDS = [
   "water_ml_milli",
 ] as const;
 
-interface FrozenDailyProgress {
+export interface FrozenDailyProgress {
   readonly date: string;
   readonly timezone: "Asia/Shanghai";
   readonly coverage_status: "complete" | "partial";
   readonly nutrients: Readonly<Record<(typeof DAILY_NUTRIENT_FIELDS)[number], number | null>>;
+}
+
+export interface DailyProgressProjection {
+  readonly progress: FrozenDailyProgress;
+  readonly previous_generated_at: string | null;
 }
 
 function invalid(reason: string): never {
@@ -279,6 +284,68 @@ function addDailyProgress(
       ? "complete"
       : "partial",
     nutrients: Object.freeze(nutrients),
+  });
+}
+
+export function readLatestAuthoritativeDailyProgress(
+  database: DatabaseSync,
+  date: string,
+  timezone: "Asia/Shanghai",
+): { readonly progress: FrozenDailyProgress | null; readonly generated_at: string | null } {
+  const previousRow = database.prepare(
+    `SELECT generated_at, payload_json FROM daily_progress_snapshots
+     WHERE date = ? AND timezone = ?
+     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
+  ).get(date, timezone) as {
+    generated_at: string;
+    payload_json: string;
+  } | undefined;
+  if (!previousRow) return Object.freeze({ progress: null, generated_at: null });
+  let value: unknown;
+  try {
+    value = JSON.parse(previousRow.payload_json) as unknown;
+  } catch {
+    return authorityInvalid("daily_progress_previous");
+  }
+  if (canonicalJson(value) !== previousRow.payload_json) {
+    return authorityInvalid("daily_progress_previous");
+  }
+  const record = plainRecord(
+    value,
+    ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+    "daily_progress_previous",
+  );
+  if (record.authority_kind !== "diet-manager/daily-progress/v1") {
+    return authorityInvalid("daily_progress_previous");
+  }
+  return Object.freeze({
+    progress: parseDailyProgress({
+      coverage_status: record.coverage_status,
+      date: record.date,
+      nutrients: record.nutrients,
+      timezone: record.timezone,
+    }, "daily_progress_previous"),
+    generated_at: previousRow.generated_at,
+  });
+}
+
+export function projectDailyProgressContribution(
+  database: DatabaseSync,
+  contribution: FrozenDailyProgress,
+  precedingContributions: readonly FrozenDailyProgress[] = Object.freeze([]),
+): DailyProgressProjection {
+  const previous = readLatestAuthoritativeDailyProgress(
+    database,
+    contribution.date,
+    contribution.timezone,
+  );
+  let cumulative = previous.progress;
+  for (const preceding of precedingContributions) {
+    cumulative = addDailyProgress(cumulative, preceding);
+  }
+  return Object.freeze({
+    progress: addDailyProgress(cumulative, contribution),
+    previous_generated_at: previous.generated_at,
   });
 }
 
@@ -500,45 +567,14 @@ function freezeMealDailyProgress(
     canonicalJson(boundContribution) !== canonicalJson(contribution)
   ) return authorityInvalid("daily_progress_bundle");
 
-  const previousRow = input.database.prepare(
-    `SELECT generated_at, payload_json FROM daily_progress_snapshots
-     WHERE date = ? AND timezone = ?
-     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
-  ).get(contribution.date, contribution.timezone) as {
-    generated_at: string;
-    payload_json: string;
-  } | undefined;
-  let previous: FrozenDailyProgress | null = null;
-  if (previousRow) {
-    let value: unknown;
-    try {
-      value = JSON.parse(previousRow.payload_json) as unknown;
-    } catch {
-      return authorityInvalid("daily_progress_previous");
-    }
-    if (canonicalJson(value) !== previousRow.payload_json) return authorityInvalid("daily_progress_previous");
-    const record = plainRecord(
-      value,
-      ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
-      "daily_progress_previous",
-    );
-    if (record.authority_kind !== "diet-manager/daily-progress/v1") {
-      return authorityInvalid("daily_progress_previous");
-    }
-    previous = parseDailyProgress({
-      coverage_status: record.coverage_status,
-      date: record.date,
-      nutrients: record.nutrients,
-      timezone: record.timezone,
-    }, "daily_progress_previous");
-  }
-  const cumulative = addDailyProgress(previous, contribution);
+  const projection = projectDailyProgressContribution(input.database, contribution);
+  const cumulative = projection.progress;
   const generatedAt = nextProgressGeneratedAt(
     input.database,
     cumulative.date,
     cumulative.timezone,
     input.finalizedAt,
-    previousRow?.generated_at ?? null,
+    projection.previous_generated_at,
   );
   input.database.prepare(
     `INSERT INTO daily_progress_snapshots(

@@ -9,6 +9,8 @@ import {
 } from "../repository/fact-commit.js";
 import {
   finalizeEnvelope,
+  projectDailyProgressContribution,
+  readLatestAuthoritativeDailyProgress,
   type PreparedMixedItemResult,
 } from "../repository/envelope-finalize.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
@@ -20,6 +22,7 @@ import {
   prepareCorrectionOperation,
   readAppliedCorrectionResult,
   preflightMealOperation,
+  replaceDailyProgress,
   prepareMealOperation,
   preparePurchaseOperation,
   type MealOperationResult,
@@ -356,19 +359,37 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
 function preflightWriteOperations(
   database: DatabaseSync,
   operations: ValidatedWriteOperations,
-): void {
+): readonly ReturnType<typeof preflightMealOperation>[] {
   if (operations.length === 2) {
     const [purchase, meal] = operations;
-    preflightMealOperation(database, meal, new Map([[purchase.product.normalized_name, Object.freeze([{
+    return Object.freeze([preflightMealOperation(database, meal, new Map([[purchase.product.normalized_name, Object.freeze([{
       batch_id: purchase.batch_id,
       product_id: purchase.product.product_id,
       available_microunits: purchase.amount.observed_microunits,
       unit: purchase.amount.unit,
-    }])]]));
-    return;
+    }])]]))]);
   }
+  const contributions = [];
   for (const operation of operations) {
-    if (operation.kind === "record_meal") preflightMealOperation(database, operation);
+    if (operation.kind === "record_meal") contributions.push(preflightMealOperation(database, operation));
+  }
+  return Object.freeze(contributions);
+}
+
+function projectMealProgressBeforeFactCommit(
+  database: DatabaseSync,
+  contributions: readonly ReturnType<typeof preflightMealOperation>[],
+): void {
+  const preceding: ReturnType<typeof preflightMealOperation>[] = [];
+  for (const contribution of contributions) {
+    projectDailyProgressContribution(
+      database,
+      contribution,
+      preceding.filter((candidate) =>
+        candidate.date === contribution.date && candidate.timezone === contribution.timezone
+      ),
+    );
+    preceding.push(contribution);
   }
 }
 
@@ -654,7 +675,7 @@ export function createDietDomainService(
     execute(execution: DomainExecuteInput): DomainExecutionResult {
       const envelope = validateAndFreezeEnvelope(execution.envelope);
       const operations = writeOperations(envelope);
-      preflightWriteOperations(options.database, operations);
+      const mealProgressContributions = preflightWriteOperations(options.database, operations);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
       const authority = authorizeRepositoryPreview({
@@ -668,6 +689,9 @@ export function createDietDomainService(
       });
       if (authority.binding.preview_id !== envelope.envelope_id) {
         return invalid("envelope_id");
+      }
+      if (authority.envelope_state === "received") {
+        projectMealProgressBeforeFactCommit(options.database, mealProgressContributions);
       }
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
       if (operations.length === 2) {
@@ -943,6 +967,19 @@ export function createDietDomainService(
             sequence: 0,
             operation,
           });
+          const currentProgress = readLatestAuthoritativeDailyProgress(
+            options.database,
+            preparedCorrection.progress_date,
+            "Asia/Shanghai",
+          ).progress;
+          if (currentProgress === null) {
+            throw new Error("CORRECTION_EFFECT_INVALID:daily_progress_missing");
+          }
+          replaceDailyProgress(
+            currentProgress,
+            preparedCorrection.progress_before,
+            preparedCorrection.progress_after,
+          );
           if (options.fault === "before_fact_commit") {
             emitFailure(options.failureSink, {
               stage: "FactCommit",

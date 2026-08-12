@@ -2014,6 +2014,64 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     }
   });
 
+  it("rejects cross-envelope daily progress overflow before meal FactCommit and keeps prior meals visible", () => {
+    const fixture = createMealService();
+    try {
+      const energyOnlySource = (sourceRef: string, energy: number): NutritionSourceCandidate => ({
+        ...nutritionSource("public_fixture", sourceRef, 1, null, {
+          kind: "per_item", microunits: 1, unit: "piece",
+        }),
+        nutrients: {
+          energy_kcal_milli: energy,
+          protein_mg: 0,
+          fat_mg: 0,
+          carbohydrate_mg: 0,
+          fiber_mg: 0,
+          water_ml_milli: 0,
+        },
+      });
+      previewAndExecute(fixture.service, mealEnvelope({
+        suffix: "daily-progress-maximum-first",
+        location: "outside",
+        items: [mealItem({
+          name: "maximum energy meal", unit: "piece", observed: 1,
+          adopted: 1, deducted: null,
+          sources: [energyOnlySource("fixture-daily-progress-maximum-v1", Number.MAX_SAFE_INTEGER)],
+        })],
+      }));
+      const overflowing = mealEnvelope({
+        suffix: "daily-progress-overflow-second",
+        location: "outside",
+        items: [mealItem({
+          name: "overflowing energy meal", unit: "piece", observed: 1,
+          adopted: 1, deducted: null,
+          sources: [energyOnlySource("fixture-daily-progress-one-v1", 1)],
+        })],
+      });
+      const preview = fixture.service.preview(overflowing);
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => fixture.service.execute({
+        envelope: overflowing,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrowError("ENVELOPE_FINALIZE_AUTHORITY_INVALID:daily_progress_sum");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-after-cross-envelope-progress-overflow",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ normalized_name: "maximum energy meal" }] }],
+      });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("keeps the latest cumulative progress when a later finalization has an earlier received time", () => {
     const fixture = createMealService();
     try {
@@ -2584,6 +2642,95 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects cross-envelope daily progress overflow before correction FactCommit and keeps the correction query-invisible", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T05:00:00.000Z",
+    });
+    const energyOnlySource = (sourceRef: string, energy: number): NutritionSourceCandidate => ({
+      ...nutritionSource("public_fixture", sourceRef, 1, null, {
+        kind: "per_item", microunits: 1, unit: "piece",
+      }),
+      nutrients: {
+        energy_kcal_milli: energy,
+        protein_mg: 0,
+        fat_mg: 0,
+        carbohydrate_mg: 0,
+        fiber_mg: 0,
+        water_ml_milli: 0,
+      },
+    });
+    try {
+      const targetMeal = mealEnvelope({
+        suffix: "correction-progress-target-one",
+        location: "outside",
+        items: [mealItem({
+          name: "correction progress target", unit: "piece", observed: 1,
+          adopted: 1, deducted: 0,
+          sources: [energyOnlySource("fixture-correction-progress-one-v1", 1)],
+        })],
+      });
+      previewAndExecute(service, targetMeal);
+      previewAndExecute(service, mealEnvelope({
+        suffix: "correction-progress-maximum-minus-one",
+        location: "outside",
+        items: [mealItem({
+          name: "correction progress remainder", unit: "piece", observed: 1,
+          adopted: 1, deducted: null,
+          sources: [energyOnlySource(
+            "fixture-correction-progress-maximum-minus-one-v1",
+            Number.MAX_SAFE_INTEGER - 1,
+          )],
+        })],
+      }));
+      const targetEventId = deriveDomainId("event", targetMeal.idempotency_key, 0);
+      const correction = correctionEnvelope({
+        suffix: "daily-progress-overflow-before-fact-commit",
+        targetEventId,
+        baseRevision: 1,
+        observed: 2,
+        adopted: 2,
+        deducted: 0,
+      });
+      const preview = service.preview(correction);
+      const before = businessCounts(runtime.database);
+      const beforeMeals = service.query({
+        kind: "query_meals",
+        operation_id: "query-before-correction-progress-overflow",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      });
+      expect(service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-summary-before-correction-progress-overflow",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        nutrients: { energy_kcal_milli: Number.MAX_SAFE_INTEGER },
+      });
+
+      expect(() => service.execute({
+        envelope: correction,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrowError("CORRECTION_EFFECT_INVALID:daily_progress");
+      expect(businessCounts(runtime.database)).toEqual(before);
+      expect(service.query({
+        kind: "query_meals",
+        operation_id: "query-after-correction-progress-overflow",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toEqual(beforeMeals);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
     }
   });
 

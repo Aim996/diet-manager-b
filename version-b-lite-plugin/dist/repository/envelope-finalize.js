@@ -154,6 +154,47 @@ function addDailyProgress(previous, contribution) {
         nutrients: Object.freeze(nutrients),
     });
 }
+export function readLatestAuthoritativeDailyProgress(database, date, timezone) {
+    const previousRow = database.prepare(`SELECT generated_at, payload_json FROM daily_progress_snapshots
+     WHERE date = ? AND timezone = ?
+     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`).get(date, timezone);
+    if (!previousRow)
+        return Object.freeze({ progress: null, generated_at: null });
+    let value;
+    try {
+        value = JSON.parse(previousRow.payload_json);
+    }
+    catch {
+        return authorityInvalid("daily_progress_previous");
+    }
+    if (canonicalJson(value) !== previousRow.payload_json) {
+        return authorityInvalid("daily_progress_previous");
+    }
+    const record = plainRecord(value, ["authority_kind", "coverage_status", "date", "nutrients", "timezone"], "daily_progress_previous");
+    if (record.authority_kind !== "diet-manager/daily-progress/v1") {
+        return authorityInvalid("daily_progress_previous");
+    }
+    return Object.freeze({
+        progress: parseDailyProgress({
+            coverage_status: record.coverage_status,
+            date: record.date,
+            nutrients: record.nutrients,
+            timezone: record.timezone,
+        }, "daily_progress_previous"),
+        generated_at: previousRow.generated_at,
+    });
+}
+export function projectDailyProgressContribution(database, contribution, precedingContributions = Object.freeze([])) {
+    const previous = readLatestAuthoritativeDailyProgress(database, contribution.date, contribution.timezone);
+    let cumulative = previous.progress;
+    for (const preceding of precedingContributions) {
+        cumulative = addDailyProgress(cumulative, preceding);
+    }
+    return Object.freeze({
+        progress: addDailyProgress(cumulative, contribution),
+        previous_generated_at: previous.generated_at,
+    });
+}
 function applyDailyProgressDelta(current, before, after) {
     if (current.date !== before.date || current.date !== after.date ||
         current.timezone !== before.timezone || current.timezone !== after.timezone)
@@ -308,33 +349,9 @@ function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
     if (boundContribution === null ||
         canonicalJson(boundContribution) !== canonicalJson(contribution))
         return authorityInvalid("daily_progress_bundle");
-    const previousRow = input.database.prepare(`SELECT generated_at, payload_json FROM daily_progress_snapshots
-     WHERE date = ? AND timezone = ?
-     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`).get(contribution.date, contribution.timezone);
-    let previous = null;
-    if (previousRow) {
-        let value;
-        try {
-            value = JSON.parse(previousRow.payload_json);
-        }
-        catch {
-            return authorityInvalid("daily_progress_previous");
-        }
-        if (canonicalJson(value) !== previousRow.payload_json)
-            return authorityInvalid("daily_progress_previous");
-        const record = plainRecord(value, ["authority_kind", "coverage_status", "date", "nutrients", "timezone"], "daily_progress_previous");
-        if (record.authority_kind !== "diet-manager/daily-progress/v1") {
-            return authorityInvalid("daily_progress_previous");
-        }
-        previous = parseDailyProgress({
-            coverage_status: record.coverage_status,
-            date: record.date,
-            nutrients: record.nutrients,
-            timezone: record.timezone,
-        }, "daily_progress_previous");
-    }
-    const cumulative = addDailyProgress(previous, contribution);
-    const generatedAt = nextProgressGeneratedAt(input.database, cumulative.date, cumulative.timezone, input.finalizedAt, previousRow?.generated_at ?? null);
+    const projection = projectDailyProgressContribution(input.database, contribution);
+    const cumulative = projection.progress;
+    const generatedAt = nextProgressGeneratedAt(input.database, cumulative.date, cumulative.timezone, input.finalizedAt, projection.previous_generated_at);
     input.database.prepare(`INSERT INTO daily_progress_snapshots(
       progress_snapshot_id, idempotency_result_id, date, timezone,
       goal_version_id, coverage_status, generated_at, payload_json
