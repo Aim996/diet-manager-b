@@ -2523,8 +2523,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -2704,8 +2707,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3140,8 +3146,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3197,8 +3206,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3547,8 +3559,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3570,8 +3585,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3610,8 +3628,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3827,8 +3848,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3885,8 +3909,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3914,8 +3941,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -3975,8 +4005,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -4026,8 +4059,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -4507,8 +4543,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -4759,8 +4798,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -4888,8 +4930,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -4950,8 +4995,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -5176,8 +5224,11 @@
         {
           "task_id": "B-SLICE-001",
           "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/acceptance-cases/tests/b-slice.test.ts",
+            "version-b-lite-plugin/tests/vertical-slice.test.ts"
+          ]
         },
         {
           "task_id": "C-SLICE-001",
@@ -7317,10 +7368,79 @@
       "owner_reviewer": "Codex /root待设计 / 独立B纵切复核待定",
       "status": "未开始",
       "next_reopen": "G1已通过；next=按已批准§26.5拆分首条可审查设计并取得确认，随后转进行中；切片或上游证据变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "brief_path": "docs/work-items/B-SLICE-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-MIXED-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-CORR-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-QUERY-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-EFFECT-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-MEAL-006": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-NUTR-008": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-MEAL-003": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-MEAL-004": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-INVENTORY-003": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-INVENTORY-004": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-NUTR-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-NUTR-002": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-NUTR-005": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-STORAGE-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-RECEIPT-001": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-RECEIPT-003": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ],
+        "CASE-PROGRESS-010": [
+          "shared/acceptance-cases/tests/b-slice.test.ts",
+          "version-b-lite-plugin/tests/vertical-slice.test.ts"
+        ]
+      },
+      "full_case_set": "G2_VERTICAL_SLICE_B_ONLY",
+      "assertion_state": "declared"
     },
     {
       "id": "C-SLICE-001",
