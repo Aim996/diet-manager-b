@@ -65,6 +65,7 @@ export interface PreparedPurchase {
 export interface MealItemExecutionResult {
   readonly item_order: number;
   readonly normalized_name: string;
+  readonly unit: string;
   readonly inventory_match: InventoryMatchDecision["status"];
   readonly inventory_transaction_id: string | null;
   readonly issue_codes: readonly string[];
@@ -870,6 +871,7 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       results.push(Object.freeze({
         item_order: item.item_order,
         normalized_name: item.normalized_name,
+        unit: String(amount.unit),
         inventory_match: decision.status,
         inventory_transaction_id: transactionId,
         issue_codes: Object.freeze(decision.issue_code ? [decision.issue_code] : []),

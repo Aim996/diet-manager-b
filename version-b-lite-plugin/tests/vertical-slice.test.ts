@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { canonicalJson } from "../src/authority/canonical-json.js";
 import { applyMealEffects, prepareMealOperation } from "../src/domain/effect-bundle.js";
 import { deriveDomainId } from "../src/domain/identity.js";
+import { buildQuickPrompt, buildReceiptData } from "../src/domain/receipt.js";
 import {
   createDietDomainService,
   type DietDomainFailureEntry,
@@ -284,6 +285,143 @@ function previewAndExecute(service: DietDomainService, envelope: DomainEnvelopeI
     data_revision: preview.data_revision,
   });
 }
+
+describe("B-SLICE-001 structured receipt and quick prompt builders", () => {
+  const progress = Object.freeze({
+    date: "2026-08-12",
+    timezone: "Asia/Shanghai" as const,
+    coverage_status: "complete" as const,
+    nutrients: Object.freeze({
+      energy_kcal_milli: 350_000,
+      protein_mg: 20_000,
+      fat_mg: 8_000,
+      carbohydrate_mg: 50_000,
+      fiber_mg: 5_000,
+      water_ml_milli: 300_000,
+    }),
+  });
+
+  it("CASE-RECEIPT-001 builds ordered multi-item data without leaking internal IDs", () => {
+    const receipt = buildReceiptData(Object.freeze({
+      status: "committed" as const,
+      date: "2026-08-12",
+      meal_slot: "lunch",
+      items: Object.freeze([
+        Object.freeze({
+          item_order: 0,
+          normalized_name: "rice",
+          unit: "g",
+          observed_microunits: 200_000_000,
+          nutrition_adoption_microunits: 200_000_000,
+          inventory_deduction_microunits: 200_000_000,
+          estimated_fields: Object.freeze([]),
+          inventory_match: "matched" as const,
+          issue_codes: Object.freeze([]),
+          inventory_transaction_id: "transaction-must-not-leak",
+          nutrition_source_type: "product_label" as const,
+          nutrition_profile_version: 1,
+          nutrients: progress.nutrients,
+        }),
+        Object.freeze({
+          item_order: 1,
+          normalized_name: "chicken",
+          unit: "g",
+          observed_microunits: 150_000_000,
+          nutrition_adoption_microunits: 150_000_000,
+          inventory_deduction_microunits: 150_000_000,
+          estimated_fields: Object.freeze([]),
+          inventory_match: "matched" as const,
+          issue_codes: Object.freeze([]),
+          inventory_transaction_id: "transaction-also-must-not-leak",
+          nutrition_source_type: "product_label" as const,
+          nutrition_profile_version: 1,
+          nutrients: progress.nutrients,
+        }),
+      ]),
+      quick_prompts: Object.freeze([]),
+      daily_progress: progress,
+    }));
+
+    expect(receipt.blocks.map((block) => block.kind)).toEqual([
+      "title", "item", "item", "progress",
+    ]);
+    expect(receipt).toMatchObject({
+      authority_kind: "diet-manager/receipt-data/v1",
+      status: "success",
+      blocks: [
+        { kind: "title", date: "2026-08-12", meal_slot: "lunch" },
+        {
+          kind: "item", item_order: 0, name: "rice",
+          amount: { observed_microunits: 200_000_000, unit: "g", evidence: "explicit" },
+          inventory_effect: { status: "matched" },
+        },
+        {
+          kind: "item", item_order: 1, name: "chicken",
+          amount: { observed_microunits: 150_000_000, unit: "g", evidence: "explicit" },
+          inventory_effect: { status: "matched" },
+        },
+        { kind: "progress", daily_progress: progress },
+      ],
+    });
+    const serialized = JSON.stringify(receipt);
+    expect(serialized).not.toContain("event-");
+    expect(serialized).not.toContain("transaction-");
+    expect(serialized).not.toContain("batch-");
+    expect(Object.isFrozen(receipt)).toBe(true);
+    expect(Object.isFrozen(receipt.blocks)).toBe(true);
+  });
+
+  it("CASE-RECEIPT-003 offers 2-4 stable options with free text last", () => {
+    const prompt = buildQuickPrompt(Object.freeze({
+      issue_id: "issue-5d86a475fd5359d4827a2ae7c645aeb3",
+      issue_code: "inventory_multiple_candidates" as const,
+      revision: 1,
+      generated_at: "2026-08-12T04:00:01.000Z",
+      expires_at: "2026-08-12T05:00:01.000Z",
+    }));
+
+    expect(prompt).toMatchObject({
+      authority_kind: "diet-manager/quick-prompt/v1",
+      issue_id: "issue-5d86a475fd5359d4827a2ae7c645aeb3",
+      option_ids: ["keep_original", "defer", "free_text"],
+      generated_from_revision: 1,
+      generated_at: "2026-08-12T04:00:01.000Z",
+      expires_at: "2026-08-12T05:00:01.000Z",
+      safe_exit_required: true,
+      accepts_combinations: true,
+      accepts_natural_language: true,
+      free_text_line: "也可以直接说明实际情况，不必选择以上选项。",
+    });
+    expect(prompt.options).toHaveLength(3);
+    expect(prompt.options.length).toBeGreaterThanOrEqual(2);
+    expect(prompt.options.length).toBeLessThanOrEqual(4);
+    expect(prompt.options.at(-1)).toEqual({
+      option_id: "free_text",
+      kind: "free_text",
+      label: "也可以直接说明实际情况，不必选择以上选项。",
+    });
+    expect(Object.isFrozen(prompt)).toBe(true);
+    expect(Object.isFrozen(prompt.options)).toBe(true);
+  });
+
+  it("does not turn effects_pending into a success receipt or progress block", () => {
+    const receipt = buildReceiptData(Object.freeze({
+      status: "effects_pending" as const,
+      date: "2026-08-12",
+      meal_slot: "lunch",
+      items: Object.freeze([]),
+      quick_prompts: Object.freeze([]),
+      daily_progress: null,
+    }));
+    expect(receipt).toEqual({
+      authority_kind: "diet-manager/receipt-data/v1",
+      status: "pending",
+      blocks: [{ kind: "pending", code: "effects_pending" }],
+    });
+    expect(JSON.stringify(receipt)).not.toContain("title");
+    expect(JSON.stringify(receipt)).not.toContain("progress");
+  });
+});
 
 describe("B-SLICE-001 purchase and inventory vertical slice", () => {
   it("adds two boxes of 12 milk cartons and queries one 24-carton batch", () => {
@@ -619,6 +757,19 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
           { normalized_name: "chicken", inventory_match: "matched", estimated_fields: [] },
         ],
       });
+      const mealPayload = result.payload as {
+        daily_progress: unknown;
+        receipt_data: { blocks: Array<{ kind: string; daily_progress?: unknown }> };
+      };
+      expect(mealPayload.receipt_data.blocks.map((block) => block.kind)).toEqual([
+        "title", "item", "item", "progress",
+      ]);
+      expect(mealPayload.receipt_data.blocks.at(-1)?.daily_progress).toEqual(
+        mealPayload.daily_progress,
+      );
+      expect(JSON.stringify(mealPayload.receipt_data)).not.toMatch(
+        /(?:event|item|transaction|batch|profile|snapshot)-[a-f0-9]{32}/,
+      );
       expect(fixture.service.query({
         kind: "query_meals", operation_id: "query-meals-explicit",
         date: "2026-08-12", timezone: "Asia/Shanghai",
@@ -859,6 +1010,23 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
       expect(fixture.runtime.database.prepare("SELECT issue_code, status FROM issues").all()).toEqual([
         { issue_code: "inventory_multiple_candidates", status: "open" },
       ]);
+      const issuePayload = result.payload as {
+        quick_prompts: Array<{
+          option_ids: string[];
+          options: Array<{ kind: string }>;
+          free_text_line: string;
+        }>;
+        receipt_data: { blocks: Array<{ kind: string }> };
+      };
+      expect(issuePayload.quick_prompts).toHaveLength(1);
+      expect(issuePayload.quick_prompts[0]).toMatchObject({
+        option_ids: ["keep_original", "defer", "free_text"],
+        free_text_line: "也可以直接说明实际情况，不必选择以上选项。",
+      });
+      expect(issuePayload.quick_prompts[0].options.at(-1)?.kind).toBe("free_text");
+      expect(issuePayload.receipt_data.blocks.map((block) => block.kind)).toEqual([
+        "title", "item", "issues", "progress",
+      ]);
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
@@ -1056,6 +1224,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
       expect(Object.isFrozen(replay.items[0])).toBe(true);
       expect(Object.isFrozen(replay.payload)).toBe(true);
       expect(Object.isFrozen((replay.payload as { daily_progress: unknown }).daily_progress)).toBe(true);
+      expect(Object.isFrozen((replay.payload as { receipt_data: unknown }).receipt_data)).toBe(true);
       expect(tableCounts(fixture.runtime.database)).toEqual(before);
     } finally {
       fixture.runtime.close();
@@ -1086,6 +1255,14 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         .daily_progress.nutrients.energy_kcal_milli).toBe(100_000);
       expect((second.payload as { daily_progress: { nutrients: { energy_kcal_milli: number } } })
         .daily_progress.nutrients.energy_kcal_milli).toBe(200_000);
+      const secondPayload = second.payload as {
+        daily_progress: unknown;
+        receipt_data: { blocks: Array<{ kind: string; daily_progress?: unknown }> };
+      };
+      expect(secondPayload.receipt_data.blocks.at(-1)).toEqual({
+        kind: "progress",
+        daily_progress: secondPayload.daily_progress,
+      });
       expect(fixture.service.query({
         kind: "query_daily_summary", operation_id: "query-daily-cumulative",
         date: "2026-08-12", timezone: "Asia/Shanghai",
@@ -1274,6 +1451,15 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
           authority_kind: "diet-manager/domain-execution/v1",
           daily_progress: mealResult.daily_progress,
           daily_progress_by_date: mealResult.daily_progress_by_date,
+          quick_prompts: Object.freeze([]),
+          receipt_data: buildReceiptData({
+            status: mealResult.status,
+            date: mealResult.daily_progress.date,
+            meal_slot: operation.meal_slot,
+            items: mealResult.meal_items,
+            quick_prompts: Object.freeze([]),
+            daily_progress: mealResult.daily_progress,
+          }),
         }),
       });
       expect(() => finalizeEnvelope({

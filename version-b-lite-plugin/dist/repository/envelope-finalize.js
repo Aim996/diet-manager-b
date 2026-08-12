@@ -2,6 +2,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { dietManagerActions, } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
+import { freezeQuickPrompt, rebaseReceiptProgress, } from "../domain/receipt.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 const INPUT_FIELDS = [
@@ -182,12 +183,45 @@ function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
     if (domainPayload.authority_kind !== "diet-manager/domain-execution/v1")
         return input;
     plainRecord(execution, ["envelope_id", "input_digest", "items", "payload", "status"], "daily_progress_execution");
-    plainRecord(domainPayload, ["authority_kind", "daily_progress", "daily_progress_by_date"], "daily_progress_payload");
+    plainRecord(domainPayload, ["authority_kind", "daily_progress", "daily_progress_by_date", "quick_prompts", "receipt_data"], "daily_progress_payload");
     const contribution = parseDailyProgress(domainPayload.daily_progress, "daily_progress_contribution");
     if (!Array.isArray(domainPayload.daily_progress_by_date) ||
         domainPayload.daily_progress_by_date.length !== 1 ||
         canonicalJson(domainPayload.daily_progress_by_date[0]) !== canonicalJson(contribution))
         return authorityInvalid("daily_progress_by_date");
+    if (!Array.isArray(domainPayload.quick_prompts) || domainPayload.quick_prompts.length > 256) {
+        return authorityInvalid("quick_prompts");
+    }
+    let quickPrompts;
+    try {
+        quickPrompts = Object.freeze(domainPayload.quick_prompts.map(freezeQuickPrompt));
+    }
+    catch {
+        return authorityInvalid("quick_prompts");
+    }
+    const issueRows = input.database.prepare(`SELECT i.issue_id, i.issue_code, i.revision, i.detected_at, i.status
+     FROM issues i
+     JOIN meal_items m ON m.item_id = i.entity_id
+     JOIN event_records e ON e.event_id = m.event_id
+     WHERE e.envelope_id = ?
+     ORDER BY m.item_order, i.issue_id`).all(envelopeId);
+    if (issueRows.length !== quickPrompts.length ||
+        issueRows.some((row, index) => {
+            const prompt = quickPrompts[index];
+            return row.issue_id !== prompt.issue_id || row.issue_code !== prompt.issue_code ||
+                row.revision !== prompt.generated_from_revision || row.detected_at !== prompt.generated_at ||
+                row.status !== "open";
+        }))
+        return authorityInvalid("quick_prompt_authority");
+    if (typeof domainPayload.receipt_data !== "object" ||
+        domainPayload.receipt_data === null ||
+        Array.isArray(domainPayload.receipt_data))
+        return authorityInvalid("receipt_data");
+    const receipt = domainPayload.receipt_data;
+    const receiptProgress = receipt.blocks?.at(-1);
+    if (receiptProgress?.kind !== "progress" ||
+        canonicalJson(receiptProgress.daily_progress) !== canonicalJson(contribution))
+        return authorityInvalid("receipt_progress");
     const bundles = input.database.prepare(`SELECT operation_id, effect_state, result_status, completed_at, payload_json
      FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id`).all(envelopeId);
     if (bundles.length !== 1)
@@ -276,6 +310,8 @@ function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
             authority_kind: "diet-manager/domain-execution/v1",
             daily_progress: cumulative,
             daily_progress_by_date: [cumulative],
+            quick_prompts: quickPrompts,
+            receipt_data: rebaseReceiptProgress(receipt, cumulative),
         },
     };
     const payloadJson = canonicalJson(finalExecution);

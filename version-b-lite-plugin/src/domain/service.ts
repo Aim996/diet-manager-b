@@ -18,6 +18,12 @@ import {
 } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { queryDomainReadModel, type DomainQueryResult } from "./read-model.js";
+import {
+  buildQuickPrompt,
+  buildReceiptData,
+  type QuickPrompt,
+  type QuickPromptIssueCode,
+} from "./receipt.js";
 import type {
   AddInventoryOperation,
   DomainEnvelopeInput,
@@ -76,6 +82,50 @@ function timestamp(value: string, field: string): string {
     return invalid(field);
   }
   return value;
+}
+
+function quickPromptIssueCode(value: string): QuickPromptIssueCode {
+  switch (value) {
+    case "inventory_multiple_candidates":
+    case "inventory_insufficient":
+    case "inventory_unit_incompatible":
+    case "inventory_amount_unknown":
+      return value;
+    default:
+      throw new Error("DIET_DOMAIN_RESULT_INVALID:issue_code");
+  }
+}
+
+function buildMealQuickPrompts(
+  database: DatabaseSync,
+  result: MealOperationResult,
+  idempotencyKey: string,
+  generatedAt: string,
+): readonly QuickPrompt[] {
+  const expiresAt = new Date(Date.parse(generatedAt) + 60 * 60 * 1_000).toISOString();
+  return Object.freeze(result.meal_items.flatMap((item) => item.issue_codes.map((code) => {
+    const issueId = deriveDomainId("issue", idempotencyKey, item.item_order);
+    const row = database.prepare(
+      "SELECT issue_id, issue_code, revision, detected_at, status FROM issues WHERE issue_id = ?",
+    ).get(issueId) as {
+      issue_id: string;
+      issue_code: string;
+      revision: number;
+      detected_at: string;
+      status: string;
+    } | undefined;
+    if (
+      !row || row.issue_id !== issueId || row.issue_code !== code || row.revision !== 1 ||
+      row.detected_at !== generatedAt || row.status !== "open"
+    ) throw new Error("DIET_DOMAIN_RESULT_INVALID:issue_authority");
+    return buildQuickPrompt({
+      issue_id: row.issue_id,
+      issue_code: quickPromptIssueCode(row.issue_code),
+      revision: row.revision,
+      generated_at: row.detected_at,
+      expires_at: expiresAt,
+    });
+  })));
 }
 
 function emitFailure(
@@ -334,6 +384,20 @@ export function createDietDomainService(
           expectedOperationIds: Object.freeze([operation.operation_id]),
           sealedAt: committedAt,
         });
+        const quickPrompts = buildMealQuickPrompts(
+          options.database,
+          mealResult,
+          envelope.idempotency_key,
+          committedAt,
+        );
+        const receiptData = buildReceiptData({
+          status: mealResult.status,
+          date: mealResult.daily_progress.date,
+          meal_slot: operation.meal_slot,
+          items: mealResult.meal_items,
+          quick_prompts: quickPrompts,
+          daily_progress: mealResult.daily_progress,
+        });
         const mealExecution: DomainExecutionResult = Object.freeze({
           envelope_id: envelope.envelope_id,
           input_digest: inputDigest,
@@ -343,6 +407,8 @@ export function createDietDomainService(
             authority_kind: "diet-manager/domain-execution/v1",
             daily_progress: mealResult.daily_progress,
             daily_progress_by_date: mealResult.daily_progress_by_date,
+            quick_prompts: quickPrompts,
+            receipt_data: receiptData,
           }),
         });
         const finalizedMeal = finalizeEnvelope({

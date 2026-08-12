@@ -545,6 +545,7 @@ export function applyMealEffects(input) {
             results.push(Object.freeze({
                 item_order: item.item_order,
                 normalized_name: item.normalized_name,
+                unit: String(amount.unit),
                 inventory_match: decision.status,
                 inventory_transaction_id: transactionId,
                 issue_codes: Object.freeze(decision.issue_code ? [decision.issue_code] : []),
