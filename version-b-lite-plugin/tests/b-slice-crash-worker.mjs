@@ -2,9 +2,16 @@ import { lstatSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 
-import { applyMealEffects, prepareMealOperation } from "../dist/domain/effect-bundle.js";
+import {
+  applyMealEffects,
+  preflightMealOperation,
+  prepareMealOperation,
+} from "../dist/domain/effect-bundle.js";
 import { createDietDomainService } from "../dist/domain/service.js";
 import { appendPreparedOperationFact } from "../dist/repository/fact-commit.js";
+import {
+  createContributionProgressReservation,
+} from "../dist/repository/progress-reservation.js";
 import { openDietDatabase } from "../dist/storage/database.js";
 
 const CRASH_EXIT = 73;
@@ -202,6 +209,10 @@ if (mode === "after_fact_commit") {
   const input = execution(service, envelope);
   const operation = envelope.operations[0];
   if (operation.kind !== "record_meal") fail("meal_fixture");
+  const progressReservation = createContributionProgressReservation(
+    runtime.database,
+    preflightMealOperation(runtime.database, operation),
+  );
   const prepared = prepareMealOperation({
     database: runtime.database,
     secret,
@@ -217,6 +228,7 @@ if (mode === "after_fact_commit") {
     committedAt: "2026-08-12T10:00:00.000Z",
     sequence: 0,
     operation,
+    progressReservation,
   });
   appendPreparedOperationFact(prepared.fact);
   crash(mode, input);
