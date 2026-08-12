@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 296561,
-      "sha256": "EC47141386E86AA5949AE0D2634CFD9893C62DDDE659FC4234A75FC4962387E1"
+      "length": 297697,
+      "sha256": "3A8859EAAF480B58C631F1564E83BD38EF9C2280A38C129137E3BCE5BCB12BFE"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,7 +14,7 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "1236BE871244B331B6FA769ED5736F2C368AE2F4C0F5F62E5FC2E348B1FD57B5"
+      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
     }
   },
   "counts": {
@@ -904,13 +904,14 @@
       "reference_ids": [
         "CASE-EFFECT-003",
         "B-FAULT-001",
-        "DEC-023"
+        "DEC-023",
+        "EV-20260812-032"
       ],
       "source_change": "CASE-EFFECT-003的正式故障 Oracle 校正；L1状态语义修复",
       "impact": "全部子效果已耐久而仅EnvelopeFinalize失败时，信封及重启状态从effects_pending更正为effects_stable；同token只允许最终器继续，不得重复效果",
       "owner_approver": "Codex / 复审冻结",
       "tasks": "B-FAULT-001、DEC-023、CASE-EFFECT-003",
-      "status_evidence": "实施中；由18行B故障矩阵、catalog SHA绑定与独立故障复核关闭"
+      "status_evidence": "已验证；EV-20260812-032以18行B故障矩阵、catalog SHA绑定、完整不可变gate log与独立scoped rereview关闭，技术Ready且过程concern保留"
     }
   ]
 }

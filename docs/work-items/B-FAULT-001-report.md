@@ -1,5 +1,7 @@
 # B-FAULT-001 Stage A Candidate Report
 
+> Stage B closure update: the independent scoped rereview subsequently recorded P0=0/P1=0/P2=0 and Ready=YES for frozen candidate `b8bdbf207e4eda52eb395989b42e159d554cb078`. `B-FAULT-001` is now **DONE_WITH_CONCERNS — 技术 Ready，过程 concern 保留**; formal closure evidence is `EV-20260812-032`. The Stage A status below is retained as the historical pre-rereview posture.
+
 ## Status
 
 - Stage: **A — evidence refrozen; scoped rereview pending**

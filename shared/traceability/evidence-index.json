@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 296561,
-      "sha256": "EC47141386E86AA5949AE0D2634CFD9893C62DDDE659FC4234A75FC4962387E1"
+      "length": 297697,
+      "sha256": "3A8859EAAF480B58C631F1564E83BD38EF9C2280A38C129137E3BCE5BCB12BFE"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,12 +14,12 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 37212,
-      "sha256": "1236BE871244B331B6FA769ED5736F2C368AE2F4C0F5F62E5FC2E348B1FD57B5"
+      "sha256": "2EBF349E688523BF443EABEBFE486D1753375A90CF2C2FAADAF00D81793437A6"
     }
   },
   "counts": {
-    "evidence": 31,
-    "files_present": 29,
+    "evidence": 32,
+    "files_present": 30,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -558,6 +558,25 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "B-SLICE-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-032",
+      "scope": "B-FAULT-001 B完整故障矩阵",
+      "result": "候选b8bdbf207e4eda52eb395989b42e159d554cb078冻结7案/18行权威矩阵；fault 73/73、完整plugin 230/230、共享15/15、B验收7/7（精确责任集17/17）、故障权威2/2、两类并发、crash主harness+9 self-tests、OpenClaw/trace/x-gate和逐边界零残留通过；70,879-byte log SHA-256=433FF257E578C1461FE63E7191B7083AEF4583002CBDCA1C6E602E631466F69F；独立scoped rereview P0=0/P1=0/P2=0、Ready=YES",
+      "limitation": "以DONE_WITH_CONCERNS关闭B-FAULT-001；保留Task 6及首次复审两次广搜输出migration-v1匹配行concern，未继续direct open/hash/execute/modify/use且本轮无新增；X-GATE-002仍等待其余冻结输入，不授权map、G2/G3、安装、部署或产品可用",
+      "reference_ids": [
+        "B-FAULT-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-032-b-fault-001.md",
+        "length": 4720,
+        "sha256": "546687A84B3BF862C9CD6D1120E532AA8D46BC280C16DCE455395305254D236D"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-FAULT-001"
       ]
     }
   ]
