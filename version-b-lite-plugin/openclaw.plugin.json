@@ -12,6 +12,8 @@
     "onStartup": true
   },
   "contracts": {
-    "tools": ["diet_manager"]
+    "tools": [
+      "diet_manager"
+    ]
   }
 }
