@@ -771,6 +771,8 @@ git commit -m "test: verify B slice crash recovery"
 
 ### Task 10: Freeze candidate evidence, review, and plan state
 
+Final-fix refresh: code/test candidate `c8e6bcef39d0f98452432c3331095d963b9b9778` and Stage A review-input commit `e8680a131cec1e5dd7c18c9f50b9fed35510dae3` are frozen. The complete implementer gate passed; independent re-review is pending, so completion/trace closure steps below are reopened.
+
 **Files:**
 - Create: `docs/work-items/B-SLICE-001-brief.md`
 - Create: `docs/work-items/B-SLICE-001-report.md`
@@ -784,16 +786,17 @@ git commit -m "test: verify B slice crash recovery"
 
 **Interfaces:**
 - Consumes: one frozen candidate SHA and fresh outputs from every prior task.
-- Produces: auditable E-STOR+E-CASE evidence; `B-SLICE-001=已完成`; only `B-FAULT-001` becomes the next task.
+- Produces, only after the pending independent verdict: auditable E-STOR+E-CASE evidence; `B-SLICE-001=已完成`; only then may `B-FAULT-001` become the next task.
 
 - [x] **Step 1: Run the complete local gate on one SHA**
 
 Run, without editing between commands:
 
 ```powershell
-& $nodeExe .\node_modules\vitest\vitest.mjs run
+& $nodeExe .\node_modules\vitest\vitest.mjs run --maxWorkers=1 --minWorkers=1 --no-file-parallelism
 & $nodeExe .\node_modules\typescript\bin\tsc -p .\tsconfig.json --noEmit
 & $nodeExe .\tests\repository-concurrency.mjs
+& $nodeExe .\tests\progress-reservation-concurrency.mjs
 & $nodeExe .\tests\b-slice-crash-harness.mjs
 & $nodeExe .\node_modules\openclaw\openclaw.mjs plugins build --check --root . --entry .\dist\index.js
 & $nodeExe .\node_modules\openclaw\openclaw.mjs plugins validate --root . --entry .\dist\index.js
@@ -809,15 +812,15 @@ Run the existing foundation test and assert `handleFoundationAction()` still ret
 
 The report must list all 17 cases, their real assertion paths, candidate SHA, failures discovered and fixed, deferred non-G2 work, and the explicit statement “not installable; public OpenClaw tool remains non-writing.” The review package contains reproducible commands and no tokens, machine-private URLs, user data, or protected file content.
 
-- [x] **Step 4: Perform independent review and fix all P0/P1 findings**
+- [ ] **Step 4: Perform independent review and fix all P0/P1 findings**
 
 Review must inspect business semantics, transaction grouping, replay, append-only corrections, query write count, failure logs, public boundary, and open-source hygiene. Any code fix changes the candidate SHA and requires rerunning the affected gate plus final full gate.
 
-- [x] **Step 5: Update progress and traceability**
+- [ ] **Step 5: Update progress and traceability after the independent verdict**
 
 Set `B-SLICE-001` to completed only after the fresh evidence and P0=0/P1=0 review exist. Add `EV-20260812-031`; regenerate trace data; verify there are no orphan requirement/case/task/evidence references. Leave `B-FAULT-001` not started and identify it as the only next implementation task.
 
-- [x] **Step 6: Final verification and commit**
+- [ ] **Step 6: Final verification and closure commit after the independent verdict**
 
 ```powershell
 git diff --check

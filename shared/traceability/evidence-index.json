@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295985,
-      "sha256": "F4A500D61D17C671F5FB9FBCE82DF21CA8BE68FECADE5E2BB09CF76C58CE94D7"
+      "length": 296115,
+      "sha256": "0591E4089A5DA2B0ECCE2DA9A0172B3A7BFE747D041C9EE434AD9E541E20E84D"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -543,17 +543,17 @@
     },
     {
       "id": "EV-20260812-031",
-      "scope": "B-SLICE-001 B-only首条纵向切片",
-      "result": "候选074fd30465eded2b650e0e00dadfca98ec363abc通过147项插件测试、13项foundation、共享22项/精确17案责任、x-gate/trace、并发/崩溃、OpenClaw本地门和残留检查；四轮修复后独立复核P0=0/P1=0/P2=0、Ready",
-      "limitation": "只关闭B-SLICE-001并把B-FAULT-001设为唯一下一实现任务；not installable; public OpenClaw tool remains non-writing；不代表完整故障矩阵、G2/G3、安装、部署或产品可用",
+      "scope": "B-SLICE-001 B-only首条纵向切片候选",
+      "result": "候选c8e6bcef39d0f98452432c3331095d963b9b9778通过153项插件测试、31项repository、13项foundation、共享22项/精确17案责任、x-gate/trace、两类并发/崩溃、OpenClaw本地门和残留检查；Stage A=e8680a131cec1e5dd7c18c9f50b9fed35510dae3",
+      "limitation": "独立复审pending，P0/P1/P2未评定、Ready=NO；不关闭B-SLICE-001，不授权B-FAULT-001；not installable; public OpenClaw tool remains non-writing；不代表完整故障矩阵、G2/G3、安装、部署或产品可用",
       "reference_ids": [
         "B-SLICE-001",
         "B-FAULT-001"
       ],
       "file": {
         "path": "docs/evidence/EV-20260812-031-b-slice-001.md",
-        "length": 3564,
-        "sha256": "3D370031F1B80A75719A226EF59AA13399C280115AAE1306FFB076CDC8D7C8C6"
+        "length": 5070,
+        "sha256": "334930688D0ADC6CD8B7FE5810A6B29FA9E39E53A51EB5C5A904A9F95738A9D7"
       },
       "file_status": "present",
       "referenced_by_task_ids": [

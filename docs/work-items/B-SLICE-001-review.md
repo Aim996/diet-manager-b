@@ -1,15 +1,18 @@
 # B-SLICE-001 Independent Review
 
-## Final result
+## Current result
 
-- Candidate/code commit: `074fd30465eded2b650e0e00dadfca98ec363abc`
-- Review-input documentation commit: `a4c16e84c908ce4e2cefbefea3aef58eb557c9e5`
-- P0: 0
-- P1: 0
-- P2: 0
-- Ready: YES
+- Candidate/code commit: `c8e6bcef39d0f98452432c3331095d963b9b9778`
+- Stage A review-input documentation commit: `e8680a131cec1e5dd7c18c9f50b9fed35510dae3`
+- Superseded independently reviewed candidate: `074fd30465eded2b650e0e00dadfca98ec363abc`
+- P0: unassessed for the current candidate
+- P1: unassessed for the current candidate
+- P2: unassessed for the current candidate
+- Ready: NO — independent re-review pending
 
-The final independent review found no open scoped finding. It inspected the implementation and Fix4 diff, ran focused SQLite and compatibility checks, and verified the Git and generated-trace boundaries. The reviewer did not repeat the complete frozen gate; that full clean gate is the implementer's evidence for the exact candidate above.
+The previous P0=0/P1=0/P2=0, Ready=YES verdict remains a historical verdict for `074fd30465eded2b650e0e00dadfca98ec363abc` only.
+
+Subsequent P1 findings changed source, generated runtime artifacts, and tests; therefore that historical verdict cannot close or approve `c8e6bcef39d0f98452432c3331095d963b9b9778`. The refreshed candidate has complete implementer gate evidence, but no independent final verdict yet.
 
 ## Review history
 
@@ -20,20 +23,23 @@ The final independent review found no open scoped finding. It inspected the impl
 | Fix round 2 | Accessor/custom-array and single-item scaling findings addressed | `3a253b8` descriptor/prototype-cloned untrusted envelopes without invoking caller getters or iterators and reused the real no-write meal preflight before FactCommit. |
 | Fix round 3 | Multi-item and correction nutrition aggregation plus descriptor exactness addressed; cumulative cross-envelope progress and two history identifiers remained open | `ca0d9ea` preflighted meal nutrition sums and correction nutrition before append while preserving null unknown, undo and restore behavior. `cbf9811` synchronized generated OpenClaw metadata. |
 | Fix round 4 | Remaining P1 and P2 findings addressed | `074fd30` preflighted cumulative meal/correction daily progress against the latest authoritative snapshot, including same-parent preceding contributions. The history now uses the real `ddf3ed0` and `4503be6` commits and existing GREEN titles; unavailable historical RED titles are labeled unavailable. |
-| Final review | P0=0, P1=0, P2=0, Ready=YES | No new scoped finding. |
+| Prior final review | P0=0, P1=0, P2=0, Ready=YES for `074fd304` | No new scoped finding was found for that exact historical candidate. |
+| Post-closure final review findings | Two P1 and two P2 findings; Ready=NO | Terminal replay/stored-preview reuse still crossed live preflight; cross-envelope progress preflight was not transaction-authoritative under two SQLite connections; chronology and trailing-whitespace documentation defects remained. |
+| Final fix wave | Implementer remediation and full gate complete; independent verdict pending | `760e985` adds early frozen reuse and transaction-authoritative progress reservations; `d639b2b` corrects the two P2 documents; `c8e6bce` aligns the crash fixture with the production reservation fact. Stage A is `e8680a1`. |
 
-## Independently verified design facts
+## Current independent review scope
 
-- Meal preflight reads the latest authoritative daily progress and uses the same `addDailyProgress()` projection as finalization before any FactCommit.
-- Same-parent preceding contributions are filtered by date and timezone and folded exactly once.
-- Correction preflight derives before/after vectors from the effective meal state, reads the same-date authoritative progress, and calls the existing replacement projection before append.
-- Finalizer `BEGIN IMMEDIATE` reauthorization and recomputation remain the concurrency authority; preflight does not replace its compare-and-set boundary.
-- The two Fix4 SQLite regressions assert zero business-table delta and unchanged query results for cumulative meal and correction overflow.
-- Focused compatibility for null unknown, finalized replay, undo/restore, mixed ordering, and cumulative paths passed: 8 tests.
-- Source and generated runtime artifacts are synchronized.
+The independent reviewer must verify, rather than inherit, all of the following for exact candidate `c8e6bcef39d0f98452432c3331095d963b9b9778`:
+
+- Frozen terminal replay and stored-preview reuse occur before every live inventory, nutrition, and progress preflight.
+- Reservation input is an exact descriptor/prototype-safe shape; no dynamic getter executes; contribution versus replacement/date authority cannot be confused.
+- The first dietary FactCommit reauthorizes the reservation inside `BEGIN IMMEDIATE`, so a second SQLite connection loses before any dietary fact, effect, checkpoint, or finalization row is committed.
+- Single meal, mixed purchase-plus-meal, correction, crash/retry, active-reservation release, and public non-leakage paths agree on the same authority.
+- The EffectBundle public top-level shape remains exact, migration v1 is unchanged, source/dist are synchronized, and no dependency or public writing route was added.
+- The hard-timeout concurrency harness always bounds barriers and worker termination and closes/removes its owned SQLite resources in `finally`.
 
 ## Decision boundary
 
-This verdict closes `B-SLICE-001` only. `B-FAULT-001` remains not started and is the only next implementation task. `X-GATE-002` remains blocked, no selected-route map is authorized, and this review does not establish installation, deployment, G2/G3 gate passage, or product readiness.
+`B-SLICE-001` is reopened pending an independent verdict for the current candidate. `B-FAULT-001` remains not started and is not yet authorized as the active implementation task. `X-GATE-002` remains blocked, no selected-route map is authorized, and this pending review does not establish installation, deployment, G2/G3 gate passage, or product readiness.
 
 not installable; public OpenClaw tool remains non-writing.
