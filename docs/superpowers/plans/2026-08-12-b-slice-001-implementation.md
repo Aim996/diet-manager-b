@@ -272,11 +272,13 @@ export interface PreparedEnvelopeSeal {
 
 `appendPreparedOperationFact()` validates one child completely before SQL, then performs one `BEGIN IMMEDIATE` that inserts only that child's immutable event/items/outboxes and creates or checks the parent idempotency identity. The parent stays `received` while more children may append. Every child commit is durable before the next child starts, so a later child failure cannot roll back an earlier child.
 
+The first child must still match the signed preview `data_revision`. Each completed child freezes its post-effect `data_revision` in that child's existing `effect_bundle_commits.payload_json`. A later child is accepted only when all earlier sequences have exact operation-scoped bundle markers and the current repository revision equals the immediately preceding marker. This is the parent-local revision handoff: it permits the previous child's own committed inventory/nutrition changes, rejects unrelated writes inserted between children, does not mutate the signed preview payload, and requires no migration-v1 change. A child with no durable effect creates the same operation-scoped empty bundle marker during its append transaction.
+
 `sealPreparedEnvelopeFacts()` verifies the exact dense operation sequence against committed rows, rejects missing/extra/reordered children, then moves the parent through the existing fact states. If every outbox is already terminal it ends at `effects_stable`; otherwise it ends at `effects_pending`. `commitPreparedFact()` remains the compatibility wrapper: append one child, then seal it.
 
 - [ ] **Step 4: Make EffectBundle completion operation-scoped**
 
-Change the terminal check to query `WHERE envelope_id = ? AND operation_id = ?`, insert exactly one `effect_bundle_commits` row per `(envelope_id, operation_id)`, then query all envelope outboxes. Add `deferEnvelopeStability?: boolean` to the strict options DTO. With `true`, the operation transaction commits without changing the parent; `sealPreparedEnvelopeFacts()` performs the final parent transition. With `false`, preserve current single-operation behavior. Only when every committed operation is sealed and every outbox is terminal may the parent move to `effects_stable`.
+Change the terminal check to query `WHERE envelope_id = ? AND operation_id = ?`, insert exactly one `effect_bundle_commits` row per `(envelope_id, operation_id)`, freeze the operation sequence and post-effect repository revision in its canonical payload, then query all envelope outboxes. Add `deferEnvelopeStability?: boolean` to the strict options DTO. With `true`, the operation transaction commits without changing the parent; `sealPreparedEnvelopeFacts()` performs the final parent transition. With `false`, preserve current single-operation behavior. Only when every committed operation is sealed and every outbox is terminal may the parent move to `effects_stable`.
 
 ```sql
 SELECT effect_id, state
