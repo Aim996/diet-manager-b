@@ -4,7 +4,7 @@ import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { parseInventoryProjectionRow, } from "./query.js";
 import { computeRepositoryDataRevision } from "./revision.js";
 const INPUT_FIELDS = ["database", "now", "outboxId"];
-const ADD_FIELDS = [
+const LEGACY_ADD_FIELDS = [
     "batch",
     "kind",
     "product",
@@ -13,6 +13,7 @@ const ADD_FIELDS = [
     "transaction_id",
     "unit",
 ];
+const ADD_FIELDS = [...LEGACY_ADD_FIELDS, "nutrition_profile"];
 const DEDUCT_FIELDS = [
     "batch_id",
     "kind",
@@ -36,6 +37,22 @@ const BATCH_FIELDS = [
     "quantity_unit",
     "schema_version",
     "stocked_at",
+];
+const NUTRITION_PROFILE_FIELDS = [
+    "applicable_product_id",
+    "nutrients",
+    "nutrition_profile_id",
+    "profile_version",
+    "source_ref",
+    "source_type",
+];
+const NUTRIENT_FIELDS = [
+    "carbohydrate_mg",
+    "energy_kcal_milli",
+    "fat_mg",
+    "fiber_mg",
+    "protein_mg",
+    "water_ml_milli",
 ];
 function invalid(reason) {
     throw new TypeError(`INVENTORY_EFFECT_REQUEST_INVALID:${reason}`);
@@ -104,6 +121,14 @@ function timestamp(value, field) {
 function positiveMicrounits(value) {
     if (!Number.isSafeInteger(value) || value <= 0) {
         return authorityInvalid("quantity_microunits");
+    }
+    return value;
+}
+function nullableNutrient(value, field) {
+    if (value === null)
+        return null;
+    if (!Number.isSafeInteger(value) || value < 0) {
+        return authorityInvalid(field);
     }
     return value;
 }
@@ -200,11 +225,16 @@ function effectValue(row) {
     return effectInputs[row.effect_id];
 }
 function parseAdd(value) {
-    const source = exactJsonObject(value, ADD_FIELDS);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        return authorityInvalid("effect_shape");
+    }
+    const sourceRecord = value;
+    const source = exactJsonObject(value, Object.hasOwn(sourceRecord, "nutrition_profile") ? ADD_FIELDS : LEGACY_ADD_FIELDS);
     if (source.kind !== "inventory_add")
         return authorityInvalid("effect_kind");
     const product = exactJsonObject(source.product, PRODUCT_FIELDS);
     const batch = exactJsonObject(source.batch, BATCH_FIELDS);
+    const productId = ascii(product.product_id, "product_id");
     const explicitExpirationAt = batch.explicit_expiration_at === null
         ? null
         : timestamp(batch.explicit_expiration_at, "explicit_expiration_at");
@@ -215,7 +245,7 @@ function parseAdd(value) {
         quantityMicrounits: positiveMicrounits(source.quantity_microunits),
         unit: ascii(source.unit, "unit", 128),
         product: Object.freeze({
-            productId: ascii(product.product_id, "product_id"),
+            productId,
             schemaVersion: ascii(product.schema_version, "product_schema_version", 128),
             normalizedName: text(product.normalized_name, "normalized_name"),
             productType: ascii(product.product_type, "product_type", 128),
@@ -229,6 +259,9 @@ function parseAdd(value) {
             quantityUnit: ascii(batch.quantity_unit, "quantity_unit", 128),
             payloadJson: canonicalJson(batch.payload),
         }),
+        nutritionProfile: Object.hasOwn(sourceRecord, "nutrition_profile")
+            ? parsePreparedNutritionProfile(source.nutrition_profile, productId)
+            : null,
     });
 }
 function parseDeduct(value) {
@@ -255,6 +288,75 @@ function parseIntent(row) {
     if (row.effect_kind !== intent.kind)
         return authorityInvalid("outbox_effect_kind");
     return intent;
+}
+function parsePreparedNutritionProfile(value, productId) {
+    if (value === null)
+        return null;
+    const profile = exactJsonObject(value, NUTRITION_PROFILE_FIELDS);
+    const nutrients = exactJsonObject(profile.nutrients, NUTRIENT_FIELDS);
+    if (profile.source_type !== "product_label" &&
+        profile.source_type !== "public_fixture") {
+        return authorityInvalid("nutrition_source_type");
+    }
+    if (profile.applicable_product_id !== productId) {
+        return authorityInvalid("nutrition_product_id");
+    }
+    if (!Number.isSafeInteger(profile.profile_version) || profile.profile_version < 1) {
+        return authorityInvalid("nutrition_profile_version");
+    }
+    const frozenNutrients = Object.freeze({
+        carbohydrate_mg: nullableNutrient(nutrients.carbohydrate_mg, "carbohydrate_mg"),
+        energy_kcal_milli: nullableNutrient(nutrients.energy_kcal_milli, "energy_kcal_milli"),
+        fat_mg: nullableNutrient(nutrients.fat_mg, "fat_mg"),
+        fiber_mg: nullableNutrient(nutrients.fiber_mg, "fiber_mg"),
+        protein_mg: nullableNutrient(nutrients.protein_mg, "protein_mg"),
+        water_ml_milli: nullableNutrient(nutrients.water_ml_milli, "water_ml_milli"),
+    });
+    const payloadJson = canonicalJson({
+        applicable_product_id: productId,
+        authority_kind: "diet-manager/nutrition-profile/v1",
+        nutrients: frozenNutrients,
+        source_ref: ascii(profile.source_ref, "nutrition_source_ref"),
+        source_type: profile.source_type,
+    });
+    return Object.freeze({
+        nutritionProfileId: ascii(profile.nutrition_profile_id, "nutrition_profile_id"),
+        profileVersion: profile.profile_version,
+        sourceType: profile.source_type,
+        sourceRef: ascii(profile.source_ref, "nutrition_source_ref"),
+        coverageStatus: Object.values(frozenNutrients).every((value) => value !== null)
+            ? "complete"
+            : "partial",
+        payloadJson,
+    });
+}
+function writeNutritionProfile(database, intent, profile, now) {
+    if (!profile)
+        return;
+    const existing = database
+        .prepare(`SELECT * FROM nutrition_profiles
+       WHERE subject_type = 'product' AND subject_id = ? AND profile_version = ?`)
+        .get(intent.product.productId, String(profile.profileVersion));
+    if (existing) {
+        if (existing.nutrition_profile_id !== profile.nutritionProfileId ||
+            existing.schema_version !== "domain/v2" ||
+            existing.source_type !== profile.sourceType ||
+            existing.source_ref !== profile.sourceRef ||
+            existing.source_version !== String(profile.profileVersion) ||
+            existing.coverage_status !== profile.coverageStatus ||
+            existing.supersedes_profile_id !== null ||
+            existing.payload_json !== profile.payloadJson) {
+            return authorityInvalid("nutrition_profile_conflict");
+        }
+        return;
+    }
+    database
+        .prepare(`INSERT INTO nutrition_profiles(
+        nutrition_profile_id, schema_version, subject_type, subject_id,
+        profile_version, source_type, source_ref, source_version, retrieved_at,
+        coverage_status, created_at, supersedes_profile_id, payload_json
+      ) VALUES (?, 'domain/v2', 'product', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+        .run(profile.nutritionProfileId, intent.product.productId, String(profile.profileVersion), profile.sourceType, profile.sourceRef, String(profile.profileVersion), now, profile.coverageStatus, now, profile.payloadJson);
 }
 function projectionPayload(batchId, productId, quantityMicrounits, unit) {
     return canonicalJson({
@@ -310,7 +412,6 @@ function applyAdd(database, row, intent, now) {
         if (product.schema_version !== intent.product.schemaVersion ||
             product.normalized_name !== intent.product.normalizedName ||
             product.product_type !== intent.product.productType ||
-            product.payload_json !== intent.product.payloadJson ||
             product.brand !== null ||
             product.manufacturer !== null ||
             product.barcode !== null ||
@@ -326,6 +427,7 @@ function applyAdd(database, row, intent, now) {
         ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`)
             .run(intent.product.productId, intent.product.schemaVersion, intent.product.normalizedName, intent.product.productType, intent.product.payloadJson);
     }
+    writeNutritionProfile(database, intent, intent.nutritionProfile, now);
     const existingBatch = database
         .prepare("SELECT batch_id FROM inventory_batches WHERE batch_id = ?")
         .get(intent.batch.batchId);

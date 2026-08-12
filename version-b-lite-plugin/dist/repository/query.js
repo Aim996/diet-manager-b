@@ -1,6 +1,7 @@
 import { canonicalJson } from "../authority/canonical-json.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 const QUERY_FIELDS = ["batchId", "database"];
+const LIST_QUERY_FIELDS = ["database"];
 const PROJECTION_PAYLOAD_FIELDS = [
     "authority_kind",
     "batch_id",
@@ -98,4 +99,73 @@ export function getInventoryProjection(input) {
 }
 export function parseInventoryProjectionRow(row) {
     return parseProjection(row);
+}
+function assertCanonicalObject(value, label) {
+    let parsed;
+    try {
+        parsed = JSON.parse(value);
+    }
+    catch {
+        return invalid(`${label}_json`);
+    }
+    if (typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed) ||
+        canonicalJson(parsed) !== value) {
+        return invalid(`${label}_canonical`);
+    }
+}
+function ordinalCompare(left, right) {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+export function listInventoryProjection(input) {
+    const fields = exactDataProperties(input, LIST_QUERY_FIELDS);
+    if (typeof fields.database.value !== "object" || fields.database.value === null) {
+        return invalid("database");
+    }
+    const database = fields.database.value;
+    let transactionOpen = false;
+    try {
+        database.exec("BEGIN DEFERRED");
+        transactionOpen = true;
+        assertCurrentMigrationAuthority(database);
+        const rows = database
+            .prepare(`SELECT
+          p.product_id, p.normalized_name, p.product_type,
+          p.payload_json AS product_payload_json,
+          b.payload_json AS batch_payload_json,
+          i.*
+         FROM inventory_batch_projections i
+         JOIN inventory_batches b ON b.batch_id = i.batch_id
+         JOIN products p ON p.product_id = b.product_id`)
+            .all();
+        const items = rows.map((row) => {
+            assertCanonicalObject(row.product_payload_json, "product_payload");
+            assertCanonicalObject(row.batch_payload_json, "batch_payload");
+            const projection = parseProjection(row);
+            if (projection.product_id !== row.product_id)
+                return invalid("product_identity");
+            return Object.freeze({
+                ...projection,
+                normalized_name: row.normalized_name,
+                product_type: row.product_type,
+            });
+        });
+        items.sort((left, right) => ordinalCompare(left.normalized_name, right.normalized_name) ||
+            ordinalCompare(left.batch_id, right.batch_id));
+        database.exec("ROLLBACK");
+        transactionOpen = false;
+        return Object.freeze(items);
+    }
+    catch (error) {
+        if (transactionOpen) {
+            try {
+                database.exec("ROLLBACK");
+            }
+            catch {
+                // Preserve the primary read-model error.
+            }
+        }
+        throw error;
+    }
 }
