@@ -630,7 +630,7 @@ git commit -m "feat: orchestrate ordered mixed envelopes"
 - Consumes: public `CaseExecutionInput`, allowed public case/fixture catalogs, and `createDietDomainService()`.
 - Produces: `G2_B_SLICE_CASE_IDS`, `createBSliceDriver()`, and a deterministic 17-case report.
 
-- [ ] **Step 1: Freeze the matrix and its exact ID order**
+- [x] **Step 1: Freeze the matrix and its exact ID order**
 
 ```json
 {
@@ -680,7 +680,7 @@ git commit -m "feat: orchestrate ordered mixed envelopes"
 
 The matrix order and key sets are authority. The tests define the exact expected values for those keys from Plan 0.3 and the allowed public contracts; the driver receives only structured setup and contract hashes. The matrix and driver must not contain raw user text, internal IDs, paths, secrets, or any mechanism that reads expected values from the result under test.
 
-- [ ] **Step 2: Write the 17-case harness RED**
+- [x] **Step 2: Write the 17-case harness RED**
 
 ```ts
 it("executes exactly the G2 B-only responsibility set", async () => {
@@ -696,19 +696,19 @@ it("executes exactly the G2 B-only responsibility set", async () => {
 });
 ```
 
-- [ ] **Step 3: Implement case-to-structured-input mapping**
+- [x] **Step 3: Implement case-to-structured-input mapping**
 
 Use an exhaustive `switch (input.case_id)` with all 17 literal cases and a `never` exhaustiveness assertion. The driver receives only setup and contract hashes, creates a fresh test-owned database per case, executes the domain service, counts real business writes, emits a sanitized observation, closes the database, and removes the test directory.
 
-- [ ] **Step 4: Add mutation checks**
+- [x] **Step 4: Add mutation checks**
 
 Mutations must fail when: mixed operations are reversed; nutrition estimate is used as inventory deduction; outside meal reads inventory; ambiguous inventory is automatically selected; unknown nutrient becomes zero; old nutrition snapshot changes to v2; correction overwrites the original event; same-key replay writes; progress is rebuilt by an extra query; or a failed effect shows a success receipt.
 
-- [ ] **Step 5: Run the shared harness and B tests**
+- [x] **Step 5: Run the shared harness and B tests**
 
 Expected: exact 17/17 PASS, the existing 27-case harness protocol tests remain green, and B plugin tests remain green.
 
-- [ ] **Step 6: Commit acceptance binding**
+- [x] **Step 6: Commit acceptance binding**
 
 ```powershell
 git add shared/acceptance-cases version-b-lite-plugin
