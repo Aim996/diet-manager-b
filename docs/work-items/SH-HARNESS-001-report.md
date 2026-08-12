@@ -1,9 +1,9 @@
 # SH-HARNESS-001 Candidate Report
 
-> 状态：independent_review_passed；P0=0/P1=0，两个P2已在closure delta关闭。  
-> 日期：2026-08-12  
-> 分支：`agent/sh-harness-001-shared-runner`  
-> implementation candidate：`6601db6320078c264dfa4c481cc66d82fe360f4b`  
+> 状态：independent_review_passed；P0=0/P1=0，两个P2已在closure delta关闭。
+> 日期：2026-08-12
+> 分支：`agent/sh-harness-001-shared-runner`
+> implementation candidate：`6601db6320078c264dfa4c481cc66d82fe360f4b`
 > draft PR：<https://github.com/Aim996/diet-manager-b/pull/4>
 
 ## 1. 本轮到底开发了什么
