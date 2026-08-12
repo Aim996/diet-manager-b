@@ -44,7 +44,56 @@
 - 同 token 重试后只有未完成阶段变化，已完成事实/效果不重复；
 - 技术日志只含冻结脱敏字段，不含食物原文、SQL、密钥或绝对路径。
 
-### 3.2 `CASE-EFFECT-003` 状态裁决
+矩阵中的 `expected_error_code` 使用共享案例层的稳定小写代码；实际异常和技术日志使用
+`diagnostic.error_code` 的稳定大写代码。`observations` 必须是精确对象，至少含：
+
+```text
+command_envelope, outbox, facts, inventory_transactions,
+nutrition_profiles, nutrition_snapshots, issues,
+daily_progress_snapshots, envelope_finalizations, success_receipts
+```
+
+计数均指本案例专属新数据库中，本轮失败后仍可见的行数；`unchanged_from_pre_fault`
+表示该阶段进入前已耐久的数据必须字节不变。非业务存储案例也要显式写
+`command_envelope/outbox = not_applicable`，不能省略字段。
+
+### 3.2 精确故障行和失败后状态
+
+矩阵固定 18 行，顺序如下；不得把多个写点合并为一个泛化行：
+
+| 案例 | 精确 fault point（顺序固定） | 失败后权威 |
+|---|---|---|
+| `CASE-EFFECT-001` | `after_nutrition` | `effects_pending / facts_committed_effects_pending`；2 条 outbox 均为 `retryable_failed, attempt_count=1, reason=NUTRITION_EFFECT_WRITE_FAILED`；1 event、1 meal item 保留，其余效果/进度/最终行/成功回执均 0 |
+| `CASE-EFFECT-002` | `after_inventory_write`、`after_issue_write`、`after_progress_contribution_prepared` | 每行均为 `effects_pending / facts_committed_effects_pending`；4 条 outbox 均为 `retryable_failed, attempt_count=1, reason=MEAL_EFFECT_FAILED`；1 event、1 meal item 保留；库存交易、营养 profile/snapshot、Issue、进度 snapshot、最终行和成功回执均 0 |
+| `CASE-EFFECT-003` | `after_finalization_row`、`after_envelope`、`after_idempotency`、`before_commit` | 每行均保持 `effects_stable / effects_stable`；4 条已完成 outbox、1 event、1 meal item、1 库存交易、1 营养 snapshot 和 terminal EffectBundle 全部与进入最终器前字节不变；进度 snapshot、finalization 和成功回执均 0 |
+| `CASE-STORAGE-005` | `after_schema`、`before_history`、`before_commit`、`unknown_existing_database`、`drifted_v1_index` | 前三行候选库不发布且重试必须从 fresh candidate 开始；后两行拒绝前后数据库完整 bytes 和 `user_version` 不变；不得创建业务 envelope/outbox |
+| `CASE-STORAGE-006` | `after_commit_before_reply` | terminal payload bytes、两日期顺序 `2026-08-08,2026-08-09` 和 `single_day_alias_present=false` 冻结；无关后续写入后原 token 返回相同 bytes，所有业务表零新写 |
+| `CASE-STORAGE-007` | `changed_digest`、`changed_subject`、`changed_command` | 三行均为 `idempotency_conflict`；原 terminal row/result bytes 不变，全部业务表零新写，且不得返回旧结果冒充新请求结果 |
+| `CASE-INVENTORY-006` | `preview_data_revision_changed` | 原 preview 执行返回 `stale_revision`；candidate 变化本身保留，但本次执行产生 0 event、0 meal item、0 outbox、0 checkpoint、0 finalization |
+
+`CASE-EFFECT-002` 的三个 fault 都发生在同一个 meal EffectBundle 的
+`BEGIN IMMEDIATE ... ROLLBACK` 范围内。测试 fixture 固定为一个 home item、四条 outbox；
+不同 fixture 分别保证库存写、Issue 写和 progress contribution 已真实到达，再注入失败。
+因此三行的公开失败码都为 `effect_bundle_write_failed`，技术日志大写码统一为
+`MEAL_EFFECT_FAILED`，不能用某张表已暂时写入来改变失败后持久状态。
+
+`CASE-EFFECT-003` 的四行复用 repository 已存在的精确 fault union。公开失败码为
+`envelope_finalize_write_failed`，技术日志大写码为 `ENVELOPE_FINALIZE_FAILED`。
+最终器事务内的暂时写入必须全部回滚；重启后只允许调用 finalizer，完成效果不得再次 claim。
+
+所有 Effect/Finalizer 行的 `diagnostic` 恰含：
+
+```text
+stage, error_code, trace_id, input_digest,
+forbidden_content=[source_text,sql,secret,absolute_path]
+```
+
+同 token GREEN 后，Effect 行必须只把上述 retryable outbox 再 claim 一次
+（最终 `attempt_count=2`），事实行仍各 1、EffectBundle terminal 恰 1、
+EnvelopeFinalize 恰 1；Finalizer 行的全部完成 effect 计数和 attempt_count 保持不变，
+只新增 1 个进度 snapshot、1 个 finalization 和 1 个冻结成功回执。
+
+### 3.3 `CASE-EFFECT-003` 状态裁决
 
 现有 `cases.json` 写为 `effects_pending`，但数据库状态机和已实现事务边界表明：所有子效果已成功，仅 `EnvelopeFinalize` 失败时，信封必须保持 `effects_stable`。
 
@@ -56,7 +105,7 @@
 
 因此本任务将通过正式案例变更把该字段更正为 `effects_stable`，并增加变更记录和回归。这是修正过时 Oracle，不是修改实现去迎合测试。
 
-### 3.3 三个只有计划摘要的案例
+### 3.4 三个只有计划摘要的案例
 
 `CASE-EFFECT-002`、`CASE-STORAGE-005`、`CASE-INVENTORY-006` 目前不在可执行案例目录。本任务不会在测试里私设 expected，而是新建 B-FAULT 专用结构化矩阵并用 manifest SHA 绑定。它是对总计划已有摘要的机器化展开，不发明新产品语义。
 
