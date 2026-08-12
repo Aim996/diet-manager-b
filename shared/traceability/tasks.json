@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295978,
-      "sha256": "DAEA7EF1284D871E25BF7501FA7916F123E9D88E5324F4324CFEAB6DFB8C5C86"
+      "length": 296128,
+      "sha256": "055AE76A7885CA02ED97156A4C4C3A9B701D569E34AF3A176EC467F916F9FE49"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -20,9 +20,10 @@
   "counts": {
     "tasks": 59,
     "status": {
-      "未开始": 27,
+      "未开始": 26,
       "已完成": 24,
-      "已取消": 8
+      "已取消": 8,
+      "进行中": 1
     },
     "case_producer_rows": 144,
     "full_case_responsibility_assignments": 5,
@@ -2729,7 +2730,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -2772,7 +2773,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -2867,7 +2868,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3269,7 +3270,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5396,7 +5397,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5478,7 +5479,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5598,7 +5599,7 @@
         },
         {
           "task_id": "B-FAULT-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -7586,9 +7587,9 @@
       "verification": "精确C字段故障Oracle；E-STOR",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立B故障复核",
-      "status": "未开始",
-      "next_reopen": "唯一下一项；按WIP单独启动并补齐完整故障矩阵；故障点或依赖证据变化重开",
+      "owner_reviewer": "Codex /root / 独立B故障复核",
+      "status": "进行中",
+      "next_reopen": "当前冻结 7 个正式案例的故障点/持久状态/重启与同键重试矩阵；完成必要严重度复核后关闭，故障点或依赖证据变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

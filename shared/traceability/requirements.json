@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295978,
-      "sha256": "DAEA7EF1284D871E25BF7501FA7916F123E9D88E5324F4324CFEAB6DFB8C5C86"
+      "length": 296128,
+      "sha256": "055AE76A7885CA02ED97156A4C4C3A9B701D569E34AF3A176EC467F916F9FE49"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
