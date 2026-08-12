@@ -1294,6 +1294,13 @@ export interface ApplyMealEffectsInput {
   readonly fault?: "after_nutrition" | "after_first_item";
 }
 
+/**
+ * The stable-envelope recovery path reads only terminal, already-applied meal
+ * effects.  It intentionally excludes the clock and fault injection fields
+ * used while applying effects.
+ */
+export type ReadAppliedMealResultInput = Omit<ApplyMealEffectsInput, "now" | "fault">;
+
 function freezeStoredNutritionVector(value: unknown, label: string): NutritionVector {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
@@ -1323,7 +1330,7 @@ function freezeStoredNutritionVector(value: unknown, label: string): NutritionVe
 }
 
 function readAppliedMealResultInTransaction(
-  input: ApplyMealEffectsInput,
+  input: ReadAppliedMealResultInput,
   checkpoint: MealBundleCheckpointRow,
 ): MealOperationResult {
   if (
@@ -1516,6 +1523,78 @@ function readAppliedMealResultInTransaction(
     daily_progress: dailyProgress,
     daily_progress_by_date: Object.freeze([dailyProgress]) as readonly [DailyProgressResult],
   });
+}
+
+/**
+ * Reconstruct a meal result from its terminal effect bundle without claiming
+ * or writing an outbox.  The stored terminal revision must still describe the
+ * current repository, otherwise a finalizer could resume from mixed authority.
+ */
+export function readAppliedMealResult(
+  input: ReadAppliedMealResultInput,
+): MealOperationResult {
+  assertCurrentMigrationAuthority(input.database);
+  if (input.operationSequence !== 0) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_sequence");
+  }
+  const checkpoints = input.database.prepare(
+    `SELECT operation_id, effect_state, result_status, completed_at, payload_json
+     FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as unknown as MealBundleCheckpointRow[];
+  if (checkpoints.length !== 1) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+  }
+  const checkpoint = checkpoints[0];
+  const bundle = parseCanonical(checkpoint.payload_json, "terminal_checkpoint");
+  exactKeys(
+    bundle,
+    ["authority_kind", "data_revision", "effects", "operation_sequence"],
+    "terminal_checkpoint",
+  );
+  if (bundle.data_revision !== computeRepositoryDataRevision(input.database)) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_revision");
+  }
+  const events = input.database.prepare(
+    `SELECT event_id FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{ event_id: string }>;
+  if (
+    events.length !== 1 ||
+    events[0]?.event_id !== deriveDomainId("event", input.idempotencyKey, input.operationSequence)
+  ) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
+  }
+  const items = input.database.prepare(
+    `SELECT item_order FROM meal_items WHERE event_id = ? ORDER BY item_order`,
+  ).all(events[0].event_id) as Array<{ item_order: number }>;
+  const expectedEffects = new Map<string, string>();
+  for (const item of items) {
+    if (input.location === "home") {
+      expectedEffects.set(mealEffectId(input.idempotencyKey, item.item_order, 0), "inventory_deduct");
+      expectedEffects.set(mealEffectId(input.idempotencyKey, item.item_order, 1), "issue_projection");
+    }
+    expectedEffects.set(mealEffectId(input.idempotencyKey, item.item_order, 2), "nutrition_snapshot");
+  }
+  expectedEffects.set(
+    mealEffectId(input.idempotencyKey, items.length, 9),
+    "daily_progress_contribution",
+  );
+  const outboxes = input.database.prepare(
+    `SELECT effect_id, effect_kind, state FROM effect_outbox
+     WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{
+    effect_id: string;
+    effect_kind: string;
+    state: string;
+  }>;
+  if (
+    items.length === 0 || outboxes.length !== expectedEffects.size ||
+    outboxes.some((outbox) =>
+      expectedEffects.get(outbox.effect_id) !== outbox.effect_kind ||
+      (outbox.state !== "succeeded" && outbox.state !== "permanent_business_skip"))
+  ) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+  }
+  return readAppliedMealResultInTransaction(input, checkpoint);
 }
 
 export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationResult {

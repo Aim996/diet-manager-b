@@ -57,6 +57,86 @@ afterEach(() => {
   for (const root of [...ownedRoots]) removeOwnedRoot(root);
 });
 
+describe("B-FAULT-001 single-meal stable finalization recovery", () => {
+  it("finalizes an already sealed home meal without rewriting its Fact or Effect rows", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T04:00:01.000Z",
+      });
+      previewAndExecute(service, purchaseMilkEnvelope({ suffix: "stable-meal-stock" }));
+      const envelope = mealEnvelope({
+        suffix: "stable-finalization-recovery",
+        location: "home",
+        items: [mealItem({
+          name: "whole milk 250ml", unit: "carton", observed: 1_000_000,
+          adopted: 1_000_000, deducted: 1_000_000,
+          sources: [nutritionSource("public_fixture", "stable-finalization-home-milk-v1", 1, null, { kind: "per_item", microunits: 1_000_000, unit: "carton" })],
+        })],
+      });
+      const preview = service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "record_meal") throw new Error("test operation mismatch");
+      const prepared = prepareMealOperation({
+        database: runtime.database, secret, token: preview.token,
+        inputDigest: preview.input_digest, dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key, sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id, receivedAt: envelope.received_at,
+        committedAt: envelope.received_at, sequence: 0, operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      applyMealEffects({
+        database: runtime.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+        operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: envelope.received_at,
+        location: operation.location,
+      });
+      sealPreparedEnvelopeFacts({
+        database: runtime.database, secret, token: preview.token, inputDigest: preview.input_digest,
+        subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+        dataRevision: preview.data_revision, traceId: prepared.fact.traceId,
+        expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: envelope.received_at,
+      });
+      const rows = (sql: string) => runtime.database.prepare(sql).all(envelope.envelope_id);
+      const before = canonicalJson({
+        events: rows("SELECT * FROM event_records WHERE envelope_id = ? ORDER BY event_id"),
+        items: rows("SELECT m.* FROM meal_items m JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ? ORDER BY m.item_id"),
+        profiles: rows("SELECT p.* FROM nutrition_profiles p JOIN nutrition_snapshots n ON n.nutrition_profile_id = p.nutrition_profile_id JOIN event_records e ON e.event_id = n.meal_event_id WHERE e.envelope_id = ? ORDER BY p.nutrition_profile_id"),
+        snapshots: rows("SELECT n.* FROM nutrition_snapshots n JOIN event_records e ON e.event_id = n.meal_event_id WHERE e.envelope_id = ? ORDER BY n.snapshot_id"),
+        transactions: rows("SELECT t.* FROM inventory_transactions t JOIN event_records e ON e.event_id = t.event_id WHERE e.envelope_id = ? ORDER BY t.transaction_id"),
+        issues: rows("SELECT i.* FROM issues i JOIN meal_items m ON m.item_id = i.entity_id JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ? ORDER BY i.issue_id"),
+        outbox: rows("SELECT * FROM effect_outbox WHERE envelope_id = ? ORDER BY outbox_id"),
+        bundles: rows("SELECT * FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id"),
+      });
+      const input = { envelope, token: preview.token, input_digest: preview.input_digest, data_revision: preview.data_revision } as const;
+
+      const recovered = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T04:00:02.000Z" }).execute(input);
+      expect(recovered.status).toBe("committed");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id)).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 1 });
+      expect(canonicalJson({
+        events: rows("SELECT * FROM event_records WHERE envelope_id = ? ORDER BY event_id"),
+        items: rows("SELECT m.* FROM meal_items m JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ? ORDER BY m.item_id"),
+        profiles: rows("SELECT p.* FROM nutrition_profiles p JOIN nutrition_snapshots n ON n.nutrition_profile_id = p.nutrition_profile_id JOIN event_records e ON e.event_id = n.meal_event_id WHERE e.envelope_id = ? ORDER BY p.nutrition_profile_id"),
+        snapshots: rows("SELECT n.* FROM nutrition_snapshots n JOIN event_records e ON e.event_id = n.meal_event_id WHERE e.envelope_id = ? ORDER BY n.snapshot_id"),
+        transactions: rows("SELECT t.* FROM inventory_transactions t JOIN event_records e ON e.event_id = t.event_id WHERE e.envelope_id = ? ORDER BY t.transaction_id"),
+        issues: rows("SELECT i.* FROM issues i JOIN meal_items m ON m.item_id = i.entity_id JOIN event_records e ON e.event_id = m.event_id WHERE e.envelope_id = ? ORDER BY i.issue_id"),
+        outbox: rows("SELECT * FROM effect_outbox WHERE envelope_id = ? ORDER BY outbox_id"),
+        bundles: rows("SELECT * FROM effect_bundle_commits WHERE envelope_id = ? ORDER BY operation_id"),
+      })).toBe(before);
+      const frozen = service.execute(input);
+      expect(frozen).toEqual(recovered);
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id)).toEqual({ count: 1 });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+});
+
 function purchaseMilkEnvelope(
   options: {
     suffix?: string;

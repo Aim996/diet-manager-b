@@ -27,6 +27,7 @@ import {
   applyPurchaseEffect,
   applyCorrectionEffects,
   prepareCorrectionOperation,
+  readAppliedMealResult,
   readAppliedCorrectionResult,
   preflightMealOperation,
   prepareMealOperation,
@@ -1139,7 +1140,11 @@ export function createDietDomainService(
             mixedItems: Object.freeze([]),
           }).payload as DomainExecutionResult;
         }
-        if (authority.envelope_state !== "received" && authority.envelope_state !== "effects_pending") {
+        if (
+          authority.envelope_state !== "received" &&
+          authority.envelope_state !== "effects_pending" &&
+          authority.envelope_state !== "effects_stable"
+        ) {
           throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
         }
         if (authority.envelope_state === "received" && options.fault === "before_fact_commit") {
@@ -1163,59 +1168,70 @@ export function createDietDomainService(
           });
         }
         let mealResult: MealOperationResult;
-        try {
-          mealResult = applyMealEffects({
+        if (authority.envelope_state === "effects_stable") {
+          mealResult = readAppliedMealResult({
             database: options.database,
             envelopeId: envelope.envelope_id,
             operationId: operation.operation_id,
             operationSequence: 0,
             idempotencyKey: envelope.idempotency_key,
-            now: committedAt,
             location: operation.location,
-            ...(options.fault === "after_meal_nutrition"
-              ? { fault: "after_nutrition" as const }
-              : options.fault === "after_meal_first_item"
-                ? { fault: "after_first_item" as const }
-                : {}),
           });
-        } catch (error) {
-          const code = (error instanceof Error ? error.message : "MEAL_EFFECT_FAILED").split(
-            ":",
-            1,
-          )[0];
-          if (authority.envelope_state === "received") {
-            markMealEffectsRetryable({
+        } else {
+          try {
+            mealResult = applyMealEffects({
               database: options.database,
               envelopeId: envelope.envelope_id,
               operationId: operation.operation_id,
               operationSequence: 0,
               idempotencyKey: envelope.idempotency_key,
-              inputDigest,
               now: committedAt,
               location: operation.location,
-              errorCode: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
+              ...(options.fault === "after_meal_nutrition"
+                ? { fault: "after_nutrition" as const }
+                : options.fault === "after_meal_first_item"
+                  ? { fault: "after_first_item" as const }
+                  : {}),
             });
+          } catch (error) {
+            const code = (error instanceof Error ? error.message : "MEAL_EFFECT_FAILED").split(
+              ":",
+              1,
+            )[0];
+            if (authority.envelope_state === "received") {
+              markMealEffectsRetryable({
+                database: options.database,
+                envelopeId: envelope.envelope_id,
+                operationId: operation.operation_id,
+                operationSequence: 0,
+                idempotencyKey: envelope.idempotency_key,
+                inputDigest,
+                now: committedAt,
+                location: operation.location,
+                errorCode: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
+              });
+            }
+            emitFailure(options.failureSink, {
+              stage: "EffectBundle",
+              error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
+              trace_id: preparedMeal.fact.traceId,
+              input_digest: inputDigest,
+            });
+            throw error;
           }
-          emitFailure(options.failureSink, {
-            stage: "EffectBundle",
-            error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
-            trace_id: preparedMeal.fact.traceId,
-            input_digest: inputDigest,
+          sealPreparedEnvelopeFacts({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId: preparedMeal.fact.traceId,
+            expectedOperationIds: Object.freeze([operation.operation_id]),
+            sealedAt: committedAt,
           });
-          throw error;
         }
-        sealPreparedEnvelopeFacts({
-          database: options.database,
-          secret: options.secret,
-          token: execution.token,
-          inputDigest,
-          subjectScope: envelope.subject_scope,
-          commandType: envelope.command_type,
-          dataRevision: execution.data_revision,
-          traceId: preparedMeal.fact.traceId,
-          expectedOperationIds: Object.freeze([operation.operation_id]),
-          sealedAt: committedAt,
-        });
         const quickPrompts = buildMealQuickPrompts(
           options.database,
           mealResult,
