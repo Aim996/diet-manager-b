@@ -5,9 +5,9 @@
 - Implementation/dist candidate: `b8bdbf207e4eda52eb395989b42e159d554cb078`
 - Plan baseline: `1ee40731a6d90c43e016ab04eb37ba85a54992ae`
 - Expected branch: `agent/b-fault-001`
-- Current status: **candidate; independent review pending**
-- P0/P1: **unassessed**
-- Ready: **NO** until an independent reviewer returns P0=0 and P1=0.
+- Current status: **Stage A evidence refrozen; scoped rereview pending**
+- Prior review: **P0=0, P1=1, P2=1**; P1-1 was missing complete immutable gate output and P2-1 was stale ledger phase text.
+- Ready: **NO** until the scoped rereviewer accepts P1/P2 remediation and returns P0=0/P1=0.
 
 The reviewer must not create `EV-20260812-032`, mark the task complete, write Ready YES on behalf of this package, update closure progress/trace files, push, or open a PR.
 
@@ -28,6 +28,9 @@ Do not inspect `version-b-lite-plugin/src/storage/migration-v1.ts` content. Do n
 ## Review inputs
 
 Read the B-FAULT plan/spec, `docs/work-items/B-FAULT-001-brief.md`, this package, `docs/work-items/B-FAULT-001-report.md`, and the Task 1–7 reports/reviews in `.superpowers/sdd/2026-08-12-b-fault-001-implementation/`. Review the candidate delta from the plan baseline, with particular attention to:
+
+- `docs/evidence/B-FAULT-001-stage-a-gates.txt` — complete captured output, `71,540` bytes, SHA-256 `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C`
+- `docs/evidence/B-FAULT-001-stage-a-gates.sha256` — committed identity list
 
 - `shared/acceptance-cases/b-fault-matrix.json`
 - `shared/acceptance-cases/tests/b-fault-matrix.test.ts`
@@ -87,6 +90,10 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 
 ## Recorded Stage A evidence
 
+- Immutable output identity: `docs/evidence/B-FAULT-001-stage-a-gates.txt`, `71,540` bytes, SHA-256 `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C`; SHA list at the adjacent `.sha256` path.
+- Candidate binding: every one of 22 command records names candidate `b8bdbf207e4eda52eb395989b42e159d554cb078` and evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`.
+- Completeness structure: 22 command begin/end records, exact commands, start/end timestamps, stdout/stderr begin/end sections and byte counts, 22 exit codes, and 22 full Node/temp boundaries. All exits, pinned/task Node counts, and new-temp counts are zero.
+- Sanitization: stdout/stderr are complete after deterministic absolute-prefix substitution only; no lines were omitted. Audit found no unredacted worktree or user-profile prefix and no protected/migration name or credential-shaped value.
 - noEmit/build: exit 0; sole formal build generated 3 matching dist files.
 - B fault matrix: 73/73.
 - full plugin Vitest: 230/230 in 8 files.
@@ -98,4 +105,4 @@ Run the nine crash self-tests one at a time using `B_SLICE_CRASH_SELFTEST` value
 
 ## Required verdict format
 
-Return one independent review document with reviewed range/SHA, spec compliance, code/test quality, separate P0/P1/P2 counts, concrete file/line evidence for every finding, concern assessment, and a final Ready YES/NO. Any P0 or P1 forces Ready NO and blocks Stage B closure.
+Perform a scoped evidence rereview of P1-1 and P2-1 while retaining the prior static code/test PASS. Recompute the committed log length/SHA, verify all 22 structures and complete outputs, sample every gate family, confirm boundary arrays/counts, audit deterministic redaction, and check the ledger phase. Return reviewed range/SHA, separate P0/P1/P2 counts, concrete evidence for any finding, concern assessment, and Ready YES/NO. Any P0 or P1 forces Ready NO and blocks Stage B closure.

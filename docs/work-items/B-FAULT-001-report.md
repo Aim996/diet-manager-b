@@ -2,11 +2,11 @@
 
 ## Status
 
-- Stage: **A — candidate frozen; independent review pending**
+- Stage: **A — evidence refrozen; scoped rereview pending**
 - Code/dist candidate: `b8bdbf207e4eda52eb395989b42e159d554cb078`
-- Independent findings: **P0/P1 unassessed**
+- Prior Stage A review: **P0=0, P1=1, P2=1**; P1 evidence remediation and P2 ledger remediation await scoped rereview.
 - Ready: **NO**
-- Task closure/evidence: **not written**; `EV-20260812-032` is intentionally absent.
+- Formal closure evidence: **not written**; `EV-20260812-032` is intentionally absent.
 
 This report records an implementation candidate and fresh local gate evidence. It does not declare an independent verdict, mark `B-FAULT-001` complete, update progress/Plan 0.3 closure state, regenerate closure trace mirrors, push, or open a PR.
 
@@ -50,6 +50,23 @@ The suites ran strictly serially. Full Vitest never overlapped a concurrency or 
 | 13 | B fault authority | PASS, 2/2 tests; exact 18 rows and mutations |
 | 14 | Trace self-test | PASS: requirements `71`, cases `144`, tasks `59`, governance `64`, evidence `31`, mutations `7` |
 | 15 | X-GATE-001 self-test | PASS: cases `13`, checks `7`, decision `pass_b_safety`, mutations `6` |
+
+## Fix round 1 immutable gate-output freeze
+
+The Stage A review found that the table above summarized results but did not freeze complete command output. The unchanged code/dist candidate was therefore rerun from evidence-run HEAD `15d2c541074a1f25bf6c7fa560201c3503f5ad18`. No second formal build was run; command 001 reran noEmit and OpenClaw command 016 used `plugins build --check`.
+
+| Artifact | Identity |
+| --- | --- |
+| Complete append-only gate log | `docs/evidence/B-FAULT-001-stage-a-gates.txt` |
+| SHA list | `docs/evidence/B-FAULT-001-stage-a-gates.sha256` |
+| Log byte length | `71,540` |
+| Log SHA-256 | `5668160F77295115FEAB61DDF77806003DC0627EEDE6A7D27C4323C9CD3BB43C` |
+| Frozen candidate binding | `b8bdbf207e4eda52eb395989b42e159d554cb078` |
+| Captured commands | `22`, all exit `0` |
+
+For every command the log records sequence, name, working directory, exact PowerShell command, UTC start/end, complete sanitized stdout and stderr with UTF-8 byte counts, exit code, pinned/task Node process count and exact process list, and baseline/after/new temp counts and exact name lists. All 22 boundary process counts and new-temp counts are zero, with explicit empty arrays.
+
+Output was not summarized or line-filtered. Deterministic redaction replaced only worktree, TEMP, and user-profile absolute prefixes with `<WORKTREE>`, `<TEMP>`, and `<USERPROFILE>`; the approved pinned Node path remains. An explicit audit found no unredacted worktree/user-profile prefix, protected/migration filename, bearer/API key, OpenAI-key, or JWT-shaped value.
 
 ## Crash-gate RED and minimal fix
 
@@ -120,4 +137,4 @@ b8bdbf2 build: freeze B fault candidate artifacts
 
 - Retained process concern: before Task 7, Task 6 and its first independent review each reported that a repository-wide search exclusion failed on Windows normalization and emitted matching `migration-v1.ts` lines. No direct read, hash, execution, modification, or use as technical evidence followed. Task 7 introduced no new such search/output concern: it used explicit safe paths and `Select-String` only.
 - The three scope-limited matrix cases remain limited as frozen: no public catalog claim for `CASE-EFFECT-002`, no upgrade/backup-restore product for `CASE-STORAGE-005`, and no full IssueResolution interaction for `CASE-INVENTORY-006`.
-- Stage A has no independent Task 7 verdict. P0/P1 remain unassessed, so Ready remains NO.
+- The first independent Task 7 review returned P0=0/P1=1/P2=1 because complete gate output was absent and the ledger lagged. Fix round 1 addresses those evidence/status findings, but no scoped rereview has accepted the remediation, so Ready remains NO.
