@@ -3,6 +3,7 @@ import { assertEffectTransition, assertEnvelopeTransition, } from "../state/tran
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { parseInventoryProjectionRow, } from "./query.js";
 import { computeRepositoryDataRevision } from "./revision.js";
+import { reservationFromEventPayload } from "./progress-reservation.js";
 const INPUT_FIELDS = ["database", "now", "outboxId"];
 const LEGACY_ADD_FIELDS = [
     "batch",
@@ -208,7 +209,7 @@ function injectFault(options, point) {
 function readOutbox(database, outboxId) {
     const rows = database
         .prepare(`SELECT
-        o.*, e.event_id, e.source_message_id, e.conversation_id,
+        o.*, e.event_id, e.event_type, e.source_message_id, e.conversation_id,
         e.received_at, e.committed_at, e.payload_json AS event_payload_json
        FROM effect_outbox o
        JOIN event_records e
@@ -234,6 +235,7 @@ function effectValue(row) {
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
         return authorityInvalid("event_payload");
     }
+    reservationFromEventPayload(payload, row.event_type);
     const effectInputs = payload.effect_inputs;
     if (typeof effectInputs !== "object" ||
         effectInputs === null ||

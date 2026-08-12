@@ -151,6 +151,26 @@ function nutritionSource(
   };
 }
 
+function overflowingPublicNutritionSource(sourceRef: string): NutritionSourceCandidate {
+  return {
+    ...nutritionSource(
+      "public_fixture",
+      sourceRef,
+      1,
+      null,
+      { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+    ),
+    nutrients: {
+      energy_kcal_milli: Number.MAX_SAFE_INTEGER,
+      protein_mg: 0,
+      fat_mg: 0,
+      carbohydrate_mg: 0,
+      fiber_mg: 0,
+      water_ml_milli: 0,
+    },
+  };
+}
+
 function purchaseStockEnvelope(options: {
   suffix: string;
   productId: string;
@@ -999,6 +1019,80 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
     }
   });
 
+  it("replays the byte-frozen mixed result without live nutrition preflight after the environment changes", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+      const original = mixedPurchaseAndDrinkEnvelope({ suffix: "environment-frozen" });
+      const meal = original.operations[1];
+      if (meal?.kind !== "record_meal") throw new Error("mixed meal fixture");
+      const envelope: DomainEnvelopeInput = {
+        ...original,
+        operations: [
+          original.operations[0]!,
+          {
+            ...meal,
+            items: [
+              {
+                ...meal.items[0]!,
+                amount: {
+                  ...meal.items[0]!.amount,
+                  observed_microunits: 2_000_000,
+                  nutrition_adoption_microunits: 2_000_000,
+                },
+                nutrition_sources: [
+                  ...meal.items[0]!.nutrition_sources,
+                  nutritionSource(
+                    "product_label",
+                    "label-fixture-product-milk-whole-250-duplicate-v1",
+                    1,
+                    "fixture-product-milk-whole-250-duplicate",
+                    { kind: "per_item", microunits: 1_000_000, unit: "carton" },
+                  ),
+                  overflowingPublicNutritionSource("fixture-mixed-environment-overflow-v1"),
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      const preview = service.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+      const first = service.execute(input);
+
+      seedPurchase(service, purchaseStockEnvelope({
+        suffix: "mixed-environment-duplicate",
+        productId: "fixture-product-milk-whole-250-duplicate",
+        normalizedName: "whole milk 250ml",
+        batchId: "batch-mixed-environment-duplicate",
+        quantityMicrounits: 4_000_000,
+        unit: "carton",
+      }));
+      const beforeReplay = tableCounts(runtime.database);
+      const replay = service.execute(input);
+
+      expect(canonicalJson(replay)).toBe(canonicalJson(first));
+      expect(replay).toEqual(first);
+      expect(Object.isFrozen(replay)).toBe(true);
+      expect(Object.isFrozen(replay.items)).toBe(true);
+      expect(Object.isFrozen(replay.payload)).toBe(true);
+      expect(tableCounts(runtime.database)).toEqual(beforeReplay);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
   it("keeps the earlier purchase when the later child needs clarification", () => {
     const root = newTestRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });
@@ -1131,6 +1225,104 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
         reason: null,
         attempt_count: 1,
       }]);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("keeps a mixed first-child reservation active across failure, retry, and release", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "reservation-first-child" });
+      const faultingService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+        fault: "after_inventory_business_writes",
+      });
+      const preview = faultingService.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+
+      expect(() => faultingService.execute(input)).toThrow(
+        "INVENTORY_EFFECT_FAILED:after_business_writes",
+      );
+      expect(runtime.database.prepare(
+        "SELECT event_type FROM event_records WHERE envelope_id = ? ORDER BY event_id",
+      ).all(envelope.envelope_id)).toEqual([{ event_type: "inventory_stock" }]);
+
+      const competingEnvelope = mealEnvelope({
+        suffix: "reservation-first-child-competitor",
+        location: "outside",
+        items: [mealItem({
+          name: "reservation competitor pear",
+          unit: "piece",
+          observed: 1_000_000,
+          adopted: 1_000_000,
+          deducted: 1_000_000,
+          sources: [nutritionSource(
+            "public_fixture",
+            "cn-reservation-competitor-pear-v1",
+            1,
+            null,
+            { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+          )],
+        })],
+      });
+      const competingPreview = faultingService.preview(competingEnvelope);
+      const competingInput = {
+        envelope: competingEnvelope,
+        token: competingPreview.token,
+        input_digest: competingPreview.input_digest,
+        data_revision: competingPreview.data_revision,
+      } as const;
+      const beforeConflict = tableCounts(runtime.database);
+      expect(() => faultingService.execute(competingInput)).toThrow(
+        "PROGRESS_RESERVATION_CONFLICT:active",
+      );
+      expect(tableCounts(runtime.database)).toEqual(beforeConflict);
+
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:02.000Z",
+      }).execute(input);
+      expect(recovered.status).toBe("committed");
+      expect(JSON.stringify(recovered)).not.toContain("progress_reservation");
+
+      const afterRelease = previewAndExecute(
+        createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-12T03:00:03.000Z",
+        }),
+        mealEnvelope({
+          suffix: "reservation-first-child-after-release",
+          location: "outside",
+          items: [mealItem({
+            name: "reservation release pear",
+            unit: "piece",
+            observed: 1_000_000,
+            adopted: 1_000_000,
+            deducted: 1_000_000,
+            sources: [nutritionSource(
+              "public_fixture",
+              "cn-reservation-release-pear-v1",
+              1,
+              null,
+              { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+            )],
+          })],
+        }),
+      );
+      expect(afterRelease.status).toBe("committed");
+      expect(JSON.stringify(afterRelease)).not.toContain("progress_reservation");
     } finally {
       runtime.close();
       removeOwnedRoot(root);
@@ -1973,6 +2165,142 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     }
   });
 
+  it("replays the byte-frozen finalized meal without live inventory or nutrition preflight", () => {
+    const fixture = createMealService();
+    try {
+      const normalizedName = "frozen environment shake";
+      const productId = "fixture-product-frozen-environment-shake";
+      seedPurchase(fixture.service, purchaseStockEnvelope({
+        suffix: "frozen-environment-primary",
+        productId,
+        normalizedName,
+        batchId: "batch-frozen-environment-primary",
+        quantityMicrounits: 10_000_000,
+        unit: "piece",
+      }));
+      const envelope = mealEnvelope({
+        suffix: "frozen-environment-replay",
+        location: "home",
+        items: [mealItem({
+          name: normalizedName,
+          unit: "piece",
+          observed: 2_000_000,
+          adopted: 2_000_000,
+          deducted: 2_000_000,
+          sources: [
+            nutritionSource(
+              "product_label",
+              `label-${productId}-v1`,
+              1,
+              productId,
+              { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+            ),
+            nutritionSource(
+              "product_label",
+              "label-fixture-product-frozen-environment-shake-duplicate-v1",
+              1,
+              "fixture-product-frozen-environment-shake-duplicate",
+              { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+            ),
+            overflowingPublicNutritionSource("fixture-frozen-environment-overflow-v1"),
+          ],
+        })],
+      });
+      const preview = fixture.service.preview(envelope);
+      const input = {
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      } as const;
+      const first = fixture.service.execute(input);
+
+      seedPurchase(fixture.service, purchaseStockEnvelope({
+        suffix: "frozen-environment-duplicate",
+        productId: "fixture-product-frozen-environment-shake-duplicate",
+        normalizedName,
+        batchId: "batch-frozen-environment-duplicate",
+        quantityMicrounits: 3_000_000,
+        unit: "piece",
+      }));
+      const beforeReplay = tableCounts(fixture.runtime.database);
+      const replay = fixture.service.execute(input);
+
+      expect(canonicalJson(replay)).toBe(canonicalJson(first));
+      expect(replay).toEqual(first);
+      expect(Object.isFrozen(replay)).toBe(true);
+      expect(Object.isFrozen(replay.items)).toBe(true);
+      expect(Object.isFrozen(replay.payload)).toBe(true);
+      expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("reuses a stored preview without live inventory or nutrition preflight", () => {
+    const fixture = createMealService();
+    try {
+      const normalizedName = "frozen preview shake";
+      const productId = "fixture-product-frozen-preview-shake";
+      seedPurchase(fixture.service, purchaseStockEnvelope({
+        suffix: "frozen-preview-primary",
+        productId,
+        normalizedName,
+        batchId: "batch-frozen-preview-primary",
+        quantityMicrounits: 10_000_000,
+        unit: "piece",
+      }));
+      const envelope = mealEnvelope({
+        suffix: "frozen-preview-reuse",
+        location: "home",
+        items: [mealItem({
+          name: normalizedName,
+          unit: "piece",
+          observed: 2_000_000,
+          adopted: 2_000_000,
+          deducted: 2_000_000,
+          sources: [
+            nutritionSource(
+              "product_label",
+              `label-${productId}-v1`,
+              1,
+              productId,
+              { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+            ),
+            nutritionSource(
+              "product_label",
+              "label-fixture-product-frozen-preview-shake-duplicate-v1",
+              1,
+              "fixture-product-frozen-preview-shake-duplicate",
+              { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+            ),
+            overflowingPublicNutritionSource("fixture-frozen-preview-overflow-v1"),
+          ],
+        })],
+      });
+      const first = fixture.service.preview(envelope);
+
+      seedPurchase(fixture.service, purchaseStockEnvelope({
+        suffix: "frozen-preview-duplicate",
+        productId: "fixture-product-frozen-preview-shake-duplicate",
+        normalizedName,
+        batchId: "batch-frozen-preview-duplicate",
+        quantityMicrounits: 3_000_000,
+        unit: "piece",
+      }));
+      const beforeReplay = tableCounts(fixture.runtime.database);
+      const replay = fixture.service.preview(envelope);
+
+      expect(replay).toEqual({ ...first, reused: true });
+      expect(Object.isFrozen(replay)).toBe(true);
+      expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("returns the cumulative same-day progress after a second meal", () => {
     const fixture = createMealService();
     try {
@@ -2328,6 +2656,21 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         { state: "retryable_failed", reason: "NUTRITION_EFFECT_WRITE_FAILED" },
         { state: "retryable_failed", reason: "NUTRITION_EFFECT_WRITE_FAILED" },
       ]);
+      const eventPayload = JSON.parse((runtime.database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json) as {
+        progress_reservation?: { authority_kind?: string; mode?: string };
+      };
+      expect(eventPayload.progress_reservation).toMatchObject({
+        authority_kind: "diet-manager/progress-reservation/v1",
+        mode: "contribution",
+      });
+      expect(JSON.stringify(service.query({
+        kind: "query_meals",
+        operation_id: "query-pending-reservation-not-public",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      }))).not.toContain("progress_reservation");
       expect(runtime.database.prepare(
         "SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?",
       ).get(envelope.envelope_id)).toEqual({
@@ -2357,6 +2700,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         data_revision: preview.data_revision,
       });
       expect(recovered.status).toBe("committed");
+      expect(JSON.stringify(recovered)).not.toContain("progress_reservation");
       expect(runtime.database.prepare(
         "SELECT DISTINCT state, reason, attempt_count FROM effect_outbox WHERE envelope_id = ?",
       ).all(envelope.envelope_id)).toEqual([{
@@ -2364,6 +2708,9 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         reason: null,
         attempt_count: 2,
       }]);
+      expect(runtime.database.prepare(
+        "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ state: "finalized" });
     } finally {
       runtime.close();
       removeOwnedRoot(root);
@@ -3458,7 +3805,7 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     }
   });
 
-  it("applies a frozen correction delta to the latest progress inside EnvelopeFinalize", () => {
+  it("serializes a later meal behind an active correction reservation and allows retry", () => {
     const fixture = createCorrectionFixture();
     const envelope = correctionEnvelope({
       suffix: "interleaved-progress-finalize",
@@ -3510,7 +3857,7 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         sealedAt: envelope.received_at,
       });
 
-      previewAndExecute(fixture.service, mealEnvelope({
+      const interleavedEnvelope = mealEnvelope({
         suffix: "between-correction-effect-and-finalize",
         location: "outside",
         items: [mealItem({
@@ -3527,7 +3874,19 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
             { kind: "per_item", microunits: 1_000_000, unit: "piece" },
           )],
         })],
-      }));
+      });
+      const interleavedPreview = fixture.service.preview(interleavedEnvelope);
+      const interleavedInput = {
+        envelope: interleavedEnvelope,
+        token: interleavedPreview.token,
+        input_digest: interleavedPreview.input_digest,
+        data_revision: interleavedPreview.data_revision,
+      } as const;
+      const beforeConflict = tableCounts(fixture.runtime.database);
+      expect(() => fixture.service.execute(interleavedInput)).toThrow(
+        "PROGRESS_RESERVATION_CONFLICT:active",
+      );
+      expect(tableCounts(fixture.runtime.database)).toEqual(beforeConflict);
 
       const execution = Object.freeze({
         envelope_id: envelope.envelope_id,
@@ -3582,8 +3941,11 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         payload: execution,
       });
       expect(finalized.payload).toMatchObject({
+        payload: { daily_progress: { nutrients: { energy_kcal_milli: 300_000 } } },
+        items: [{ daily_progress: { nutrients: { energy_kcal_milli: 300_000 } } }],
+      });
+      expect(fixture.service.execute(interleavedInput)).toMatchObject({
         payload: { daily_progress: { nutrients: { energy_kcal_milli: 400_000 } } },
-        items: [{ daily_progress: { nutrients: { energy_kcal_milli: 400_000 } } }],
       });
       expect(fixture.service.query({
         kind: "query_daily_summary",

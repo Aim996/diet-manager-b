@@ -11,6 +11,7 @@ import {
   type InventoryProjectionResult,
 } from "./query.js";
 import { computeRepositoryDataRevision } from "./revision.js";
+import { reservationFromEventPayload } from "./progress-reservation.js";
 
 const INPUT_FIELDS = ["database", "now", "outboxId"] as const;
 const LEGACY_ADD_FIELDS = [
@@ -154,6 +155,7 @@ interface OutboxEventRow {
   created_at: string;
   updated_at: string;
   event_id: string;
+  event_type: string;
   source_message_id: string;
   conversation_id: string;
   received_at: string;
@@ -401,7 +403,7 @@ function readOutbox(database: DatabaseSync, outboxId: string): OutboxEventRow {
   const rows = database
     .prepare(
       `SELECT
-        o.*, e.event_id, e.source_message_id, e.conversation_id,
+        o.*, e.event_id, e.event_type, e.source_message_id, e.conversation_id,
         e.received_at, e.committed_at, e.payload_json AS event_payload_json
        FROM effect_outbox o
        JOIN event_records e
@@ -427,6 +429,7 @@ function effectValue(row: OutboxEventRow): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return authorityInvalid("event_payload");
   }
+  reservationFromEventPayload(payload, row.event_type);
   const effectInputs = (payload as Record<string, unknown>).effect_inputs;
   if (
     typeof effectInputs !== "object" ||

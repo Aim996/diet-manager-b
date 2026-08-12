@@ -38,6 +38,19 @@ const AUTHORIZE_FIELDS = [
   "token",
 ] as const;
 
+const REUSE_FIELDS = [
+  "commandType",
+  "conversationId",
+  "database",
+  "idempotencyKey",
+  "inputDigest",
+  "previewId",
+  "previewMaterial",
+  "secret",
+  "sourceMessageId",
+  "subjectScope",
+] as const;
+
 export interface CreateServerPreviewInput {
   database: DatabaseSync;
   secret: Uint8Array;
@@ -57,6 +70,19 @@ export interface CreatedServerPreview {
   binding: PreviewBindingV1;
   token: string;
   reused: boolean;
+}
+
+export interface ReuseServerPreviewInput {
+  database: DatabaseSync;
+  secret: Uint8Array;
+  previewId: string;
+  idempotencyKey: string;
+  inputDigest: string;
+  subjectScope: string;
+  commandType: DietManagerAction;
+  sourceMessageId: string;
+  conversationId: string;
+  previewMaterial: unknown;
 }
 
 export type PreviewStoreFault = "after_envelope";
@@ -115,6 +141,19 @@ interface FrozenAuthorizeInput {
   dataRevision: string;
 }
 
+interface FrozenReuseInput {
+  database: DatabaseSync;
+  secret: Uint8Array;
+  previewId: string;
+  idempotencyKey: string;
+  inputDigest: string;
+  subjectScope: string;
+  commandType: DietManagerAction;
+  sourceMessageId: string;
+  conversationId: string;
+  previewHash: string;
+}
+
 interface ExistingAuthorityRow {
   envelope_id: string;
   envelope_idempotency_key: string;
@@ -122,6 +161,8 @@ interface ExistingAuthorityRow {
   envelope_state: string;
   result_status: string;
   committed_at: string | null;
+  source_message_id: string | null;
+  conversation_id: string | null;
   payload_json: string;
   idempotency_key: string;
   operation_id: string;
@@ -245,6 +286,22 @@ function freezeAuthorizeInput(value: AuthorizeServerPreviewInput): FrozenAuthori
   });
 }
 
+function freezeReuseInput(value: ReuseServerPreviewInput): FrozenReuseInput {
+  const fields = exactDataProperties(value, REUSE_FIELDS);
+  return Object.freeze({
+    database: database(fields.database.value),
+    secret: secret(fields.secret.value),
+    previewId: visibleAscii(fields.previewId.value, "preview_id", 128),
+    idempotencyKey: visibleAscii(fields.idempotencyKey.value, "idempotency_key"),
+    inputDigest: digest(fields.inputDigest.value),
+    subjectScope: visibleAscii(fields.subjectScope.value, "subject_scope"),
+    commandType: command(fields.commandType.value),
+    sourceMessageId: visibleAscii(fields.sourceMessageId.value, "source_message_id"),
+    conversationId: visibleAscii(fields.conversationId.value, "conversation_id"),
+    previewHash: canonicalSha256(fields.previewMaterial.value),
+  });
+}
+
 function authorityPayload(binding: PreviewBindingV1): string {
   return canonicalJson({
     authority_kind: "diet-manager/server-preview/v1",
@@ -291,6 +348,8 @@ function findAuthorityByIdempotencyKey(
         e.state AS envelope_state,
         e.result_status,
         e.committed_at,
+        e.source_message_id,
+        e.conversation_id,
         e.payload_json,
         i.idempotency_key,
         i.operation_id,
@@ -317,6 +376,8 @@ function findAuthorityByPreviewId(
         e.state AS envelope_state,
         e.result_status,
         e.committed_at,
+        e.source_message_id,
+        e.conversation_id,
         e.payload_json,
         i.idempotency_key,
         i.operation_id,
@@ -353,6 +414,42 @@ function assertPreviewReadyRow(row: ExistingAuthorityRow | undefined): ExistingA
 
 function bindingEquals(left: PreviewBindingV1, right: PreviewBindingV1): boolean {
   return canonicalJson(left) === canonicalJson(right);
+}
+
+export function reuseServerPreview(
+  input: ReuseServerPreviewInput,
+): CreatedServerPreview | undefined {
+  const frozen = freezeReuseInput(input);
+  assertCurrentMigrationAuthority(frozen.database);
+  const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
+  if (!existing) return undefined;
+  const row = assertPreviewReadyRow(existing);
+  const binding = storedBinding(row.payload_json);
+  if (row.envelope_id !== frozen.previewId) throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
+  if (row.idempotency_input_digest !== frozen.inputDigest) {
+    throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
+  }
+  if (row.source_message_id !== frozen.sourceMessageId) {
+    throw new Error("IDEMPOTENCY_CONFLICT:source_message_id");
+  }
+  if (row.conversation_id !== frozen.conversationId) {
+    throw new Error("IDEMPOTENCY_CONFLICT:conversation_id");
+  }
+  if (binding.input_digest !== frozen.inputDigest) return authorityInvalid("binding");
+  if (binding.subject_scope !== frozen.subjectScope) {
+    throw new Error("IDEMPOTENCY_CONFLICT:subject_scope");
+  }
+  if (binding.command_type !== frozen.commandType) {
+    throw new Error("IDEMPOTENCY_CONFLICT:command_type");
+  }
+  if (binding.preview_hash !== frozen.previewHash) {
+    throw new Error("PREVIEW_CONFLICT:preview_hash");
+  }
+  return Object.freeze({
+    binding,
+    token: issuePreviewToken(binding, frozen.secret),
+    reused: true,
+  });
 }
 
 export function createServerPreview(

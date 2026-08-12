@@ -4,6 +4,7 @@ import { authorizeRepositoryPreview } from "../preview/store.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { computeRepositoryDataRevision } from "./revision.js";
+import { assertProgressReservationFactCommitAuthority, parseProgressReservation, reservationFromEventPayload, } from "./progress-reservation.js";
 const INPUT_FIELDS = [
     "commandType",
     "dataRevision",
@@ -31,6 +32,10 @@ const OPERATION_INPUT_FIELDS = [
     "subjectScope",
     "token",
     "traceId",
+];
+const RESERVED_OPERATION_INPUT_FIELDS = [
+    ...OPERATION_INPUT_FIELDS,
+    "progressReservation",
 ];
 const SEAL_INPUT_FIELDS = [
     "commandType",
@@ -353,7 +358,12 @@ function freezeInput(value) {
     });
 }
 function freezeOperation(value) {
-    const fields = exactDataProperties(value, OPERATION_INPUT_FIELDS);
+    const hasReservation = typeof value === "object" && value !== null &&
+        Reflect.ownKeys(value).includes("progressReservation");
+    const fields = exactDataProperties(value, hasReservation ? RESERVED_OPERATION_INPUT_FIELDS : OPERATION_INPUT_FIELDS);
+    const progressReservation = hasReservation
+        ? parseProgressReservation(fields.progressReservation.value)
+        : undefined;
     const event = freezeEvent(fields.event.value);
     const items = freezeItems(fields.items.value);
     const effects = freezeEffects(fields.effects.value);
@@ -366,6 +376,18 @@ function freezeOperation(value) {
     const operationId = ascii(fields.operationId.value, "operation_id");
     if (event.operationId !== operationId)
         return requestInvalid("operation_identity");
+    let eventPayload;
+    try {
+        eventPayload = JSON.parse(event.payloadJson);
+    }
+    catch {
+        return requestInvalid("event_payload");
+    }
+    const payloadReservation = reservationFromEventPayload(eventPayload, event.eventType);
+    if ((progressReservation === undefined) !== (payloadReservation === undefined) ||
+        (progressReservation !== undefined &&
+            canonicalJson(progressReservation) !== canonicalJson(payloadReservation)))
+        return requestInvalid("progress_reservation_binding");
     return Object.freeze({
         database: database(fields.database.value),
         secret: secret(fields.secret.value),
@@ -380,6 +402,7 @@ function freezeOperation(value) {
         event,
         items,
         effects,
+        ...(progressReservation === undefined ? {} : { progressReservation }),
     });
 }
 function freezeSeal(value) {
@@ -757,6 +780,12 @@ export function appendPreparedOperationFact(input, options) {
             return replay;
         }
         assertOperationRevisionHandoff(frozen, authority.binding.preview_id, authority.binding.data_revision, events);
+        if (frozen.progressReservation !== undefined) {
+            if (frozen.sequence !== 0 || events.length !== 0) {
+                throw new Error("FACT_COMMIT_AUTHORITY_INVALID:progress_reservation_sequence");
+            }
+            assertProgressReservationFactCommitAuthority(frozen.database, authority.binding.preview_id, frozen.progressReservation);
+        }
         const event = frozen.event;
         frozen.database
             .prepare(`INSERT INTO event_records(

@@ -35,12 +35,48 @@ import {
 import { getInventoryProjection } from "../src/repository/query.js";
 import { computeRepositoryDataRevision } from "../src/repository/revision.js";
 import {
+  parseProgressReservation,
+  reservationFromEventPayload,
+} from "../src/repository/progress-reservation.js";
+import {
   assertDietDatabaseIdentity,
   DIET_DATABASE_FILENAME,
   openDietDatabase,
 } from "../src/storage/database.js";
 
 const secret = Buffer.from("B-STOR-002 synthetic repository test key 0001", "utf8");
+const completeProgressFixture = Object.freeze({
+  coverage_status: "complete" as const,
+  date: "2026-08-12",
+  nutrients: Object.freeze({
+    carbohydrate_mg: 0,
+    energy_kcal_milli: 1,
+    fat_mg: 0,
+    fiber_mg: 0,
+    protein_mg: 0,
+    water_ml_milli: 0,
+  }),
+  timezone: "Asia/Shanghai" as const,
+});
+const contributionReservationFixture = Object.freeze({
+  authority_kind: "diet-manager/progress-reservation/v1" as const,
+  base_generated_at: null,
+  contribution: completeProgressFixture,
+  date: "2026-08-12",
+  mode: "contribution" as const,
+  reserved_progress: completeProgressFixture,
+  timezone: "Asia/Shanghai" as const,
+});
+const replacementReservationFixture = Object.freeze({
+  after: completeProgressFixture,
+  authority_kind: "diet-manager/progress-reservation/v1" as const,
+  base_generated_at: "2026-08-12T04:00:00.000Z",
+  before: completeProgressFixture,
+  date: "2026-08-12",
+  mode: "replacement" as const,
+  reserved_progress: completeProgressFixture,
+  timezone: "Asia/Shanghai" as const,
+});
 const requireNode = createRequire(import.meta.url);
 const { backup } = requireNode("node:sqlite") as typeof import("node:sqlite");
 const ownedRoots = new Set<string>();
@@ -1320,6 +1356,116 @@ describe("B-STOR-002 FactCommit", () => {
       expect(tableCounts(fixture.runtime.database)).toEqual(before);
     } finally {
       disposeFixture(fixture);
+    }
+  });
+
+  test("rejects a dynamic nested progress reservation without executing its getter", () => {
+    const fixture = createMixedFixture();
+    let getterCalls = 0;
+    try {
+      const [original] = fixture.operations;
+      const dynamicReservation = {} as Record<string, unknown>;
+      Object.defineProperty(dynamicReservation, "mode", {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return "contribution";
+        },
+      });
+      const operation = {
+        ...original,
+        progressReservation: dynamicReservation,
+        event: {
+          ...original.event,
+          payload: {
+            ...(original.event.payload as Record<string, unknown>),
+            progress_reservation: dynamicReservation,
+          },
+        },
+      } as unknown as PreparedEnvelopeOperation;
+      const before = tableCounts(fixture.runtime.database);
+
+      expect(() => appendPreparedOperationFact(operation)).toThrow(
+        "PROGRESS_RESERVATION_AUTHORITY_INVALID:descriptor",
+      );
+      expect(getterCalls).toBe(0);
+      expect(tableCounts(fixture.runtime.database)).toEqual(before);
+    } finally {
+      disposeFixture(fixture);
+    }
+  });
+
+  test("rejects non-exact reservations and fact-mode mismatches", () => {
+    expect(() => parseProgressReservation({
+      ...contributionReservationFixture,
+      undeclared: true,
+    })).toThrow("PROGRESS_RESERVATION_AUTHORITY_INVALID:shape");
+
+    let getterCalls = 0;
+    const dynamicMeal = {
+      location: "outside",
+      progress_reservation: contributionReservationFixture,
+      timezone: "Asia/Shanghai",
+    } as Record<string, unknown>;
+    Object.defineProperty(dynamicMeal, "authority_kind", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "diet-manager/meal-fact/v1";
+      },
+    });
+    expect(() => reservationFromEventPayload(dynamicMeal, "diet_meal")).toThrow(
+      "PROGRESS_RESERVATION_AUTHORITY_INVALID:meal_fact",
+    );
+    expect(getterCalls).toBe(0);
+
+    const mismatches = [
+      {
+        eventType: "diet_meal",
+        payload: {
+          authority_kind: "diet-manager/meal-fact/v1",
+          location: "outside",
+          progress_reservation: replacementReservationFixture,
+          timezone: "Asia/Shanghai",
+        },
+        reason: "meal_reservation_mode",
+      },
+      {
+        eventType: "inventory_stock",
+        payload: {
+          authority_kind: "diet-manager/purchase-fact/v1",
+          effect_inputs: {},
+          progress_reservation: replacementReservationFixture,
+          result: {},
+        },
+        reason: "purchase_reservation_mode",
+      },
+      {
+        eventType: "diet_correction",
+        payload: {
+          affected_dates: ["2026-08-12"],
+          after_snapshot: {},
+          authority_kind: "diet-manager/correction-fact/v1",
+          base_revision: 1,
+          before_snapshot: {},
+          change_set: [],
+          correction_id: "correction-authority-test",
+          inventory_compensation_intent: { items: [] },
+          nutrition_delta: {
+            items: [],
+            progress_reservation: contributionReservationFixture,
+          },
+          operation: "change_amount",
+          request_id: "request-authority-test",
+          target_event_id: "event-authority-test",
+        },
+        reason: "correction_reservation_mode",
+      },
+    ] as const;
+    for (const mismatch of mismatches) {
+      expect(() => reservationFromEventPayload(mismatch.payload, mismatch.eventType)).toThrow(
+        `PROGRESS_RESERVATION_AUTHORITY_INVALID:${mismatch.reason}`,
+      );
     }
   });
 

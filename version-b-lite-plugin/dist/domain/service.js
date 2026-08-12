@@ -1,9 +1,10 @@
 import { canonicalJson } from "../authority/canonical-json.js";
-import { createServerPreview, authorizeRepositoryPreview } from "../preview/store.js";
+import { authorizeRepositoryPreview, createServerPreview, reuseServerPreview, } from "../preview/store.js";
 import { appendPreparedOperationFact, sealPreparedEnvelopeFacts, } from "../repository/fact-commit.js";
-import { finalizeEnvelope, projectDailyProgressContribution, readLatestAuthoritativeDailyProgress, } from "../repository/envelope-finalize.js";
+import { finalizeEnvelope, } from "../repository/envelope-finalize.js";
+import { createContributionProgressReservation, readEnvelopeProgressReservation, } from "../repository/progress-reservation.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
-import { applyMealEffects, markMealEffectsRetryable, applyPurchaseEffect, applyCorrectionEffects, prepareCorrectionOperation, readAppliedCorrectionResult, preflightMealOperation, replaceDailyProgress, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
+import { applyMealEffects, markMealEffectsRetryable, applyPurchaseEffect, applyCorrectionEffects, prepareCorrectionOperation, readAppliedCorrectionResult, preflightMealOperation, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { queryDomainReadModel } from "./read-model.js";
 import { buildQuickPrompt, buildReceiptData, } from "./receipt.js";
@@ -289,11 +290,21 @@ function preflightWriteOperations(database, operations) {
     }
     return Object.freeze(contributions);
 }
-function projectMealProgressBeforeFactCommit(database, contributions) {
-    const preceding = [];
-    for (const contribution of contributions) {
-        projectDailyProgressContribution(database, contribution, preceding.filter((candidate) => candidate.date === contribution.date && candidate.timezone === contribution.timezone));
-        preceding.push(contribution);
+function createMealProgressReservation(database, contributions) {
+    if (contributions.length === 0)
+        return undefined;
+    if (contributions.length !== 1) {
+        throw new Error("DIET_DOMAIN_REQUEST_INVALID:progress_contribution_count");
+    }
+    try {
+        return createContributionProgressReservation(database, contributions[0]);
+    }
+    catch (error) {
+        if (error instanceof Error &&
+            error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_sum") {
+            throw new Error("ENVELOPE_FINALIZE_AUTHORITY_INVALID:daily_progress_sum");
+        }
+        throw error;
     }
 }
 function quickPromptIssueCode(value) {
@@ -456,8 +467,33 @@ export function createDietDomainService(input) {
         preview(envelope) {
             const validatedEnvelope = validateAndFreezeEnvelope(envelope);
             const operations = writeOperations(validatedEnvelope);
-            preflightWriteOperations(options.database, operations);
             const inputDigest = digestDomainEnvelope(validatedEnvelope);
+            const previewMaterial = Object.freeze({
+                authority_kind: "diet-manager/domain-preview/v1",
+                envelope: validatedEnvelope,
+            });
+            const reused = reuseServerPreview({
+                database: options.database,
+                secret: options.secret,
+                previewId: validatedEnvelope.envelope_id,
+                idempotencyKey: validatedEnvelope.idempotency_key,
+                inputDigest,
+                subjectScope: validatedEnvelope.subject_scope,
+                commandType: validatedEnvelope.command_type,
+                sourceMessageId: validatedEnvelope.source_message_id,
+                conversationId: validatedEnvelope.conversation_id,
+                previewMaterial,
+            });
+            if (reused) {
+                return Object.freeze({
+                    envelope_id: validatedEnvelope.envelope_id,
+                    token: reused.token,
+                    input_digest: inputDigest,
+                    data_revision: reused.binding.data_revision,
+                    reused: true,
+                });
+            }
+            preflightWriteOperations(options.database, operations);
             const dataRevision = computeRepositoryDataRevision(options.database);
             const now = timestamp(options.now(), "clock");
             const preview = createServerPreview({
@@ -471,10 +507,7 @@ export function createDietDomainService(input) {
                 dataRevision,
                 sourceMessageId: validatedEnvelope.source_message_id,
                 conversationId: validatedEnvelope.conversation_id,
-                previewMaterial: Object.freeze({
-                    authority_kind: "diet-manager/domain-preview/v1",
-                    envelope: validatedEnvelope,
-                }),
+                previewMaterial,
                 now,
             });
             return Object.freeze({
@@ -488,7 +521,6 @@ export function createDietDomainService(input) {
         execute(execution) {
             const envelope = validateAndFreezeEnvelope(execution.envelope);
             const operations = writeOperations(envelope);
-            const mealProgressContributions = preflightWriteOperations(options.database, operations);
             const inputDigest = digestDomainEnvelope(envelope);
             if (execution.input_digest !== inputDigest)
                 return invalid("input_digest");
@@ -504,9 +536,10 @@ export function createDietDomainService(input) {
             if (authority.binding.preview_id !== envelope.envelope_id) {
                 return invalid("envelope_id");
             }
-            if (authority.envelope_state === "received") {
-                projectMealProgressBeforeFactCommit(options.database, mealProgressContributions);
-            }
+            const progressReservation = authority.envelope_state === "received"
+                ? readEnvelopeProgressReservation(options.database, envelope.envelope_id) ??
+                    createMealProgressReservation(options.database, preflightWriteOperations(options.database, operations))
+                : undefined;
             const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
             if (operations.length === 2) {
                 const [purchaseOperation, mealOperation] = operations;
@@ -555,6 +588,7 @@ export function createDietDomainService(input) {
                     committedAt: purchaseAt,
                     sequence: 0,
                     operation: purchaseOperation,
+                    ...(progressReservation === undefined ? {} : { progressReservation }),
                 });
                 if (options.fault === "before_fact_commit") {
                     emitFailure(options.failureSink, {
@@ -748,11 +782,6 @@ export function createDietDomainService(input) {
                         sequence: 0,
                         operation,
                     });
-                    const currentProgress = readLatestAuthoritativeDailyProgress(options.database, preparedCorrection.progress_date, "Asia/Shanghai").progress;
-                    if (currentProgress === null) {
-                        throw new Error("CORRECTION_EFFECT_INVALID:daily_progress_missing");
-                    }
-                    replaceDailyProgress(currentProgress, preparedCorrection.progress_before, preparedCorrection.progress_after);
                     if (options.fault === "before_fact_commit") {
                         emitFailure(options.failureSink, {
                             stage: "FactCommit",
@@ -860,6 +889,7 @@ export function createDietDomainService(input) {
                     committedAt,
                     sequence: 0,
                     operation,
+                    ...(progressReservation === undefined ? {} : { progressReservation }),
                 });
                 if (authority.envelope_state === "finalized") {
                     const row = options.database

@@ -1,6 +1,7 @@
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import { processInventoryEffect, } from "../repository/inventory-effects.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
+import { createReplacementProgressReservation, reservationFromEventPayload, } from "../repository/progress-reservation.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
@@ -25,6 +26,7 @@ function readEffectiveMealState(database, targetEventId) {
     if (!event)
         throw new Error("CORRECTION_TARGET_INVALID:event");
     const eventPayload = parseCanonical(event.payload_json, "correction_target_event");
+    reservationFromEventPayload(eventPayload, "diet_meal");
     if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
         (eventPayload.location !== "home" && eventPayload.location !== "outside") ||
         eventPayload.timezone !== "Asia/Shanghai")
@@ -75,6 +77,7 @@ function readEffectiveMealState(database, targetEventId) {
             throw new Error("CORRECTION_TARGET_INVALID:chain_state");
         }
         const payload = parseCanonical(correction.payload_json, "correction_chain");
+        reservationFromEventPayload(payload, "diet_correction");
         if (correction.base_revision !== revision || payload.base_revision !== revision ||
             payload.target_event_id !== targetEventId ||
             payload.authority_kind !== "diet-manager/correction-fact/v1" ||
@@ -135,6 +138,34 @@ export function prepareCorrectionOperation(input) {
     const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
     const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
     const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
+    const beforeProgress = Object.freeze({
+        coverage_status: Object.values(progressPreflight.before).every((value) => value !== null)
+            ? "complete"
+            : "partial",
+        date,
+        nutrients: progressPreflight.before,
+        timezone: "Asia/Shanghai",
+    });
+    const afterProgress = Object.freeze({
+        coverage_status: Object.values(progressPreflight.after).every((value) => value !== null)
+            ? "complete"
+            : "partial",
+        date,
+        nutrients: progressPreflight.after,
+        timezone: "Asia/Shanghai",
+    });
+    let progressReservation;
+    try {
+        progressReservation = createReplacementProgressReservation(input.database, date, beforeProgress, afterProgress);
+    }
+    catch (error) {
+        if (error instanceof Error &&
+            (error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_delta" ||
+                error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_missing")) {
+            throw new Error("CORRECTION_EFFECT_INVALID:daily_progress");
+        }
+        throw error;
+    }
     const payload = freezeJson({
         affected_dates: [date],
         after_snapshot: afterSnapshot,
@@ -170,6 +201,7 @@ export function prepareCorrectionOperation(input) {
                     ? afterSnapshot.items[affectedItemOrder].amount.nutrition_adoption_microunits
                     : 0,
             })),
+            progress_reservation: progressReservation,
         },
         operation: operationKind,
         request_id: operation.operation_id,
@@ -224,6 +256,7 @@ export function prepareCorrectionOperation(input) {
                     reason: null,
                 }),
             ]),
+            progressReservation,
         }),
     });
 }
@@ -336,6 +369,9 @@ export function preparePurchaseOperation(input) {
                 payload: Object.freeze({
                     authority_kind: "diet-manager/purchase-fact/v1",
                     effect_inputs: Object.freeze({ [effectId]: effectInput }),
+                    ...(input.progressReservation === undefined
+                        ? {}
+                        : { progress_reservation: input.progressReservation }),
                     result,
                 }),
             }),
@@ -349,6 +385,9 @@ export function preparePurchaseOperation(input) {
                     reason: null,
                 }),
             ]),
+            ...(input.progressReservation === undefined
+                ? {}
+                : { progressReservation: input.progressReservation }),
         }),
         outbox_id: outboxId,
         result,
@@ -435,6 +474,9 @@ export function prepareMealOperation(input) {
                 payload: Object.freeze({
                     authority_kind: "diet-manager/meal-fact/v1",
                     location: operation.location,
+                    ...(input.progressReservation === undefined
+                        ? {}
+                        : { progress_reservation: input.progressReservation }),
                     timezone: "Asia/Shanghai",
                 }),
             }),
@@ -450,6 +492,9 @@ export function prepareMealOperation(input) {
                 }),
             }))),
             effects: Object.freeze(effects),
+            ...(input.progressReservation === undefined
+                ? {}
+                : { progressReservation: input.progressReservation }),
         }),
     });
 }
@@ -858,6 +903,7 @@ function readAppliedMealResultInTransaction(input, checkpoint) {
     if (!event)
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
     const eventPayload = parseCanonical(event.payload_json, "terminal_event");
+    reservationFromEventPayload(eventPayload, "diet_meal");
     if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
         eventPayload.location !== input.location) {
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
@@ -1018,6 +1064,7 @@ export function applyMealEffects(input) {
         if (!event)
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:event");
         const eventPayload = parseCanonical(event.payload_json, "event");
+        reservationFromEventPayload(eventPayload, "diet_meal");
         if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" || eventPayload.location !== input.location) {
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:event_payload");
         }
@@ -1308,6 +1355,7 @@ export function applyCorrectionEffects(input) {
         if (!correctionEvent || !correction)
             throw new Error("CORRECTION_EFFECT_INVALID:fact");
         const payload = parseCanonical(correction.payload_json, "correction_fact");
+        reservationFromEventPayload(payload, "diet_correction");
         if (payload.correction_id !== correction.correction_id ||
             payload.target_event_id !== correction.target_event_id ||
             payload.base_revision !== correction.base_revision ||
@@ -1324,7 +1372,8 @@ export function applyCorrectionEffects(input) {
         const inventoryIntent = payload.inventory_compensation_intent;
         const nutritionDelta = payload.nutrition_delta;
         if (Object.keys(inventoryIntent).join("\u0000") !== "items" ||
-            Object.keys(nutritionDelta).join("\u0000") !== "items" ||
+            Object.keys(nutritionDelta).sort().join("\u0000") !==
+                "items\u0000progress_reservation" ||
             !Array.isArray(inventoryIntent.items) || !Array.isArray(nutritionDelta.items) ||
             inventoryIntent.items.length === 0 ||
             inventoryIntent.items.length !== nutritionDelta.items.length)
@@ -1344,6 +1393,7 @@ export function applyCorrectionEffects(input) {
         if (!target)
             throw new Error("CORRECTION_EFFECT_INVALID:target");
         const targetPayload = parseCanonical(target.payload_json, "correction_target");
+        reservationFromEventPayload(targetPayload, "diet_meal");
         if (targetPayload.location !== "home" && targetPayload.location !== "outside") {
             throw new Error("CORRECTION_EFFECT_INVALID:target_location");
         }
@@ -1717,6 +1767,7 @@ export function readAppliedCorrectionResult(input) {
         "request_id",
         "target_event_id",
     ], "terminal_fact");
+    reservationFromEventPayload(fact, "diet_correction");
     if (fact.authority_kind !== "diet-manager/correction-fact/v1" ||
         fact.correction_id !== correction.correction_id ||
         fact.target_event_id !== correction.target_event_id ||

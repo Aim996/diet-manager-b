@@ -2,6 +2,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { dietManagerActions, } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
+import { assertProgressReservationFinalizerAuthority } from "./progress-reservation.js";
 import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
 import { freezeQuickPrompt, rebaseReceiptProgress, } from "../domain/receipt.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
@@ -742,6 +743,18 @@ export function finalizeEnvelope(input, options) {
         }
         if (authority.envelope_state !== "effects_stable") {
             return authorityInvalid("effects_not_stable");
+        }
+        try {
+            assertProgressReservationFinalizerAuthority(frozen.database, authority.binding.preview_id);
+        }
+        catch (error) {
+            if (error instanceof Error &&
+                error.message.startsWith("PROGRESS_RESERVATION_AUTHORITY_INVALID:terminal_")) {
+                return authorityInvalid(frozen.commandType === "correct_record" || frozen.commandType === "undo_record"
+                    ? "correction_progress_bundle"
+                    : "daily_progress_bundle");
+            }
+            throw error;
         }
         const finalizedInput = freezeCorrectionDailyProgress(freezeMealDailyProgress(frozen, authority.binding.preview_id, authority.idempotency_key), authority.binding.preview_id, authority.idempotency_key);
         const result = resultFor(finalizedInput, authority.binding.preview_id, authority.idempotency_key);

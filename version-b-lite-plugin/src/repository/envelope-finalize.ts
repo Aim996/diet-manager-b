@@ -7,6 +7,7 @@ import {
 } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
+import { assertProgressReservationFinalizerAuthority } from "./progress-reservation.js";
 import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
 import {
   freezeQuickPrompt,
@@ -1114,6 +1115,24 @@ export function finalizeEnvelope(
       return authorityInvalid("effects_not_stable");
     }
 
+    try {
+      assertProgressReservationFinalizerAuthority(
+        frozen.database,
+        authority.binding.preview_id,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("PROGRESS_RESERVATION_AUTHORITY_INVALID:terminal_")
+      ) {
+        return authorityInvalid(
+          frozen.commandType === "correct_record" || frozen.commandType === "undo_record"
+            ? "correction_progress_bundle"
+            : "daily_progress_bundle",
+        );
+      }
+      throw error;
+    }
     const finalizedInput = freezeCorrectionDailyProgress(
       freezeMealDailyProgress(
         frozen,
