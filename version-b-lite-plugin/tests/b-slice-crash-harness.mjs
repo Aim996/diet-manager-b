@@ -44,8 +44,8 @@ const expandedCrashAuthority = Object.freeze({
   purchase_after_finalize_before_reply: "944d91e6a5ce846bea766e87831f2f60aa44a8b5581a57b206ca5f80dde248bc",
   purchase_after_effect_before_seal: "c6bd4ac3011ceb6be6cc55656e99fa95299197237771991f8993b3d61a2d2080",
   purchase_after_fact: "a115aba9eafbca0997bb8fd972d0428452668e99bfd90d91ec5070439adaf526",
-  correction_after_finalize_before_reply: "c5eb9ba5449111dc288e40948e047b7610e0ed693b706abfd8e4f25db47e0f46",
-  correction_after_effect_before_seal: "31605624329b1a3c4b548ad96bc5592f3dc41dbeaad7437e789a3fc3dcd813d4",
+  correction_after_finalize_before_reply: "c1f8c50735c0035a43ddac2068251c05d9a0fbf1e19c0b3f5d4ce1c5903b8254",
+  correction_after_effect_before_seal: "f7970fb7a4dd1f713c1d263b816ab21660985fdf2a4b124c3a1515271ace9f20",
   correction_after_fact: "48f1a3590147fac9c1868efe7ac1cdb389598019dabaeed4bb89dee934c54a44",
   mixed_after_finalize_before_reply: "58ad65040cb33af8f1cbc7df87ec486c895b39c65bd9edc06dd7d78807211a61",
   mixed_after_seal_before_finalize: "6aba4ff8cbe89515fc09ff28758b5ad6ea1430ebbcc19152c79608a67fa57899",
@@ -62,7 +62,7 @@ const expandedTerminalAuthority = Object.freeze({
     frozen_length: 708,
   }),
   correction: Object.freeze({
-    snapshot_digest: "c5eb9ba5449111dc288e40948e047b7610e0ed693b706abfd8e4f25db47e0f46",
+    snapshot_digest: "c1f8c50735c0035a43ddac2068251c05d9a0fbf1e19c0b3f5d4ce1c5903b8254",
     frozen_sha256: "309e20bada433b8ba7ddf52e0af86b9b35e2157528bfef7818e12240208a134f",
     frozen_length: 1540,
   }),
@@ -455,7 +455,7 @@ function assertCrashBoundary(database, input, kind, boundary) {
     outboxes.every((row) => row.state === (factsOnly ? "pending" : "succeeded")),
     `crash_boundary_outbox_state:${kind}:${boundary}`,
   );
-  const expectedAttemptCount = factsOnly || kind === "correction" ? 0 : 1;
+  const expectedAttemptCount = factsOnly ? 0 : 1;
   assert(
     outboxes.every((row) => row.attempt_count === expectedAttemptCount),
     `crash_boundary_outbox_attempt:${kind}:${boundary}:${JSON.stringify(outboxes)}`,

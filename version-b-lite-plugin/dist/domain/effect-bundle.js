@@ -1038,6 +1038,119 @@ function readAppliedMealResultInTransaction(input, checkpoint) {
         daily_progress_by_date: Object.freeze([dailyProgress]),
     });
 }
+/**
+ * Reconstruct a meal result from its terminal effect bundle without claiming
+ * or writing an outbox. The bundle revision is immutable terminal evidence;
+ * the prepared Fact carries the separately authorized execution binding, so
+ * unrelated later commits cannot prevent finalization recovery.
+ */
+export function readAppliedMealResult(input) {
+    let transactionOpen = false;
+    try {
+        input.database.exec("BEGIN");
+        transactionOpen = true;
+        assertCurrentMigrationAuthority(input.database);
+        if (input.operationSequence !== 0 || input.expectedFact.database !== input.database ||
+            input.expectedFact.operationId !== input.operationId ||
+            input.expectedFact.sequence !== input.operationSequence ||
+            input.expectedFact.event.operationId !== input.operationId ||
+            typeof input.expectedFact.dataRevision !== "string" ||
+            !input.expectedFact.dataRevision.startsWith("repository-v1:")) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_expected_fact");
+        }
+        const checkpoints = input.database.prepare(`SELECT operation_id, effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`).all(input.envelopeId, input.operationId);
+        if (checkpoints.length !== 1) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+        }
+        const checkpoint = checkpoints[0];
+        const bundle = parseCanonical(checkpoint.payload_json, "terminal_checkpoint");
+        exactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "terminal_checkpoint");
+        if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
+            typeof bundle.data_revision !== "string" ||
+            !bundle.data_revision.startsWith("repository-v1:") ||
+            bundle.operation_sequence !== input.operationSequence || !Array.isArray(bundle.effects)) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
+        }
+        const events = input.database.prepare(`SELECT event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
+              source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
+              meal_id, meal_slot, payload_json
+       FROM event_records WHERE envelope_id = ? AND operation_id = ?`).all(input.envelopeId, input.operationId);
+        const event = events[0];
+        const expectedEvent = input.expectedFact.event;
+        if (events.length !== 1 || !event || event.event_id !== expectedEvent.eventId ||
+            event.envelope_id !== input.envelopeId || event.operation_id !== expectedEvent.operationId) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
+        }
+        if (event.schema_version !== expectedEvent.schemaVersion || event.event_type !== expectedEvent.eventType ||
+            event.fact_kind !== expectedEvent.factKind)
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_kind");
+        if (event.source_message_id !== expectedEvent.sourceMessageId ||
+            event.conversation_id !== expectedEvent.conversationId)
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_source");
+        if (event.received_at !== expectedEvent.receivedAt || event.committed_at !== expectedEvent.committedAt) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_time");
+        }
+        if (event.occurred_at_text !== expectedEvent.occurredAtText || event.meal_id !== expectedEvent.mealId ||
+            event.meal_slot !== expectedEvent.mealSlot)
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_meal");
+        if (event.payload_json !== canonicalJson(expectedEvent.payload)) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
+        }
+        const items = input.database.prepare(`SELECT item_id, item_order, item_type, normalized_name, payload_json FROM meal_items
+       WHERE event_id = ? ORDER BY item_order, item_id`).all(event.event_id);
+        if (items.length === 0 || items.length !== input.expectedFact.items.length) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_items");
+        }
+        for (let index = 0; index < items.length; index += 1) {
+            const item = items[index];
+            const expectedItem = input.expectedFact.items[index];
+            if (!expectedItem || item.item_id !== expectedItem.itemId ||
+                item.item_order !== expectedItem.itemOrder || item.item_type !== expectedItem.itemType ||
+                item.normalized_name !== expectedItem.normalizedName ||
+                item.payload_json !== canonicalJson(expectedItem.payload)) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
+            }
+        }
+        const expectedEffects = [...input.expectedFact.effects].sort((left, right) => left.effectId.localeCompare(right.effectId));
+        const outboxes = input.database.prepare(`SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox
+       WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(input.envelopeId, input.operationId);
+        if (outboxes.length !== expectedEffects.length || bundle.effects.length !== expectedEffects.length) {
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+        }
+        for (let index = 0; index < expectedEffects.length; index += 1) {
+            const expectedEffect = expectedEffects[index];
+            const outbox = outboxes[index];
+            const bundled = bundle.effects[index];
+            if (!expectedEffect || !outbox || typeof bundled !== "object" || bundled === null ||
+                Array.isArray(bundled) || outbox.outbox_id !== expectedEffect.outboxId ||
+                outbox.effect_id !== expectedEffect.effectId || outbox.effect_kind !== expectedEffect.effectKind ||
+                (outbox.state !== "succeeded" && outbox.state !== "permanent_business_skip")) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+            }
+            const bundledEffect = bundled;
+            exactKeys(bundledEffect, expectedEffect.effectKind === "daily_progress_contribution"
+                ? ["contribution", "effect_id", "state"]
+                : ["effect_id", "state"], "terminal_effects");
+            if (bundledEffect.effect_id !== outbox.effect_id || bundledEffect.state !== outbox.state) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_effects");
+            }
+        }
+        const result = readAppliedMealResultInTransaction(input, checkpoint);
+        input.database.exec("COMMIT");
+        transactionOpen = false;
+        return result;
+    }
+    catch (error) {
+        if (transactionOpen) {
+            try {
+                input.database.exec("ROLLBACK");
+            }
+            catch { /* preserve primary error */ }
+        }
+        throw error;
+    }
+}
 export function applyMealEffects(input) {
     let transactionOpen = false;
     try {
@@ -1114,6 +1227,9 @@ export function applyMealEffects(input) {
             }
             const transactionId = writeMealDeduction(input.database, input, event, item, decision);
             writeMealIssue(input.database, input, event, item, decision);
+            if (input.fault === "after_issue_write") {
+                throw new Error("MEAL_EFFECT_FAILED:after_issue_write");
+            }
             progress = addNutritionVectors(progress, scaledNutrients);
             results.push(Object.freeze({
                 item_order: item.item_order,
@@ -1140,6 +1256,9 @@ export function applyMealEffects(input) {
             date, timezone: "Asia/Shanghai", coverage_status: coverage,
             nutrients: Object.freeze(progress),
         });
+        if (input.fault === "after_progress_contribution_prepared") {
+            throw new Error("MEAL_EFFECT_FAILED:after_progress_contribution_prepared");
+        }
         updateMealOutboxes(input.database, input, results);
         const effectRows = input.database.prepare(`SELECT effect_id, effect_kind, state FROM effect_outbox
        WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(input.envelopeId, input.operationId);
@@ -1276,6 +1395,33 @@ export function replaceDailyProgress(previous, before, after) {
         nutrients: Object.freeze(nutrients),
     });
 }
+function claimCorrectionOutboxes(database, input, outboxes) {
+    if (outboxes.length === 0 || outboxes.some((outbox) => outbox.state !== "pending" && outbox.state !== "retryable_failed")) {
+        throw new Error("CORRECTION_EFFECT_INVALID:claim_state");
+    }
+    for (const outbox of outboxes) {
+        assertEffectTransition(outbox.state, "processing");
+        database.prepare(`UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+         reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = ?`).run(input.now, input.envelopeId, input.operationId, outbox.effect_id, outbox.state);
+        if (changed(database) !== 1) {
+            throw new Error("CORRECTION_EFFECT_INVALID:claim_cas");
+        }
+    }
+}
+function finalizeCorrectionOutboxes(database, input, outboxes, skippedCompensationEffectIds) {
+    for (const outbox of outboxes) {
+        const terminal = skippedCompensationEffectIds.has(outbox.effect_id)
+            ? "permanent_business_skip"
+            : "succeeded";
+        assertEffectTransition("processing", terminal);
+        database.prepare(`UPDATE effect_outbox SET state = ?, reason = ?, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = 'processing'`).run(terminal, terminal === "succeeded" ? null : "inventory_insufficient", input.now, input.envelopeId, input.operationId, outbox.effect_id);
+        if (changed(database) !== 1) {
+            throw new Error("CORRECTION_EFFECT_INVALID:terminal_cas");
+        }
+    }
+}
 export function applyCorrectionEffects(input) {
     let transactionOpen = false;
     try {
@@ -1334,18 +1480,23 @@ export function applyCorrectionEffects(input) {
             operations[input.operationSequence]?.operation_id !== input.operationId ||
             operations.filter((operation) => operation.operation_id === input.operationId).length !== 1 ||
             outboxes.length !== expectedKinds.size ||
-            outboxes.some((outbox) => outbox.state !== "pending" || expectedKinds.get(outbox.effect_id) !== outbox.effect_kind) ||
+            outboxes.some((outbox) => (outbox.state !== "pending" && outbox.state !== "retryable_failed") ||
+                expectedKinds.get(outbox.effect_id) !== outbox.effect_kind) ||
             checkpointPayload.effects.some((effect, index) => {
                 if (typeof effect !== "object" || effect === null || Array.isArray(effect))
                     return true;
                 const value = effect;
                 return Object.keys(value).sort().join("\u0000") !== "effect_id\u0000state" ||
-                    value.effect_id !== outboxes[index]?.effect_id || value.state !== outboxes[index]?.state;
+                    value.effect_id !== outboxes[index]?.effect_id || value.state !== "pending";
             })) {
             if (checkpointPayload.data_revision !== computeRepositoryDataRevision(input.database)) {
                 throw new Error("PREVIEW_STALE:data_revision");
             }
             throw new Error("CORRECTION_EFFECT_INVALID:checkpoint_payload");
+        }
+        claimCorrectionOutboxes(input.database, input, outboxes);
+        if (input.fault === "after_claim") {
+            throw new Error("CORRECTION_EFFECT_FAILED:after_claim");
         }
         const correctionEvent = input.database.prepare(`SELECT event_id, source_message_id, conversation_id, received_at
        FROM event_records WHERE envelope_id = ? AND operation_id = ?
@@ -1545,6 +1696,9 @@ export function applyCorrectionEffects(input) {
                     inventoryOutbox.state !== "permanent_business_skip")
                     throw new Error("CORRECTION_EFFECT_INVALID:original_transaction");
             }
+            if (input.fault === "after_compensation") {
+                throw new Error("CORRECTION_EFFECT_FAILED:after_compensation");
+            }
             const item = beforeSnapshot.items[itemOrder];
             const previousNutrition = input.database.prepare(`SELECT snapshot_id, meal_event_id, intake_item_id, nutrition_profile_id,
                 profile_version, source_type, source_ref, payload_json
@@ -1596,16 +1750,10 @@ export function applyCorrectionEffects(input) {
             coverage_status: progressRow.coverage_status,
             nutrients: progressPayload.nutrients,
         }), beforeNutrients, afterNutrients);
-        for (const outbox of outboxes) {
-            const nextState = skippedCompensationEffectIds.has(outbox.effect_id)
-                ? "permanent_business_skip"
-                : "succeeded";
-            input.database.prepare(`UPDATE effect_outbox SET state = ?, updated_at = ?
-         WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = 'pending'`).run(nextState, input.now, input.envelopeId, input.operationId, outbox.effect_id);
-            if (changed(input.database) !== 1) {
-                throw new Error("CORRECTION_EFFECT_INVALID:outbox_cas");
-            }
+        if (input.fault === "after_nutrition_progress") {
+            throw new Error("CORRECTION_EFFECT_FAILED:after_nutrition_progress");
         }
+        finalizeCorrectionOutboxes(input.database, input, outboxes, skippedCompensationEffectIds);
         const terminalEffects = input.database.prepare(`SELECT effect_id, effect_kind, state FROM effect_outbox
        WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(input.envelopeId, input.operationId);
         const hasIssues = issueCodes.length > 0;
