@@ -9,7 +9,6 @@ import {
 import {
   appendPreparedOperationFact,
   sealPreparedEnvelopeFacts,
-  type FactCommitFault,
 } from "../repository/fact-commit.js";
 import {
   finalizeEnvelope,
@@ -479,6 +478,40 @@ function failureCode(error: unknown, fallback: string): string {
   return /^[A-Z][A-Z0-9_]*$/.test(code) ? code : fallback;
 }
 
+function appendFactWithFailure(
+  input: Parameters<typeof appendPreparedOperationFact>[0],
+  sink: CreateDietDomainServiceInput["failureSink"],
+): ReturnType<typeof appendPreparedOperationFact> {
+  return appendPreparedOperationFact(input, {
+    failureSink: (entry) => emitFailure(sink, {
+      stage: "FactCommit",
+      error_code: entry.error_code,
+      trace_id: entry.trace_id,
+      input_digest: entry.input_digest,
+    }),
+  });
+}
+
+function runEffectWithFailure<Result>(
+  run: () => Result,
+  sink: CreateDietDomainServiceInput["failureSink"],
+  traceId: string,
+  inputDigest: string,
+  fallbackErrorCode: string,
+): Result {
+  try {
+    return run();
+  } catch (error) {
+    emitFailure(sink, {
+      stage: "EffectBundle",
+      error_code: failureCode(error, fallbackErrorCode),
+      trace_id: traceId,
+      input_digest: inputDigest,
+    });
+    throw error;
+  }
+}
+
 function envelopeFinalizeOptions(
   fault: DietDomainFault | undefined,
 ): EnvelopeFinalizeOptions | undefined {
@@ -859,14 +892,20 @@ export function createDietDomainService(
           throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
         }
         if (authority.envelope_state === "received") {
-          appendPreparedOperationFact(preparedPurchase.fact);
-          applyPurchaseEffect(
-            options.database,
-            preparedPurchase.outbox_id,
-            purchaseAt,
-            options.fault === "after_inventory_business_writes"
-              ? "after_business_writes"
-              : undefined,
+          appendFactWithFailure(preparedPurchase.fact, options.failureSink);
+          runEffectWithFailure(
+            () => applyPurchaseEffect(
+              options.database,
+              preparedPurchase.outbox_id,
+              purchaseAt,
+              options.fault === "after_inventory_business_writes"
+                ? "after_business_writes"
+                : undefined,
+            ),
+            options.failureSink,
+            traceId,
+            inputDigest,
+            "INVENTORY_EFFECT_FAILED",
           );
         }
         const preparedMeal = prepareMealOperation({
@@ -887,26 +926,32 @@ export function createDietDomainService(
           operation: mealOperation,
         });
         if (authority.envelope_state === "received") {
-          appendPreparedOperationFact(preparedMeal.fact);
+          appendFactWithFailure(preparedMeal.fact, options.failureSink);
         }
-        const mealResult = applyMealEffects({
-          database: options.database,
-          envelopeId: envelope.envelope_id,
-          operationId: mealOperation.operation_id,
-          operationSequence: 1,
-          idempotencyKey: mealIdentityKey,
-          now: mealAt,
-          location: mealOperation.location,
-          ...(options.fault === "after_meal_nutrition"
-            ? { fault: "after_nutrition" as const }
-            : options.fault === "after_meal_first_item"
-              ? { fault: "after_first_item" as const }
-              : options.fault === "after_meal_issue_write"
-                ? { fault: "after_issue_write" as const }
-                : options.fault === "after_meal_progress_contribution_prepared"
-                  ? { fault: "after_progress_contribution_prepared" as const }
-                  : {}),
-        });
+        const mealResult = runEffectWithFailure(
+          () => applyMealEffects({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: mealOperation.operation_id,
+            operationSequence: 1,
+            idempotencyKey: mealIdentityKey,
+            now: mealAt,
+            location: mealOperation.location,
+            ...(options.fault === "after_meal_nutrition"
+              ? { fault: "after_nutrition" as const }
+              : options.fault === "after_meal_first_item"
+                ? { fault: "after_first_item" as const }
+                : options.fault === "after_meal_issue_write"
+                  ? { fault: "after_issue_write" as const }
+                  : options.fault === "after_meal_progress_contribution_prepared"
+                    ? { fault: "after_progress_contribution_prepared" as const }
+                    : {}),
+          }),
+          options.failureSink,
+          traceId,
+          inputDigest,
+          "MEAL_EFFECT_FAILED",
+        );
         if (
           authority.envelope_state === "received" &&
           options.fault === "after_mixed_meal_effect_commit"
@@ -1075,14 +1120,7 @@ export function createDietDomainService(
             });
             throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
           }
-          appendPreparedOperationFact(preparedCorrection.fact, {
-            failureSink: (entry) => emitFailure(options.failureSink, {
-              stage: "FactCommit",
-              error_code: entry.error_code,
-              trace_id: entry.trace_id,
-              input_digest: entry.input_digest,
-            }),
-          });
+          appendFactWithFailure(preparedCorrection.fact, options.failureSink);
         }
         let correctionResult;
         if (authority.envelope_state === "effects_stable") {
@@ -1226,15 +1264,7 @@ export function createDietDomainService(
           throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
         }
         if (authority.envelope_state === "received") {
-          appendPreparedOperationFact(preparedMeal.fact, {
-            failureSink: (entry) =>
-              emitFailure(options.failureSink, {
-                stage: "FactCommit",
-                error_code: entry.error_code,
-                trace_id: entry.trace_id,
-                input_digest: entry.input_digest,
-              }),
-          });
+          appendFactWithFailure(preparedMeal.fact, options.failureSink);
         }
         let mealResult: MealOperationResult;
         if (authority.envelope_state === "effects_stable") {
@@ -1399,15 +1429,7 @@ export function createDietDomainService(
           });
           throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
         }
-        appendPreparedOperationFact(prepared.fact, {
-          failureSink: (entry) =>
-            emitFailure(options.failureSink, {
-              stage: "FactCommit",
-              error_code: entry.error_code,
-              trace_id: entry.trace_id,
-              input_digest: entry.input_digest,
-            }),
-        });
+        appendFactWithFailure(prepared.fact, options.failureSink);
         try {
           applyPurchaseEffect(
             options.database,

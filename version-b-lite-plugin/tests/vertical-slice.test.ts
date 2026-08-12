@@ -69,6 +69,57 @@ function canonicalBusinessSnapshot(database: DatabaseSync): Record<string, unkno
   ]));
 }
 
+const failureDiagnosticKeys = ["error_code", "input_digest", "stage", "trace_id"];
+
+function installRepositoryAppendFailure(
+  database: DatabaseSync,
+  operationId: string,
+  detail: string,
+): void {
+  if (!/^[a-z0-9-]+$/.test(operationId) || !/^[a-z0-9_]+$/.test(detail)) {
+    throw new Error("test repository fault identity invalid");
+  }
+  database.exec(`
+    CREATE TEMP TRIGGER "fail_${detail}"
+    AFTER INSERT ON main.event_records
+    WHEN NEW.operation_id = '${operationId}'
+    BEGIN
+      SELECT RAISE(ABORT, 'FACT_COMMIT_FAILED:${detail}');
+    END
+  `);
+}
+
+function captureThrown(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected test operation to fail");
+}
+
+function expectSafeMixedFailure(
+  entry: DietDomainFailureEntry,
+  expected: {
+    readonly stage: DietDomainFailureEntry["stage"];
+    readonly errorCode: string;
+    readonly traceId: string;
+    readonly inputDigest: string;
+  },
+  forbidden: readonly string[],
+): void {
+  expect(Object.keys(entry).sort()).toEqual(failureDiagnosticKeys);
+  expect(entry).toEqual({
+    stage: expected.stage,
+    error_code: expected.errorCode,
+    trace_id: expected.traceId,
+    input_digest: expected.inputDigest,
+  });
+  expect(Object.isFrozen(entry)).toBe(true);
+  const serialized = JSON.stringify(entry).toLowerCase();
+  for (const value of forbidden) expect(serialized).not.toContain(value.toLowerCase());
+}
+
 describe("B-FAULT-001 single-meal stable finalization recovery", () => {
   it("finalizes an already sealed home meal without rewriting its Fact or Effect rows", () => {
     const root = newTestRoot();
@@ -1160,6 +1211,139 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
       }).effect_inputs[expectedEffectId]?.transaction_id,
     ).toBe(deriveDomainId("transaction", envelope.idempotency_key, sequence));
   });
+
+  it.each([
+    {
+      id: "purchase-fact",
+      fault: undefined,
+      repositoryFailureSequence: 0,
+      repositoryFailureDetail: "mixed_purchase_repository_append",
+      stage: "FactCommit",
+      errorCode: "FACT_COMMIT_FAILED",
+      primaryError: "FACT_COMMIT_FAILED:mixed_purchase_repository_append",
+      durableEventTypes: [],
+    },
+    {
+      id: "meal-fact",
+      fault: undefined,
+      repositoryFailureSequence: 1,
+      repositoryFailureDetail: "mixed_meal_repository_append",
+      stage: "FactCommit",
+      errorCode: "FACT_COMMIT_FAILED",
+      primaryError: "FACT_COMMIT_FAILED:mixed_meal_repository_append",
+      durableEventTypes: ["inventory_stock"],
+    },
+    {
+      id: "purchase-effect",
+      fault: "after_inventory_business_writes",
+      repositoryFailureSequence: undefined,
+      repositoryFailureDetail: undefined,
+      stage: "EffectBundle",
+      errorCode: "INVENTORY_EFFECT_FAILED",
+      primaryError: "INVENTORY_EFFECT_FAILED:after_business_writes",
+      durableEventTypes: ["inventory_stock"],
+    },
+    {
+      id: "meal-effect",
+      fault: "after_meal_nutrition",
+      repositoryFailureSequence: undefined,
+      repositoryFailureDetail: undefined,
+      stage: "EffectBundle",
+      errorCode: "NUTRITION_EFFECT_WRITE_FAILED",
+      primaryError: "NUTRITION_EFFECT_WRITE_FAILED:after_nutrition",
+      durableEventTypes: ["inventory_stock", "diet_meal"],
+    },
+  ] as const)(
+    "emits one mutation-sensitive safe diagnostic for the mixed $id failure and rolls back its whole transaction",
+    (testCase) => {
+      const root = newTestRoot();
+      const runtime = openDietDatabase({ privateRuntimeRoot: root });
+      const leakFragments = [
+        "private source payload",
+        "SELECT * FROM secrets",
+        "B-SLICE-001 purchase test secret 0001",
+        "C:\\Users\\fault\\private.db",
+      ] as const;
+      const leak = leakFragments.join(" ");
+      const originalEnvelope = mixedPurchaseAndDrinkEnvelope({ suffix: `safe-${testCase.id}` });
+      const envelope: DomainEnvelopeInput = {
+        ...originalEnvelope,
+        source_message_id: `${originalEnvelope.source_message_id} ${leak}`,
+      };
+      const failures: DietDomainFailureEntry[] = [];
+      try {
+        const service = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-12T03:00:01.000Z",
+          ...(testCase.fault === undefined ? {} : { fault: testCase.fault }),
+          failureSink: (entry) => {
+            failures.push(entry);
+            throw new Error("diagnostic sink must not replace the primary failure");
+          },
+        });
+        const preview = service.preview(envelope);
+        const input = {
+          envelope,
+          token: preview.token,
+          input_digest: preview.input_digest,
+          data_revision: preview.data_revision,
+        } as const;
+        const beforeFirstAttempt = canonicalBusinessSnapshot(runtime.database);
+        if (
+          testCase.repositoryFailureSequence !== undefined &&
+          testCase.repositoryFailureDetail !== undefined
+        ) {
+          installRepositoryAppendFailure(
+            runtime.database,
+            envelope.operations[testCase.repositoryFailureSequence]!.operation_id,
+            testCase.repositoryFailureDetail,
+          );
+        }
+
+        expect(captureThrown(() => service.execute(input))).toEqual(
+          new Error(testCase.primaryError),
+        );
+        expect(failures).toHaveLength(1);
+        expectSafeMixedFailure(failures[0]!, {
+          stage: testCase.stage,
+          errorCode: testCase.errorCode,
+          traceId: deriveDomainId("trace", envelope.idempotency_key, 0),
+          inputDigest: preview.input_digest,
+        }, [...leakFragments, root]);
+
+        const afterFirstAttempt = canonicalBusinessSnapshot(runtime.database);
+        if (testCase.durableEventTypes.length === 0) {
+          expect(afterFirstAttempt).toEqual(beforeFirstAttempt);
+        }
+        expect(runtime.database.prepare(
+          "SELECT event_type FROM event_records WHERE envelope_id = ? ORDER BY committed_at",
+        ).all(envelope.envelope_id)).toEqual(
+          testCase.durableEventTypes.map((event_type) => ({ event_type })),
+        );
+        expect(runtime.database.prepare(
+          "SELECT COUNT(*) AS count FROM envelope_finalizations WHERE envelope_id = ?",
+        ).get(envelope.envelope_id)).toEqual({ count: 0 });
+
+        failures.length = 0;
+        const beforeRetry = canonicalBusinessSnapshot(runtime.database);
+        expect(captureThrown(() => service.execute(input))).toEqual(
+          new Error(testCase.primaryError),
+        );
+        expect(failures).toHaveLength(1);
+        expectSafeMixedFailure(failures[0]!, {
+          stage: testCase.stage,
+          errorCode: testCase.errorCode,
+          traceId: deriveDomainId("trace", envelope.idempotency_key, 0),
+          inputDigest: preview.input_digest,
+        }, [...leakFragments, root]);
+        expect(canonicalBusinessSnapshot(runtime.database)).toEqual(beforeRetry);
+      } finally {
+        runtime.close();
+        removeOwnedRoot(root);
+      }
+    },
+  );
 
   it("CASE-MIXED-001 adds 24 cartons, drinks one, and finalizes once at 23", () => {
     const root = newTestRoot();
