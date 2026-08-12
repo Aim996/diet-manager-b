@@ -2,7 +2,7 @@
 
 ## Candidate and review scope
 
-Review candidate: `074fd30465eded2b650e0e00dadfca98ec363abc` on `agent/b-slice-001-vertical`.
+Review candidate: `c8e6bcef39d0f98452432c3331095d963b9b9778` on `agent/b-slice-001-vertical`.
 
 Review the business semantics, operation grouping, replay identity, append-only corrections, read-only query behavior, failure-log redaction, crash/restart cleanup, public tool boundary, and dependency/open-source hygiene. This package contains only sanitized repository-relative evidence. It contains no tokens, user data, machine-private URLs, or protected-file content.
 
@@ -12,14 +12,15 @@ From the repository root on the candidate SHA, set `$nodeExe` to the verified `v
 
 ```powershell
 Set-Location version-b-lite-plugin
-& $nodeExe .\node_modules\vitest\vitest.mjs run
+& $nodeExe .\node_modules\vitest\vitest.mjs run --maxWorkers=1 --minWorkers=1 --no-file-parallelism
 & $nodeExe .\node_modules\typescript\bin\tsc -p .\tsconfig.json --noEmit
 & $nodeExe .\tests\repository-concurrency.mjs
+& $nodeExe .\tests\progress-reservation-concurrency.mjs
 & $nodeExe .\tests\b-slice-crash-harness.mjs
 & $nodeExe .\node_modules\typescript\bin\tsc -p .\tsconfig.json
 & $nodeExe .\node_modules\openclaw\openclaw.mjs plugins build --check --root . --entry .\dist\index.js
 & $nodeExe .\node_modules\openclaw\openclaw.mjs plugins validate --root . --entry .\dist\index.js
-& $nodeExe .\node_modules\vitest\vitest.mjs run .\tests\foundation.test.ts
+& $nodeExe .\node_modules\vitest\vitest.mjs run .\tests\foundation.test.ts --maxWorkers=1 --minWorkers=1 --no-file-parallelism
 ```
 
 ```powershell
@@ -33,18 +34,18 @@ git rev-parse HEAD
 git status --porcelain=v1 --untracked-files=all
 ```
 
-Run the x-gate command above: its protected-path Set compares names from Git output only. It does not read, hash, execute, or modify a protected lease file; its SHA reads are only its declared dependency evidence paths. The traceability validator above was also statically confirmed not to reference a protected lease file. Do not otherwise read, hash, execute, or modify any protected lease file while reviewing.
+Run the x-gate command above: its protected-path Set compares names from Git output, and its SHA reads are limited to declared dependency evidence paths. The traceability validator above was also statically confirmed not to reference a protected lease file. Use only explicitly named safe paths for any additional content search. Git diff/status evidence for the candidate shows no protected-path modification; a separate read-only `rg` scope incident is recorded in the internal implementer ledger and means this package does not claim that no low-level open occurred during implementation evidence collection.
 
 ## Fresh sanitized results
 
-- Plugin gate: 7 files / 147 tests passed; TypeScript no-emit passed.
-- Repository concurrency and B-slice crash harnesses passed; crash cleanup reported no surviving child, temporary database, or log residue.
+- Plugin gate: 7 files / 153 tests passed with one worker and file parallelism disabled; TypeScript no-emit and build passed.
+- Repository focused 31/31, repository concurrency, daily-progress reservation two-connection, and B-slice crash harnesses passed; crash cleanup reported no surviving child, temporary database, or log residue.
 - Local OpenClaw build check and validation passed; plugin metadata is current and the plugin is valid.
 - X-GATE-001 self-test passed: 13 cases, 7 checks, `pass_b_safety`, and 6 mutation rejections.
-- Shared trace self-test passed with 71 requirements, 144 cases, 59 tasks, 63 governance records, 30 evidence records, and 7 mutations.
+- Shared trace self-test passed with 71 requirements, 144 cases, 59 tasks, 63 governance records, 31 evidence records, and 7 mutations.
 - Shared acceptance passed 22 tests, including all 17 exact G2 B cases and their mutation checks.
 - Foundation boundary passed 13 tests: `handleFoundationAction()` returns `foundation_not_implemented` and `committed:false` for every public action.
-- Candidate SHA stayed unchanged; final worktree was clean, no protected path had changed, `shared/selected-route-map.json` was absent, and the residual scan found no test database or log.
+- Candidate SHA stayed unchanged; final worktree was clean, Git diff/status showed no protected-path change, `shared/selected-route-map.json` was absent, and the residual scan found no test database or log. The evidence-search scope incident described above remains a review concern and must not be rewritten as proof that no protected path was opened.
 
 ## Review-path map and P1 regression
 
@@ -58,6 +59,10 @@ Fix3 retains that preflight boundary for the aggregate paths discovered in re-re
 
 Fix4 closes the remaining cumulative-progress boundary. The real SQLite tests are `rejects cross-envelope daily progress overflow before meal FactCommit and keeps prior meals visible` and `rejects cross-envelope daily progress overflow before correction FactCommit and keeps the correction query-invisible`. Before `074fd30`, the meal threw only in EnvelopeFinalize after leaving a second event/item, two outboxes, checkpoint, nutrition profile and snapshot; the correction threw after leaving its correction event/row, two outboxes and checkpoint. The finalizer now exposes its exact no-write authoritative snapshot read plus addition, meal preflight returns its contribution, and correction preflight returns its before/after vectors so execute can run the same projection before append. The finalizer transaction/CAS remains authoritative. Focused 2-test GREEN, the 7-test null/undo/restore/mixed/replay compatibility set, TypeScript no-emit, full 147-test plugin gate, and the complete frozen gate passed.
 
+The refreshed candidate first moves frozen terminal replay and stored-preview reuse ahead of live environmental preflight. Its three regression tests prove that later inventory/nutrition changes cannot invalidate byte-frozen terminal results or an already stored preview.
+
+It then adds a transaction-authoritative daily-progress reservation embedded in the first dietary fact. The reservation parser requires exact plain descriptor/prototype shapes without executing accessors, binds meal/purchase to contribution mode and correction to replacement/date authority, keeps reservations active across mixed first-child and correction crash/retry windows, releases them only when no active fact/outbox remains, and does not leak reservation metadata through public results or queries. In the real two-connection harness, the historical behavior left one event, one meal, two outboxes, and one checkpoint before a late finalization conflict; the current candidate rejects the competitor at its first FactCommit with all those counts and finalizations at zero. The crash harness fixture creates the same authoritative reservation fact used in production.
+
 ## Required verdict
 
-Record independently found issues by priority. Stage B may proceed only with an explicit P0=0/P1=0 verdict. This package does not supply that verdict and does not complete `B-SLICE-001`.
+Record independently found issues by priority against exact candidate `c8e6bcef39d0f98452432c3331095d963b9b9778`. The earlier P0=0/P1=0/P2=0 verdict belongs only to superseded candidate `074fd30465eded2b650e0e00dadfca98ec363abc`. Stage B may proceed only with a new explicit P0=0/P1=0 verdict; until then P0/P1/P2 are unassessed, Ready=NO pending review, and this package does not complete `B-SLICE-001`.
