@@ -2,7 +2,7 @@
 
 ## Candidate
 
-- Candidate SHA: `dc96175a3369752fa0247d701718011934113227`
+- Candidate SHA: `0e98f0cc47895e5c03dab19a65a93ce43145d326`
 - Branch: `agent/b-slice-001-vertical`
 - Stage: A — candidate freeze and review inputs only
 - Full responsibility set: `G2_VERTICAL_SLICE_B_ONLY` (17 cases)
@@ -10,66 +10,87 @@
 
 ## Gate boundary
 
-The candidate started clean at the SHA above and remained at that SHA throughout the gate sequence. The final status check found no tracked or untracked repository changes, `shared/selected-route-map.json` absent, and no test-owned B-slice database or log residue. All Node commands used the task-mandated Node `v24.15.0`; no model calls were made.
+The candidate started clean at the SHA above and remained at that SHA throughout the complete gate sequence. The final status check found no tracked or untracked repository changes, `shared/selected-route-map.json` absent, no protected-path change, and no test-owned B-slice database or log residue. All Node commands used the task-mandated Node `v24.15.0`; no model calls were made.
 
-The allowed shared validators were limited to `shared/tests/validate-traceability.mjs` and the established shared acceptance tests. `shared/tests/validate-x-gate-001.mjs` was intentionally not run: static inspection shows it references protected lease files. The trace validator was statically confirmed not to reference those files. The planned Stage B filename `shared/traceability/evidence.json` does not exist; the established mirror is `shared/traceability/evidence-index.json`.
+The allowed shared validators were `shared/tests/validate-x-gate-001.mjs --self-test`, `shared/tests/validate-traceability.mjs --self-test`, and the established shared acceptance tests. The x-gate stores protected path names only to compare them with Git-reported changed names; it does not read, hash, execute, or modify those files. Its evidence SHA reads are limited to its declared dependency evidence paths. The trace validator was statically confirmed not to reference protected lease files. The planned Stage B filename `shared/traceability/evidence.json` does not exist; the established mirror is `shared/traceability/evidence-index.json`.
 
 ## Case assertions
 
 case_assertion_paths:
   CASE-MIXED-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-CORR-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-QUERY-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-EFFECT-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-MEAL-006:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-NUTR-008:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-MEAL-003:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-MEAL-004:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-INVENTORY-003:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-INVENTORY-004:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-NUTR-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-NUTR-002:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-NUTR-005:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-STORAGE-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-RECEIPT-001:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-RECEIPT-003:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
   CASE-PROGRESS-010:
     - shared/acceptance-cases/tests/b-slice.test.ts
+    - shared/acceptance-cases/adapters/b-slice-driver.ts
     - version-b-lite-plugin/tests/vertical-slice.test.ts
 
 full_case_set: `G2_VERTICAL_SLICE_B_ONLY`
+
+## Observation-builder map
+
+The assertion test dispatches each case to the named real observation builder in `shared/acceptance-cases/adapters/b-slice-driver.ts`: `CASE-MIXED-001` `runMixed` (589), `CASE-CORR-001` `runCorrection` (654), `CASE-QUERY-001` `runQuery` (717), `CASE-EFFECT-001` `runEffectFailure` (756), `CASE-MEAL-006` `runMeal006` (857), `CASE-NUTR-008` `runNutrition008` (895), `CASE-MEAL-003` `runMeal003` (933), `CASE-MEAL-004` `runMeal004` (968), `CASE-INVENTORY-003` `runInventory003` (1002), `CASE-INVENTORY-004` `runInventory004` (1034), `CASE-NUTR-001` `runNutrition001` (1066), `CASE-NUTR-002` `runNutrition002` (1103), `CASE-NUTR-005` `runNutrition005` (1121), `CASE-STORAGE-001` `runStorage001` (1153), `CASE-RECEIPT-001` `runReceipt001` (1184), `CASE-RECEIPT-003` `runReceipt003` (1205), and `CASE-PROGRESS-010` `runProgress010` (1231). The P1-1 focused SQLite regression is `rejects an invalid meal amount before FactCommit and keeps it query-invisible` in `version-b-lite-plugin/tests/vertical-slice.test.ts`.
 
 ## Stage A disposition
 

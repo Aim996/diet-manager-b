@@ -2526,6 +2526,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -2710,6 +2711,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3149,6 +3151,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3209,6 +3212,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3562,6 +3566,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3588,6 +3593,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3631,6 +3637,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3851,6 +3858,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3912,6 +3920,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -3944,6 +3953,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4008,6 +4018,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4062,6 +4073,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4546,6 +4558,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4801,6 +4814,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4933,6 +4947,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -4998,6 +5013,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -5227,6 +5243,7 @@
           "assertion_state": "declared",
           "assertion_paths": [
             "shared/acceptance-cases/tests/b-slice.test.ts",
+            "shared/acceptance-cases/adapters/b-slice-driver.ts",
             "version-b-lite-plugin/tests/vertical-slice.test.ts"
           ]
         },
@@ -7372,70 +7389,87 @@
       "case_assertion_paths": {
         "CASE-MIXED-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-CORR-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-QUERY-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-EFFECT-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-MEAL-006": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-NUTR-008": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-MEAL-003": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-MEAL-004": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-INVENTORY-003": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-INVENTORY-004": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-NUTR-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-NUTR-002": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-NUTR-005": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-STORAGE-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-RECEIPT-001": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-RECEIPT-003": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ],
         "CASE-PROGRESS-010": [
           "shared/acceptance-cases/tests/b-slice.test.ts",
+          "shared/acceptance-cases/adapters/b-slice-driver.ts",
           "version-b-lite-plugin/tests/vertical-slice.test.ts"
         ]
       },
