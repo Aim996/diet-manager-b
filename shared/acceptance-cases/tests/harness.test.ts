@@ -50,6 +50,8 @@ test("freezes the shared harness manifest", () => {
     contracts: Array<{ contract_id: string; path: string; sha256: string }>;
     case_catalog: { path: string; case_set_id: string; version: string; case_count: number; sha256: string };
     fixture_catalog: { path: string; fixture_catalog_id: string; version: string; sha256: string };
+    b_slice_input_catalog: { path: string; input_catalog_id: string; version: string; case_count: number; sha256: string };
+    g2_b_slice_matrix: { path: string; matrix_id: string; expected_count: number; sha256: string };
     route_policy: { b_mode: string; a_mode: string; c_mode: string };
     required_case_ids: string[];
     kind_mappings: Array<{ direction: string; from: string; to: string }>;
@@ -72,6 +74,19 @@ test("freezes the shared harness manifest", () => {
     fixture_catalog_id: "diet-manager/core-fixtures-v1",
     version: "1.2.0",
     sha256: "E4069D2EB2FCE22B191657BDE91CDFF737597891F3CA0535AA22C5BA6FE16C60",
+  });
+  assert.deepEqual(manifest.b_slice_input_catalog, {
+    path: "shared/acceptance-cases/b-slice-inputs.json",
+    input_catalog_id: "diet-manager/b-slice-case-inputs/v1",
+    version: "1.0.0",
+    case_count: 9,
+    sha256: "73228B1B718502BE486420AD68475CA2482C793E4CF44EF6ABF9ADB29DB1283C",
+  });
+  assert.deepEqual(manifest.g2_b_slice_matrix, {
+    path: "shared/acceptance-cases/g2-b-slice-matrix.json",
+    matrix_id: "diet-manager/g2-b-slice-matrix/v1",
+    expected_count: 17,
+    sha256: "C6FE8A220D30D0C4B21E53D172F578B545847692096F984B14F8C0C72B8B99AF",
   });
   assert.deepEqual(manifest.route_policy, {
     b_mode: "selected_execution_adapter",
@@ -103,6 +118,8 @@ test("freezes the shared harness manifest", () => {
     ...manifest.contracts.map((entry) => ({ path: entry.path, sha256: entry.sha256 })),
     { path: manifest.case_catalog.path, sha256: manifest.case_catalog.sha256 },
     { path: manifest.fixture_catalog.path, sha256: manifest.fixture_catalog.sha256 },
+    { path: manifest.b_slice_input_catalog.path, sha256: manifest.b_slice_input_catalog.sha256 },
+    { path: manifest.g2_b_slice_matrix.path, sha256: manifest.g2_b_slice_matrix.sha256 },
   ];
   for (const entry of locked) {
     const bytes = readFileSync(resolve(projectRoot, entry.path));

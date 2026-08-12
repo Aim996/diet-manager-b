@@ -10,6 +10,7 @@ import {
 } from "../repository/inventory-effects.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
 import {
@@ -775,9 +776,86 @@ function assertPendingMealCheckpoint(
     exactKeys(effect, ["effect_id", "state"], "checkpoint_effects");
     if (
       effect.effect_id !== outboxes[index]?.effect_id || effect.state !== "pending" ||
-      outboxes[index]?.state !== "pending"
+      (outboxes[index]?.state !== "pending" && outboxes[index]?.state !== "retryable_failed")
     ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:checkpoint_effects");
   });
+}
+
+export interface MarkMealEffectsRetryableInput {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly operationSequence: number;
+  readonly idempotencyKey: string;
+  readonly inputDigest: string;
+  readonly now: string;
+  readonly location: "home" | "outside";
+  readonly errorCode: string;
+}
+
+export function markMealEffectsRetryable(input: MarkMealEffectsRetryableInput): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const checkpoint = input.database.prepare(
+      `SELECT operation_id, effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as MealBundleCheckpointRow | undefined;
+    if (!checkpoint) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:checkpoint_missing");
+    assertPendingMealCheckpoint(
+      input.database, checkpoint, input.envelopeId, input.operationId,
+      input.operationSequence, input.idempotencyKey, input.location,
+    );
+    assertEffectTransition("pending", "processing");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+         reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'pending'`,
+    ).run(input.now, input.envelopeId, input.operationId);
+    const claimed = changed(input.database);
+    if (claimed < 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_claim");
+    assertEffectTransition("processing", "retryable_failed");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'retryable_failed', reason = ?, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
+    ).run(input.errorCode, input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== claimed) {
+      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_fail_compare_and_set");
+    }
+    const envelope = input.database.prepare(
+      "SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?",
+    ).get(input.envelopeId) as { state: string; result_status: string } | undefined;
+    if (envelope?.state !== "received" || envelope.result_status !== "preview_ready") {
+      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_envelope_state");
+    }
+    assertEnvelopeTransition("received", "facts_committed");
+    input.database.prepare(
+      `UPDATE command_envelopes SET state = 'facts_committed', result_status = 'facts_committed', committed_at = ?
+       WHERE envelope_id = ? AND state = 'received' AND result_status = 'preview_ready'`,
+    ).run(input.now, input.envelopeId);
+    if (changed(input.database) !== 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_fact_compare_and_set");
+    assertEnvelopeTransition("facts_committed", "effects_pending");
+    input.database.prepare(
+      `UPDATE command_envelopes SET state = 'effects_pending', result_status = 'facts_committed_effects_pending'
+       WHERE envelope_id = ? AND state = 'facts_committed' AND result_status = 'facts_committed'`,
+    ).run(input.envelopeId);
+    if (changed(input.database) !== 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_envelope_compare_and_set");
+    input.database.prepare(
+      `UPDATE idempotency_records SET state = 'effects_pending', updated_at = ?
+       WHERE idempotency_key = ? AND operation_id = ? AND input_digest = ?
+         AND state = 'preview_ready' AND terminal_result_json IS NULL`,
+    ).run(input.now, input.idempotencyKey, input.envelopeId, input.inputDigest);
+    if (changed(input.database) !== 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:retry_idempotency_compare_and_set");
+    input.database.exec("COMMIT");
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }
+    }
+    throw error;
+  }
 }
 
 function inventoryCandidates(
@@ -1036,18 +1114,23 @@ function updateMealOutboxes(
   for (const item of itemResults) {
     if (input.location === "home") {
       const inventoryState = item.inventory_match === "matched" ? "succeeded" : "permanent_business_skip";
+      assertEffectTransition("processing", inventoryState);
       database.prepare(
-        `UPDATE effect_outbox SET state = ?, updated_at = ?
-         WHERE envelope_id = ? AND operation_id = ? AND effect_id = ? AND state = 'pending'`,
+        `UPDATE effect_outbox SET state = ?, reason = ?, updated_at = ?
+         WHERE envelope_id = ? AND operation_id = ? AND effect_id = ?
+           AND state = 'processing'`,
       ).run(
-        inventoryState, input.now, input.envelopeId, input.operationId,
+        inventoryState, inventoryState === "succeeded" ? null : item.inventory_match,
+        input.now, input.envelopeId, input.operationId,
         mealEffectId(input.idempotencyKey, item.item_order, 0),
       );
       if (changed(database) !== 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:inventory_outbox_compare_and_set");
     }
+    assertEffectTransition("processing", "succeeded");
     database.prepare(
-      `UPDATE effect_outbox SET state = 'succeeded', updated_at = ?
-       WHERE envelope_id = ? AND operation_id = ? AND effect_id IN (?, ?) AND state = 'pending'`,
+      `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND effect_id IN (?, ?)
+         AND state = 'processing'`,
     ).run(
       input.now, input.envelopeId, input.operationId,
       mealEffectId(input.idempotencyKey, item.item_order, 1),
@@ -1057,12 +1140,35 @@ function updateMealOutboxes(
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:item_outbox_compare_and_set");
     }
   }
+  assertEffectTransition("processing", "succeeded");
   database.prepare(
-    `UPDATE effect_outbox SET state = 'succeeded', updated_at = ?
+    `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
      WHERE envelope_id = ? AND operation_id = ? AND effect_kind = 'daily_progress_contribution'
-       AND state = 'pending'`,
+       AND state = 'processing'`,
   ).run(input.now, input.envelopeId, input.operationId);
   if (changed(database) !== 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:progress_outbox_compare_and_set");
+}
+
+function claimMealOutboxes(database: DatabaseSync, input: ApplyMealEffectsInput): void {
+  const states = database.prepare(
+    `SELECT state, COUNT(*) AS count FROM effect_outbox
+     WHERE envelope_id = ? AND operation_id = ? GROUP BY state ORDER BY state`,
+  ).all(input.envelopeId, input.operationId) as Array<{ state: string; count: number }>;
+  if (states.length === 0 || states.some((row) =>
+    row.state !== "pending" && row.state !== "retryable_failed")) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:claim_state");
+  }
+  for (const row of states) {
+    assertEffectTransition(row.state as "pending" | "retryable_failed", "processing");
+    database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+         reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = ?`,
+    ).run(input.now, input.envelopeId, input.operationId, row.state);
+    if (changed(database) !== Number(row.count)) {
+      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:claim_compare_and_set");
+    }
+  }
 }
 
 export interface ApplyMealEffectsInput {
@@ -1329,6 +1435,7 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
     if (checkpointPayload.data_revision !== computeRepositoryDataRevision(input.database)) {
       throw new Error("PREVIEW_STALE:data_revision");
     }
+    claimMealOutboxes(input.database, input);
     const event = input.database.prepare(
       `SELECT * FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
     ).get(input.envelopeId, input.operationId) as unknown as MealEventRow | undefined;
@@ -1397,7 +1504,9 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
         profileId,
         generatedAt,
       );
-      if (input.fault === "after_nutrition") throw new Error("MEAL_EFFECT_FAILED:after_nutrition");
+      if (input.fault === "after_nutrition") {
+        throw new Error("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
+      }
       const transactionId = writeMealDeduction(input.database, input, event, item, decision);
       writeMealIssue(input.database, input, event, item, decision);
       progress = addNutritionVectors(progress, scaledNutrients);

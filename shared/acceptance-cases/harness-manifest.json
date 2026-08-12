@@ -37,6 +37,19 @@
     "version": "1.2.0",
     "sha256": "E4069D2EB2FCE22B191657BDE91CDFF737597891F3CA0535AA22C5BA6FE16C60"
   },
+  "b_slice_input_catalog": {
+    "path": "shared/acceptance-cases/b-slice-inputs.json",
+    "input_catalog_id": "diet-manager/b-slice-case-inputs/v1",
+    "version": "1.0.0",
+    "case_count": 9,
+    "sha256": "73228B1B718502BE486420AD68475CA2482C793E4CF44EF6ABF9ADB29DB1283C"
+  },
+  "g2_b_slice_matrix": {
+    "path": "shared/acceptance-cases/g2-b-slice-matrix.json",
+    "matrix_id": "diet-manager/g2-b-slice-matrix/v1",
+    "expected_count": 17,
+    "sha256": "C6FE8A220D30D0C4B21E53D172F578B545847692096F984B14F8C0C72B8B99AF"
+  },
   "route_policy": {
     "b_mode": "selected_execution_adapter",
     "a_mode": "read_only_no_writer",

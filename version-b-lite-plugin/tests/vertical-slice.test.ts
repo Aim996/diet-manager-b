@@ -1042,7 +1042,7 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
       } as const;
 
       expect(() => faultingService.execute(input)).toThrow(
-        "MEAL_EFFECT_FAILED:after_nutrition",
+        "NUTRITION_EFFECT_WRITE_FAILED:after_nutrition",
       );
       expect(runtime.database.prepare(
         "SELECT COUNT(*) AS count FROM envelope_finalizations",
@@ -1071,6 +1071,13 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
       expect(runtime.database.prepare(
         "SELECT COUNT(*) AS count FROM inventory_transactions",
       ).get()).toEqual({ count: 2 });
+      expect(runtime.database.prepare(
+        "SELECT DISTINCT state, reason, attempt_count FROM effect_outbox WHERE envelope_id = ?",
+      ).all(envelope.envelope_id)).toEqual([{
+        state: "succeeded",
+        reason: null,
+        attempt_count: 1,
+      }]);
     } finally {
       runtime.close();
       removeOwnedRoot(root);
@@ -1988,10 +1995,10 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         token: preview.token,
         input_digest: preview.input_digest,
         data_revision: preview.data_revision,
-      })).toThrow("MEAL_EFFECT_FAILED:after_nutrition");
+      })).toThrow("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
       expect(failures).toEqual([{
         stage: "EffectBundle",
-        error_code: "MEAL_EFFECT_FAILED",
+        error_code: "NUTRITION_EFFECT_WRITE_FAILED",
         trace_id: expect.stringMatching(/^trace-[a-f0-9]{32}$/),
         input_digest: preview.input_digest,
       }]);
@@ -1999,17 +2006,47 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         "SELECT event_type, lifecycle_status FROM event_records",
       ).all()).toEqual([{ event_type: "diet_meal", lifecycle_status: "active" }]);
       expect(runtime.database.prepare(
-        "SELECT state FROM effect_outbox ORDER BY effect_id",
+        "SELECT state, reason FROM effect_outbox ORDER BY effect_id",
       ).all()).toEqual([
-        { state: "pending" },
-        { state: "pending" },
+        { state: "retryable_failed", reason: "NUTRITION_EFFECT_WRITE_FAILED" },
+        { state: "retryable_failed", reason: "NUTRITION_EFFECT_WRITE_FAILED" },
       ]);
+      expect(runtime.database.prepare(
+        "SELECT state, result_status FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({
+        state: "effects_pending",
+        result_status: "facts_committed_effects_pending",
+      });
+      expect(runtime.database.prepare(
+        "SELECT state, terminal_result_json FROM idempotency_records WHERE idempotency_key = ?",
+      ).get(envelope.idempotency_key)).toEqual({
+        state: "effects_pending",
+        terminal_result_json: null,
+      });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM nutrition_profiles").get()).toEqual({ count: 0 });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM nutrition_snapshots").get()).toEqual({ count: 0 });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM inventory_transactions").get()).toEqual({ count: 0 });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM issues").get()).toEqual({ count: 0 });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 0 });
       expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM envelope_finalizations").get()).toEqual({ count: 0 });
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T04:00:02.000Z",
+      }).execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(recovered.status).toBe("committed");
+      expect(runtime.database.prepare(
+        "SELECT DISTINCT state, reason, attempt_count FROM effect_outbox WHERE envelope_id = ?",
+      ).all(envelope.envelope_id)).toEqual([{
+        state: "succeeded",
+        reason: null,
+        attempt_count: 2,
+      }]);
     } finally {
       runtime.close();
       removeOwnedRoot(root);
@@ -2078,7 +2115,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
       });
       expect(runtime.database.prepare(
         "SELECT DISTINCT state FROM effect_outbox WHERE operation_id = ?",
-      ).all("operation-meal-rollback-two-items")).toEqual([{ state: "pending" }]);
+      ).all("operation-meal-rollback-two-items")).toEqual([{ state: "retryable_failed" }]);
     } finally {
       runtime.close();
       removeOwnedRoot(root);
@@ -2109,7 +2146,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
         token: preview.token,
         input_digest: preview.input_digest,
         data_revision: preview.data_revision,
-      })).toThrow("MEAL_EFFECT_FAILED:after_nutrition");
+      })).toThrow("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
       const checkpoint = runtime.database.prepare(
         "SELECT payload_json FROM effect_bundle_commits WHERE operation_id = ?",
       ).get("operation-meal-tampered-checkpoint") as { payload_json: string };

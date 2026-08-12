@@ -3,7 +3,7 @@ import { createServerPreview, authorizeRepositoryPreview } from "../preview/stor
 import { appendPreparedOperationFact, sealPreparedEnvelopeFacts, } from "../repository/fact-commit.js";
 import { finalizeEnvelope, } from "../repository/envelope-finalize.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
-import { applyMealEffects, applyPurchaseEffect, applyCorrectionEffects, prepareCorrectionOperation, readAppliedCorrectionResult, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
+import { applyMealEffects, markMealEffectsRetryable, applyPurchaseEffect, applyCorrectionEffects, prepareCorrectionOperation, readAppliedCorrectionResult, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { queryDomainReadModel } from "./read-model.js";
 import { buildQuickPrompt, buildReceiptData, } from "./receipt.js";
@@ -601,10 +601,10 @@ export function createDietDomainService(input) {
                         mixedItems: Object.freeze([]),
                     }).payload;
                 }
-                if (authority.envelope_state !== "received") {
+                if (authority.envelope_state !== "received" && authority.envelope_state !== "effects_pending") {
                     throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
                 }
-                if (options.fault === "before_fact_commit") {
+                if (authority.envelope_state === "received" && options.fault === "before_fact_commit") {
                     emitFailure(options.failureSink, {
                         stage: "FactCommit",
                         error_code: "DIET_DOMAIN_EXECUTION_FAILED",
@@ -613,14 +613,16 @@ export function createDietDomainService(input) {
                     });
                     throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
                 }
-                appendPreparedOperationFact(preparedMeal.fact, {
-                    failureSink: (entry) => emitFailure(options.failureSink, {
-                        stage: "FactCommit",
-                        error_code: entry.error_code,
-                        trace_id: entry.trace_id,
-                        input_digest: entry.input_digest,
-                    }),
-                });
+                if (authority.envelope_state === "received") {
+                    appendPreparedOperationFact(preparedMeal.fact, {
+                        failureSink: (entry) => emitFailure(options.failureSink, {
+                            stage: "FactCommit",
+                            error_code: entry.error_code,
+                            trace_id: entry.trace_id,
+                            input_digest: entry.input_digest,
+                        }),
+                    });
+                }
                 let mealResult;
                 try {
                     mealResult = applyMealEffects({
@@ -640,6 +642,19 @@ export function createDietDomainService(input) {
                 }
                 catch (error) {
                     const code = (error instanceof Error ? error.message : "MEAL_EFFECT_FAILED").split(":", 1)[0];
+                    if (authority.envelope_state === "received") {
+                        markMealEffectsRetryable({
+                            database: options.database,
+                            envelopeId: envelope.envelope_id,
+                            operationId: operation.operation_id,
+                            operationSequence: 0,
+                            idempotencyKey: envelope.idempotency_key,
+                            inputDigest,
+                            now: committedAt,
+                            location: operation.location,
+                            errorCode: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
+                        });
+                    }
                     emitFailure(options.failureSink, {
                         stage: "EffectBundle",
                         error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "MEAL_EFFECT_FAILED",
