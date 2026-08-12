@@ -2,7 +2,7 @@
 
 ## Candidate and review scope
 
-Review candidate: `cbf9811ce64c002b44737d50b846df6ce2535b4c` on `agent/b-slice-001-vertical`.
+Review candidate: `074fd30465eded2b650e0e00dadfca98ec363abc` on `agent/b-slice-001-vertical`.
 
 Review the business semantics, operation grouping, replay identity, append-only corrections, read-only query behavior, failure-log redaction, crash/restart cleanup, public tool boundary, and dependency/open-source hygiene. This package contains only sanitized repository-relative evidence. It contains no tokens, user data, machine-private URLs, or protected-file content.
 
@@ -37,7 +37,7 @@ Run the x-gate command above: its protected-path Set compares names from Git out
 
 ## Fresh sanitized results
 
-- Plugin gate: 7 files / 145 tests passed; TypeScript no-emit passed.
+- Plugin gate: 7 files / 147 tests passed; TypeScript no-emit passed.
 - Repository concurrency and B-slice crash harnesses passed; crash cleanup reported no surviving child, temporary database, or log residue.
 - Local OpenClaw build check and validation passed; plugin metadata is current and the plugin is valid.
 - X-GATE-001 self-test passed: 13 cases, 7 checks, `pass_b_safety`, and 6 mutation rejections.
@@ -55,6 +55,8 @@ P1-1 RED was the real SQLite regression `rejects an invalid meal amount before F
 Fix2 adds descriptor/prototype-safe cloning before validation, then a no-write meal preflight which reuses real inventory matching and nutrition scaling. Its real SQLite REDs were (1) all six nutrients and adoption at `Number.MAX_SAFE_INTEGER` with basis `1`, which threw `DOMAIN_RULE_INVALID:nutrition_scaled` only after one event, one item, two outboxes, and one checkpoint; (2) an `envelope_id` accessor hit once; and (3) a custom operations-array `entries()` hit once. `3a253b8` makes all three fail before FactCommit with zero hits, zero business rows, and no query-visible meal; it preserves `null=unknown` fields and uses an in-memory preceding purchase candidate for the legitimate mixed preflight.
 
 Fix3 retains that preflight boundary for the aggregate paths discovered in re-review. The real SQLite tests are `rejects multi-item nutrition summation overflow before FactCommit and keeps it query-invisible` and `rejects correction nutrition scaling overflow before FactCommit and keeps the correction query-invisible`; both now reject with zero new business rows and no query-visible partial write. `ca0d9ea` accumulates every scaled meal vector with `addNutritionVectors()` before FactCommit and preflights corrected nutrition across replace/undo/restore before append. The descriptor test `rejects envelope symbols and non-enumerable array indexes before reading or writing` confirms symbols and non-enumerable indexes are rejected while ordinary frozen arrays remain accepted. The focused three regression tests, existing unknown/undo/restore compatibility tests, full 145-test plugin gate, and complete frozen gate passed. `cbf9811` is the generated OpenClaw metadata-formatting commit included in the reviewed candidate.
+
+Fix4 closes the remaining cumulative-progress boundary. The real SQLite tests are `rejects cross-envelope daily progress overflow before meal FactCommit and keeps prior meals visible` and `rejects cross-envelope daily progress overflow before correction FactCommit and keeps the correction query-invisible`. Before `074fd30`, the meal threw only in EnvelopeFinalize after leaving a second event/item, two outboxes, checkpoint, nutrition profile and snapshot; the correction threw after leaving its correction event/row, two outboxes and checkpoint. The finalizer now exposes its exact no-write authoritative snapshot read plus addition, meal preflight returns its contribution, and correction preflight returns its before/after vectors so execute can run the same projection before append. The finalizer transaction/CAS remains authoritative. Focused 2-test GREEN, the 7-test null/undo/restore/mixed/replay compatibility set, TypeScript no-emit, full 147-test plugin gate, and the complete frozen gate passed.
 
 ## Required verdict
 

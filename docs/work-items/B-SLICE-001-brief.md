@@ -2,7 +2,7 @@
 
 ## Candidate
 
-- Candidate SHA: `cbf9811ce64c002b44737d50b846df6ce2535b4c`
+- Candidate SHA: `074fd30465eded2b650e0e00dadfca98ec363abc`
 - Branch: `agent/b-slice-001-vertical`
 - Stage: A — candidate freeze and review inputs only
 - Full responsibility set: `G2_VERTICAL_SLICE_B_ONLY` (17 cases)
@@ -95,6 +95,8 @@ The assertion test dispatches each case to the named real observation builder in
 Fix2 adds three more pre-FactCommit SQLite regressions in that test file: `rejects nutrition scaling overflow before FactCommit and keeps it query-invisible`, `rejects an accessor envelope without reading it or writing business rows`, and `rejects a custom operations array prototype without calling entries or writing rows`. `3a253b8` descriptor/prototype-clones untrusted envelopes before validation and reuses the no-write meal preflight for real nutrition scaling.
 
 Fix3 adds `rejects multi-item nutrition summation overflow before FactCommit and keeps it query-invisible`, `rejects correction nutrition scaling overflow before FactCommit and keeps the correction query-invisible`, and `rejects envelope symbols and non-enumerable array indexes before reading or writing` in `version-b-lite-plugin/tests/vertical-slice.test.ts`. `ca0d9ea` accumulates the exact scaled nutrition vector during meal preflight and evaluates correction nutrition before append; it also accepts safely frozen ordinary arrays while rejecting symbols, accessors, non-enumerable indexes, and nonstandard prototypes. `cbf9811` records the local OpenClaw-generated metadata formatting used by the frozen candidate.
+
+Fix4 adds `rejects cross-envelope daily progress overflow before meal FactCommit and keeps prior meals visible` and `rejects cross-envelope daily progress overflow before correction FactCommit and keeps the correction query-invisible`. `074fd30` exposes the finalizer's no-write authoritative daily-progress projection, returns the meal contribution and correction before/after vectors from preflight, and applies those exact operations before any new FactCommit. The finalizer transaction and compare-and-set checks remain authoritative, and parent-local in-memory contributions are included when projecting an ordered envelope.
 
 ## Stage A disposition
 

@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.3.md",
-      "length": 295323,
-      "sha256": "F555300D07DA6397E55327CF196F34D665989C289559E98A40B3C6C1269566F9"
+      "length": 295375,
+      "sha256": "D91F4C2D601A8AA21F39704DA07CE986EF8F2D9A2379B4D05B93DF4DD652FF1A"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -7382,9 +7382,9 @@
       "verification": "§26.5 B-only固定共同Oracle全通过；E-STOR+E-CASE",
       "roots": "ROOT-B",
       "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root待设计 / 独立B纵切复核待定",
+      "owner_reviewer": "Codex /root实现 / 独立B纵切复核待定",
       "status": "未开始",
-      "next_reopen": "G1已通过；next=按已批准§26.5拆分首条可审查设计并取得确认，随后转进行中；切片或上游证据变化重开",
+      "next_reopen": "Stage A候选074fd30465eded2b650e0e00dadfca98ec363abc已通过147项plugin测试和完整允许门；独立复核待定；P0/P1归零前不得完成Stage B，候选或上游证据变化重开",
       "brief_path": "docs/work-items/B-SLICE-001-brief.md",
       "case_assertion_paths": {
         "CASE-MIXED-001": [
