@@ -576,7 +576,7 @@ git commit -m "feat: add append-only dietary corrections"
 - Consumes: multi-operation FactCommit, per-operation EffectBundle, and single finalizer from Tasks 2–6.
 - Produces: `CASE-MIXED-001` ordered execution and `CASE-PROGRESS-010` envelope-level progress.
 
-- [ ] **Step 1: Write the full mixed RED test**
+- [x] **Step 1: Write the full mixed RED test**
 
 ```ts
 it("adds 24 milk cartons, drinks one, then finalizes once at 23", () => {
@@ -594,21 +594,21 @@ it("adds 24 milk cartons, drinks one, then finalizes once at 23", () => {
 
 Add a local non-G2 regression that a later `needs_clarification` item does not remove an earlier committed fact and that ordered statuses remain explicit.
 
-- [ ] **Step 2: Run the mixed test and verify ordering RED**
+- [x] **Step 2: Run the mixed test and verify ordering RED**
 
-- [ ] **Step 3: Execute effects in operation order**
+- [x] **Step 3: Execute effects in operation order**
 
 After the multi-operation FactCommit, process every operation's outboxes in sequence. The meal operation queries inventory only after the purchase operation commits its EffectBundle, so it observes 24 cartons and deducts one.
 
-- [ ] **Step 4: Freeze one parent result**
+- [x] **Step 4: Freeze one parent result**
 
 Build ordered `mixedItems`, aggregate current-turn contributions from every succeeded child, and call `finalizeEnvelope()` once. A business-skip child remains an explicit item and may produce `committed_with_issues`; a technical pending child prevents parent success finalization.
 
-- [ ] **Step 5: Run mixed, progress, replay, and crash-near-reply tests**
+- [x] **Step 5: Run mixed, progress, replay, and crash-near-reply tests**
 
 Expected: inventory ends at 23; one finalization; same-key replay is exact and creates zero rows.
 
-- [ ] **Step 6: Commit mixed orchestration**
+- [x] **Step 6: Commit mixed orchestration**
 
 ```powershell
 git add version-b-lite-plugin/src/domain version-b-lite-plugin/tests/vertical-slice.test.ts
