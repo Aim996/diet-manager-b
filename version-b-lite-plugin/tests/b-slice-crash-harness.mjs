@@ -37,6 +37,41 @@ const expandedCrashMatrix = Object.freeze([
   Object.freeze({ kind: "mixed", boundary: "after_finalize_before_reply" }),
   Object.freeze({ kind: "mixed", boundary: "after_seal_before_finalize" }),
 ]);
+const expandedCrashAuthority = Object.freeze({
+  meal_after_finalize_before_reply: "8ce0c6f6dc0e1f66e186ec21ff7f47b201b7fe6d7f43f7638ba46de3604641fe",
+  meal_after_effect_before_seal: "7bc3bd0d8cb469ac9d6fa572a09072768fc152ec0e6fec90437c45f8a1870ff5",
+  meal_after_fact: "d7f9acadb7c94ca322a13a703e553b221468e775c24dbfabe6b4395aaea0ae96",
+  purchase_after_finalize_before_reply: "944d91e6a5ce846bea766e87831f2f60aa44a8b5581a57b206ca5f80dde248bc",
+  purchase_after_effect_before_seal: "c6bd4ac3011ceb6be6cc55656e99fa95299197237771991f8993b3d61a2d2080",
+  purchase_after_fact: "a115aba9eafbca0997bb8fd972d0428452668e99bfd90d91ec5070439adaf526",
+  correction_after_finalize_before_reply: "c5eb9ba5449111dc288e40948e047b7610e0ed693b706abfd8e4f25db47e0f46",
+  correction_after_effect_before_seal: "31605624329b1a3c4b548ad96bc5592f3dc41dbeaad7437e789a3fc3dcd813d4",
+  correction_after_fact: "48f1a3590147fac9c1868efe7ac1cdb389598019dabaeed4bb89dee934c54a44",
+  mixed_after_finalize_before_reply: "58ad65040cb33af8f1cbc7df87ec486c895b39c65bd9edc06dd7d78807211a61",
+  mixed_after_seal_before_finalize: "6aba4ff8cbe89515fc09ff28758b5ad6ea1430ebbcc19152c79608a67fa57899",
+});
+const expandedTerminalAuthority = Object.freeze({
+  meal: Object.freeze({
+    snapshot_digest: "8ce0c6f6dc0e1f66e186ec21ff7f47b201b7fe6d7f43f7638ba46de3604641fe",
+    frozen_sha256: "d2af84ce7646ffb8c42b9ee59772ce7c005c575888e31d4ff612b1338a35a685",
+    frozen_length: 2515,
+  }),
+  purchase: Object.freeze({
+    snapshot_digest: "944d91e6a5ce846bea766e87831f2f60aa44a8b5581a57b206ca5f80dde248bc",
+    frozen_sha256: "9ebbaa0d602c170f393fd6b32761718e1c664120193150a39b14b8070213d89f",
+    frozen_length: 708,
+  }),
+  correction: Object.freeze({
+    snapshot_digest: "c5eb9ba5449111dc288e40948e047b7610e0ed693b706abfd8e4f25db47e0f46",
+    frozen_sha256: "309e20bada433b8ba7ddf52e0af86b9b35e2157528bfef7818e12240208a134f",
+    frozen_length: 1540,
+  }),
+  mixed: Object.freeze({
+    snapshot_digest: "58ad65040cb33af8f1cbc7df87ec486c895b39c65bd9edc06dd7d78807211a61",
+    frozen_sha256: "68de186a58e7e9f1e32cf4905ffba864b5a1d1ace86dc81101dee0c09d4c991e",
+    frozen_length: 2873,
+  }),
+});
 const expectedFinalizationSnapshots = Object.freeze({
   command_envelopes: "d1045e31409a2daef86a6a675e9d305d44051a8a87592d168ad61c89267f0a20",
   idempotency_records: "78444d24787f5b7138d1ea5e12e86938df80d1984dd610790d3f0e55b9a211f4",
@@ -183,7 +218,11 @@ function tableSnapshot(database) {
       .map(({ name }) => name);
     const rows = database.prepare(`SELECT * FROM "${table}"`).all().map((row) =>
       Object.freeze(columns.map((column) => Object.freeze([column, canonicalValue(row[column])]))),
-    ).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    ).sort((left, right) => {
+      const leftJson = JSON.stringify(left);
+      const rightJson = JSON.stringify(right);
+      return leftJson < rightJson ? -1 : leftJson > rightJson ? 1 : 0;
+    });
     return [table, Object.freeze(rows)];
   })));
 }
@@ -194,6 +233,13 @@ function snapshotEquals(left, right) {
 
 function snapshotDigest(snapshot) {
   return createHash("sha256").update(JSON.stringify(snapshot), "utf8").digest("hex");
+}
+
+function expandedAuthoritySnapshot(database) {
+  const snapshot = tableSnapshot(database);
+  return Object.freeze(Object.fromEntries(
+    Object.entries(snapshot).filter(([table]) => table !== "schema_migrations"),
+  ));
 }
 
 function assertSnapshotUnchanged(before, after, tables, label) {
@@ -222,6 +268,24 @@ function verifyHangTimeout() {
   const result = spawnChild(["-e", "setInterval(() => {}, 1000)"], "selftest_hang", process.env, 200);
   assert(result.error?.code === "ETIMEDOUT", "selftest_hang_timeout");
   assertNoSurvivingChild(result.pid, "selftest_hang");
+}
+
+function verifyCanonicalSnapshotOrdering() {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec("CREATE TABLE canonical_order(value TEXT NOT NULL)");
+    database.prepare("INSERT INTO canonical_order(value) VALUES (?), (?)").run("z", "ä");
+    const ordered = tableSnapshot(database).canonical_order;
+    assert(
+      JSON.stringify(ordered) === JSON.stringify([
+        [["value", "z"]],
+        [["value", "ä"]],
+      ]),
+      `selftest_canonical_order:${JSON.stringify(ordered)}`,
+    );
+  } finally {
+    database.close();
+  }
 }
 
 function verifyReplacementRootRefused() {
@@ -432,6 +496,80 @@ function assertCrashBoundary(database, input, kind, boundary) {
   }
 }
 
+function assertExpandedAuthority(database, input, kind, boundary) {
+  assertCrashBoundary(database, input, kind, boundary);
+  const mode = `${kind}_${boundary}`;
+  const expected = expandedCrashAuthority[mode];
+  assert(typeof expected === "string", `expanded_authority_missing:${mode}`);
+  const actual = snapshotDigest(expandedAuthoritySnapshot(database));
+  assert(actual === expected, `expanded_authority:${mode}:${actual}`);
+}
+
+async function verifyExpandedAuthorityMutation(mode, kind, boundary, mutate, code) {
+  const { root, token } = newRoot();
+  let database;
+  try {
+    const input = runWorker(root, token, mode);
+    database = databaseFor(root);
+    mutate(database, input);
+    expectFailure(
+      () => assertExpandedAuthority(database, input, kind, boundary),
+      code,
+    );
+  } finally {
+    database?.close();
+    removeRoot(root);
+  }
+}
+
+async function verifyExpandedFactAuthorityMutationCaught() {
+  await verifyExpandedAuthorityMutation(
+    "meal_after_fact",
+    "meal",
+    "after_fact",
+    (database, input) => {
+      const changed = database.prepare(
+        "UPDATE command_envelopes SET committed_at = ? WHERE envelope_id = ?",
+      ).run("2026-08-12T10:00:00.000Z", input.envelope.envelope_id).changes;
+      assert(changed === 1, "selftest_expanded_fact_setup");
+    },
+    "expanded_authority:meal_after_fact",
+  );
+}
+
+async function verifyExpandedEffectAuthorityMutationCaught() {
+  await verifyExpandedAuthorityMutation(
+    "meal_after_effect_before_seal",
+    "meal",
+    "after_effect_before_seal",
+    (database, input) => {
+      const changed = database.prepare(
+        `UPDATE nutrition_snapshots SET payload_json = '{}'
+         WHERE meal_event_id IN (
+           SELECT event_id FROM event_records WHERE envelope_id = ?
+         )`,
+      ).run(input.envelope.envelope_id).changes;
+      assert(changed === 1, "selftest_expanded_effect_setup");
+    },
+    "expanded_authority:meal_after_effect_before_seal",
+  );
+}
+
+async function verifyExpandedFinalizeAuthorityMutationCaught() {
+  await verifyExpandedAuthorityMutation(
+    "meal_after_finalize_before_reply",
+    "meal",
+    "after_finalize_before_reply",
+    (database, input) => {
+      const changed = database.prepare(
+        "DELETE FROM daily_progress_snapshots WHERE idempotency_result_id = ?",
+      ).run(input.envelope.idempotency_key).changes;
+      assert(changed === 1, "selftest_expanded_finalize_setup");
+    },
+    "expanded_authority:meal_after_finalize_before_reply",
+  );
+}
+
 async function runExpandedRecoveryCase(spec, expectedTerminal) {
   const mode = `${spec.kind}_${spec.boundary}`;
   const { root, token } = newRoot();
@@ -439,7 +577,7 @@ async function runExpandedRecoveryCase(spec, expectedTerminal) {
   try {
     const input = runWorker(root, token, mode);
     database = databaseFor(root);
-    assertCrashBoundary(database, input, spec.kind, spec.boundary);
+    assertExpandedAuthority(database, input, spec.kind, spec.boundary);
     const crashSnapshot = tableSnapshot(database);
     const crashIdentities = envelopeIdentitySnapshot(database, input.envelope.envelope_id);
     database.close();
@@ -456,6 +594,13 @@ async function runExpandedRecoveryCase(spec, expectedTerminal) {
     const result = service.execute(input);
     assert(result.status === "committed", `recovery_result:${mode}`);
     const recoveredSnapshot = tableSnapshot(database);
+    const terminalAuthorityDigest = snapshotDigest(expandedAuthoritySnapshot(database));
+    const terminalAuthority = expandedTerminalAuthority[spec.kind];
+    assert(terminalAuthority !== undefined, `terminal_authority_missing:${spec.kind}`);
+    assert(
+      terminalAuthorityDigest === terminalAuthority.snapshot_digest,
+      `terminal_authority:${mode}:${terminalAuthorityDigest}`,
+    );
     const recoveredIdentities = envelopeIdentitySnapshot(database, input.envelope.envelope_id);
     assert(
       snapshotEquals(crashIdentities, recoveredIdentities),
@@ -493,6 +638,11 @@ async function runExpandedRecoveryCase(spec, expectedTerminal) {
     ).get(input.envelope.envelope_id);
     assert(finalization !== undefined, `recovery_finalization_missing:${mode}`);
     const frozenBytes = Buffer.from(finalization.payload_json, "utf8");
+    const frozenDigest = createHash("sha256").update(frozenBytes).digest("hex");
+    assert(frozenBytes.byteLength === terminalAuthority.frozen_length,
+      `terminal_frozen_length:${mode}:${frozenBytes.byteLength}`);
+    assert(frozenDigest === terminalAuthority.frozen_sha256,
+      `terminal_frozen_digest:${mode}:${frozenDigest}`);
     assert(
       frozenBytes.equals(Buffer.from(JSON.stringify(result), "utf8")),
       `recovery_frozen_payload:${mode}`,
@@ -635,6 +785,26 @@ try {
   if (process.env.B_SLICE_CRASH_SELFTEST === "allowed-mutation") {
     await verifyAllowedTableMutationCaught();
     process.stdout.write("PASS B-SLICE-001 crash harness allowed-table mutation self-test\n");
+    process.exit(0);
+  }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "expanded-fact-mutation") {
+    await verifyExpandedFactAuthorityMutationCaught();
+    process.stdout.write("PASS B-SLICE-001 expanded Fact authority mutation self-test\n");
+    process.exit(0);
+  }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "expanded-effect-mutation") {
+    await verifyExpandedEffectAuthorityMutationCaught();
+    process.stdout.write("PASS B-SLICE-001 expanded Effect authority mutation self-test\n");
+    process.exit(0);
+  }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "expanded-finalize-mutation") {
+    await verifyExpandedFinalizeAuthorityMutationCaught();
+    process.stdout.write("PASS B-SLICE-001 expanded Finalize authority mutation self-test\n");
+    process.exit(0);
+  }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "canonical-order") {
+    verifyCanonicalSnapshotOrdering();
+    process.stdout.write("PASS B-SLICE-001 canonical snapshot ordering self-test\n");
     process.exit(0);
   }
   if (process.env.B_SLICE_CRASH_SELFTEST !== undefined) {

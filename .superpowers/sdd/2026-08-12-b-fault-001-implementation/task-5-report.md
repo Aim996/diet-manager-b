@@ -118,3 +118,66 @@ The five protected contract/schema/validator paths were not read, hashed, execut
 ## Concerns
 
 The mode names intentionally distinguish single-operation `after_effect_before_seal` from mixed `after_seal_before_finalize`. The matrix does not claim that the current unbuilt `dist` can recover a sealed single meal; doing so would reproduce the recorded `DIET_DOMAIN_EXECUTION_PENDING:effects_stable` failure and would require an out-of-scope build or production change.
+
+## Fix round 1: independent expanded authority
+
+The independent Task 5 review found one P1: the cross-root terminal reference was produced by another run of the same worker/service implementation. It proved deterministic convergence but could accept a shared missing or incorrect write. The finding was reproduced before changing the oracle with three new real database mutation self-tests.
+
+### RED
+
+Each self-test ran a real crash worker, mutated the durable database without changing the previously asserted primary row counts, and asked the old expanded oracle to reject it. All three instead exited 1 with `selftest_missing_failure`:
+
+```text
+B_SLICE_CRASH_HARNESS_FAILED:selftest_missing_failure:expanded_authority:meal_after_fact
+B_SLICE_CRASH_HARNESS_FAILED:selftest_missing_failure:expanded_authority:meal_after_effect_before_seal
+B_SLICE_CRASH_HARNESS_FAILED:selftest_missing_failure:expanded_authority:meal_after_finalize_before_reply
+```
+
+The mutations were:
+
+- Fact: set the meal command envelope's `committed_at` early. This preserves every table's row count and the old literal state/result expectation.
+- Effect: replace the existing meal nutrition projection `payload_json` with canonical `{}`. The projection row remains present, so the old count assertion still passes.
+- Finalize: delete the finalizer-owned daily progress row while leaving the envelope finalization row and frozen response path present.
+
+### GREEN
+
+The primary expanded oracle no longer obtains expected terminal state from any worker or service invocation. It contains immutable literal authority for:
+
+- one canonical all-table SHA-256 for each of the 11 crash modes;
+- one canonical terminal all-table SHA-256 for each of meal, purchase, correction, and mixed recovery;
+- one exact frozen payload byte length and SHA-256 for each operation kind.
+
+The canonical all-table snapshot includes every table, row, column name, scalar value, and blob byte in deterministic order. Only `schema_migrations` is excluded from the fixed cross-root digest because its installation timestamp is root-specific; it remains covered by the exact same-root crash/reopen and replay snapshots. Thus Fact rows and payloads, completed Effect projections, finalizer-owned rows, terminal idempotency authority, and frozen finalization content are all bound by independent literals.
+
+The original cross-root terminal comparison remains as secondary convergence evidence only. The fixed digest and frozen-byte checks run independently for every expanded mode before that comparison.
+
+The three new mutation self-tests now pass:
+
+```text
+PASS B-SLICE-001 expanded Fact authority mutation self-test
+PASS B-SLICE-001 expanded Effect authority mutation self-test
+PASS B-SLICE-001 expanded Finalize authority mutation self-test
+```
+
+The normal pinned crash harness also passes with all 11 immutable crash authorities and all four immutable terminal/frozen authorities.
+
+### Canonical ordering review follow-up
+
+A read-only review of the fix found that `localeCompare()` made row ordering depend on the host's default ICU locale. A focused in-memory SQLite self-test was added before changing the comparator. With rows `z` and `ä`, the old helper produced locale order and failed:
+
+```text
+B_SLICE_CRASH_HARNESS_FAILED:selftest_canonical_order:[[["value","ä"]],[["value","z"]]]
+```
+
+`tableSnapshot()` now compares the serialized row JSON with explicit `<`/`>` code-unit ordering, which is independent of the default locale. The canonical-order self-test and the normal 11-mode harness both pass. The existing fixed digests remained valid because the crash fixtures' serialized row values already had the same order under both comparators.
+
+Final fix-round verification under the pinned Node executable:
+
+- normal 11-mode crash harness: PASS;
+- original five supervision/mutation/cleanup self-tests: PASS;
+- expanded Fact, Effect, and Finalize authority mutation self-tests: PASS;
+- canonical snapshot ordering self-test: PASS;
+- focused `fault-matrix.test.ts`: 30/30 PASS;
+- `git diff --check`: PASS.
+
+The fix-round read-only reviewer reported no remaining Critical or Important findings and a Ready verdict.
