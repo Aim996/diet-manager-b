@@ -525,6 +525,82 @@ function freezeEffects(value: unknown): readonly Readonly<PreparedEffectIntent>[
   return Object.freeze(effects);
 }
 
+function insertCorrectionFact(
+  database: DatabaseSync,
+  event: FrozenFactEvent,
+  commandType: DietManagerAction,
+): void {
+  if (event.eventType !== "diet_correction") return;
+  if (commandType !== "correct_record" && commandType !== "undo_record") {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_command");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(event.payloadJson) as unknown;
+  } catch {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_payload");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_payload");
+  }
+  const payload = value as Record<string, unknown>;
+  const expectedFields = [
+    "affected_dates",
+    "after_snapshot",
+    "authority_kind",
+    "base_revision",
+    "before_snapshot",
+    "change_set",
+    "correction_id",
+    "inventory_compensation_intent",
+    "nutrition_delta",
+    "operation",
+    "request_id",
+    "target_event_id",
+  ];
+  if (
+    Object.keys(payload).sort().join("\u0000") !== expectedFields.sort().join("\u0000") ||
+    payload.authority_kind !== "diet-manager/correction-fact/v1" ||
+    typeof payload.correction_id !== "string" ||
+    typeof payload.target_event_id !== "string" ||
+    typeof payload.request_id !== "string" ||
+    !Number.isSafeInteger(payload.base_revision) ||
+    (payload.base_revision as number) < 1 ||
+    (payload.operation !== "change_amount" &&
+      payload.operation !== "void_event" &&
+      payload.operation !== "restore_event") ||
+    (commandType === "correct_record" && payload.operation !== "change_amount") ||
+    (commandType === "undo_record" &&
+      payload.operation !== "void_event" && payload.operation !== "restore_event") ||
+    canonicalJson(payload.before_snapshot) === canonicalJson(payload.after_snapshot)
+  ) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_payload");
+  }
+  const target = database.prepare(
+    "SELECT event_id FROM event_records WHERE event_id = ? AND event_type = 'diet_meal'",
+  ).get(payload.target_event_id) as { event_id: string } | undefined;
+  const count = (database.prepare(
+    "SELECT COUNT(*) AS count FROM correction_events WHERE target_event_id = ?",
+  ).get(payload.target_event_id) as { count: number }).count;
+  if (!target || payload.base_revision !== count + 1) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_revision");
+  }
+  database.prepare(
+    `INSERT INTO correction_events(
+      correction_id, target_event_id, base_revision, request_id,
+      operation, created_at, timezone, payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, 'Asia/Shanghai', ?)`,
+  ).run(
+    payload.correction_id,
+    payload.target_event_id,
+    payload.base_revision,
+    payload.request_id,
+    payload.operation,
+    event.committedAt,
+    event.payloadJson,
+  );
+}
+
 function freezeInput(value: PreparedFactCommit): FrozenFactCommit {
   const fields = exactDataProperties(value, INPUT_FIELDS);
   const event = freezeEvent(fields.event.value);
@@ -1100,6 +1176,7 @@ export function appendPreparedOperationFact(
         event.mealSlot,
         event.payloadJson,
       );
+    insertCorrectionFact(frozen.database, event, frozen.commandType);
     injectFault(frozenOptions, "after_event");
     const insertItem = frozen.database.prepare(
       `INSERT INTO meal_items(

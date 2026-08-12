@@ -7,6 +7,7 @@ import {
 } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
+import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
 import {
   freezeQuickPrompt,
   rebaseReceiptProgress,
@@ -281,6 +282,40 @@ function addDailyProgress(
   });
 }
 
+function applyDailyProgressDelta(
+  current: FrozenDailyProgress,
+  before: FrozenDailyProgress,
+  after: FrozenDailyProgress,
+): FrozenDailyProgress {
+  if (
+    current.date !== before.date || current.date !== after.date ||
+    current.timezone !== before.timezone || current.timezone !== after.timezone
+  ) return authorityInvalid("correction_progress_date");
+  const nutrients = {} as Record<(typeof DAILY_NUTRIENT_FIELDS)[number], number | null>;
+  for (const field of DAILY_NUTRIENT_FIELDS) {
+    const currentValue = current.nutrients[field];
+    const beforeValue = before.nutrients[field];
+    const afterValue = after.nutrients[field];
+    if (currentValue === null || beforeValue === null || afterValue === null) {
+      nutrients[field] = null;
+      continue;
+    }
+    const next = currentValue - beforeValue + afterValue;
+    if (!Number.isSafeInteger(next) || next < 0) {
+      return authorityInvalid("correction_progress_delta");
+    }
+    nutrients[field] = next;
+  }
+  return Object.freeze({
+    date: current.date,
+    timezone: current.timezone,
+    coverage_status: Object.values(nutrients).every((value) => value !== null)
+      ? "complete"
+      : "partial",
+    nutrients: Object.freeze(nutrients),
+  });
+}
+
 function nextProgressGeneratedAt(
   database: DatabaseSync,
   date: string,
@@ -515,6 +550,244 @@ function freezeMealDailyProgress(
       quick_prompts: quickPrompts,
       receipt_data: rebaseReceiptProgress(receipt, cumulative),
     },
+  };
+  const payloadJson = canonicalJson(finalExecution);
+  return Object.freeze({
+    ...input,
+    payloadJson,
+    payload: deepFreezeJson(JSON.parse(payloadJson) as unknown),
+  });
+}
+
+function freezeCorrectionDailyProgress(
+  input: FrozenInput,
+  envelopeId: string,
+  idempotencyKey: string,
+): FrozenInput {
+  if (input.commandType !== "correct_record" && input.commandType !== "undo_record") return input;
+  if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload)) {
+    return authorityInvalid("correction_progress_execution");
+  }
+  const execution = plainRecord(
+    input.payload,
+    ["envelope_id", "input_digest", "items", "payload", "status"],
+    "correction_progress_execution",
+  );
+  if (
+    execution.envelope_id !== envelopeId ||
+    execution.input_digest !== input.inputDigest ||
+    execution.status !== input.resultStatus
+  ) return authorityInvalid("correction_progress_execution");
+  const domainPayload = plainRecord(
+    execution.payload,
+    ["authority_kind", "daily_progress", "daily_progress_by_date"],
+    "correction_progress_payload",
+  );
+  if (domainPayload.authority_kind !== "diet-manager/domain-execution/v1") {
+    return authorityInvalid("correction_progress_payload");
+  }
+  const replacement = parseDailyProgress(
+    domainPayload.daily_progress,
+    "correction_progress_replacement",
+  );
+  if (
+    !Array.isArray(domainPayload.daily_progress_by_date) ||
+    domainPayload.daily_progress_by_date.length !== 1 ||
+    canonicalJson(domainPayload.daily_progress_by_date[0]) !== canonicalJson(replacement)
+  ) return authorityInvalid("correction_progress_by_date");
+  const bundleRows = input.database.prepare(
+    `SELECT operation_id, effect_state, result_status, completed_at, payload_json
+     FROM effect_bundle_commits WHERE envelope_id = ?`,
+  ).all(envelopeId) as Array<{
+    operation_id: string;
+    effect_state: string;
+    result_status: string;
+    completed_at: string | null;
+    payload_json: string;
+  }>;
+  if (bundleRows.length !== 1) return authorityInvalid("correction_progress_bundle");
+  const bundle = bundleRows[0];
+  if (
+    !bundle ||
+    (bundle.effect_state !== "succeeded" && bundle.effect_state !== "permanent_business_skip") ||
+    (bundle.result_status !== "applied" && bundle.result_status !== "applied_with_issues") ||
+    (input.resultStatus === "committed" && bundle.result_status !== "applied") ||
+    (input.resultStatus === "committed_with_issues" && bundle.result_status !== "applied_with_issues") ||
+    bundle.completed_at === null
+  ) return authorityInvalid("correction_progress_bundle");
+  let bundleValue: unknown;
+  try {
+    bundleValue = JSON.parse(bundle.payload_json) as unknown;
+  } catch {
+    return authorityInvalid("correction_progress_bundle");
+  }
+  if (canonicalJson(bundleValue) !== bundle.payload_json) {
+    return authorityInvalid("correction_progress_bundle");
+  }
+  const bundlePayload = plainRecord(
+    bundleValue,
+    ["authority_kind", "data_revision", "effects", "operation_sequence"],
+    "correction_progress_bundle",
+  );
+  if (
+    bundlePayload.authority_kind !== "diet-manager/effect-bundle/v1" ||
+    typeof bundlePayload.data_revision !== "string" ||
+    !bundlePayload.data_revision.startsWith("repository-v1:") ||
+    bundlePayload.operation_sequence !== 0 || !Array.isArray(bundlePayload.effects)
+  ) return authorityInvalid("correction_progress_bundle");
+  const authoritativeResult = readAppliedCorrectionResult({
+    database: input.database,
+    envelopeId,
+    operationId: bundle.operation_id,
+    operationSequence: 0,
+    idempotencyKey,
+  });
+  const outboxes = input.database.prepare(
+    `SELECT effect_id, effect_kind, state FROM effect_outbox
+     WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`,
+  ).all(envelopeId, bundle.operation_id) as Array<{
+    effect_id: string;
+    effect_kind: string;
+    state: string;
+  }>;
+  if (
+    outboxes.length < 2 || bundlePayload.effects.length !== outboxes.length ||
+    outboxes.filter((outbox) => outbox.effect_kind === "daily_progress_replacement").length !== 1 ||
+    outboxes.some((outbox) =>
+      outbox.effect_kind !== "daily_progress_replacement" &&
+      outbox.effect_kind !== "correction_inventory_compensation")
+  ) {
+    return authorityInvalid("correction_progress_bundle");
+  }
+  let boundReplacement: FrozenDailyProgress | null = null;
+  let boundBefore: FrozenDailyProgress | null = null;
+  let boundAfter: FrozenDailyProgress | null = null;
+  for (let index = 0; index < outboxes.length; index += 1) {
+    const outbox = outboxes[index];
+    const progress = outbox.effect_kind === "daily_progress_replacement";
+    const effect = plainRecord(
+      bundlePayload.effects[index],
+      progress
+        ? ["delta", "effect_id", "replacement", "state"]
+        : ["effect_id", "state"],
+      "correction_progress_effect",
+    );
+    if (
+      effect.effect_id !== outbox.effect_id || effect.state !== outbox.state ||
+      (outbox.state !== "succeeded" && outbox.state !== "permanent_business_skip")
+    ) return authorityInvalid("correction_progress_bundle");
+    if (progress) {
+      if (outbox.state !== "succeeded" || boundReplacement !== null) {
+        return authorityInvalid("correction_progress_bundle");
+      }
+      boundReplacement = parseDailyProgress(effect.replacement, "correction_progress_bundle");
+      const delta = plainRecord(
+        effect.delta,
+        ["after", "before"],
+        "correction_progress_delta",
+      );
+      boundBefore = parseDailyProgress(delta.before, "correction_progress_delta");
+      boundAfter = parseDailyProgress(delta.after, "correction_progress_delta");
+    }
+  }
+  if (
+    boundReplacement === null || boundBefore === null || boundAfter === null ||
+    canonicalJson(boundReplacement) !== canonicalJson(replacement)
+  ) return authorityInvalid("correction_progress_bundle");
+  const previousRow = input.database.prepare(
+    `SELECT generated_at, payload_json FROM daily_progress_snapshots
+     WHERE date = ? AND timezone = ? ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
+  ).get(replacement.date, replacement.timezone) as {
+    generated_at: string;
+    payload_json: string;
+  } | undefined;
+  if (!previousRow) return authorityInvalid("correction_progress_previous");
+  let previousValue: unknown;
+  try {
+    previousValue = JSON.parse(previousRow.payload_json) as unknown;
+  } catch {
+    return authorityInvalid("correction_progress_previous");
+  }
+  if (canonicalJson(previousValue) !== previousRow.payload_json) {
+    return authorityInvalid("correction_progress_previous");
+  }
+  const previousRecord = plainRecord(
+    previousValue,
+    ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+    "correction_progress_previous",
+  );
+  if (previousRecord.authority_kind !== "diet-manager/daily-progress/v1") {
+    return authorityInvalid("correction_progress_previous");
+  }
+  const previous = parseDailyProgress({
+    coverage_status: previousRecord.coverage_status,
+    date: previousRecord.date,
+    nutrients: previousRecord.nutrients,
+    timezone: previousRecord.timezone,
+  }, "correction_progress_previous");
+  const finalizedReplacement = applyDailyProgressDelta(previous, boundBefore, boundAfter);
+  const generatedAt = nextProgressGeneratedAt(
+    input.database,
+    finalizedReplacement.date,
+    finalizedReplacement.timezone,
+    input.finalizedAt,
+    previousRow.generated_at,
+  );
+  input.database.prepare(
+    `INSERT INTO daily_progress_snapshots(
+      progress_snapshot_id, idempotency_result_id, date, timezone,
+      goal_version_id, coverage_status, generated_at, payload_json
+    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+  ).run(
+    deriveDomainId("progress", idempotencyKey, 0),
+    idempotencyKey,
+    finalizedReplacement.date,
+    finalizedReplacement.timezone,
+    finalizedReplacement.coverage_status,
+    generatedAt,
+    canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...finalizedReplacement }),
+  );
+  if (!Array.isArray(execution.items) || execution.items.length !== 1) {
+    return authorityInvalid("correction_progress_items");
+  }
+  const item = plainRecord(
+    execution.items[0],
+    [
+      "compensation_transaction_id",
+      "correction_id",
+      "daily_progress",
+      "daily_progress_by_date",
+      "error_code",
+      "issue_codes",
+      "operation",
+      "operation_id",
+      "revision",
+      "sequence",
+      "status",
+      "target_event_id",
+    ],
+    "correction_progress_item",
+  );
+  if (
+    canonicalJson(item.daily_progress) !== canonicalJson(replacement) ||
+    !Array.isArray(item.daily_progress_by_date) || item.daily_progress_by_date.length !== 1 ||
+    canonicalJson(item.daily_progress_by_date[0]) !== canonicalJson(replacement) ||
+    item.status !== input.resultStatus ||
+    canonicalJson(item) !== canonicalJson(authoritativeResult)
+  ) return authorityInvalid("correction_progress_item");
+  const finalExecution = {
+    ...execution,
+    items: [{
+      ...item,
+      daily_progress: finalizedReplacement,
+      daily_progress_by_date: [finalizedReplacement],
+    }],
+    payload: {
+      authority_kind: "diet-manager/domain-execution/v1",
+      daily_progress: finalizedReplacement,
+      daily_progress_by_date: [finalizedReplacement],
+    },
+    status: input.resultStatus,
   };
   const payloadJson = canonicalJson(finalExecution);
   return Object.freeze({
@@ -792,8 +1065,12 @@ export function finalizeEnvelope(
       return authorityInvalid("effects_not_stable");
     }
 
-    const finalizedInput = freezeMealDailyProgress(
-      frozen,
+    const finalizedInput = freezeCorrectionDailyProgress(
+      freezeMealDailyProgress(
+        frozen,
+        authority.binding.preview_id,
+        authority.idempotency_key,
+      ),
       authority.binding.preview_id,
       authority.idempotency_key,
     );

@@ -104,6 +104,20 @@ interface MealItemQueryRow {
   payload_json: string;
 }
 
+interface EffectiveMealSnapshotRow {
+  active: boolean;
+  occurred_at: string;
+  meal_slot: string;
+  location: "home" | "outside";
+  timezone: "Asia/Shanghai";
+  items: Array<{
+    item_order: number;
+    item_type: string;
+    normalized_name: string;
+    amount: Record<string, unknown>;
+  }>;
+}
+
 function invalid(reason: string): never {
   throw new Error(`INVENTORY_PROJECTION_INVALID:${reason}`);
 }
@@ -316,12 +330,62 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
          AND occurred_at_text >= ? AND occurred_at_text < ?
        ORDER BY occurred_at_text, event_id`,
     ).all(query.start, query.end) as unknown as MealQueryRow[];
-    return Object.freeze(rows.map((row) => {
+    return Object.freeze(rows.flatMap((row) => {
       const eventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
       if (
         eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
         (eventPayload.location !== "home" && eventPayload.location !== "outside")
       ) return invalid("meal_event_authority");
+      const latestCorrection = query.database.prepare(
+        `SELECT c.base_revision, c.payload_json
+         FROM correction_events c
+         JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+         JOIN effect_bundle_commits b
+           ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+         WHERE c.target_event_id = ? AND (
+           (b.effect_state = 'succeeded' AND b.result_status = 'applied') OR
+           (b.effect_state = 'permanent_business_skip' AND b.result_status = 'applied_with_issues')
+         )
+         ORDER BY c.base_revision DESC LIMIT 1`,
+      ).get(row.event_id) as { base_revision: number; payload_json: string } | undefined;
+      if (latestCorrection) {
+        const correction = parseCanonicalRecord(latestCorrection.payload_json, "meal_correction");
+        if (
+          correction.authority_kind !== "diet-manager/correction-fact/v1" ||
+          correction.target_event_id !== row.event_id ||
+          correction.base_revision !== latestCorrection.base_revision ||
+          typeof correction.after_snapshot !== "object" || correction.after_snapshot === null ||
+          Array.isArray(correction.after_snapshot)
+        ) return invalid("meal_correction_authority");
+        const snapshot = correction.after_snapshot as unknown as EffectiveMealSnapshotRow;
+        if (!snapshot.active) return [];
+        if (
+          snapshot.occurred_at !== row.occurred_at_text ||
+          snapshot.meal_slot !== row.meal_slot ||
+          snapshot.location !== eventPayload.location ||
+          snapshot.timezone !== "Asia/Shanghai" ||
+          !Array.isArray(snapshot.items)
+        ) return invalid("meal_correction_snapshot");
+        const items = snapshot.items.map((item, index) => {
+          if (
+            item.item_order !== index || typeof item.item_type !== "string" ||
+            typeof item.normalized_name !== "string" || typeof item.amount !== "object" ||
+            item.amount === null || Array.isArray(item.amount)
+          ) return invalid("meal_correction_item");
+          return Object.freeze({
+            item_order: item.item_order,
+            item_type: item.item_type,
+            normalized_name: item.normalized_name,
+            amount: Object.freeze({ ...item.amount }),
+          });
+        });
+        return [Object.freeze({
+          occurred_at: snapshot.occurred_at,
+          meal_slot: snapshot.meal_slot,
+          location: snapshot.location,
+          items: Object.freeze(items),
+        }) as MealListItem];
+      }
       const itemRows = query.database.prepare(
         `SELECT item_order, item_type, normalized_name, payload_json
          FROM meal_items WHERE event_id = ? ORDER BY item_order`,
@@ -341,12 +405,12 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
           amount: Object.freeze({ ...(payload.amount as Record<string, unknown>) }),
         });
       });
-      return Object.freeze({
+      return [Object.freeze({
         occurred_at: row.occurred_at_text,
         meal_slot: row.meal_slot,
         location: eventPayload.location,
         items: Object.freeze(items),
-      }) as MealListItem;
+      }) as MealListItem];
     }));
   });
 }

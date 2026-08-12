@@ -7,7 +7,12 @@ import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { canonicalJson } from "../src/authority/canonical-json.js";
-import { applyMealEffects, prepareMealOperation } from "../src/domain/effect-bundle.js";
+import {
+  applyCorrectionEffects,
+  applyMealEffects,
+  prepareCorrectionOperation,
+  prepareMealOperation,
+} from "../src/domain/effect-bundle.js";
 import { deriveDomainId } from "../src/domain/identity.js";
 import { buildQuickPrompt, buildReceiptData } from "../src/domain/receipt.js";
 import {
@@ -244,6 +249,68 @@ function mealEnvelope(options: {
         meal_slot: "lunch",
         location: options.location,
         items: options.items,
+      },
+    ],
+  };
+}
+
+function correctionEnvelope(options: {
+  suffix: string;
+  targetEventId: string;
+  baseRevision: number;
+  observed: number;
+  adopted: number | null;
+  deducted: number | null;
+}): DomainEnvelopeInput {
+  return {
+    envelope_id: `envelope-correction-${options.suffix}`,
+    idempotency_key: `idem-correction-${options.suffix}`,
+    command_type: "correct_record",
+    subject_scope: "user:self",
+    source_message_id: `message-correction-${options.suffix}`,
+    conversation_id: "conversation-correction-matrix",
+    received_at: "2026-08-12T05:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: [
+      {
+        kind: "correct_record",
+        operation_id: `operation-correction-${options.suffix}`,
+        target_event_id: options.targetEventId,
+        base_revision: options.baseRevision,
+        item_order: 0,
+        replacement_amount: {
+          unit: "piece",
+          observed_microunits: options.observed,
+          nutrition_adoption_microunits: options.adopted,
+          inventory_deduction_microunits: options.deducted,
+          template_reference_microunits: null,
+          evidence: "explicit",
+        },
+      },
+    ],
+  };
+}
+
+function undoEnvelope(options: {
+  suffix: string;
+  targetEventId: string;
+  baseRevision: number;
+}): DomainEnvelopeInput {
+  return {
+    envelope_id: `envelope-undo-${options.suffix}`,
+    idempotency_key: `idem-undo-${options.suffix}`,
+    command_type: "undo_record",
+    subject_scope: "user:self",
+    source_message_id: `message-undo-${options.suffix}`,
+    conversation_id: "conversation-correction-matrix",
+    received_at: "2026-08-12T06:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: [
+      {
+        kind: "undo_record",
+        operation_id: `operation-undo-${options.suffix}`,
+        target_event_id: options.targetEventId,
+        base_revision: options.baseRevision,
       },
     ],
   };
@@ -1660,6 +1727,977 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
     } finally {
       runtime.close();
       removeOwnedRoot(root);
+    }
+  });
+});
+
+describe("B-SLICE-001 append-only corrections and effective views", () => {
+  function createCorrectionFixture() {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T05:00:00.000Z",
+    });
+    const purchase = purchaseStockEnvelope({
+      suffix: "correction-eggs",
+      productId: "product-correction-eggs",
+      normalizedName: "eggs",
+      batchId: "batch-correction-eggs",
+      quantityMicrounits: 10_000_000,
+      unit: "piece",
+    });
+    seedPurchase(service, purchase);
+    const meal = mealEnvelope({
+      suffix: "correction-two-eggs",
+      location: "home",
+      items: [mealItem({
+        name: "eggs",
+        unit: "piece",
+        observed: 2_000_000,
+        adopted: 2_000_000,
+        deducted: 2_000_000,
+        sources: [nutritionSource(
+          "product_label",
+          "label-product-correction-eggs-v1",
+          1,
+          "product-correction-eggs",
+          { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+        )],
+      })],
+    });
+    previewAndExecute(service, meal);
+    return {
+      root,
+      runtime,
+      service,
+      meal,
+      targetEventId: deriveDomainId("event", meal.idempotency_key, 0),
+    };
+  }
+
+  it("CASE-CORR-001 changes two eggs to three with one append-only correction and one-unit compensation", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const beforeEvent = canonicalJson(fixture.runtime.database.prepare(
+        "SELECT * FROM event_records WHERE event_id = ?",
+      ).get(fixture.targetEventId));
+      const envelope = correctionEnvelope({
+        suffix: "eggs-two-to-three",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 3_000_000,
+        adopted: 3_000_000,
+        deducted: 3_000_000,
+      });
+      const preview = fixture.service.preview(envelope);
+      const result = fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(result.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        "SELECT operation, base_revision FROM correction_events ORDER BY base_revision",
+      ).all()).toEqual([{ operation: "change_amount", base_revision: 1 }]);
+      expect(canonicalJson(fixture.runtime.database.prepare(
+        "SELECT * FROM event_records WHERE event_id = ?",
+      ).get(fixture.targetEventId))).toBe(beforeEvent);
+      expect(fixture.runtime.database.prepare(
+        `SELECT direction, reason_code, related_event_id, payload_json
+         FROM inventory_transactions WHERE reason_code = 'correction_compensation'`,
+      ).get()).toMatchObject({
+        direction: "out",
+        reason_code: "correction_compensation",
+        related_event_id: fixture.targetEventId,
+        payload_json: expect.stringContaining('"quantity_delta_microunits":-1000000'),
+      });
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(7_000_000);
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-corrected-eggs",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ amount: { observed_microunits: 3_000_000 } }] }],
+      });
+
+      const beforeReplay = tableCounts(fixture.runtime.database);
+      expect(fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toEqual(result);
+      expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects a stale correction revision before any business write", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const envelope = correctionEnvelope({
+        suffix: "stale-eggs",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 2,
+        observed: 3_000_000,
+        adopted: 3_000_000,
+        deducted: 3_000_000,
+      });
+      const preview = fixture.service.preview(envelope);
+      const before = businessCounts(fixture.runtime.database);
+      expect(() => fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("CORRECTION_TARGET_INVALID:stale_revision");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM correction_events",
+      ).get()).toEqual({ count: 0 });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects a no-change correction before any business write", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const envelope = correctionEnvelope({
+        suffix: "unchanged-eggs",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 2_000_000,
+        adopted: 2_000_000,
+        deducted: 2_000_000,
+      });
+      const preview = fixture.service.preview(envelope);
+      const before = businessCounts(fixture.runtime.database);
+      expect(() => fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("CORRECTION_TARGET_INVALID:no_change");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM correction_events",
+      ).get()).toEqual({ count: 0 });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("undo appends void_event, returns the real three-egg deduction, and never deletes the meal", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      previewAndExecute(fixture.service, correctionEnvelope({
+        suffix: "eggs-before-undo",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 3_000_000,
+        adopted: 3_000_000,
+        deducted: 3_000_000,
+      }));
+      const beforeEvent = canonicalJson(fixture.runtime.database.prepare(
+        "SELECT * FROM event_records WHERE event_id = ?",
+      ).get(fixture.targetEventId));
+      const result = previewAndExecute(fixture.service, undoEnvelope({
+        suffix: "void-eggs",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 2,
+      }));
+      expect(result.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        "SELECT operation, base_revision FROM correction_events ORDER BY base_revision",
+      ).all()).toEqual([
+        { operation: "change_amount", base_revision: 1 },
+        { operation: "void_event", base_revision: 2 },
+      ]);
+      expect(canonicalJson(fixture.runtime.database.prepare(
+        "SELECT * FROM event_records WHERE event_id = ?",
+      ).get(fixture.targetEventId))).toBe(beforeEvent);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records WHERE event_id = ?",
+      ).get(fixture.targetEventId)).toEqual({ count: 1 });
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-voided-eggs",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(10_000_000);
+      const compensationRows = fixture.runtime.database.prepare(
+        `SELECT direction, payload_json FROM inventory_transactions
+         WHERE reason_code = 'correction_compensation' ORDER BY committed_at`,
+      ).all() as Array<{ direction: string; payload_json: string }>;
+      expect(compensationRows.map((row) => [
+        row.direction,
+        JSON.parse(row.payload_json).quantity_delta_microunits,
+      ])).toEqual([["out", -1_000_000], ["in", 3_000_000]]);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("restores a voided meal by appending restore_event and reevaluating current inventory", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      previewAndExecute(fixture.service, correctionEnvelope({
+        suffix: "eggs-before-restore",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 3_000_000,
+        adopted: 3_000_000,
+        deducted: 3_000_000,
+      }));
+      previewAndExecute(fixture.service, undoEnvelope({
+        suffix: "void-before-restore",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 2,
+      }));
+      const restoreEnvelope = undoEnvelope({
+        suffix: "restore-eggs",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 3,
+      });
+      const restorePreview = fixture.service.preview(restoreEnvelope);
+      const restored = fixture.service.execute({
+        envelope: restoreEnvelope,
+        token: restorePreview.token,
+        input_digest: restorePreview.input_digest,
+        data_revision: restorePreview.data_revision,
+      });
+
+      expect(restored.status).toBe("committed");
+      expect(restored.items).toMatchObject([{ operation: "restore_event", revision: 4 }]);
+      expect(fixture.runtime.database.prepare(
+        "SELECT operation, base_revision FROM correction_events ORDER BY base_revision",
+      ).all()).toEqual([
+        { operation: "change_amount", base_revision: 1 },
+        { operation: "void_event", base_revision: 2 },
+        { operation: "restore_event", base_revision: 3 },
+      ]);
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(7_000_000);
+      expect(fixture.runtime.database.prepare(
+        `SELECT direction, payload_json FROM inventory_transactions
+         WHERE reason_code = 'correction_compensation' ORDER BY committed_at, transaction_id`,
+      ).all()).toHaveLength(3);
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-restored-eggs",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ amount: { observed_microunits: 3_000_000 } }] }],
+      });
+      expect(fixture.service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-restored-progress",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ nutrients: { energy_kcal_milli: 300_000 } });
+
+      const beforeReplay = tableCounts(fixture.runtime.database);
+      expect(fixture.service.execute({
+        envelope: restoreEnvelope,
+        token: restorePreview.token,
+        input_digest: restorePreview.input_digest,
+        data_revision: restorePreview.data_revision,
+      })).toEqual(restored);
+      expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("undo returns every real deduction from a multi-item meal and removes the whole meal contribution", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T07:00:00.000Z",
+    });
+    try {
+      seedPurchase(service, purchaseStockEnvelope({
+        suffix: "undo-eggs",
+        productId: "product-undo-eggs",
+        normalizedName: "undo eggs",
+        batchId: "batch-undo-eggs",
+        quantityMicrounits: 10_000_000,
+        unit: "piece",
+      }));
+      const meal = mealEnvelope({
+        suffix: "undo-multi-item",
+        location: "home",
+        items: [
+          mealItem({
+            name: "undo eggs", unit: "piece", observed: 2_000_000,
+            adopted: 2_000_000, deducted: 2_000_000,
+            sources: [nutritionSource("product_label", "label-product-undo-eggs-v1", 1,
+              "product-undo-eggs", { kind: "per_item", microunits: 1_000_000, unit: "piece" })],
+          }),
+          mealItem({
+            name: "undo eggs", unit: "piece", observed: 1_000_000,
+            adopted: 1_000_000, deducted: 1_000_000,
+            sources: [nutritionSource("product_label", "label-product-undo-eggs-v1", 1,
+              "product-undo-eggs", { kind: "per_item", microunits: 1_000_000, unit: "piece" })],
+          }),
+        ],
+      });
+      previewAndExecute(service, meal);
+      previewAndExecute(service, undoEnvelope({
+        suffix: "multi-item-meal",
+        targetEventId: deriveDomainId("event", meal.idempotency_key, 0),
+        baseRevision: 1,
+      }));
+
+      expect(service.query(queryInventory()).batches.map((batch) => [
+        batch.batch_id,
+        batch.quantity_microunits,
+      ])).toEqual([
+        ["batch-undo-eggs", 10_000_000],
+      ]);
+      expect(runtime.database.prepare(
+        `SELECT direction, related_transaction_id, payload_json
+         FROM inventory_transactions WHERE reason_code = 'correction_compensation'
+         ORDER BY related_transaction_id`,
+      ).all()).toHaveLength(2);
+      expect(service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-after-multi-undo",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ nutrients: { energy_kcal_milli: 0 } });
+      expect(service.query({
+        kind: "query_meals",
+        operation_id: "query-after-multi-undo-meals",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ meals: [] });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("corrects an outside meal without inventing an inventory compensation transaction", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T08:00:00.000Z",
+    });
+    const meal = mealEnvelope({
+      suffix: "outside-correction",
+      location: "outside",
+      items: [mealItem({
+        name: "outside pear", unit: "piece", observed: 1_000_000,
+        adopted: 1_000_000, deducted: 1_000_000,
+        sources: [nutritionSource("public_fixture", "cn-outside-pear-v1", 1, null,
+          { kind: "per_item", microunits: 1_000_000, unit: "piece" })],
+      })],
+    });
+    try {
+      previewAndExecute(service, meal);
+      const result = previewAndExecute(service, correctionEnvelope({
+        suffix: "outside-pear-one-to-two",
+        targetEventId: deriveDomainId("event", meal.idempotency_key, 0),
+        baseRevision: 1,
+        observed: 2_000_000,
+        adopted: 2_000_000,
+        deducted: 2_000_000,
+      }));
+      expect(result.status).toBe("committed");
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 0 });
+      expect(service.query({
+        kind: "query_meals",
+        operation_id: "query-corrected-outside-pear",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ amount: { observed_microunits: 2_000_000 } }] }],
+      });
+      expect(service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-corrected-outside-progress",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ nutrients: { energy_kcal_milli: 200_000 } });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("keeps a correction fact and nutrition progress when the inventory delta is insufficient", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      const envelope = correctionEnvelope({
+        suffix: "insufficient-correction-delta",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 12_000_000,
+        adopted: 12_000_000,
+        deducted: 12_000_000,
+      });
+      const result = previewAndExecute(fixture.service, envelope);
+
+      expect(result.status).toBe("committed_with_issues");
+      expect(result.items).toMatchObject([{
+        status: "committed_with_issues",
+        issue_codes: ["inventory_insufficient"],
+      }]);
+      expect(fixture.runtime.database.prepare(
+        "SELECT operation, base_revision FROM correction_events",
+      ).get()).toEqual({ operation: "change_amount", base_revision: 1 });
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 0 });
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(8_000_000);
+      expect(fixture.runtime.database.prepare(
+        "SELECT issue_code, status FROM issues WHERE entity_type = 'meal_item'",
+      ).get()).toEqual({ issue_code: "inventory_insufficient", status: "open" });
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-insufficient-correction-meal",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ amount: { observed_microunits: 12_000_000 } }] }],
+      });
+      expect(fixture.service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-insufficient-correction-progress",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ nutrients: { energy_kcal_milli: 1_200_000 } });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("bases later correction and undo compensation on the real inventory ledger after an insufficient skip", () => {
+    const fixture = createCorrectionFixture();
+    try {
+      previewAndExecute(fixture.service, correctionEnvelope({
+        suffix: "insufficient-ledger-twelve",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 12_000_000,
+        adopted: 12_000_000,
+        deducted: 12_000_000,
+      }));
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(8_000_000);
+
+      previewAndExecute(fixture.service, correctionEnvelope({
+        suffix: "insufficient-ledger-back-to-one",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 2,
+        observed: 1_000_000,
+        adopted: 1_000_000,
+        deducted: 1_000_000,
+      }));
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(9_000_000);
+
+      previewAndExecute(fixture.service, undoEnvelope({
+        suffix: "insufficient-ledger-undo",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 3,
+      }));
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(10_000_000);
+      const deltas = (fixture.runtime.database.prepare(
+        `SELECT payload_json FROM inventory_transactions
+         WHERE reason_code = 'correction_compensation' ORDER BY committed_at, transaction_id`,
+      ).all() as Array<{ payload_json: string }>).map((row) =>
+        JSON.parse(row.payload_json).quantity_delta_microunits as number);
+      expect(deltas).toEqual([1_000_000, 1_000_000]);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects a tampered correction checkpoint before any compensation or nutrition write", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "tampered-correction-checkpoint",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      const checkpoint = fixture.runtime.database.prepare(
+        "SELECT payload_json FROM effect_bundle_commits WHERE operation_id = ?",
+      ).get(operation.operation_id) as { payload_json: string };
+      const payload = JSON.parse(checkpoint.payload_json) as {
+        effects: Array<{ effect_id: string; state: string }>;
+      };
+      payload.effects[0].effect_id = "effect-tampered-correction-checkpoint";
+      fixture.runtime.database.prepare(
+        "UPDATE effect_bundle_commits SET payload_json = ? WHERE operation_id = ?",
+      ).run(canonicalJson(payload), operation.operation_id);
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      })).toThrow("CORRECTION_EFFECT_INVALID:checkpoint_payload");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 0 });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("keeps a pending correction out of the effective view and blocks a later correction", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "pending-effective-view",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+
+      expect(fixture.service.query({
+        kind: "query_meals",
+        operation_id: "query-before-pending-correction-effect",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({
+        meals: [{ items: [{ amount: { observed_microunits: 2_000_000 } }] }],
+      });
+      const later = correctionEnvelope({
+        suffix: "after-pending-correction",
+        targetEventId: fixture.targetEventId,
+        baseRevision: 1,
+        observed: 4_000_000,
+        adopted: 4_000_000,
+        deducted: 4_000_000,
+      });
+      const laterPreview = fixture.service.preview(later);
+      expect(() => fixture.service.execute({
+        envelope: later,
+        token: laterPreview.token,
+        input_digest: laterPreview.input_digest,
+        data_revision: laterPreview.data_revision,
+      })).toThrow("CORRECTION_TARGET_INVALID:pending_correction");
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(8_000_000);
+
+      const retried = fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(retried.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM correction_events WHERE request_id = ?",
+      ).get(operation.operation_id)).toEqual({ count: 1 });
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 1 });
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(7_000_000);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("same-token retry seals and finalizes a correction whose EffectBundle already committed", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "retry-after-correction-effect",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      });
+      const beforeRetry = businessCounts(fixture.runtime.database);
+
+      const retried = fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(retried.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ state: "finalized" });
+      expect(businessCounts(fixture.runtime.database)).toMatchObject({
+        correction_events: beforeRetry.correction_events,
+        inventory_transactions: beforeRetry.inventory_transactions,
+      });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("same-token retry finalizes a correction that was sealed before the reply", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "retry-after-correction-seal",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      });
+      sealPreparedEnvelopeFacts({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision: preview.data_revision,
+        traceId: prepared.fact.traceId,
+        expectedOperationIds: Object.freeze([operation.operation_id]),
+        sealedAt: envelope.received_at,
+      });
+
+      const retried = fixture.service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(retried.status).toBe("committed");
+      expect(fixture.runtime.database.prepare(
+        "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({ state: "finalized" });
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 1 });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("rejects an unrelated committed write between correction FactCommit and EffectBundle", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "stale-correction-handoff",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      seedPurchase(fixture.service, purchaseStockEnvelope({
+        suffix: "unrelated-after-correction-fact",
+        productId: "product-unrelated-after-correction-fact",
+        normalizedName: "unrelated stock",
+        batchId: "batch-unrelated-after-correction-fact",
+        quantityMicrounits: 1_000_000,
+        unit: "piece",
+      }));
+      const before = businessCounts(fixture.runtime.database);
+
+      expect(() => applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      })).toThrow("PREVIEW_STALE:data_revision");
+      expect(businessCounts(fixture.runtime.database)).toEqual(before);
+      expect(fixture.runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM inventory_transactions WHERE reason_code = 'correction_compensation'",
+      ).get()).toEqual({ count: 0 });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("applies a frozen correction delta to the latest progress inside EnvelopeFinalize", () => {
+    const fixture = createCorrectionFixture();
+    const envelope = correctionEnvelope({
+      suffix: "interleaved-progress-finalize",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      observed: 3_000_000,
+      adopted: 3_000_000,
+      deducted: 3_000_000,
+    });
+    try {
+      const preview = fixture.service.preview(envelope);
+      const operation = envelope.operations[0];
+      if (operation.kind !== "correct_record") throw new Error("test operation mismatch");
+      const prepared = prepareCorrectionOperation({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: 0,
+        operation,
+      });
+      appendPreparedOperationFact(prepared.fact);
+      const correctionResult = applyCorrectionEffects({
+        database: fixture.runtime.database,
+        envelopeId: envelope.envelope_id,
+        operationId: operation.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+        now: envelope.received_at,
+      });
+      sealPreparedEnvelopeFacts({
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision: preview.data_revision,
+        traceId: prepared.fact.traceId,
+        expectedOperationIds: Object.freeze([operation.operation_id]),
+        sealedAt: envelope.received_at,
+      });
+
+      previewAndExecute(fixture.service, mealEnvelope({
+        suffix: "between-correction-effect-and-finalize",
+        location: "outside",
+        items: [mealItem({
+          name: "interleaved pear",
+          unit: "piece",
+          observed: 1_000_000,
+          adopted: 1_000_000,
+          deducted: 1_000_000,
+          sources: [nutritionSource(
+            "public_fixture",
+            "cn-interleaved-pear-v1",
+            1,
+            null,
+            { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+          )],
+        })],
+      }));
+
+      const execution = Object.freeze({
+        envelope_id: envelope.envelope_id,
+        input_digest: preview.input_digest,
+        status: correctionResult.status,
+        items: Object.freeze([correctionResult]),
+        payload: Object.freeze({
+          authority_kind: "diet-manager/domain-execution/v1",
+          daily_progress: correctionResult.daily_progress,
+          daily_progress_by_date: correctionResult.daily_progress_by_date,
+        }),
+      });
+      const finalizerBase = {
+        database: fixture.runtime.database,
+        secret,
+        token: preview.token,
+        inputDigest: preview.input_digest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision: preview.data_revision,
+        traceId: prepared.fact.traceId,
+        resultStatus: correctionResult.status,
+        receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+        finalizedAt: envelope.received_at,
+        frozenAt: envelope.received_at,
+        mixedItems: Object.freeze([]),
+      } as const;
+      expect(() => finalizeEnvelope({
+        ...finalizerBase,
+        payload: Object.freeze({
+          ...execution,
+          envelope_id: "envelope-forged-correction-result",
+          input_digest: "0".repeat(64),
+        }),
+      })).toThrow("ENVELOPE_FINALIZE_AUTHORITY_INVALID:correction_progress_execution");
+      expect(() => finalizeEnvelope({
+        ...finalizerBase,
+        payload: Object.freeze({
+          ...execution,
+          items: Object.freeze([Object.freeze({
+            ...correctionResult,
+            correction_id: "correction-forged-result",
+            target_event_id: "event-forged-result",
+            revision: 999,
+            compensation_transaction_id: "transaction-forged-result",
+            issue_codes: Object.freeze(["inventory_insufficient"]),
+          })]),
+        }),
+      })).toThrow("ENVELOPE_FINALIZE_AUTHORITY_INVALID:correction_progress_item");
+      const finalized = finalizeEnvelope({
+        ...finalizerBase,
+        payload: execution,
+      });
+      expect(finalized.payload).toMatchObject({
+        payload: { daily_progress: { nutrients: { energy_kcal_milli: 400_000 } } },
+        items: [{ daily_progress: { nutrients: { energy_kcal_milli: 400_000 } } }],
+      });
+      expect(fixture.service.query({
+        kind: "query_daily_summary",
+        operation_id: "query-interleaved-correction-progress",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toMatchObject({ nutrients: { energy_kcal_milli: 400_000 } });
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
     }
   });
 });

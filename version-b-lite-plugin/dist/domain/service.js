@@ -3,7 +3,7 @@ import { createServerPreview, authorizeRepositoryPreview } from "../preview/stor
 import { appendPreparedOperationFact, sealPreparedEnvelopeFacts, } from "../repository/fact-commit.js";
 import { finalizeEnvelope } from "../repository/envelope-finalize.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
-import { applyMealEffects, applyPurchaseEffect, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
+import { applyMealEffects, applyPurchaseEffect, applyCorrectionEffects, prepareCorrectionOperation, readAppliedCorrectionResult, prepareMealOperation, preparePurchaseOperation, } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { queryDomainReadModel } from "./read-model.js";
 import { buildQuickPrompt, buildReceiptData, } from "./receipt.js";
@@ -60,7 +60,9 @@ function writeOperation(envelope) {
         return invalid("operation_count");
     const operation = envelope.operations[0];
     if ((envelope.command_type === "add_inventory" && operation.kind === "add_inventory") ||
-        (envelope.command_type === "record_meal" && operation.kind === "record_meal"))
+        (envelope.command_type === "record_meal" && operation.kind === "record_meal") ||
+        (envelope.command_type === "correct_record" && operation.kind === "correct_record") ||
+        (envelope.command_type === "undo_record" && operation.kind === "undo_record"))
         return operation;
     return invalid("command_operation");
 }
@@ -170,6 +172,154 @@ export function createDietDomainService(input) {
                 return invalid("envelope_id");
             }
             const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
+            if (operation.kind === "correct_record" || operation.kind === "undo_record") {
+                const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
+                if (authority.envelope_state === "finalized") {
+                    const row = options.database.prepare("SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id);
+                    if (!row)
+                        throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_missing");
+                    const parsed = JSON.parse(row.payload_json);
+                    if (canonicalJson(parsed) !== row.payload_json ||
+                        (parsed.status !== "committed" && parsed.status !== "committed_with_issues")) {
+                        throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_payload");
+                    }
+                    return finalizeEnvelope({
+                        database: options.database,
+                        secret: options.secret,
+                        token: execution.token,
+                        inputDigest,
+                        subjectScope: envelope.subject_scope,
+                        commandType: envelope.command_type,
+                        dataRevision: execution.data_revision,
+                        traceId,
+                        resultStatus: parsed.status,
+                        receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+                        finalizedAt: committedAt,
+                        frozenAt: committedAt,
+                        payload: parsed,
+                        mixedItems: Object.freeze([]),
+                    }).payload;
+                }
+                if (authority.envelope_state !== "received" &&
+                    authority.envelope_state !== "effects_stable") {
+                    throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+                }
+                const existingFact = options.database.prepare(`SELECT event_id, event_type FROM event_records
+           WHERE envelope_id = ? AND operation_id = ?`).get(envelope.envelope_id, operation.operation_id);
+                if (existingFact) {
+                    if (existingFact.event_id !== deriveDomainId("event", envelope.idempotency_key, 0) ||
+                        existingFact.event_type !== "diet_correction") {
+                        throw new Error("DIET_DOMAIN_RESULT_INVALID:correction_fact_identity");
+                    }
+                }
+                else if (authority.envelope_state === "received") {
+                    const preparedCorrection = prepareCorrectionOperation({
+                        database: options.database,
+                        secret: options.secret,
+                        token: execution.token,
+                        inputDigest,
+                        dataRevision: execution.data_revision,
+                        subjectScope: envelope.subject_scope,
+                        commandType: envelope.command_type,
+                        idempotencyKey: envelope.idempotency_key,
+                        sourceMessageId: envelope.source_message_id,
+                        conversationId: envelope.conversation_id,
+                        receivedAt: envelope.received_at,
+                        committedAt,
+                        sequence: 0,
+                        operation,
+                    });
+                    if (options.fault === "before_fact_commit") {
+                        emitFailure(options.failureSink, {
+                            stage: "FactCommit",
+                            error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+                            trace_id: traceId,
+                            input_digest: inputDigest,
+                        });
+                        throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+                    }
+                    appendPreparedOperationFact(preparedCorrection.fact, {
+                        failureSink: (entry) => emitFailure(options.failureSink, {
+                            stage: "FactCommit",
+                            error_code: entry.error_code,
+                            trace_id: entry.trace_id,
+                            input_digest: entry.input_digest,
+                        }),
+                    });
+                }
+                let correctionResult;
+                if (authority.envelope_state === "effects_stable") {
+                    correctionResult = readAppliedCorrectionResult({
+                        database: options.database,
+                        envelopeId: envelope.envelope_id,
+                        operationId: operation.operation_id,
+                        operationSequence: 0,
+                        idempotencyKey: envelope.idempotency_key,
+                    });
+                }
+                else {
+                    try {
+                        correctionResult = applyCorrectionEffects({
+                            database: options.database,
+                            envelopeId: envelope.envelope_id,
+                            operationId: operation.operation_id,
+                            operationSequence: 0,
+                            idempotencyKey: envelope.idempotency_key,
+                            now: committedAt,
+                        });
+                    }
+                    catch (error) {
+                        const code = (error instanceof Error ? error.message : "CORRECTION_EFFECT_FAILED")
+                            .split(":", 1)[0];
+                        emitFailure(options.failureSink, {
+                            stage: "EffectBundle",
+                            error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "CORRECTION_EFFECT_FAILED",
+                            trace_id: traceId,
+                            input_digest: inputDigest,
+                        });
+                        throw error;
+                    }
+                    sealPreparedEnvelopeFacts({
+                        database: options.database,
+                        secret: options.secret,
+                        token: execution.token,
+                        inputDigest,
+                        subjectScope: envelope.subject_scope,
+                        commandType: envelope.command_type,
+                        dataRevision: execution.data_revision,
+                        traceId,
+                        expectedOperationIds: Object.freeze([operation.operation_id]),
+                        sealedAt: committedAt,
+                    });
+                }
+                const correctionExecution = Object.freeze({
+                    envelope_id: envelope.envelope_id,
+                    input_digest: inputDigest,
+                    status: correctionResult.status,
+                    items: Object.freeze([correctionResult]),
+                    payload: Object.freeze({
+                        authority_kind: "diet-manager/domain-execution/v1",
+                        daily_progress: correctionResult.daily_progress,
+                        daily_progress_by_date: correctionResult.daily_progress_by_date,
+                    }),
+                });
+                return finalizeEnvelope({
+                    database: options.database,
+                    secret: options.secret,
+                    token: execution.token,
+                    inputDigest,
+                    subjectScope: envelope.subject_scope,
+                    commandType: envelope.command_type,
+                    dataRevision: execution.data_revision,
+                    traceId,
+                    resultStatus: correctionResult.status,
+                    receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+                    finalizedAt: committedAt,
+                    frozenAt: committedAt,
+                    payload: correctionExecution,
+                    mixedItems: Object.freeze([]),
+                }).payload;
+            }
             if (operation.kind === "record_meal") {
                 const preparedMeal = prepareMealOperation({
                     database: options.database,

@@ -192,11 +192,57 @@ export function listMealProjection(input) {
        WHERE event_type = 'diet_meal' AND lifecycle_status = 'active'
          AND occurred_at_text >= ? AND occurred_at_text < ?
        ORDER BY occurred_at_text, event_id`).all(query.start, query.end);
-        return Object.freeze(rows.map((row) => {
+        return Object.freeze(rows.flatMap((row) => {
             const eventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
             if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
                 (eventPayload.location !== "home" && eventPayload.location !== "outside"))
                 return invalid("meal_event_authority");
+            const latestCorrection = query.database.prepare(`SELECT c.base_revision, c.payload_json
+         FROM correction_events c
+         JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+         JOIN effect_bundle_commits b
+           ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+         WHERE c.target_event_id = ? AND (
+           (b.effect_state = 'succeeded' AND b.result_status = 'applied') OR
+           (b.effect_state = 'permanent_business_skip' AND b.result_status = 'applied_with_issues')
+         )
+         ORDER BY c.base_revision DESC LIMIT 1`).get(row.event_id);
+            if (latestCorrection) {
+                const correction = parseCanonicalRecord(latestCorrection.payload_json, "meal_correction");
+                if (correction.authority_kind !== "diet-manager/correction-fact/v1" ||
+                    correction.target_event_id !== row.event_id ||
+                    correction.base_revision !== latestCorrection.base_revision ||
+                    typeof correction.after_snapshot !== "object" || correction.after_snapshot === null ||
+                    Array.isArray(correction.after_snapshot))
+                    return invalid("meal_correction_authority");
+                const snapshot = correction.after_snapshot;
+                if (!snapshot.active)
+                    return [];
+                if (snapshot.occurred_at !== row.occurred_at_text ||
+                    snapshot.meal_slot !== row.meal_slot ||
+                    snapshot.location !== eventPayload.location ||
+                    snapshot.timezone !== "Asia/Shanghai" ||
+                    !Array.isArray(snapshot.items))
+                    return invalid("meal_correction_snapshot");
+                const items = snapshot.items.map((item, index) => {
+                    if (item.item_order !== index || typeof item.item_type !== "string" ||
+                        typeof item.normalized_name !== "string" || typeof item.amount !== "object" ||
+                        item.amount === null || Array.isArray(item.amount))
+                        return invalid("meal_correction_item");
+                    return Object.freeze({
+                        item_order: item.item_order,
+                        item_type: item.item_type,
+                        normalized_name: item.normalized_name,
+                        amount: Object.freeze({ ...item.amount }),
+                    });
+                });
+                return [Object.freeze({
+                        occurred_at: snapshot.occurred_at,
+                        meal_slot: snapshot.meal_slot,
+                        location: snapshot.location,
+                        items: Object.freeze(items),
+                    })];
+            }
             const itemRows = query.database.prepare(`SELECT item_order, item_type, normalized_name, payload_json
          FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(row.event_id);
             const items = itemRows.map((item, index) => {
@@ -214,12 +260,12 @@ export function listMealProjection(input) {
                     amount: Object.freeze({ ...payload.amount }),
                 });
             });
-            return Object.freeze({
-                occurred_at: row.occurred_at_text,
-                meal_slot: row.meal_slot,
-                location: eventPayload.location,
-                items: Object.freeze(items),
-            });
+            return [Object.freeze({
+                    occurred_at: row.occurred_at_text,
+                    meal_slot: row.meal_slot,
+                    location: eventPayload.location,
+                    items: Object.freeze(items),
+                })];
         }));
     });
 }
