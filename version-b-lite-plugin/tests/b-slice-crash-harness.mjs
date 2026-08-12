@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -24,6 +24,13 @@ const databaseFile = "diet-manager-b.sqlite3";
 const crashExit = 73;
 const childTimeoutMs = 30_000;
 const roots = new Map();
+const expectedFinalizationSnapshots = Object.freeze({
+  command_envelopes: "d1045e31409a2daef86a6a675e9d305d44051a8a87592d168ad61c89267f0a20",
+  idempotency_records: "78444d24787f5b7138d1ea5e12e86938df80d1984dd610790d3f0e55b9a211f4",
+  daily_progress_snapshots: "52293a8ef0f30ef1e020defad33a11fac4c1d8c05d51f2d14bcb270f9e36d4c3",
+  envelope_finalizations: "2ab918c4e3d90ce9d1fdf78ff6cf8ee81b15c4c11019cd7d4e2e4651230d6082",
+  mixed_item_results: "cd0f4499faf1eab638f70a89f910d454649dd30ceaa9988d3c5ae294d44095b1",
+});
 
 function assert(condition, message) {
   if (!condition) throw new Error(`B_SLICE_CRASH_HARNESS_FAILED:${message}`);
@@ -84,6 +91,12 @@ function removeRoot(root) {
   rmSync(root, { recursive: true, force: false });
   assert(!existsSync(root), "cleanup_residue");
   roots.delete(root);
+}
+
+function cleanupOwnedRoots() {
+  for (const root of [...roots.keys()]) {
+    try { removeRoot(root); } catch { /* Preserve the primary verification failure. */ }
+  }
 }
 
 function assertNoSurvivingChild(pid, mode) {
@@ -165,6 +178,10 @@ function snapshotEquals(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function snapshotDigest(snapshot) {
+  return createHash("sha256").update(JSON.stringify(snapshot), "utf8").digest("hex");
+}
+
 function assertSnapshotUnchanged(before, after, tables, label) {
   for (const table of tables) {
     assert(snapshotEquals(before[table], after[table]), `${label}:${table}`);
@@ -237,6 +254,49 @@ function verifySnapshotMutationCaught() {
   }
 }
 
+function verifyEmergencyCleanupAfterVerifierFailure() {
+  const { root, token } = newRoot();
+  let database;
+  try {
+    runWorker(root, token, "after_fact_commit");
+    database = databaseFor(root);
+    throw new Error("B_SLICE_CRASH_HARNESS_FAILED:selftest_verifier_failure");
+  } catch (error) {
+    assert(error instanceof Error && error.message.includes("selftest_verifier_failure"),
+      "selftest_verifier_failure_missing");
+  } finally {
+    database?.close();
+    cleanupOwnedRoots();
+  }
+  assert(!existsSync(root) && roots.size === 0, "selftest_emergency_cleanup_residue");
+}
+
+async function verifyAllowedTableMutationCaught() {
+  const { root, token } = newRoot();
+  let database;
+  try {
+    const input = runWorker(root, token, "after_effect_bundle");
+    database = databaseFor(root);
+    const before = tableSnapshot(database);
+    database.prepare("UPDATE command_envelopes SET source_message_id = 'tampered' WHERE envelope_id = ?")
+      .run("envelope-crash-mixed-001");
+    const { createDietDomainService } = await import("../dist/domain/service.js");
+    const service = createDietDomainService({
+      database,
+      secret: Buffer.from("B-SLICE-001 crash harness secret 0001", "utf8"),
+      now: () => "2026-08-12T10:00:01.000Z",
+    });
+    service.execute(input);
+    expectFailure(
+      () => assertExpectedFinalization(database, input, before, tableSnapshot(database)),
+      "finalizer_snapshot_exact:command_envelopes",
+    );
+  } finally {
+    database?.close();
+    removeRoot(root);
+  }
+}
+
 async function runCase(mode, verify) {
   const { root, token } = newRoot();
   try {
@@ -266,6 +326,9 @@ function assertExpectedFinalization(database, input, before, after) {
     databaseTables(database).filter((table) => !finalizerTables.has(table)),
     "finalizer_touched_nonfinalizer_table",
   );
+  for (const [table, expected] of Object.entries(expectedFinalizationSnapshots)) {
+    assert(snapshotDigest(after[table]) === expected, `finalizer_snapshot_exact:${table}`);
+  }
   assert(before.daily_progress_snapshots.length === 0, "finalizer_progress_before");
   assert(before.envelope_finalizations.length === 0, "finalizer_envelope_before");
   assert(before.mixed_item_results.length === 0, "finalizer_mixed_before");
@@ -356,6 +419,16 @@ try {
     process.stdout.write("PASS B-SLICE-001 crash harness snapshot-mutation self-test\n");
     process.exit(0);
   }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "emergency-cleanup") {
+    verifyEmergencyCleanupAfterVerifierFailure();
+    process.stdout.write("PASS B-SLICE-001 crash harness emergency-cleanup self-test\n");
+    process.exit(0);
+  }
+  if (process.env.B_SLICE_CRASH_SELFTEST === "allowed-mutation") {
+    await verifyAllowedTableMutationCaught();
+    process.stdout.write("PASS B-SLICE-001 crash harness allowed-table mutation self-test\n");
+    process.exit(0);
+  }
   if (process.env.B_SLICE_CRASH_SELFTEST !== undefined) {
     throw new Error("B_SLICE_CRASH_HARNESS_FAILED:selftest_unknown");
   }
@@ -421,9 +494,7 @@ try {
   assert(roots.size === 0, "roots_survived");
   process.stdout.write("PASS B-SLICE-001 crash recovery: no surviving child, temporary database, or log residue\n");
 } catch (error) {
-  for (const root of [...roots]) {
-    try { removeRoot(root); } catch { /* Preserve the primary verification failure. */ }
-  }
+  cleanupOwnedRoots();
   process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
   process.exitCode = 1;
 }
