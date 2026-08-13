@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,5 +42,31 @@ describe("SEL-PANTRY-001 catalog authority", () => {
     expect(selected.every((entry) => entry.stage === "PRODUCT-0.1")).toBe(true);
     expect(Object.isFrozen(selected)).toBe(true);
     expect(selected.every((entry) => Object.isFrozen(entry))).toBe(true);
+  });
+});
+
+describe("SEL-PANTRY-001 verification-root authority", () => {
+  it("accepts only the brief-pinned roots and leaves no isolated child", () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const nodeExe = "C:\\Users\\10481\\AppData\\Local\\Temp\\diet-manager-validation-node-24.15.0\\node-v24.15.0-win-x64\\node.exe";
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+
+    mkdirSync(officialRoot, { recursive: true });
+    mkdirSync(isolatedRoot, { recursive: true });
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+
+    const output = execFileSync(nodeExe, [validator, "--official-manifest-root", officialRoot, "--isolated-root-base", isolatedRoot], {
+      cwd: projectRoot,
+      encoding: "utf8",
+    });
+    expect(output.trim()).toBe("SEL_PANTRY_ROOTS|PASS|official_delta=0|isolated_removed=true");
+    const selfTestOutput = execFileSync(nodeExe, [validator, "--official-manifest-root", officialRoot, "--isolated-root-base", isolatedRoot, "--self-test"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+    });
+    expect(selfTestOutput.trim()).toBe("SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=12|controls=1");
+    expect(readdirSync(isolatedRoot)).toEqual([]);
   });
 });
