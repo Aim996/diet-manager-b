@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
 import type { DietManagerAction } from "../contracts.js";
 import type { PreparedEnvelopeOperation } from "../repository/fact-commit.js";
 import {
@@ -197,7 +198,12 @@ function readEffectiveMealState(
     payload_json: string;
   } | undefined;
   if (!event) throw new Error("CORRECTION_TARGET_INVALID:event");
-  const eventPayload = parseCanonical(event.payload_json, "correction_target_event");
+  const parsedEventPayload = parseCanonical(event.payload_json, "correction_target_event");
+  const eventPayload = validatedMealFactPayload(
+    parsedEventPayload,
+    event.occurred_at_text,
+    "correction_target_event",
+  );
   reservationFromEventPayload(eventPayload, "diet_meal");
   if (
     eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
@@ -634,18 +640,6 @@ function mealEffectId(
   return deriveDomainId("effect", idempotencyKey, itemOrder * 10 + effectOrder);
 }
 
-function detachedMealEvidence(
-  operation: RecordMealOperation,
-): Readonly<Record<string, unknown>> {
-  const evidence: Record<string, unknown> = {};
-  if (Object.hasOwn(operation, "source_text")) evidence.source_text = operation.source_text;
-  for (const field of ["occurred_time", "subject", "context"] as const) {
-    if (!Object.hasOwn(operation, field)) continue;
-    evidence[field] = freezeJson(JSON.parse(canonicalJson(operation[field])) as unknown);
-  }
-  return Object.freeze(evidence);
-}
-
 export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
   const { operation } = input;
   const effectIdentityKey = input.effectIdentityKey ?? input.idempotencyKey;
@@ -688,6 +682,21 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
     previousState: null,
     reason: null,
   }));
+  const eventPayload = validateAndFreezeMealFactPayload({
+    authority_kind: "diet-manager/meal-fact/v1",
+    location: operation.location,
+    ...(Object.hasOwn(operation, "source_text") ? { source_text: operation.source_text } : {}),
+    ...(Object.hasOwn(operation, "occurred_time") ? { occurred_time: operation.occurred_time } : {}),
+    ...(Object.hasOwn(operation, "subject") ? { subject: operation.subject } : {}),
+    ...(Object.hasOwn(operation, "context") ? { context: operation.context } : {}),
+    ...(input.progressReservation === undefined
+      ? {}
+      : { progress_reservation: input.progressReservation }),
+    timezone: "Asia/Shanghai",
+  }, {
+    occurredAt: operation.occurred_at,
+    path: "prepared_meal_fact",
+  });
   return Object.freeze({
     event_id: eventId,
     operation,
@@ -715,15 +724,7 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
         occurredAtText: operation.occurred_at,
         mealId,
         mealSlot: operation.meal_slot,
-        payload: Object.freeze({
-          authority_kind: "diet-manager/meal-fact/v1",
-          location: operation.location,
-          ...detachedMealEvidence(operation),
-          ...(input.progressReservation === undefined
-            ? {}
-            : { progress_reservation: input.progressReservation }),
-          timezone: "Asia/Shanghai",
-        }),
+        payload: eventPayload,
       }),
       items: Object.freeze(operation.items.map((item, itemOrder) => Object.freeze({
         itemId: deriveDomainId("item", input.idempotencyKey, itemOrder),
@@ -785,6 +786,21 @@ function parseCanonical(value: string, label: string): Record<string, unknown> {
     throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}_canonical`);
   }
   return parsed as Record<string, unknown>;
+}
+
+function validatedMealFactPayload(
+  value: unknown,
+  occurredAt: string,
+  label: string,
+): Readonly<Record<string, unknown>> {
+  try {
+    return validateAndFreezeMealFactPayload(value, {
+      occurredAt,
+      path: label,
+    });
+  } catch {
+    throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  }
 }
 
 function exactKeys(value: Record<string, unknown>, fields: readonly string[], label: string): void {
@@ -1322,6 +1338,136 @@ export interface ReadAppliedMealResultInput extends MealTerminalReadbackInput {
   readonly expectedFact: PreparedEnvelopeOperation;
 }
 
+function assertExpectedMealFactInput(input: ReadAppliedMealResultInput): void {
+  if (
+    input.operationSequence !== 0 || input.expectedFact.database !== input.database ||
+    input.expectedFact.operationId !== input.operationId ||
+    input.expectedFact.sequence !== input.operationSequence ||
+    input.expectedFact.event.operationId !== input.operationId ||
+    typeof input.expectedFact.dataRevision !== "string" ||
+    !input.expectedFact.dataRevision.startsWith("repository-v1:")
+  ) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_expected_fact");
+  }
+}
+
+function assertStoredMealFactMatchesExpectedInTransaction(
+  input: ReadAppliedMealResultInput,
+): void {
+  assertExpectedMealFactInput(input);
+  const events = input.database.prepare(
+    `SELECT event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
+            source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
+            meal_id, meal_slot, payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{
+    event_id: string;
+    envelope_id: string;
+    operation_id: string;
+    schema_version: string;
+    event_type: string;
+    fact_kind: string;
+    source_message_id: string;
+    conversation_id: string;
+    received_at: string;
+    committed_at: string;
+    occurred_at_text: string | null;
+    meal_id: string | null;
+    meal_slot: string | null;
+    payload_json: string;
+  }>;
+  const event = events[0];
+  const expectedEvent = input.expectedFact.event;
+  if (
+    events.length !== 1 || !event || event.event_id !== expectedEvent.eventId ||
+    event.envelope_id !== input.envelopeId || event.operation_id !== expectedEvent.operationId
+  ) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
+  }
+  if (
+    event.schema_version !== expectedEvent.schemaVersion ||
+    event.event_type !== expectedEvent.eventType || event.fact_kind !== expectedEvent.factKind
+  ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_kind");
+  if (
+    event.source_message_id !== expectedEvent.sourceMessageId ||
+    event.conversation_id !== expectedEvent.conversationId
+  ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_source");
+  if (
+    event.received_at !== expectedEvent.receivedAt ||
+    event.committed_at !== expectedEvent.committedAt
+  ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_time");
+  if (
+    event.occurred_at_text !== expectedEvent.occurredAtText ||
+    event.meal_id !== expectedEvent.mealId || event.meal_slot !== expectedEvent.mealSlot
+  ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_meal");
+  if (event.occurred_at_text === null) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
+  }
+  if (expectedEvent.occurredAtText === null) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_expected_fact");
+  }
+  let parsedPayload: unknown;
+  try {
+    parsedPayload = JSON.parse(event.payload_json) as unknown;
+    if (canonicalJson(parsedPayload) !== event.payload_json) {
+      throw new Error("noncanonical");
+    }
+    validatedMealFactPayload(parsedPayload, event.occurred_at_text, "terminal_event_payload");
+    validateAndFreezeMealFactPayload(expectedEvent.payload, {
+      occurredAt: expectedEvent.occurredAtText,
+      path: "terminal_expected_event_payload",
+    });
+  } catch {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
+  }
+  if (event.payload_json !== canonicalJson(expectedEvent.payload)) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
+  }
+  const items = input.database.prepare(
+    `SELECT item_id, item_order, item_type, normalized_name, payload_json FROM meal_items
+     WHERE event_id = ? ORDER BY item_order, item_id`,
+  ).all(event.event_id) as Array<{
+    item_id: string;
+    item_order: number;
+    item_type: string;
+    normalized_name: string;
+    payload_json: string;
+  }>;
+  if (items.length === 0 || items.length !== input.expectedFact.items.length) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_items");
+  }
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const expectedItem = input.expectedFact.items[index];
+    if (
+      !expectedItem || item.item_id !== expectedItem.itemId ||
+      item.item_order !== expectedItem.itemOrder || item.item_type !== expectedItem.itemType ||
+      item.normalized_name !== expectedItem.normalizedName ||
+      item.payload_json !== canonicalJson(expectedItem.payload)
+    ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
+  }
+}
+
+/** Authenticate an already-stored immutable meal Fact without writing. */
+export function assertStoredMealFactMatchesExpected(
+  input: ReadAppliedMealResultInput,
+): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    assertStoredMealFactMatchesExpectedInTransaction(input);
+    input.database.exec("ROLLBACK");
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }
+    }
+    throw error;
+  }
+}
+
 function freezeStoredNutritionVector(value: unknown, label: string): NutritionVector {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
@@ -1383,7 +1529,12 @@ function readAppliedMealResultInTransaction(
     `SELECT * FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
   ).get(input.envelopeId, input.operationId) as unknown as MealEventRow | undefined;
   if (!event) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
-  const eventPayload = parseCanonical(event.payload_json, "terminal_event");
+  const parsedEventPayload = parseCanonical(event.payload_json, "terminal_event");
+  const eventPayload = validatedMealFactPayload(
+    parsedEventPayload,
+    event.occurred_at_text,
+    "terminal_event",
+  );
   reservationFromEventPayload(eventPayload, "diet_meal");
   if (
     eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
@@ -1560,16 +1711,7 @@ export function readAppliedMealResult(
     input.database.exec("BEGIN");
     transactionOpen = true;
     assertCurrentMigrationAuthority(input.database);
-    if (
-      input.operationSequence !== 0 || input.expectedFact.database !== input.database ||
-      input.expectedFact.operationId !== input.operationId ||
-      input.expectedFact.sequence !== input.operationSequence ||
-      input.expectedFact.event.operationId !== input.operationId ||
-      typeof input.expectedFact.dataRevision !== "string" ||
-      !input.expectedFact.dataRevision.startsWith("repository-v1:")
-    ) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_expected_fact");
-    }
+    assertStoredMealFactMatchesExpectedInTransaction(input);
     const checkpoints = input.database.prepare(
       `SELECT operation_id, effect_state, result_status, completed_at, payload_json
        FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
@@ -1591,72 +1733,6 @@ export function readAppliedMealResult(
       bundle.operation_sequence !== input.operationSequence || !Array.isArray(bundle.effects)
     ) {
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_checkpoint");
-    }
-    const events = input.database.prepare(
-      `SELECT event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
-              source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
-              meal_id, meal_slot, payload_json
-       FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
-    ).all(input.envelopeId, input.operationId) as Array<{
-      event_id: string;
-      envelope_id: string;
-      operation_id: string;
-      schema_version: string;
-      event_type: string;
-      fact_kind: string;
-      source_message_id: string;
-      conversation_id: string;
-      received_at: string;
-      committed_at: string;
-      occurred_at_text: string | null;
-      meal_id: string | null;
-      meal_slot: string | null;
-      payload_json: string;
-    }>;
-    const event = events[0];
-    const expectedEvent = input.expectedFact.event;
-    if (
-      events.length !== 1 || !event || event.event_id !== expectedEvent.eventId ||
-      event.envelope_id !== input.envelopeId || event.operation_id !== expectedEvent.operationId
-    ) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event");
-    }
-    if (event.schema_version !== expectedEvent.schemaVersion || event.event_type !== expectedEvent.eventType ||
-      event.fact_kind !== expectedEvent.factKind) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_kind");
-    if (event.source_message_id !== expectedEvent.sourceMessageId ||
-      event.conversation_id !== expectedEvent.conversationId) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_source");
-    if (event.received_at !== expectedEvent.receivedAt || event.committed_at !== expectedEvent.committedAt) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_time");
-    }
-    if (event.occurred_at_text !== expectedEvent.occurredAtText || event.meal_id !== expectedEvent.mealId ||
-      event.meal_slot !== expectedEvent.mealSlot) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_meal");
-    if (event.payload_json !== canonicalJson(expectedEvent.payload)) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
-    }
-    const items = input.database.prepare(
-      `SELECT item_id, item_order, item_type, normalized_name, payload_json FROM meal_items
-       WHERE event_id = ? ORDER BY item_order, item_id`,
-    ).all(event.event_id) as Array<{
-      item_id: string;
-      item_order: number;
-      item_type: string;
-      normalized_name: string;
-      payload_json: string;
-    }>;
-    if (items.length === 0 || items.length !== input.expectedFact.items.length) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_items");
-    }
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      const expectedItem = input.expectedFact.items[index];
-      if (
-        !expectedItem || item.item_id !== expectedItem.itemId ||
-        item.item_order !== expectedItem.itemOrder || item.item_type !== expectedItem.itemType ||
-        item.normalized_name !== expectedItem.normalizedName ||
-        item.payload_json !== canonicalJson(expectedItem.payload)
-      ) {
-        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
-      }
     }
     const expectedEffects = [...input.expectedFact.effects].sort((left, right) =>
       left.effectId.localeCompare(right.effectId));
@@ -1743,7 +1819,12 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       `SELECT * FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
     ).get(input.envelopeId, input.operationId) as unknown as MealEventRow | undefined;
     if (!event) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:event");
-    const eventPayload = parseCanonical(event.payload_json, "event");
+    const parsedEventPayload = parseCanonical(event.payload_json, "event");
+    const eventPayload = validatedMealFactPayload(
+      parsedEventPayload,
+      event.occurred_at_text,
+      "event_payload",
+    );
     reservationFromEventPayload(eventPayload, "diet_meal");
     if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" || eventPayload.location !== input.location) {
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:event_payload");
@@ -2282,7 +2363,7 @@ export function applyCorrectionEffects(
     }
     const target = input.database.prepare(
       `SELECT e.envelope_id, e.operation_id, e.source_message_id, e.conversation_id,
-              e.received_at, e.payload_json, c.idempotency_key
+              e.received_at, e.occurred_at_text, e.payload_json, c.idempotency_key
        FROM event_records e JOIN command_envelopes c ON c.envelope_id = e.envelope_id
        WHERE e.event_id = ? AND e.event_type = 'diet_meal'`,
     ).get(correction.target_event_id) as {
@@ -2291,11 +2372,17 @@ export function applyCorrectionEffects(
       source_message_id: string;
       conversation_id: string;
       received_at: string;
+      occurred_at_text: string;
       payload_json: string;
       idempotency_key: string;
     } | undefined;
     if (!target) throw new Error("CORRECTION_EFFECT_INVALID:target");
-    const targetPayload = parseCanonical(target.payload_json, "correction_target");
+    const parsedTargetPayload = parseCanonical(target.payload_json, "correction_target");
+    const targetPayload = validatedMealFactPayload(
+      parsedTargetPayload,
+      target.occurred_at_text,
+      "correction_target",
+    );
     reservationFromEventPayload(targetPayload, "diet_meal");
     if (targetPayload.location !== "home" && targetPayload.location !== "outside") {
       throw new Error("CORRECTION_EFFECT_INVALID:target_location");

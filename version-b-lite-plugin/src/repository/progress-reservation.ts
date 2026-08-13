@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
+import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
 
 const NUTRIENT_FIELDS = [
   "carbohydrate_mg",
@@ -383,24 +384,13 @@ export function reservationFromEventPayload(
   }
   const authorityKind = authorityDescriptor.value;
   if (eventType === "diet_meal" && authorityKind === "diet-manager/meal-fact/v1") {
-    const hasReservation = keys.includes("progress_reservation");
-    const evidenceFields = ["source_text", "occurred_time", "subject", "context"]
-      .filter((field) => keys.includes(field));
-    const payload = exactRecord(
-      value,
-      [
-        "authority_kind",
-        "location",
-        ...evidenceFields,
-        ...(hasReservation ? ["progress_reservation"] : []),
-        "timezone",
-      ],
-      "meal_fact",
-    );
-    if (
-      (payload.location !== "home" && payload.location !== "outside") ||
-      payload.timezone !== "Asia/Shanghai"
-    ) return invalid("meal_fact");
+    let payload: Readonly<Record<string, unknown>>;
+    try {
+      payload = validateAndFreezeMealFactPayload(value);
+    } catch {
+      return invalid("meal_fact");
+    }
+    const hasReservation = Object.hasOwn(payload, "progress_reservation");
     if (!hasReservation) return undefined;
     const reservation = parseProgressReservation(payload.progress_reservation);
     if (reservation.mode !== "contribution") return invalid("meal_reservation_mode");

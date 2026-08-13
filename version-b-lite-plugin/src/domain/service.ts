@@ -2,6 +2,11 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
 import {
+  MealFactAuthorityError,
+  optionalMealEvidenceFields,
+  validateMealOperationEvidence,
+} from "../authority/meal-fact.js";
+import {
   authorizeRepositoryPreview,
   createServerPreview,
   reuseServerPreview,
@@ -28,6 +33,7 @@ import {
   markMealEffectsRetryable,
   applyPurchaseEffect,
   applyCorrectionEffects,
+  assertStoredMealFactMatchesExpected,
   prepareCorrectionOperation,
   readAppliedMealResult,
   readAppliedCorrectionResult,
@@ -157,266 +163,6 @@ function enumValue<T extends string>(
   return value as T;
 }
 
-const MEAL_EVIDENCE_OPTIONAL_FIELDS = [
-  "source_text",
-  "occurred_time",
-  "subject",
-  "context",
-] as const;
-const MAX_MEAL_SOURCE_TEXT_LENGTH = 4_096;
-const MAX_MEAL_EVIDENCE_ARRAY_LENGTH = 64;
-const MAX_MEAL_EVIDENCE_ID_LENGTH = 256;
-const MAX_MEAL_EVIDENCE_TEXT_LENGTH = 256;
-const MAX_MEAL_EVIDENCE_UNIT_LENGTH = 64;
-const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/u;
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
-
-function boundedEvidenceText(value: unknown, field: string, maxLength: number): string {
-  if (
-    typeof value !== "string" ||
-    value.trim().length === 0 ||
-    value.length > maxLength ||
-    value.includes("\u0000")
-  ) return invalid(field);
-  return value;
-}
-
-function nullableEvidenceText(
-  value: unknown,
-  field: string,
-  maxLength: number,
-): string | null {
-  return value === null ? null : boundedEvidenceText(value, field, maxLength);
-}
-
-function daysInMonth(year: number, month: number): number {
-  if (month === 2) {
-    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
-  }
-  return [4, 6, 9, 11].includes(month) ? 30 : 31;
-}
-
-function evidenceTimestamp(
-  value: unknown,
-  field: string,
-): { readonly epoch: number; readonly value: string } {
-  if (typeof value !== "string" || value.length > 64) return invalid(field);
-  const match = OFFSET_ISO_PATTERN.exec(value);
-  if (match === null) return invalid(field);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6]);
-  const millisecond = Number((match[7] ?? "0").padEnd(3, "0"));
-  const offsetHour = match[8] === "Z" ? 0 : Number(match[10]);
-  const offsetMinute = match[8] === "Z" ? 0 : Number(match[11]);
-  if (
-    year < 1_000 || year > 9_999 ||
-    month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month) ||
-    hour > 23 || minute > 59 || second > 59 ||
-    offsetHour > 14 || offsetMinute > 59 ||
-    (offsetHour === 14 && offsetMinute !== 0)
-  ) return invalid(field);
-  const localEpoch = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
-  const offsetSign = match[8] === "Z" || match[9] === "+" ? 1 : -1;
-  const epoch = localEpoch - offsetSign * (offsetHour * 60 + offsetMinute) * 60_000;
-  const shanghaiYear = new Date(epoch + SHANGHAI_OFFSET_MS).getUTCFullYear();
-  if (!Number.isFinite(epoch) || shanghaiYear < 1_000 || shanghaiYear > 9_999) {
-    return invalid(field);
-  }
-  return Object.freeze({ epoch, value });
-}
-
-function optionalMealEvidenceFields(value: Record<string, unknown>): readonly string[] {
-  return MEAL_EVIDENCE_OPTIONAL_FIELDS.filter((field) => Object.hasOwn(value, field));
-}
-
-function validateOccurredTimeEvidence(
-  value: unknown,
-  field: string,
-  occurredAt: string,
-): void {
-  const evidence = record(value, [
-    "raw_text",
-    "resolved_start",
-    "resolved_end",
-    "precision",
-    "timezone",
-    "resolution_basis",
-    "resolution_anchor",
-    "resolver_version",
-  ], field);
-  nullableEvidenceText(evidence.raw_text, `${field}.raw_text`, MAX_MEAL_SOURCE_TEXT_LENGTH);
-  const precision = enumValue(evidence.precision, [
-    "exact", "date", "meal_period", "approximate", "unknown",
-  ], `${field}.precision`);
-  enumValue(evidence.timezone, ["Asia/Shanghai"], `${field}.timezone`);
-  const basis = enumValue(evidence.resolution_basis, [
-    "explicit", "relative_to_received_at", "default_received_at", "needs_clarification",
-  ], `${field}.resolution_basis`);
-  evidenceTimestamp(evidence.resolution_anchor, `${field}.resolution_anchor`);
-  enumValue(
-    evidence.resolver_version,
-    ["diet-manager/time-parser-v1"],
-    `${field}.resolver_version`,
-  );
-  if (
-    basis === "needs_clarification" ||
-    precision === "unknown" ||
-    evidence.resolved_start === null ||
-    evidence.resolved_end === null
-  ) return invalid(`${field}.resolved_interval`);
-  const start = evidenceTimestamp(evidence.resolved_start, `${field}.resolved_start`);
-  const end = evidenceTimestamp(evidence.resolved_end, `${field}.resolved_end`);
-  if (end.epoch <= start.epoch) return invalid(`${field}.resolved_interval`);
-  if (new Date(start.epoch).toISOString() !== occurredAt) {
-    return invalid(`${field}.occurred_at`);
-  }
-}
-
-function validateSubjectEvidence(value: unknown, field: string): void {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
-  const source = value as Record<string, unknown>;
-  const optional = [
-    "subject_entity_created",
-    "excluded_non_self_share_count",
-    "self_participated",
-  ].filter((key) => Object.hasOwn(source, key));
-  const subject = record(value, [
-    "kind", "resolution_basis", ...optional, "matched_span", "rule_version",
-  ], field);
-  enumValue(subject.kind, ["self"], `${field}.kind`);
-  const basis = enumValue(subject.resolution_basis, [
-    "omitted_subject_default",
-    "explicit_self",
-    "explicit_self_share",
-    "collective_self_participation",
-  ], `${field}.resolution_basis`);
-  if (Object.hasOwn(subject, "subject_entity_created") && subject.subject_entity_created !== false) {
-    return invalid(`${field}.subject_entity_created`);
-  }
-  if (Object.hasOwn(subject, "excluded_non_self_share_count")) {
-    const count = safeNonnegativeInteger(
-      subject.excluded_non_self_share_count,
-      `${field}.excluded_non_self_share_count`,
-    );
-    if (count === 0 || basis !== "explicit_self_share") {
-      return invalid(`${field}.excluded_non_self_share_count`);
-    }
-  } else if (basis === "explicit_self_share") {
-    return invalid(`${field}.excluded_non_self_share_count`);
-  }
-  if (Object.hasOwn(subject, "self_participated")) {
-    if (subject.self_participated !== true || basis !== "collective_self_participation") {
-      return invalid(`${field}.self_participated`);
-    }
-  } else if (basis === "collective_self_participation") {
-    return invalid(`${field}.self_participated`);
-  }
-  const matchedSpan = nullableEvidenceText(
-    subject.matched_span,
-    `${field}.matched_span`,
-    MAX_MEAL_SOURCE_TEXT_LENGTH,
-  );
-  if (
-    (basis === "omitted_subject_default" && matchedSpan !== null) ||
-    (basis !== "omitted_subject_default" && matchedSpan === null)
-  ) return invalid(`${field}.matched_span`);
-  enumValue(subject.rule_version, ["diet-manager/subject-v1"], `${field}.rule_version`);
-}
-
-function validateContextItem(value: unknown, field: string): void {
-  const item = record(value, ["normalized_name", "quantity", "unit"], field);
-  boundedEvidenceText(
-    item.normalized_name,
-    `${field}.normalized_name`,
-    MAX_MEAL_EVIDENCE_TEXT_LENGTH,
-  );
-  if (
-    item.quantity !== null &&
-    (typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || item.quantity < 0 ||
-      (Number.isInteger(item.quantity) && !Number.isSafeInteger(item.quantity)))
-  ) return invalid(`${field}.quantity`);
-  if (item.unit !== null) {
-    boundedEvidenceText(item.unit, `${field}.unit`, MAX_MEAL_EVIDENCE_UNIT_LENGTH);
-  }
-}
-
-function validateAcceptedContext(
-  value: unknown,
-  field: string,
-): "home" | "outside" | "company" | "unknown" {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
-  const source = value as Record<string, unknown>;
-  const optional = ["items", "scene"].filter((key) => Object.hasOwn(source, key));
-  const context = record(value, [
-    "context_id",
-    "conversation_id",
-    "revision",
-    "generated_at",
-    "valid_until",
-    "source_message_id",
-    "rule_version",
-    "scope",
-    ...optional,
-  ], field);
-  for (const key of ["context_id", "conversation_id", "source_message_id"] as const) {
-    boundedEvidenceText(context[key], `${field}.${key}`, MAX_MEAL_EVIDENCE_ID_LENGTH);
-  }
-  const revision = safeNonnegativeInteger(context.revision, `${field}.revision`);
-  if (revision < 1) return invalid(`${field}.revision`);
-  const generated = evidenceTimestamp(context.generated_at, `${field}.generated_at`);
-  const validUntil = evidenceTimestamp(context.valid_until, `${field}.valid_until`);
-  if (generated.epoch >= validUntil.epoch) return invalid(`${field}.valid_interval`);
-  enumValue(context.rule_version, ["diet-manager/context-v1"], `${field}.rule_version`);
-  enumValue(context.scope, ["meal", "meal_date"], `${field}.scope`);
-  if (Object.hasOwn(context, "items")) {
-    if (!Array.isArray(context.items) || context.items.length > MAX_MEAL_EVIDENCE_ARRAY_LENGTH) {
-      return invalid(`${field}.items`);
-    }
-    context.items.forEach((item, index) =>
-      validateContextItem(item, `${field}.items.${index}`));
-  }
-  return Object.hasOwn(context, "scene")
-    ? enumValue(
-        context.scene,
-        ["home", "outside", "company", "unknown"],
-        `${field}.scene`,
-      )
-    : "unknown";
-}
-
-function validateContextEvidence(value: unknown, field: string): void {
-  const context = record(value, [
-    "scene", "expired_context_ids", "inventory_read", "accepted_context", "rule_version",
-  ], field);
-  const scene = enumValue(
-    context.scene,
-    ["home", "outside", "company", "unknown"],
-    `${field}.scene`,
-  );
-  if (
-    !Array.isArray(context.expired_context_ids) ||
-    context.expired_context_ids.length > MAX_MEAL_EVIDENCE_ARRAY_LENGTH
-  ) return invalid(`${field}.expired_context_ids`);
-  const expiredIds = context.expired_context_ids.map((id, index) => boundedEvidenceText(
-    id,
-    `${field}.expired_context_ids.${index}`,
-    MAX_MEAL_EVIDENCE_ID_LENGTH,
-  ));
-  if (new Set(expiredIds).size !== expiredIds.length) {
-    return invalid(`${field}.expired_context_ids`);
-  }
-  if (typeof context.inventory_read !== "boolean") return invalid(`${field}.inventory_read`);
-  const acceptedScene = context.accepted_context === null
-    ? "unknown"
-    : validateAcceptedContext(context.accepted_context, `${field}.accepted_context`);
-  if (scene !== acceptedScene) return invalid(`${field}.scene`);
-  enumValue(context.rule_version, ["diet-manager/context-v1"], `${field}.rule_version`);
-}
-
 function validateNutritionVector(value: unknown, field: string): void {
   const candidate = record(value, [
     "energy_kcal_milli", "protein_mg", "fat_mg", "carbohydrate_mg", "fiber_mg", "water_ml_milli",
@@ -494,25 +240,11 @@ function validateOperation(value: unknown, field: string): void {
       validateStructuredAmount(mealItem.amount, `${field}.items.${index}.amount`);
       validateNutritionSources(mealItem.nutrition_sources, `${field}.items.${index}.nutrition_sources`);
     }
-    if (Object.hasOwn(candidate, "source_text")) {
-      boundedEvidenceText(
-        candidate.source_text,
-        `${field}.source_text`,
-        MAX_MEAL_SOURCE_TEXT_LENGTH,
-      );
-    }
-    if (Object.hasOwn(candidate, "occurred_time")) {
-      validateOccurredTimeEvidence(
-        candidate.occurred_time,
-        `${field}.occurred_time`,
-        candidate.occurred_at as string,
-      );
-    }
-    if (Object.hasOwn(candidate, "subject")) {
-      validateSubjectEvidence(candidate.subject, `${field}.subject`);
-    }
-    if (Object.hasOwn(candidate, "context")) {
-      validateContextEvidence(candidate.context, `${field}.context`);
+    try {
+      validateMealOperationEvidence(candidate, candidate.occurred_at as string, field);
+    } catch (error) {
+      if (error instanceof MealFactAuthorityError) return invalid(error.reason);
+      throw error;
     }
     return;
   }
@@ -1501,6 +1233,21 @@ export function createDietDomainService(
           operation,
           ...(progressReservation === undefined ? {} : { progressReservation }),
         });
+        const storedMealFactAuthority = Object.freeze({
+          database: options.database,
+          envelopeId: envelope.envelope_id,
+          operationId: operation.operation_id,
+          operationSequence: 0,
+          idempotencyKey: envelope.idempotency_key,
+          location: operation.location,
+          expectedFact: preparedMeal.fact,
+        });
+        if (
+          authority.envelope_state === "finalized" ||
+          authority.envelope_state === "effects_pending"
+        ) {
+          assertStoredMealFactMatchesExpected(storedMealFactAuthority);
+        }
         if (authority.envelope_state === "finalized") {
           const row = options.database
             .prepare("SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?")
@@ -1551,15 +1298,7 @@ export function createDietDomainService(
         }
         let mealResult: MealOperationResult;
         if (authority.envelope_state === "effects_stable") {
-          mealResult = readAppliedMealResult({
-            database: options.database,
-            envelopeId: envelope.envelope_id,
-            operationId: operation.operation_id,
-            operationSequence: 0,
-            idempotencyKey: envelope.idempotency_key,
-            location: operation.location,
-            expectedFact: preparedMeal.fact,
-          });
+          mealResult = readAppliedMealResult(storedMealFactAuthority);
         } else {
           try {
             mealResult = applyMealEffects({

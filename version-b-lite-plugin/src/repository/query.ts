@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
+import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 
 const QUERY_FIELDS = ["batchId", "database"] as const;
@@ -331,11 +332,16 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
        ORDER BY occurred_at_text, event_id`,
     ).all(query.start, query.end) as unknown as MealQueryRow[];
     return Object.freeze(rows.flatMap((row) => {
-      const eventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
-      if (
-        eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
-        (eventPayload.location !== "home" && eventPayload.location !== "outside")
-      ) return invalid("meal_event_authority");
+      const parsedEventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
+      let eventPayload: Readonly<Record<string, unknown>>;
+      try {
+        eventPayload = validateAndFreezeMealFactPayload(parsedEventPayload, {
+          occurredAt: row.occurred_at_text,
+          path: "meal_event",
+        });
+      } catch {
+        return invalid("meal_event_authority");
+      }
       const latestCorrection = query.database.prepare(
         `SELECT c.base_revision, c.payload_json
          FROM correction_events c

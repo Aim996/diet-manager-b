@@ -19,6 +19,33 @@ import { openDietDatabase } from "../../src/storage/database.js";
 
 const secret = Buffer.from("SEL-CORE-001 meal evidence test secret", "utf8");
 const fixedNow = "2026-08-11T00:30:01.000Z";
+const validMealFactEvidence = Object.freeze({
+  source_text: "吃了一个苹果。",
+  occurred_time: Object.freeze({
+    raw_text: null,
+    resolved_start: "2026-08-11T08:30:00+08:00",
+    resolved_end: "2026-08-11T08:31:00+08:00",
+    precision: "exact",
+    timezone: "Asia/Shanghai",
+    resolution_basis: "default_received_at",
+    resolution_anchor: "2026-08-11T08:30:00+08:00",
+    resolver_version: "diet-manager/time-parser-v1",
+  }),
+  subject: Object.freeze({
+    kind: "self",
+    resolution_basis: "omitted_subject_default",
+    subject_entity_created: false,
+    matched_span: null,
+    rule_version: "diet-manager/subject-v1",
+  }),
+  context: Object.freeze({
+    scene: "unknown",
+    expired_context_ids: Object.freeze([]),
+    inventory_read: false,
+    accepted_context: null,
+    rule_version: "diet-manager/context-v1",
+  }),
+});
 
 function legacyEnvelope(): DomainEnvelopeInput {
   return {
@@ -145,6 +172,43 @@ function withService<T>(run: (fixture: {
   }
 }
 
+function databaseSnapshot(database: DatabaseSync): string {
+  const tables = database.prepare(
+    "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).all() as Array<{ name: string }>;
+  return JSON.stringify(Object.fromEntries(tables.map(({ name }) => [
+    name,
+    database.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+  ])));
+}
+
+function replaceStoredMealPayload(
+  database: DatabaseSync,
+  envelopeId: string,
+  mutate: (payload: Record<string, unknown>) => void,
+): void {
+  const row = database.prepare(
+    "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+  ).get(envelopeId) as { payload_json: string };
+  const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+  mutate(payload);
+  database.prepare(
+    "UPDATE event_records SET payload_json = ? WHERE envelope_id = ?",
+  ).run(canonicalJson(payload), envelopeId);
+}
+
+function executionInput(
+  envelope: DomainEnvelopeInput,
+  preview: ReturnType<DietDomainService["preview"]>,
+) {
+  return {
+    envelope,
+    token: preview.token,
+    input_digest: preview.input_digest,
+    data_revision: preview.data_revision,
+  };
+}
+
 function businessWriteCounts(database: DatabaseSync): Record<string, number> {
   const tables = [
     "event_records",
@@ -169,30 +233,64 @@ function requiredMealOperation(envelope: DomainEnvelopeInput): RecordMealOperati
 }
 
 describe("SEL-CORE-001 meal fact evidence authority", () => {
+  it.each(Array.from({ length: 16 }, (_, mask) => [mask] as const))(
+    "lets the reservation reader authenticate optional evidence permutation %i/15",
+    (mask) => {
+      const evidence = Object.fromEntries(
+        Object.entries(validMealFactEvidence).filter((_, index) => (mask & (1 << index)) !== 0),
+      );
+      expect(reservationFromEventPayload({
+        authority_kind: "diet-manager/meal-fact/v1",
+        location: "outside",
+        ...evidence,
+        timezone: "Asia/Shanghai",
+      }, "diet_meal")).toBeUndefined();
+    },
+  );
+
   it.each([
-    ["source_text", "吃了一个苹果。"],
-    ["occurred_time", { evidence: "occurrence" }],
-    ["subject", { evidence: "subject" }],
-    ["context", { evidence: "context" }],
-  ])("lets the reservation reader ignore the independently optional %s fact evidence", (key, evidence) => {
-    expect(reservationFromEventPayload({
+    ["source_text", 17],
+    ["occurred_time", null],
+    ["subject", []],
+    ["context", 42],
+  ])("rejects malformed stored %s evidence in the shared reservation read", (key, evidence) => {
+    expect(() => reservationFromEventPayload({
       authority_kind: "diet-manager/meal-fact/v1",
       location: "outside",
       [key]: evidence,
       timezone: "Asia/Shanghai",
-    }, "diet_meal")).toBeUndefined();
+    }, "diet_meal")).toThrowError("PROGRESS_RESERVATION_AUTHORITY_INVALID:meal_fact");
   });
 
-  it("lets the reservation reader ignore all four evidence fields without changing extraction", () => {
-    expect(reservationFromEventPayload({
+  it("rejects a custom stored evidence prototype in the shared reservation read", () => {
+    const context = ordinaryClone(validMealFactEvidence.context);
+    Object.setPrototypeOf(context, { inherited: true });
+    expect(() => reservationFromEventPayload({
       authority_kind: "diet-manager/meal-fact/v1",
       location: "outside",
-      source_text: "吃了一个苹果。",
-      occurred_time: { evidence: "occurrence" },
-      subject: { evidence: "subject" },
-      context: { evidence: "context" },
+      context,
       timezone: "Asia/Shanghai",
-    }, "diet_meal")).toBeUndefined();
+    }, "diet_meal")).toThrowError("PROGRESS_RESERVATION_AUTHORITY_INVALID:meal_fact");
+  });
+
+  it("rejects a stored evidence accessor without executing its getter", () => {
+    const subject = ordinaryClone(validMealFactEvidence.subject) as Record<string, unknown>;
+    let getterExecutions = 0;
+    Object.defineProperty(subject, "matched_span", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        getterExecutions += 1;
+        return null;
+      },
+    });
+    expect(() => reservationFromEventPayload({
+      authority_kind: "diet-manager/meal-fact/v1",
+      location: "outside",
+      subject,
+      timezone: "Asia/Shanghai",
+    }, "diet_meal")).toThrowError("PROGRESS_RESERVATION_AUTHORITY_INVALID:meal_fact");
+    expect(getterExecutions).toBe(0);
   });
 
   it("keeps the reservation reader failed closed for an unknown meal fact key", () => {
@@ -365,6 +463,9 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
         "subject",
         "timezone",
       ]);
+      expect(reservationFromEventPayload(payload, "diet_meal")).toEqual(
+        payload.progress_reservation,
+      );
     });
   });
 
@@ -480,4 +581,273 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
       expect(businessWriteCounts(database).event_records).toBe(0);
     });
   });
+
+  it.each([
+    ["source_text", 17],
+    ["occurred_time", null],
+    ["subject", []],
+    ["context", 42],
+  ])("rejects finalized stored %s tampering on retry and query without another write", (field, malformed) => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope(`finalized-${field}`);
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
+        payload[field] = malformed;
+      });
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        /^(?:MEAL_EFFECT|PROGRESS_RESERVATION)_AUTHORITY_INVALID:/,
+      );
+      expect(databaseSnapshot(database)).toBe(before);
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: `query-finalized-${field}`,
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_authority");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it("rejects evidence injected into a finalized legacy fact before retry or query success", () => {
+    withService(({ database, service }) => {
+      const envelope = legacyEnvelope();
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
+        payload.source_text = 17;
+      });
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        /^(?:MEAL_EFFECT|PROGRESS_RESERVATION)_AUTHORITY_INVALID:/,
+      );
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-finalized-legacy-injection",
+        date: "2026-08-13",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_authority");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it.each(["source_text", "occurred_time", "subject", "context"] as const)(
+    "rejects deletion of finalized stored %s evidence on same-token retry without another write",
+    (field) => {
+      withService(({ database, service }) => {
+        const envelope = parserMealEnvelope(`finalized-delete-${field}`);
+        const preview = service.preview(envelope);
+        expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+        replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
+          Reflect.deleteProperty(payload, field);
+        });
+        const before = databaseSnapshot(database);
+
+        expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+          "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+        );
+        expect(databaseSnapshot(database)).toBe(before);
+      });
+    },
+  );
+
+  it.each([
+    ["source_text", (payload: Record<string, unknown>) => {
+      payload.source_text = "changed but valid source text";
+    }],
+    ["occurred_time", (payload: Record<string, unknown>) => {
+      (payload.occurred_time as Record<string, unknown>).raw_text = "just now";
+    }],
+    ["subject", (payload: Record<string, unknown>) => {
+      payload.subject = {
+        kind: "self",
+        resolution_basis: "explicit_self",
+        subject_entity_created: false,
+        matched_span: "me",
+        rule_version: "diet-manager/subject-v1",
+      };
+    }],
+    ["context", (payload: Record<string, unknown>) => {
+      (payload.context as Record<string, unknown>).inventory_read = true;
+    }],
+  ] as const)(
+    "rejects schema-valid finalized stored %s mutation against the prepared fact",
+    (field, mutate) => {
+      withService(({ database, service }) => {
+        const envelope = parserMealEnvelope(`finalized-valid-mutation-${field}`);
+        const preview = service.preview(envelope);
+        expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+        replaceStoredMealPayload(database, envelope.envelope_id, mutate);
+        const before = databaseSnapshot(database);
+
+        expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+          "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+        );
+        expect(databaseSnapshot(database)).toBe(before);
+      });
+    },
+  );
+
+  it("rejects a schema-valid evidence insertion into a finalized legacy fact", () => {
+    withService(({ database, service }) => {
+      const envelope = legacyEnvelope();
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
+        payload.source_text = "injected but structurally valid";
+      });
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+      );
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it("rejects an unknown stored meal-fact key on finalized retry and query", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("finalized-unknown-key");
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
+        payload.untrusted_extra = true;
+      });
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        /^(?:MEAL_EFFECT|PROGRESS_RESERVATION)_AUTHORITY_INVALID:/,
+      );
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-finalized-unknown-key",
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_authority");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it("rejects noncanonical finalized meal fact bytes on retry and query", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("finalized-noncanonical");
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      const row = database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      database.prepare(
+        "UPDATE event_records SET payload_json = ? WHERE envelope_id = ?",
+      ).run(` ${row.payload_json}`, envelope.envelope_id);
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        /^(?:MEAL_EFFECT|PROGRESS_RESERVATION)_AUTHORITY_INVALID:/,
+      );
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-finalized-noncanonical",
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_canonical");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it.each([
+    ["legacy", () => legacyEnvelope()],
+    ["all-evidence", () => parserMealEnvelope("valid-finalized-replay")],
+  ] as const)("replays a valid finalized %s meal without changing storage", (_label, envelopeFactory) => {
+    withService(({ database, service }) => {
+      const envelope = envelopeFactory();
+      const preview = service.preview(envelope);
+      const first = service.execute(executionInput(envelope, preview));
+      const before = databaseSnapshot(database);
+
+      expect(service.execute(executionInput(envelope, preview))).toEqual(first);
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it.each(["source_text", "occurred_time", "subject", "context"] as const)(
+    "rejects deletion of stored %s evidence during retryable EffectBundle recovery",
+    (field) => {
+      const root = mkdtempSync(join(tmpdir(), `diet-manager-core-recovery-${randomUUID()}-`));
+      const runtime = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const envelope = parserMealEnvelope(`recovery-delete-${field}`);
+        const faulting = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => fixedNow,
+          fault: "after_meal_nutrition",
+        });
+        const preview = faulting.preview(envelope);
+        expect(() => faulting.execute(executionInput(envelope, preview))).toThrowError(
+          "NUTRITION_EFFECT_WRITE_FAILED:after_nutrition",
+        );
+        replaceStoredMealPayload(runtime.database, envelope.envelope_id, (payload) => {
+          Reflect.deleteProperty(payload, field);
+        });
+        const before = databaseSnapshot(runtime.database);
+        const recovering = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-11T00:30:02.000Z",
+        });
+
+        expect(() => recovering.execute(executionInput(envelope, preview))).toThrowError(
+          "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+        );
+        expect(databaseSnapshot(runtime.database)).toBe(before);
+      } finally {
+        runtime.close();
+        rmSync(root, { recursive: true, force: false });
+      }
+    },
+  );
+
+  it.each(["source_text", "occurred_time", "subject", "context"] as const)(
+    "rejects deletion of stored %s evidence while resuming effects_stable finalization",
+    (field) => {
+      const root = mkdtempSync(join(tmpdir(), `diet-manager-core-stable-${randomUUID()}-`));
+      const runtime = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const envelope = parserMealEnvelope(`stable-delete-${field}`);
+        const faulting = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => fixedNow,
+          fault: "before_commit",
+        });
+        const preview = faulting.preview(envelope);
+        expect(() => faulting.execute(executionInput(envelope, preview))).toThrowError(
+          "ENVELOPE_FINALIZE_FAILED:before_commit",
+        );
+        expect(runtime.database.prepare(
+          "SELECT state FROM command_envelopes WHERE envelope_id = ?",
+        ).get(envelope.envelope_id)).toEqual({ state: "effects_stable" });
+        replaceStoredMealPayload(runtime.database, envelope.envelope_id, (payload) => {
+          Reflect.deleteProperty(payload, field);
+        });
+        const before = databaseSnapshot(runtime.database);
+        const recovering = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-11T00:30:02.000Z",
+        });
+
+        expect(() => recovering.execute(executionInput(envelope, preview))).toThrowError(
+          "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+        );
+        expect(databaseSnapshot(runtime.database)).toBe(before);
+      } finally {
+        runtime.close();
+        rmSync(root, { recursive: true, force: false });
+      }
+    },
+  );
 });
