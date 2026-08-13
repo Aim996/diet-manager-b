@@ -120,6 +120,7 @@ export interface CoreAmountEvidence {
 export interface CoreMealCommandCandidate {
   readonly action: "record_meal";
   readonly operation_id: string;
+  readonly meal_identity_seed: string;
   readonly source_text: string;
   readonly parser_version: "diet-manager/core-parser-v1";
   readonly occurred_time: OccurredTimeEvidence;
@@ -143,9 +144,29 @@ export interface CoreWaterCommandCandidate {
   readonly amount_evidence: CoreAmountEvidence;
 }
 
+export interface CoreInventoryCommandCandidate {
+  readonly action: "add_inventory";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly product: Readonly<{
+    readonly normalized_name: "fresh_milk";
+    readonly raw_text: string;
+    readonly quantity: null;
+    readonly unit: null;
+  }>;
+  readonly stocked_at: OffsetIsoTimestamp;
+  readonly received_at: OffsetIsoTimestamp;
+  readonly ingestion_at: null;
+  readonly estimated_expires_at: OffsetIsoTimestamp;
+  readonly expiration_resolution_basis: "stocked_at";
+  readonly shelf_life_rule_version: "diet-manager/fresh-milk-shelf-life-v1";
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
-  | Readonly<CoreWaterCommandCandidate>;
+  | Readonly<CoreWaterCommandCandidate>
+  | Readonly<CoreInventoryCommandCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;
@@ -181,8 +202,14 @@ export type CoreIgnoredResult =
     }>
   | Readonly<{
       disposition: "ignored";
+      action: "record_meal" | "record_water";
+      reason_code: "non_self_subject";
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "ignored";
       action: "record_meal";
-      reason_code: "non_self_subject" | "future_plan";
+      reason_code: "future_plan";
       context_id?: never;
     }>
   | Readonly<{
@@ -266,6 +293,23 @@ type CoreTypeAcceptNotOccurredContext = CoreTypeAssert<CoreTypeAssignable<{
   readonly reason_code: "not_occurred";
   readonly context_id: "context-meal-016-v1";
 }, CoreParseResult>>;
+
+type CoreTypeAcceptWaterNonSelf = CoreTypeAssert<CoreTypeAssignable<{
+  readonly disposition: "ignored";
+  readonly action: "record_water";
+  readonly reason_code: "non_self_subject";
+}, CoreParseResult>>;
+
+type CoreTypeMealIdentitySeed = CoreTypeAssert<CoreTypeAssignable<{
+  readonly action: "record_meal";
+  readonly operation_id: "operation-core-types-identity";
+  readonly meal_identity_seed: "operation-core-types-identity";
+  readonly source_text: "吃了一个苹果。";
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly occurred_time: OccurredTimeEvidence;
+  readonly subject: CoreSubjectEvidence;
+  readonly items: readonly CoreMealItem[];
+}, CoreMealCommandCandidate>>;
 
 type CoreTypeRejectIncompleteOccurredClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
   disposition: "needs_clarification";
