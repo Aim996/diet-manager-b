@@ -14,7 +14,9 @@ import type {
   RecordMealOperation,
 } from "../../src/domain/types.js";
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
+import { createServerPreview } from "../../src/preview/store.js";
 import { reservationFromEventPayload } from "../../src/repository/progress-reservation.js";
+import { computeRepositoryDataRevision } from "../../src/repository/revision.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
 const secret = Buffer.from("SEL-CORE-001 meal evidence test secret", "utf8");
@@ -44,6 +46,15 @@ const validMealFactEvidence = Object.freeze({
     inventory_read: false,
     accepted_context: null,
     rule_version: "diet-manager/context-v1",
+  }),
+});
+const validLegacyMealFactEvidence = Object.freeze({
+  ...validMealFactEvidence,
+  occurred_time: Object.freeze({
+    ...validMealFactEvidence.occurred_time,
+    resolved_start: "2026-08-13T20:00:00+08:00",
+    resolved_end: "2026-08-13T20:01:00+08:00",
+    resolution_anchor: "2026-08-13T20:00:00+08:00",
   }),
 });
 
@@ -248,6 +259,36 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
     },
   );
 
+  it.each(Array.from({ length: 16 }, (_, mask) => [mask] as const))(
+    "executes and queries optional evidence permutation %i/15 through its independent identity",
+    (mask) => {
+      withService(({ database, service }) => {
+        const envelope = parserMealEnvelope(`identity-permutation-${mask}`);
+        const operation = requiredMealOperation(envelope);
+        ["source_text", "occurred_time", "subject", "context"].forEach((field, index) => {
+          if ((mask & (1 << index)) === 0) Reflect.deleteProperty(operation, field);
+        });
+        const preview = service.preview(envelope);
+        expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+        expect(service.query({
+          kind: "query_meals",
+          operation_id: `query-identity-permutation-${mask}`,
+          date: "2026-08-11",
+          timezone: "Asia/Shanghai",
+        })).toMatchObject({ meals: [{ items: [{ normalized_name: "apple" }] }] });
+        const previewPayloadJson = (database.prepare(
+          "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+        ).get(envelope.envelope_id) as { payload_json: string }).payload_json;
+        expect(previewPayloadJson).not.toContain(operation.source_text ?? "unreachable-source-text");
+        expect(JSON.parse(previewPayloadJson)).toMatchObject({
+          authority_kind: mask === 0
+            ? "diet-manager/server-preview/v1"
+            : "diet-manager/server-preview/v2",
+        });
+      });
+    },
+  );
+
   it.each([
     ["source_text", 17],
     ["occurred_time", null],
@@ -363,6 +404,16 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
       expect(preview.input_digest).toBe(
         "63B11485345AF59431DFFA1B48F3AA7E385D51755654A035D7A67EBD30106D2D",
       );
+      const previewAuthority = JSON.parse((database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json) as {
+        authority_kind: string;
+        binding: { preview_hash: string };
+      };
+      expect(previewAuthority.authority_kind).toBe("diet-manager/server-preview/v1");
+      expect(previewAuthority.binding.preview_hash).toBe(
+        "F787F462AA648277029CB781354E6A4723A696A70CEA6E17008E2F08F1CE18E2",
+      );
       expect(prepared.event_id).toBe("event-5871a0bc3d8d4565ca39019dd72324fa");
       expect(prepared.fact.traceId).toBe("trace-d8167984bfa92e87b05aa6d910527b76");
       expect(prepared.fact.event.mealId).toBe("meal-de650b75ef3aed863883c868f2a066c2");
@@ -378,11 +429,67 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
     });
   });
 
+  it("reuses and executes a received legacy v1 preview created before manifest support", () => {
+    withService(({ database, service }) => {
+      const envelope = legacyEnvelope();
+      const inputDigest =
+        "63B11485345AF59431DFFA1B48F3AA7E385D51755654A035D7A67EBD30106D2D";
+      const dataRevision = computeRepositoryDataRevision(database);
+      const oldPreview = createServerPreview({
+        database,
+        secret,
+        previewId: envelope.envelope_id,
+        idempotencyKey: envelope.idempotency_key,
+        inputDigest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        previewMaterial: Object.freeze({
+          authority_kind: "diet-manager/domain-preview/v1",
+          envelope,
+        }),
+        now: envelope.received_at,
+      });
+      const previewPayloadJson = (database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json;
+      const previewPayload = JSON.parse(previewPayloadJson) as Record<string, unknown>;
+      expect(Object.keys(previewPayload).sort()).toEqual(["authority_kind", "binding"]);
+      expect(previewPayloadJson).toBe(canonicalJson({
+        authority_kind: "diet-manager/server-preview/v1",
+        binding: oldPreview.binding,
+      }));
+
+      const reused = service.preview(envelope);
+      expect(reused).toMatchObject({ reused: true, input_digest: inputDigest, data_revision: dataRevision });
+      expect(reused.token).toBe(oldPreview.token);
+      expect(service.execute(executionInput(envelope, reused)).status).toBe("committed");
+      expect((database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json).toBe(previewPayloadJson);
+    });
+  });
+
   it("stores parser occurrence, self-subject, context, and source evidence in the immutable meal fact", () => {
     withService(({ database, service }) => {
       const envelope = parserMealEnvelope("stored");
       const operation = requiredMealOperation(envelope);
       const preview = service.preview(envelope);
+      const previewAuthorityJson = (database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json;
+      const previewAuthority = JSON.parse(previewAuthorityJson) as {
+        authority_kind: string;
+        meal_fact_identities?: readonly unknown[];
+      };
+      expect(previewAuthority.authority_kind).toBe("diet-manager/server-preview/v2");
+      expect(previewAuthority.meal_fact_identities).toHaveLength(1);
+      expect(previewAuthorityJson).not.toContain(operation.source_text as string);
+      expect(previewAuthorityJson).not.toContain("diet-manager/time-parser-v1");
+      expect(previewAuthorityJson).not.toContain("omitted_subject_default");
+      expect(previewAuthorityJson).not.toContain("context-core-meal-evidence-v1");
       const prepared = prepareMealOperation({
         database,
         secret,
@@ -466,6 +573,67 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
       expect(reservationFromEventPayload(payload, "diet_meal")).toEqual(
         payload.progress_reservation,
       );
+    });
+  });
+
+  it("reuses the exact redacted v2 preview without changing its stored manifest", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("v2-preview-reuse");
+      const first = service.preview(envelope);
+      const before = (database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json;
+
+      expect(service.preview(envelope)).toEqual({ ...first, reused: true });
+      expect((database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json).toBe(before);
+      expect(before).not.toContain(requiredMealOperation(envelope).source_text as string);
+    });
+  });
+
+  it("rejects a v2 preview material whose digest disagrees with its binding input", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), `diet-manager-v2-material-source-${randomUUID()}-`));
+    const sourceRuntime = openDietDatabase({ privateRuntimeRoot: sourceRoot });
+    let material: { input_digest: string; meal_fact_identities: readonly unknown[] };
+    try {
+      const envelope = parserMealEnvelope("v2-material-binding-source");
+      const service = createDietDomainService({
+        database: sourceRuntime.database,
+        secret,
+        now: () => fixedNow,
+      });
+      service.preview(envelope);
+      const stored = JSON.parse((sourceRuntime.database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json) as typeof material;
+      material = {
+        input_digest: stored.input_digest,
+        meal_fact_identities: stored.meal_fact_identities,
+      };
+    } finally {
+      sourceRuntime.close();
+      rmSync(sourceRoot, { recursive: true, force: false });
+    }
+    withService(({ database }) => {
+      expect(() => createServerPreview({
+        database,
+        secret,
+        previewId: "envelope-v2-material-mismatch",
+        idempotencyKey: "idem-v2-material-mismatch",
+        inputDigest: "A".repeat(64),
+        subjectScope: "user:self",
+        commandType: "record_meal",
+        dataRevision: computeRepositoryDataRevision(database),
+        sourceMessageId: "message-v2-material-mismatch",
+        conversationId: "conversation-v2-material-mismatch",
+        previewMaterial: {
+          authority_kind: "diet-manager/domain-preview/v2",
+          ...material,
+        },
+        now: fixedNow,
+      })).toThrowError("PREVIEW_REQUEST_INVALID:preview_material_input_digest");
+      expect(database.prepare("SELECT COUNT(*) AS count FROM command_envelopes").get()).toEqual({ count: 0 });
     });
   });
 
@@ -649,6 +817,12 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
         expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
           "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
         );
+        expect(() => service.query({
+          kind: "query_meals",
+          operation_id: `query-finalized-delete-${field}`,
+          date: "2026-08-11",
+          timezone: "Asia/Shanghai",
+        })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
         expect(databaseSnapshot(database)).toBe(before);
       });
     },
@@ -686,27 +860,46 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
         expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
           "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
         );
+        expect(() => service.query({
+          kind: "query_meals",
+          operation_id: `query-finalized-valid-mutation-${field}`,
+          date: "2026-08-11",
+          timezone: "Asia/Shanghai",
+        })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
         expect(databaseSnapshot(database)).toBe(before);
       });
     },
   );
 
-  it("rejects a schema-valid evidence insertion into a finalized legacy fact", () => {
+  it.each(Object.entries(validLegacyMealFactEvidence))(
+    "rejects a schema-valid %s insertion into a finalized legacy fact and query",
+    (field, evidence) => {
     withService(({ database, service }) => {
       const envelope = legacyEnvelope();
+      (envelope as { envelope_id: string }).envelope_id += `-${field}`;
+      (envelope as { idempotency_key: string }).idempotency_key += `-${field}`;
+      (envelope as { source_message_id: string }).source_message_id += `-${field}`;
+      (requiredMealOperation(envelope) as { operation_id: string }).operation_id += `-${field}`;
       const preview = service.preview(envelope);
       expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
       replaceStoredMealPayload(database, envelope.envelope_id, (payload) => {
-        payload.source_text = "injected but structurally valid";
+        payload[field] = ordinaryClone(evidence);
       });
       const before = databaseSnapshot(database);
 
       expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
         "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
       );
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: `query-finalized-legacy-valid-injection-${field}`,
+        date: "2026-08-13",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
       expect(databaseSnapshot(database)).toBe(before);
     });
-  });
+    },
+  );
 
   it("rejects an unknown stored meal-fact key on finalized retry and query", () => {
     withService(({ database, service }) => {
@@ -727,6 +920,43 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
         date: "2026-08-11",
         timezone: "Asia/Shanghai",
       })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_authority");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it.each([
+    ["missing", (payload: Record<string, unknown>) => {
+      Reflect.deleteProperty(payload, "meal_fact_identities");
+    }, false],
+    ["extra", (payload: Record<string, unknown>) => {
+      payload.untrusted_extra = true;
+    }, false],
+    ["mismatch", (payload: Record<string, unknown>) => {
+      const identities = payload.meal_fact_identities as Array<Record<string, unknown>>;
+      identities[0]!.payload_digest = "A".repeat(64);
+    }, false],
+    ["noncanonical", (_payload: Record<string, unknown>) => {}, true],
+  ] as const)("rejects a %s preview meal manifest before query projection", (_label, mutate, noncanonical) => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope(`manifest-${_label}`);
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      const row = database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+      mutate(payload);
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(noncanonical ? ` ${row.payload_json}` : canonicalJson(payload), envelope.envelope_id);
+      const before = databaseSnapshot(database);
+
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: `query-manifest-${_label}`,
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError(/^INVENTORY_PROJECTION_INVALID:/);
       expect(databaseSnapshot(database)).toBe(before);
     });
   });

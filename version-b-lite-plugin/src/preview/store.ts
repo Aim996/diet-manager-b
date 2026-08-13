@@ -5,6 +5,10 @@ import {
   type DietManagerAction,
 } from "../contracts.js";
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import {
+  parseMealFactPreviewMaterial,
+  type MealFactPreviewMaterial,
+} from "../authority/meal-fact-identity.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
   freezePreviewBinding,
@@ -128,6 +132,7 @@ interface FrozenCreateInput {
   sourceMessageId: string;
   conversationId: string;
   previewHash: string;
+  previewMaterialV2?: MealFactPreviewMaterial;
   now: string;
 }
 
@@ -255,20 +260,34 @@ function isoTimestamp(value: unknown): string {
 
 function freezeCreateInput(value: CreateServerPreviewInput): FrozenCreateInput {
   const fields = exactDataProperties(value, CREATE_FIELDS);
+  const inputDigest = digest(fields.inputDigest.value);
   const previewMaterial = fields.previewMaterial.value;
   const previewHash = canonicalSha256(previewMaterial);
+  let previewMaterialV2: MealFactPreviewMaterial | undefined;
+  if (
+    typeof previewMaterial === "object" && previewMaterial !== null &&
+    !Array.isArray(previewMaterial) &&
+    (previewMaterial as Record<string, unknown>).authority_kind ===
+      "diet-manager/domain-preview/v2"
+  ) {
+    previewMaterialV2 = parseMealFactPreviewMaterial(previewMaterial);
+    if (previewMaterialV2.input_digest !== inputDigest) {
+      return requestInvalid("preview_material_input_digest");
+    }
+  }
   return Object.freeze({
     database: database(fields.database.value),
     secret: secret(fields.secret.value),
     previewId: visibleAscii(fields.previewId.value, "preview_id", 128),
     idempotencyKey: visibleAscii(fields.idempotencyKey.value, "idempotency_key"),
-    inputDigest: digest(fields.inputDigest.value),
+    inputDigest,
     subjectScope: visibleAscii(fields.subjectScope.value, "subject_scope"),
     commandType: command(fields.commandType.value),
     dataRevision: visibleAscii(fields.dataRevision.value, "data_revision"),
     sourceMessageId: visibleAscii(fields.sourceMessageId.value, "source_message_id"),
     conversationId: visibleAscii(fields.conversationId.value, "conversation_id"),
     previewHash,
+    ...(previewMaterialV2 === undefined ? {} : { previewMaterialV2 }),
     now: isoTimestamp(fields.now.value),
   });
 }
@@ -302,11 +321,21 @@ function freezeReuseInput(value: ReuseServerPreviewInput): FrozenReuseInput {
   });
 }
 
-function authorityPayload(binding: PreviewBindingV1): string {
-  return canonicalJson({
-    authority_kind: "diet-manager/server-preview/v1",
-    binding,
-  });
+function authorityPayload(
+  binding: PreviewBindingV1,
+  material?: MealFactPreviewMaterial,
+): string {
+  return material === undefined
+    ? canonicalJson({
+        authority_kind: "diet-manager/server-preview/v1",
+        binding,
+      })
+    : canonicalJson({
+        authority_kind: "diet-manager/server-preview/v2",
+        binding,
+        input_digest: material.input_digest,
+        meal_fact_identities: material.meal_fact_identities,
+      });
 }
 
 function storedBinding(payloadJson: string): PreviewBindingV1 {
@@ -320,16 +349,34 @@ function storedBinding(payloadJson: string): PreviewBindingV1 {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return authorityInvalid("binding");
   }
-  const keys = Object.keys(parsed).sort();
-  if (keys.join("\u0000") !== "authority_kind\u0000binding") {
-    return authorityInvalid("binding");
-  }
-  const candidate = parsed as { authority_kind?: unknown; binding?: unknown };
-  if (candidate.authority_kind !== "diet-manager/server-preview/v1") {
+  const candidate = parsed as {
+    authority_kind?: unknown;
+    binding?: unknown;
+    input_digest?: unknown;
+    meal_fact_identities?: unknown;
+  };
+  const keys = Object.keys(candidate).sort().join("\u0000");
+  const v1 = candidate.authority_kind === "diet-manager/server-preview/v1" &&
+    keys === "authority_kind\u0000binding";
+  const v2 = candidate.authority_kind === "diet-manager/server-preview/v2" &&
+    keys === "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities";
+  if (!v1 && !v2) {
     return authorityInvalid("binding");
   }
   try {
-    return freezePreviewBinding(candidate.binding);
+    const binding = freezePreviewBinding(candidate.binding);
+    if (v2) {
+      const material = parseMealFactPreviewMaterial({
+        authority_kind: "diet-manager/domain-preview/v2",
+        input_digest: candidate.input_digest,
+        meal_fact_identities: candidate.meal_fact_identities,
+      });
+      if (
+        binding.input_digest !== material.input_digest ||
+        binding.preview_hash !== canonicalSha256(material)
+      ) return authorityInvalid("binding");
+    }
+    return binding;
   } catch {
     return authorityInvalid("binding");
   }
@@ -655,7 +702,7 @@ export function createServerPreview(
         frozen.sourceMessageId,
         frozen.conversationId,
         frozen.now,
-        authorityPayload(candidateBinding),
+        authorityPayload(candidateBinding, frozen.previewMaterialV2),
       );
     if (fault === "after_envelope") {
       throw new Error("PREVIEW_STORE_FAILED:after_envelope");

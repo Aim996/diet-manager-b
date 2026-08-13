@@ -1933,6 +1933,43 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
       removeOwnedRoot(root);
     }
   });
+
+  it("rejects a schema-valid mixed meal evidence mutation from the query authority", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "query-evidence-authority" });
+      const meal = envelope.operations[1];
+      if (meal?.kind !== "record_meal") throw new Error("mixed meal fixture");
+      (meal as unknown as { source_text: string }).source_text = "drank one carton";
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+      previewAndExecute(service, envelope);
+      const row = runtime.database.prepare(
+        "SELECT event_id, payload_json FROM event_records WHERE event_type = 'diet_meal'",
+      ).get() as { event_id: string; payload_json: string };
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+      payload.source_text = "drank two cartons";
+      runtime.database.prepare(
+        "UPDATE event_records SET payload_json = ? WHERE event_id = ?",
+      ).run(canonicalJson(payload), row.event_id);
+      const beforeQuery = canonicalBusinessSnapshot(runtime.database);
+
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-mixed-evidence-authority",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
+      expect(canonicalBusinessSnapshot(runtime.database)).toEqual(beforeQuery);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
 });
 
 describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {

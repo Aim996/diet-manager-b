@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
+import { createMealFactIdentity } from "../authority/meal-fact-identity.js";
 import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
@@ -592,6 +593,62 @@ function writeOperations(
   return invalid("command_operation");
 }
 
+function mealFactPreviewMaterial(
+  envelope: DomainEnvelopeInput,
+  inputDigest: string,
+): Readonly<Record<string, unknown>> {
+  const meals = envelope.operations.flatMap((operation, sequence) =>
+    operation.kind === "record_meal" ? [{ operation, sequence }] : []);
+  const hasEvidence = meals.some(({ operation }) =>
+    ["source_text", "occurred_time", "subject", "context"].some((field) =>
+      Object.hasOwn(operation, field)));
+  if (!hasEvidence) {
+    return Object.freeze({
+      authority_kind: "diet-manager/domain-preview/v1",
+      envelope,
+    });
+  }
+  return Object.freeze({
+    authority_kind: "diet-manager/domain-preview/v2",
+    input_digest: inputDigest,
+    meal_fact_identities: Object.freeze(meals.map(({ operation, sequence }) =>
+      createMealFactIdentity({
+        sequence,
+        event_id: deriveDomainId("event", envelope.idempotency_key, sequence),
+        operation_id: operation.operation_id,
+        schema_version: "domain/v2",
+        event_type: "diet_meal",
+        fact_kind: "meal",
+        source_message_id: envelope.source_message_id,
+        conversation_id: envelope.conversation_id,
+        received_at: envelope.received_at,
+        occurred_at_text: operation.occurred_at,
+        meal_id: deriveDomainId("meal", envelope.idempotency_key, sequence),
+        meal_slot: operation.meal_slot,
+        payload: {
+          authority_kind: "diet-manager/meal-fact/v1",
+          location: operation.location,
+          ...(Object.hasOwn(operation, "source_text") ? { source_text: operation.source_text } : {}),
+          ...(Object.hasOwn(operation, "occurred_time") ? { occurred_time: operation.occurred_time } : {}),
+          ...(Object.hasOwn(operation, "subject") ? { subject: operation.subject } : {}),
+          ...(Object.hasOwn(operation, "context") ? { context: operation.context } : {}),
+          timezone: "Asia/Shanghai",
+        },
+        items: operation.items.map((item, itemOrder) => ({
+          item_id: deriveDomainId("item", envelope.idempotency_key, itemOrder),
+          item_order: itemOrder,
+          item_type: item.item_type,
+          normalized_name: item.normalized_name,
+          payload: {
+            amount: item.amount,
+            authority_kind: "diet-manager/meal-item/v1",
+            nutrition_sources: item.nutrition_sources,
+          },
+        })),
+      }))),
+  });
+}
+
 function timestampAfter(value: string, offsetMilliseconds: number): string {
   return new Date(Date.parse(value) + offsetMilliseconds).toISOString();
 }
@@ -758,10 +815,7 @@ export function createDietDomainService(
       const validatedEnvelope = validateAndFreezeEnvelope(envelope);
       const operations = writeOperations(validatedEnvelope);
       const inputDigest = digestDomainEnvelope(validatedEnvelope);
-      const previewMaterial = Object.freeze({
-        authority_kind: "diet-manager/domain-preview/v1",
-        envelope: validatedEnvelope,
-      });
+      const previewMaterial = mealFactPreviewMaterial(validatedEnvelope, inputDigest);
       const reused = reuseServerPreview({
         database: options.database,
         secret: options.secret,
