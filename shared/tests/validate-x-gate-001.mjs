@@ -137,7 +137,7 @@ function validateMatrix(matrix, { checkRepository = true } = {}) {
     for (const path of changed) {
       if (protectedPaths.has(path.replaceAll("\\", "/"))) fail("X_GATE_PROTECTED_PATH_CHANGED", path);
     }
-    const publicEntry = readFileSync(resolve(projectRoot, "version-b-lite-plugin", "src", "index.ts"), "utf8");
+    const publicEntry = git("show", `${matrix.closure_commit}:version-b-lite-plugin/src/index.ts`);
     if (!publicEntry.includes("foundation_not_implemented")) fail("X_GATE_PUBLIC_ENTRY_WRITE_ENABLED");
   }
 }
