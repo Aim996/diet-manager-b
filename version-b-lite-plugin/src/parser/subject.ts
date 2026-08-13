@@ -16,6 +16,7 @@ export interface ProposedSubjectItem {
 export interface SubjectMatchedEvidence {
   readonly rule_id:
     | "subject.explicit-non-self.child"
+    | "subject.explicit-non-self.third-person"
     | "subject.explicit-self-share.friend"
     | "subject.collective-self.we"
     | "subject.group-amount.two-plates";
@@ -73,10 +74,22 @@ const EXPLICIT_NON_SELF_CHILD = Object.freeze<SubjectRule>({
   pattern: /孩子(?=\s*(?:吃|喝))/u,
 });
 
+const EXPLICIT_NON_SELF_THIRD_PERSON = Object.freeze<SubjectRule>({
+  rule_id: "subject.explicit-non-self.third-person",
+  pattern: /(?:朋友|同事|家人|他们|他|她)(?=\s*(?:吃|喝))/u,
+});
+
+const UNRESOLVED_THIRD_PERSON_MARKER = Object.freeze<SubjectRule>({
+  rule_id: "subject.explicit-non-self.third-person",
+  pattern: /(?:朋友|孩子|同事|家人|他们|他|她)/u,
+});
+
 const EXPLICIT_SELF_SHARE_FRIEND = Object.freeze<SubjectRule>({
   rule_id: "subject.explicit-self-share.friend",
   pattern: /我\s*和\s*朋友(?=\s*一人\s*一瓶)/u,
 });
+
+const EXPLICIT_SELF_SHARE_MILK_LINK = /我\s*和\s*朋友\s*一人\s*一\s*瓶\s*牛奶/u;
 
 const COLLECTIVE_SELF = Object.freeze<SubjectRule>({
   rule_id: "subject.collective-self.we",
@@ -85,22 +98,84 @@ const COLLECTIVE_SELF = Object.freeze<SubjectRule>({
 
 const TWO_PLATES_GROUP_AMOUNT = Object.freeze<SubjectRule>({
   rule_id: "subject.group-amount.two-plates",
-  pattern: /两\s*盘/u,
+  pattern: /两\s*盘(?=\s*炒饭)/u,
 });
 
+const COLLECTIVE_TWO_PLATES_FRIED_RICE_LINK = /我们\s*吃(?:了)?\s*两\s*盘\s*炒饭/u;
+
+interface SubjectClause {
+  readonly raw: string;
+  readonly start: number;
+}
+
+function splitClauses(sourceText: string): readonly SubjectClause[] {
+  const clauses: SubjectClause[] = [];
+  const delimiter = /[，,。；;！？!?\r\n]+/gu;
+  let clauseStart = 0;
+  let match: RegExpExecArray | null;
+  while ((match = delimiter.exec(sourceText)) !== null) {
+    const raw = sourceText.slice(clauseStart, match.index);
+    if (raw.trim().length > 0) clauses.push({ raw, start: clauseStart });
+    clauseStart = match.index + match[0].length;
+  }
+  const raw = sourceText.slice(clauseStart);
+  if (raw.trim().length > 0) clauses.push({ raw, start: clauseStart });
+  return Object.freeze(clauses.map((clause) => Object.freeze(clause)));
+}
+
+function clausesForItems(
+  clauses: readonly SubjectClause[],
+  proposedItems: readonly ProposedSubjectItem[],
+): readonly SubjectClause[] {
+  if (proposedItems.length === 0) return clauses;
+  const relevant = clauses.filter((clause) =>
+    proposedItems.some((item) =>
+      item.raw_text.length > 0 && clause.raw.includes(item.raw_text)
+    )
+  );
+  return relevant.length === 0 ? clauses : Object.freeze(relevant);
+}
+
 function matchEvidence(
-  sourceText: string,
+  clause: SubjectClause,
   rule: SubjectRule,
 ): SubjectMatchedEvidence | null {
-  const match = rule.pattern.exec(sourceText);
+  const match = rule.pattern.exec(clause.raw);
   if (match === null || match.index < 0) return null;
   return Object.freeze({
     rule_id: rule.rule_id,
     raw: match[0],
-    start: match.index,
-    end: match.index + match[0].length,
+    start: clause.start + match.index,
+    end: clause.start + match.index + match[0].length,
     rule_version: SUBJECT_RULE_VERSION,
   });
+}
+
+function firstEvidence(
+  clauses: readonly SubjectClause[],
+  rule: SubjectRule,
+): SubjectMatchedEvidence | null {
+  for (const clause of clauses) {
+    const evidence = matchEvidence(clause, rule);
+    if (evidence !== null) return evidence;
+  }
+  return null;
+}
+
+interface ClauseEvidence {
+  readonly clause: SubjectClause;
+  readonly evidence: SubjectMatchedEvidence;
+}
+
+function firstClauseEvidence(
+  clauses: readonly SubjectClause[],
+  rule: SubjectRule,
+): ClauseEvidence | null {
+  for (const clause of clauses) {
+    const evidence = matchEvidence(clause, rule);
+    if (evidence !== null) return { clause, evidence };
+  }
+  return null;
 }
 
 function cloneItem(item: ProposedSubjectItem): Readonly<ProposedSubjectItem> {
@@ -165,22 +240,67 @@ function resolveFrozenItemAmount(
 }
 
 function resolveFrozenItemAmounts(
-  sourceText: string,
+  clauses: readonly SubjectClause[],
   proposedItems: readonly ProposedSubjectItem[],
   rules: readonly FrozenItemAmountRule[],
 ): readonly Readonly<ProposedSubjectItem>[] {
   return Object.freeze(
-    proposedItems.map((item) =>
-      resolveFrozenItemAmount(sourceText, item, rules)
-    ),
+    proposedItems.map((item) => {
+      const clause = clauses.find((candidate) =>
+        item.raw_text.length > 0 && candidate.raw.includes(item.raw_text)
+      );
+      return clause === undefined
+        ? cloneItem(item)
+        : resolveFrozenItemAmount(clause.raw, item, rules);
+    }),
   );
+}
+
+function hasFrozenItemAmount(
+  clause: SubjectClause,
+  item: ProposedSubjectItem,
+  rules: readonly FrozenItemAmountRule[],
+): boolean {
+  if (item.raw_text.length === 0 || !clause.raw.includes(item.raw_text)) {
+    return false;
+  }
+  return rules.some((rule) =>
+    rule.normalized_name === item.normalized_name &&
+    rule.pattern.test(clause.raw)
+  );
+}
+
+function selfShareClause(
+  clauses: readonly SubjectClause[],
+  proposedItems: readonly ProposedSubjectItem[],
+): ClauseEvidence | null {
+  for (const clause of clauses) {
+    const evidence = matchEvidence(clause, EXPLICIT_SELF_SHARE_FRIEND);
+    if (
+      evidence !== null &&
+      EXPLICIT_SELF_SHARE_MILK_LINK.test(clause.raw) &&
+      proposedItems.some((item) =>
+        hasFrozenItemAmount(
+          clause,
+          item,
+          EXPLICIT_SELF_SHARE_ITEM_AMOUNTS,
+        )
+      )
+    ) {
+      return { clause, evidence };
+    }
+  }
+  return null;
 }
 
 export function resolveSubject(
   sourceText: string,
   proposedItems: readonly ProposedSubjectItem[],
 ): SubjectResolution {
-  const nonSelf = matchEvidence(sourceText, EXPLICIT_NON_SELF_CHILD);
+  const clauses = splitClauses(sourceText);
+  const relevantClauses = clausesForItems(clauses, proposedItems);
+  const nonSelf = firstEvidence(relevantClauses, EXPLICIT_NON_SELF_CHILD) ??
+    firstEvidence(relevantClauses, EXPLICIT_NON_SELF_THIRD_PERSON);
   if (nonSelf !== null) {
     return Object.freeze({
       disposition: "ignored",
@@ -190,7 +310,7 @@ export function resolveSubject(
     });
   }
 
-  const selfShare = matchEvidence(sourceText, EXPLICIT_SELF_SHARE_FRIEND);
+  const selfShare = selfShareClause(relevantClauses, proposedItems);
   if (selfShare !== null) {
     return Object.freeze({
       disposition: "resolved",
@@ -199,21 +319,25 @@ export function resolveSubject(
         resolution_basis: "explicit_self_share",
         subject_entity_created: false,
         excluded_non_self_share_count: 1,
-        matched_span: selfShare.raw,
-        matched_evidence: selfShare,
+        matched_span: selfShare.evidence.raw,
+        matched_evidence: selfShare.evidence,
         rule_version: SUBJECT_RULE_VERSION,
       }),
       items: resolveFrozenItemAmounts(
-        sourceText,
+        [selfShare.clause],
         proposedItems,
         EXPLICIT_SELF_SHARE_ITEM_AMOUNTS,
       ),
     });
   }
 
-  const collective = matchEvidence(sourceText, COLLECTIVE_SELF);
+  const collective = firstClauseEvidence(relevantClauses, COLLECTIVE_SELF);
   if (collective !== null) {
-    const groupAmount = matchEvidence(sourceText, TWO_PLATES_GROUP_AMOUNT);
+    const groupAmount = COLLECTIVE_TWO_PLATES_FRIED_RICE_LINK.test(
+      collective.clause.raw,
+    )
+      ? matchEvidence(collective.clause, TWO_PLATES_GROUP_AMOUNT)
+      : null;
     const items = Object.freeze(proposedItems.map((item) => Object.freeze({
       normalized_name: item.normalized_name,
       raw_text: item.raw_text,
@@ -231,8 +355,8 @@ export function resolveSubject(
         resolution_basis: "collective_self_participation" as const,
         subject_entity_created: false as const,
         self_participated: true as const,
-        matched_span: collective.raw,
-        matched_evidence: collective,
+        matched_span: collective.evidence.raw,
+        matched_evidence: collective.evidence,
         rule_version: SUBJECT_RULE_VERSION,
       }),
       items,
@@ -251,6 +375,19 @@ export function resolveSubject(
     });
   }
 
+  const unresolvedThirdPerson = firstEvidence(
+    relevantClauses,
+    UNRESOLVED_THIRD_PERSON_MARKER,
+  );
+  if (unresolvedThirdPerson !== null) {
+    return Object.freeze({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+      matched_evidence: unresolvedThirdPerson,
+    });
+  }
+
   return Object.freeze({
     disposition: "resolved",
     subject: Object.freeze({
@@ -262,7 +399,7 @@ export function resolveSubject(
       rule_version: SUBJECT_RULE_VERSION,
     }),
     items: resolveFrozenItemAmounts(
-      sourceText,
+      relevantClauses,
       proposedItems,
       OMITTED_SUBJECT_ITEM_AMOUNTS,
     ),

@@ -198,6 +198,12 @@ function expectMatchedSpan(
   expect(sourceText.slice(evidence.start, evidence.end)).toBe(evidence.raw);
 }
 
+function expectDeepFrozen(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const nested of Object.values(value)) expectDeepFrozen(nested);
+}
+
 describe("bounded completion rules", () => {
   it("keeps the completed item while exposing the item-scoped negation in CASE-MEAL-009", () => {
     const sourceText = catalogCase("CASE-MEAL-009").source_text;
@@ -491,5 +497,91 @@ describe("bounded current-user subject rules", () => {
       ...oracle,
       matched_evidence: { rule_id: "subject.explicit-non-self.child" },
     });
+  });
+});
+
+describe("subject clause safety", () => {
+  it.each([
+    "朋友吃了两个鸡蛋。",
+    "孩子吃了两个鸡蛋。",
+    "同事吃了两个鸡蛋。",
+    "家人吃了两个鸡蛋。",
+    "他吃了两个鸡蛋。",
+    "她吃了两个鸡蛋。",
+    "他们吃了两个鸡蛋。",
+  ])("never falls back to self for the bounded explicit non-self form %s", (sourceText) => {
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+    });
+    expect(Object.hasOwn(result, "items")).toBe(false);
+  });
+
+  it("does not borrow a friend's milk amount from another clause", () => {
+    const sourceText = "我和朋友一人一瓶果汁，后来朋友喝了一瓶牛奶。";
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+    });
+    expect(Object.hasOwn(result, "items")).toBe(false);
+  });
+
+  it("does not attach a two-plate span from another clause to collective fried rice", () => {
+    const sourceText = "我们吃了炒饭，服务员拿走两盘菜。";
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "resolved",
+      subject: {
+        kind: "self",
+        resolution_basis: "collective_self_participation",
+      },
+      items: [{
+        normalized_name: "fried_rice",
+        amount_evidence: {
+          raw_text: null,
+          quantity: null,
+          unit: null,
+          estimated: null,
+        },
+      }],
+    });
+    expect(Object.hasOwn(result, "group_amount_evidence")).toBe(false);
+  });
+
+  it("deep-freezes detached output without mutating proposed items", () => {
+    const sourceText = catalogCase("CASE-MEAL-017").source_text;
+    const proposed = lexicalSeed(sourceText);
+    const snapshot = structuredClone(proposed);
+
+    const result = resolveSubject(sourceText, proposed);
+
+    expect(proposed).toEqual(snapshot);
+    expect(result.disposition).toBe("resolved");
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.items).not.toBe(proposed);
+    expect(result.items[0]).not.toBe(proposed[0]);
+    expect(result.items[0].amount_evidence).not.toBe(
+      proposed[0].amount_evidence,
+    );
+    expectDeepFrozen(result);
+    expect(Reflect.set(result.items[0].amount_evidence, "quantity", 99)).toBe(
+      false,
+    );
+    expect(result.items[0].amount_evidence.quantity).toBe(
+      requiredItems("CASE-MEAL-017")[0].quantity,
+    );
+    (proposed[0].amount_evidence as { quantity: number | null }).quantity = 99;
+    expect(result.items[0].amount_evidence.quantity).toBe(
+      requiredItems("CASE-MEAL-017")[0].quantity,
+    );
   });
 });
