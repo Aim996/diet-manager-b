@@ -251,6 +251,14 @@ export type CoreClarificationResult =
       question: string;
       occurred_time?: never;
       context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "health_advice";
+      reason_code: "unsupported_command";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
     }>;
 
 export type CoreParseResult =
@@ -332,6 +340,28 @@ type CoreTypeAcceptWaterUnsupportedClarification = CoreTypeAssert<CoreTypeAssign
   readonly reason_code: "unsupported_command";
   readonly question: "请确认是否已发生";
 }, CoreParseResult>>;
+
+type CoreTypeAcceptHealthUnsupportedClarification = CoreTypeAssert<CoreTypeAssignable<{
+  readonly disposition: "needs_clarification";
+  readonly action: "health_advice";
+  readonly reason_code: "unsupported_command";
+  readonly question: "这是术语解释请求";
+}, CoreParseResult>>;
+
+type CoreTypeRejectHealthAmountClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  readonly disposition: "needs_clarification";
+  readonly action: "health_advice";
+  readonly reason_code: "amount_ambiguous";
+  readonly question: "请说明数量";
+}, CoreParseResult>>>;
+
+type CoreTypeRejectHealthClarificationContext = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  readonly disposition: "needs_clarification";
+  readonly action: "health_advice";
+  readonly reason_code: "unsupported_command";
+  readonly question: "这是术语解释请求";
+  readonly context_id: "context-unrelated";
+}, CoreParseResult>>>;
 
 type CoreTypeRejectIncompleteOccurredClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
   disposition: "needs_clarification";

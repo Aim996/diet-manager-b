@@ -20,8 +20,8 @@ import type {
 } from "./types.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_TERMINOLOGY_EXPLANATION = /(?:请\s*解释|帮我\s*理解)[^。！？!?]*(?:医疗\s*诊断|减重\s*建议)/u;
-const HEALTH_ADVICE_REQUEST = /(?:给我|请|帮我)[^。！？!?]*(?:(?:做|进行)\s*医疗\s*诊断|(?:提供|给|做|制定)?\s*减重\s*建议)/u;
+const HEALTH_TERMINOLOGY_EXPLANATION = /(?:^|[，,。；;！？!?])\s*(?:请\s*解释|帮我\s*理解)\s*(?:医疗\s*诊断|减重\s*建议)(?:这个词)?(?=$|[\s，,。；;！？!?])/u;
+const HEALTH_ADVICE_REQUEST = /(?:^|[，,。；;！？!?])\s*(?:请|帮我|给我)\s*(?:(?:做|提供|进行)\s*)?(?:医疗\s*诊断|减重\s*建议)(?=$|[\s，,。；;！？!?或和与])/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
@@ -224,7 +224,7 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
       initialMealItems.length === 0 && initialWater === null) {
     return detachedFrozen({
       disposition: "needs_clarification",
-      action: "record_meal",
+      action: "health_advice",
       reason_code: "unsupported_command",
       question: "这是术语解释请求，不会作为饮食记录处理。",
     });

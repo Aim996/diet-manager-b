@@ -37,13 +37,13 @@ interface MealClause {
   readonly start: number;
 }
 
-const EXPLICIT_NON_SELF_INGESTION = /^\s*(?:朋友|孩子|同事|家人|他们|他|她)\s*(?:吃|喝)/u;
-const CAUSATIVE_NON_SELF_INGESTION = /^\s*我\s*(?:让|给)\s*(?:朋友|孩子|同事|家人|他们|他|她)\s*(?:吃|喝)/u;
 const COMPLETION_CLAUSE = /(?:吃|喝)(?:了|过)?/u;
 const SELF_SHARE_CLAUSE = /我\s*和\s*朋友\s*一人\s*一\s*瓶/u;
+const COLLECTIVE_SELF_CLAUSE = /我们\s*(?:吃|喝)/u;
 const OBJECT_FRONTED_COMPLETION = /记不清\s*是\s*在\s*公司\s*还是\s*回家后\s*(?:吃|喝)的/u;
 const ALLOWED_PREVIOUS = /[吃喝了过的个片瓶碗块盘和与、，,。；;！？!?\s0-9lL]/u;
 const ALLOWED_NEXT = /[和与、，,。；;！？!?\s记重没不]/u;
+const OMITTED_SUBJECT_SUFFIX = /(?:今天|昨天|前天|刚才|刚刚|已经|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|回家后|后来|还是|准备|不想|没有)$/u;
 
 function splitMealClauses(sourceText: string): readonly MealClause[] {
   const clauses: MealClause[] = [];
@@ -60,13 +60,72 @@ function splitMealClauses(sourceText: string): readonly MealClause[] {
   return Object.freeze(clauses);
 }
 
-function isCurrentUserIngestionClause(clause: MealClause): boolean {
-  if (EXPLICIT_NON_SELF_INGESTION.test(clause.raw)) return false;
-  if (CAUSATIVE_NON_SELF_INGESTION.test(clause.raw)) return false;
+function lastKnownNonSelfPosition(prefix: string): number {
+  let lastPosition = -1;
+  for (const match of prefix.matchAll(/朋友|孩子|同事|家人|他们|他|她|老师|阿姨/gu)) {
+    lastPosition = Math.max(lastPosition, match.index);
+  }
+  return lastPosition;
+}
+
+function lastUnknownNominalPosition(prefix: string, selfPosition: number): number {
+  const trimmed = prefix.trimEnd();
+  if (OMITTED_SUBJECT_SUFFIX.test(trimmed)) return -1;
+  const match = /([\p{Script=Han}]{2})$/u.exec(trimmed);
+  const nominal = match?.[1];
+  if (match === null || nominal === undefined || nominal.includes("我")) return -1;
+  const position = trimmed.length - nominal.length;
+  if (position === 0 || (selfPosition >= 0 && position > selfPosition)) {
+    return position;
+  }
+  return -1;
+}
+
+function isCurrentUserIngestion(
+  clauseText: string,
+  ingestionPosition: number,
+): boolean {
+  const prefix = clauseText.slice(0, ingestionPosition);
+  const selfPosition = prefix.lastIndexOf("我");
+  const nonSelfPosition = Math.max(
+    lastKnownNonSelfPosition(prefix),
+    lastUnknownNominalPosition(prefix, selfPosition),
+  );
+  if (nonSelfPosition > selfPosition) return false;
+  if (selfPosition >= 0) return true;
+  return nonSelfPosition < 0;
+}
+
+function isCurrentUserItemPosition(
+  clause: MealClause,
+  itemPosition: number,
+): boolean {
+  if (SELF_SHARE_CLAUSE.test(clause.raw)) return true;
+  if (COLLECTIVE_SELF_CLAUSE.test(clause.raw)) return true;
+  if (OBJECT_FRONTED_COMPLETION.test(clause.raw)) return true;
   if (/买/u.test(clause.raw) && !COMPLETION_CLAUSE.test(clause.raw)) return false;
-  return COMPLETION_CLAUSE.test(clause.raw) ||
-    SELF_SHARE_CLAUSE.test(clause.raw) ||
-    OBJECT_FRONTED_COMPLETION.test(clause.raw);
+
+  let nearestIngestionPosition = -1;
+  for (const match of clause.raw.matchAll(/[吃喝]/gu)) {
+    if (match.index > itemPosition) break;
+    nearestIngestionPosition = match.index;
+  }
+  return nearestIngestionPosition >= 0 &&
+    isCurrentUserIngestion(clause.raw, nearestIngestionPosition);
+}
+
+function firstCurrentUserLexemePosition(
+  clause: MealClause,
+  rawText: string,
+): number {
+  let searchFrom = 0;
+  while (searchFrom < clause.raw.length) {
+    const position = clause.raw.indexOf(rawText, searchFrom);
+    if (position < 0) return -1;
+    if (isCurrentUserItemPosition(clause, position)) return position;
+    searchFrom = position + rawText.length;
+  }
+  return -1;
 }
 
 function hasLexemeBoundary(
@@ -123,9 +182,11 @@ function amount(
 export function proposeMealItems(sourceText: string): readonly Readonly<PositionedItem>[] {
   const found: PositionedItem[] = [];
   for (const clause of splitMealClauses(sourceText)) {
-    if (!isCurrentUserIngestionClause(clause)) continue;
     for (const entry of LEXICON) {
-      const relativePosition = clause.raw.indexOf(entry.raw_text);
+      const relativePosition = firstCurrentUserLexemePosition(
+        clause,
+        entry.raw_text,
+      );
       if (relativePosition < 0) continue;
       const position = clause.start + relativePosition;
       if (!hasLexemeBoundary(sourceText, position, entry.raw_text)) continue;
@@ -137,7 +198,14 @@ export function proposeMealItems(sourceText: string): readonly Readonly<Position
         position,
       }));
     }
-    const noodleMatch = /(一碗\s*)面(?!包)/u.exec(clause.raw);
+    const noodleMatch = Array.from(
+      clause.raw.matchAll(/(一碗\s*)面(?!包)/gu),
+    ).find((match) =>
+      isCurrentUserItemPosition(
+        clause,
+        match.index + (match[1]?.length ?? 0),
+      )
+    ) ?? null;
     if (noodleMatch !== null) {
       const rawTextPosition = noodleMatch.index + noodleMatch[1].length;
       const position = clause.start + rawTextPosition;

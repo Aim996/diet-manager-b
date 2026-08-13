@@ -834,6 +834,10 @@ describe("core parser quality boundaries", () => {
     ["吃了一个苹果嘛", "record_meal"],
     ["“吃了一个苹果吗”  ", "record_meal"],
     ["喝了500ml白水么\"  ", "record_water"],
+    ["吃了一个苹果吗。", "record_meal"],
+    ["“吃了一个苹果吗！”", "record_meal"],
+    ["喝了500ml白水么？", "record_water"],
+    ["吃了一个苹果呢。", "record_meal"],
   ])("treats an unpunctuated final question particle as incomplete: %s", (
     sourceText,
     action,
@@ -846,6 +850,16 @@ describe("core parser quality boundaries", () => {
       reason_code: "unsupported_command",
     });
     expect(Object.hasOwn(result, "command")).toBe(false);
+  });
+
+  it("does not mistake the final character of 妈妈 for a question particle", () => {
+    expect(variant("我吃了妈妈做的一个苹果。")).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_meal",
+        items: [{ normalized_name: "apple" }],
+      },
+    });
   });
 
   it.each([
@@ -899,6 +913,11 @@ describe("core parser quality boundaries", () => {
   it.each([
     "我让朋友吃了两个鸡蛋，我吃了一个苹果。",
     "我给朋友吃了两个鸡蛋，我吃了一个苹果。",
+    "我请王芳吃了两个鸡蛋，我吃了一个苹果。",
+    "我叫老师吃了两个鸡蛋，我吃了一个苹果。",
+    "我喂阿姨吃了两个鸡蛋，我吃了一个苹果。",
+    "我让陈晨吃了两个鸡蛋，我吃了一个苹果。",
+    "我给赵云吃了两个鸡蛋，我吃了一个苹果。",
   ])("does not attribute a causative recipient clause to the current user: %s", (
     sourceText,
   ) => {
@@ -957,8 +976,15 @@ describe("core parser quality boundaries", () => {
     });
   });
 
-  it("fails closed instead of truncating multiple explicit water records", () => {
-    const result = variant("我喝了500ml白水，又喝了200ml水。");
+  it.each([
+    "我喝了500ml白水，又喝了200ml水。",
+    "我喝了500ml白水和300ml水。",
+    "我喝了500ml白水又喝300ml水。",
+    "我喝了500ml白水，300ml水。",
+  ])("fails closed instead of truncating multiple explicit water records: %s", (
+    sourceText,
+  ) => {
+    const result = variant(sourceText);
 
     expect(result).toMatchObject({
       disposition: "needs_clarification",
@@ -999,10 +1025,22 @@ describe("core parser quality boundaries", () => {
 
     expect(result).toMatchObject({
       disposition: "needs_clarification",
-      action: "record_meal",
+      action: "health_advice",
       reason_code: "unsupported_command",
     });
     expect(Object.hasOwn(result, "command")).toBe(false);
+  });
+
+  it.each([
+    "请做医疗诊断。",
+    "帮我提供减重建议。",
+    "给我进行医疗诊断。",
+  ])("keeps an anchored health-advice request ignored: %s", (sourceText) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
   });
 
   it("still rejects the frozen pure health-advice request", () => {

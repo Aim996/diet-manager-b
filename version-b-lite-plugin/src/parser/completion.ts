@@ -71,18 +71,13 @@ const ADVERSATIVE_COMPLETED_RULE = Object.freeze<CompletionRule>({
   pattern: /后来\s*还是\s*吃了/u,
 });
 
-const INTERROGATIVE_RULE = Object.freeze<CompletionRule>({
-  rule_id: "completion.interrogative",
-  pattern: /(?:[吗么嘛]\s*[？?]?|[？?])(?=["'”’」』》】）)]*\s*$)/u,
-});
-
 const CONDITIONAL_RULE = Object.freeze<CompletionRule>({
   rule_id: "completion.conditional",
   pattern: /^\s*(?:如果|假如|要是)(?=[^。！？!?]*(?:吃|喝))/u,
 });
 
 function clarificationAction(sourceText: string): "record_meal" | "record_water" {
-  return /喝(?:了)?[^。！？!?]*(?:白水|水)(?=$|[\s,，。；;！!？?、和与吗么嘛])/u
+  return /喝(?:了)?[^。！？!?]*(?:白水|水)(?=$|[\s,，。；;！!？?、和与吗么嘛呢])/u
       .test(sourceText)
     ? "record_water"
     : "record_meal";
@@ -175,10 +170,44 @@ function matchEvidence(
   });
 }
 
+const TRAILING_QUESTION_TAIL = /[\s"'。.!！?？]|\p{Pe}|\p{Pf}/u;
+const FINAL_QUESTION_PARTICLE = /[吗么嘛呢]/u;
+
+function matchInterrogativeEvidence(
+  sourceText: string,
+): CompletionMatchedEvidence | null {
+  let normalizedEnd = sourceText.length;
+  let terminalQuestionMark = -1;
+  while (normalizedEnd > 0) {
+    const character = sourceText[normalizedEnd - 1];
+    if (character === undefined || !TRAILING_QUESTION_TAIL.test(character)) break;
+    if (character === "?" || character === "？") {
+      terminalQuestionMark = normalizedEnd - 1;
+    }
+    normalizedEnd -= 1;
+  }
+
+  const particlePosition = normalizedEnd - 1;
+  const particle = particlePosition < 0
+    ? undefined
+    : sourceText[particlePosition];
+  const start = particle !== undefined && FINAL_QUESTION_PARTICLE.test(particle)
+    ? particlePosition
+    : terminalQuestionMark;
+  if (start < 0) return null;
+  return Object.freeze({
+    rule_id: "completion.interrogative",
+    raw: sourceText.slice(start),
+    start,
+    end: sourceText.length,
+    rule_version: COMPLETION_RULE_VERSION,
+  });
+}
+
 export function classifyCompletion(
   sourceText: string,
 ): CompletionClassification {
-  const interrogative = matchEvidence(sourceText, INTERROGATIVE_RULE);
+  const interrogative = matchInterrogativeEvidence(sourceText);
   if (interrogative !== null) {
     return Object.freeze({
       disposition: "needs_clarification",
