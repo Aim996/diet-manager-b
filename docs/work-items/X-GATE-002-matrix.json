@@ -40,12 +40,18 @@
   ],
   "formal_build_provenance_requirement": {
     "execution_count": 1,
-    "command": "npm run build",
+    "command": "node_modules/typescript/bin/tsc -p tsconfig.json",
+    "node_version": "v24.15.0",
+    "started_at_utc": "2026-08-13T16:49:36.8876349Z",
+    "ended_at_utc": "2026-08-13T16:49:40.6122966Z",
     "reexecution_forbidden_in_review_fix": true,
-    "candidate_commit": "bdbc5e229af24bc78002e63951b0f9fbde51207f",
+    "reexecuted_during_review_fix": false,
+    "source_candidate_commit": "b4c5010f969408ec6cdf564e3eaec65d28abe82b",
+    "artifact_commit": "93d1fabcc2c90f42cb2ea295515d9636721b2c08",
+    "task9_final_commit": "01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c",
     "artifacts": [
-      { "path": "version-b-lite-plugin/dist/contracts.js", "bytes": 2444, "sha256": "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
-      { "path": "version-b-lite-plugin/dist/index.js", "bytes": 2393, "sha256": "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" }
+      { "path": "version-b-lite-plugin/dist/contracts.js", "bytes": 2410, "sha256": "C4AEF28FFC88C91D495AC0C9F2D756BA6B33A9994E9555067E05F08ED9BE7AC5" },
+      { "path": "version-b-lite-plugin/dist/index.js", "bytes": 173, "sha256": "AE609D468FEAB0D62192F3991C2F9A81B2A0514CD3A753576B73118ADA78DBBE" }
     ]
   },
   "authorized_next_on_bind": ["SEL-CORE-001"],

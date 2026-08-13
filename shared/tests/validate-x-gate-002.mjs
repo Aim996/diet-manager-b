@@ -69,9 +69,22 @@ const expectedPrerequisiteRequirements = Object.freeze([
   { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
 ]);
 const expectedFormalArtifacts = Object.freeze([
-  { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
-  { path: "version-b-lite-plugin/dist/index.js", bytes: 2393, sha256: "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" },
+  { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2410, sha256: "C4AEF28FFC88C91D495AC0C9F2D756BA6B33A9994E9555067E05F08ED9BE7AC5" },
+  { path: "version-b-lite-plugin/dist/index.js", bytes: 173, sha256: "AE609D468FEAB0D62192F3991C2F9A81B2A0514CD3A753576B73118ADA78DBBE" },
 ]);
+const expectedFormalBuildRequirement = Object.freeze({
+  execution_count: 1,
+  command: "node_modules/typescript/bin/tsc -p tsconfig.json",
+  node_version: "v24.15.0",
+  started_at_utc: "2026-08-13T16:49:36.8876349Z",
+  ended_at_utc: "2026-08-13T16:49:40.6122966Z",
+  reexecution_forbidden_in_review_fix: true,
+  reexecuted_during_review_fix: false,
+  source_candidate_commit: "b4c5010f969408ec6cdf564e3eaec65d28abe82b",
+  artifact_commit: "93d1fabcc2c90f42cb2ea295515d9636721b2c08",
+  task9_final_commit: "01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c",
+  artifacts: expectedFormalArtifacts,
+});
 const inputHashPaths = Object.freeze([
   "version-b-lite-plugin/src/contracts.ts",
   "version-b-lite-plugin/src/index.ts",
@@ -213,13 +226,7 @@ function validateMatrix(matrix, template) {
     exactKeys(check, ["check_id", "executor", "timeout_seconds"], "X_GATE_CHECK_REQUIREMENT_SHAPE");
     assert.equal(Number.isInteger(check.timeout_seconds) && check.timeout_seconds > 0 && check.timeout_seconds <= 120, true);
   }
-  assert.deepEqual(matrix.formal_build_provenance_requirement, {
-    execution_count: 1,
-    command: "npm run build",
-    reexecution_forbidden_in_review_fix: true,
-    candidate_commit: "bdbc5e229af24bc78002e63951b0f9fbde51207f",
-    artifacts: expectedFormalArtifacts,
-  }, "X_GATE_FORMAL_BUILD_REQUIREMENT");
+  assert.deepEqual(matrix.formal_build_provenance_requirement, expectedFormalBuildRequirement, "X_GATE_FORMAL_BUILD_REQUIREMENT");
   assert.deepEqual(matrix.authorized_next_on_bind, ["SEL-CORE-001"]);
   assert.deepEqual(matrix.forbidden_claims, template.forbidden_claims);
 }
@@ -252,21 +259,29 @@ function validateRuntimeIdentity(runtimeModule, pluginMetadata, manifest, skill)
 
 function validateFormalBuildArtifacts(matrix) {
   const requirement = matrix.formal_build_provenance_requirement;
+  git(["merge-base", "--is-ancestor", requirement.source_candidate_commit, requirement.artifact_commit]);
+  git(["merge-base", "--is-ancestor", requirement.artifact_commit, requirement.task9_final_commit]);
+  git(["merge-base", "--is-ancestor", requirement.task9_final_commit, "HEAD"]);
   const artifacts = requirement.artifacts.map((item) => {
     const path = resolve(projectRoot, item.path);
     const stat = statSync(path);
     assert.equal(stat.size, item.bytes, `X_GATE_FORMAL_BUILD_SIZE:${item.path}`);
     assert.equal(sha256(path), item.sha256, `X_GATE_FORMAL_BUILD_SHA:${item.path}`);
-    const committed = git(["show", `${requirement.candidate_commit}:${item.path}`]).stdout;
+    const committed = git(["show", `${requirement.artifact_commit}:${item.path}`]).stdout;
     assert.equal(sha256Bytes(Buffer.from(committed, "utf8")), item.sha256, `X_GATE_FORMAL_BUILD_COMMIT_DRIFT:${item.path}`);
     return { ...item, mtime_utc: stat.mtime.toISOString() };
   });
   return {
-    mode: "recovered_exactly_once",
-    execution_count: 1,
+    mode: "task9_exactly_once",
+    execution_count: requirement.execution_count,
     command: requirement.command,
-    candidate_commit: requirement.candidate_commit,
-    reexecuted_during_review_fix: false,
+    node_version: requirement.node_version,
+    started_at_utc: requirement.started_at_utc,
+    ended_at_utc: requirement.ended_at_utc,
+    source_candidate_commit: requirement.source_candidate_commit,
+    artifact_commit: requirement.artifact_commit,
+    task9_final_commit: requirement.task9_final_commit,
+    reexecuted_during_review_fix: requirement.reexecuted_during_review_fix,
     artifacts,
   };
 }
@@ -708,14 +723,29 @@ function identitySelfTests(map, template, matrix, trace) {
   artifactMatrix.formal_build_provenance_requirement.artifacts[0].sha256 = "0".repeat(64);
   expectFailure(() => validateMatrix(artifactMatrix, template), "formal_artifact_exact");
   const commandMatrix = clone(matrix);
-  commandMatrix.formal_build_provenance_requirement.command = "npm run build:other";
+  commandMatrix.formal_build_provenance_requirement.command = "node_modules/typescript/bin/tsc -p tsconfig.other.json";
   expectFailure(() => validateMatrix(commandMatrix, template), "formal_build_command_exact");
+  const executionMatrix = clone(matrix);
+  executionMatrix.formal_build_provenance_requirement.execution_count = 2;
+  expectFailure(() => validateMatrix(executionMatrix, template), "formal_build_second_execution");
+  const reexecutedMatrix = clone(matrix);
+  reexecutedMatrix.formal_build_provenance_requirement.reexecuted_during_review_fix = true;
+  expectFailure(() => validateMatrix(reexecutedMatrix, template), "formal_build_review_reexecution");
+  const sourceMatrix = clone(matrix);
+  sourceMatrix.formal_build_provenance_requirement.source_candidate_commit = "0".repeat(40);
+  expectFailure(() => validateMatrix(sourceMatrix, template), "formal_build_source_candidate");
+  const artifactCommitMatrix = clone(matrix);
+  artifactCommitMatrix.formal_build_provenance_requirement.artifact_commit = "0".repeat(40);
+  expectFailure(() => validateMatrix(artifactCommitMatrix, template), "formal_build_artifact_commit");
+  const finalCommitMatrix = clone(matrix);
+  finalCommitMatrix.formal_build_provenance_requirement.task9_final_commit = "0".repeat(40);
+  expectFailure(() => validateMatrix(finalCommitMatrix, template), "formal_build_task9_final_commit");
   const receiptMutations = [
     (value) => { value.verification_receipt.base_commit = "0".repeat(40); },
     (value) => { value.verification_receipt.input_hashes["version-b-lite-plugin/src/contracts.ts"] = "0".repeat(64); },
     (value) => { value.verification_receipt.checks[0].executor = "wrong_executor"; },
     (value) => { value.verification_receipt.checks[0].args = ["wrong-command"]; },
-    (value) => { value.verification_receipt.formal_build.candidate_commit = "0".repeat(40); },
+    (value) => { value.verification_receipt.formal_build.source_candidate_commit = "0".repeat(40); },
   ];
   for (const [index, mutate] of receiptMutations.entries()) {
     const changed = clone(map);
@@ -723,7 +753,7 @@ function identitySelfTests(map, template, matrix, trace) {
     resealReceipt(changed);
     expectFailure(() => validateLocalMap(changed, template, matrix, trace), `receipt_identity_${index}`);
   }
-  return 13;
+  return 18;
 }
 
 function stateReparseSelfTest() {

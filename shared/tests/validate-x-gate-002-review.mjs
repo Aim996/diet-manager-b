@@ -34,10 +34,22 @@ test("freezes exact prerequisite and formal-build requirements", () => {
     { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
     { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
   ]);
-  assert.deepEqual(matrix.formal_build_provenance_requirement.artifacts, [
-    { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
-    { path: "version-b-lite-plugin/dist/index.js", bytes: 2393, sha256: "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" },
-  ]);
+  assert.deepEqual(matrix.formal_build_provenance_requirement, {
+    execution_count: 1,
+    command: "node_modules/typescript/bin/tsc -p tsconfig.json",
+    node_version: "v24.15.0",
+    started_at_utc: "2026-08-13T16:49:36.8876349Z",
+    ended_at_utc: "2026-08-13T16:49:40.6122966Z",
+    reexecution_forbidden_in_review_fix: true,
+    reexecuted_during_review_fix: false,
+    source_candidate_commit: "b4c5010f969408ec6cdf564e3eaec65d28abe82b",
+    artifact_commit: "93d1fabcc2c90f42cb2ea295515d9636721b2c08",
+    task9_final_commit: "01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c",
+    artifacts: [
+      { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2410, sha256: "C4AEF28FFC88C91D495AC0C9F2D756BA6B33A9994E9555067E05F08ED9BE7AC5" },
+      { path: "version-b-lite-plugin/dist/index.js", bytes: 173, sha256: "AE609D468FEAB0D62192F3991C2F9A81B2A0514CD3A753576B73118ADA78DBBE" },
+    ],
+  });
   assert.ok(matrix.required_checks.length >= 6);
   for (const check of matrix.required_checks) assert.equal(Object.hasOwn(check, "result"), false, check.check_id);
 });
@@ -56,6 +68,6 @@ test("validates a published local map when present and exercises semantic mutati
   assert.match(output, /plan_mutations=4/u);
   assert.match(output, /command_failures=1/u);
   assert.match(output, /prerequisite_mutations=5/u);
-  assert.match(output, /identity_mutations=13/u);
+  assert.match(output, /identity_mutations=18/u);
   assert.match(output, /state_reparse_mutations=1/u);
 });
