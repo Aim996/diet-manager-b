@@ -44,6 +44,17 @@ export interface DietManagerRequest {
   items?: DietManagerItem[];
 }
 
+export interface CoreApplicationRequest {
+  readonly action: DietManagerAction;
+  readonly source_text: string;
+  readonly received_at: string;
+  readonly timezone: "Asia/Shanghai";
+  readonly operation_id: string;
+  readonly source_message_id: string;
+  readonly conversation_id: string;
+  readonly prior_context: readonly import("./parser/types.js").CoreContextEntry[];
+}
+
 export interface FoundationOutcome {
   action: DietManagerAction;
   status: "foundation_not_implemented";

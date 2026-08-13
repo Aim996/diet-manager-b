@@ -48,7 +48,7 @@ function fail(code: string): never {
   throw new Error(code);
 }
 
-function assertPrivateRuntimeRoot(value: string): string {
+export function assertPrivateRuntimeRoot(value: string): string {
   if (typeof value !== "string" || value.length === 0 || !isAbsolute(value)) {
     return fail("STORAGE_PATH_INVALID:absolute_root");
   }
@@ -72,7 +72,7 @@ function assertPrivateRuntimeRoot(value: string): string {
     return fail("STORAGE_PATH_INVALID:root_identity");
   }
 
-  return root;
+  return physical;
 }
 
 function assertOrdinaryDatabaseLeaf(databasePath: string): boolean {

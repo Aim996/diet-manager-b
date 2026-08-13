@@ -600,6 +600,42 @@ function isTerminalAuthorityCandidate(row: ExistingAuthorityRow): boolean {
   );
 }
 
+function reuseFinalizedPreview(
+  row: ExistingAuthorityRow,
+  input: FrozenReuseInput | FrozenCreateInput,
+): CreatedServerPreview | undefined {
+  if (!isTerminalAuthorityCandidate(row)) return undefined;
+  const authority = assertRepositoryAuthorityRow(row, input.secret);
+  if (authority.envelope_state !== "finalized") return authorityInvalid("state");
+  if (row.envelope_id !== input.previewId) {
+    throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
+  }
+  if (authority.idempotency_key !== input.idempotencyKey) {
+    throw new Error("IDEMPOTENCY_CONFLICT:idempotency_key");
+  }
+  if (row.source_message_id !== input.sourceMessageId) {
+    throw new Error("IDEMPOTENCY_CONFLICT:source_message_id");
+  }
+  if (row.conversation_id !== input.conversationId) {
+    throw new Error("IDEMPOTENCY_CONFLICT:conversation_id");
+  }
+  assertPreviewIdentityConflicts(
+    row,
+    authority.binding,
+    input.inputDigest,
+    input.subjectScope,
+    input.commandType,
+  );
+  if (authority.binding.preview_hash !== input.previewHash) {
+    throw new Error("PREVIEW_CONFLICT:preview_hash");
+  }
+  return Object.freeze({
+    binding: authority.binding,
+    token: issuePreviewToken(authority.binding, input.secret),
+    reused: true,
+  });
+}
+
 function bindingEquals(left: PreviewBindingV1, right: PreviewBindingV1): boolean {
   return canonicalJson(left) === canonicalJson(right);
 }
@@ -704,17 +740,8 @@ export function reuseServerPreview(
   assertCurrentMigrationAuthority(frozen.database);
   const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
   if (!existing) return undefined;
-  if (isTerminalAuthorityCandidate(existing)) {
-    const terminal = assertRepositoryAuthorityRow(existing, frozen.secret);
-    if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
-    assertPreviewIdentityConflicts(
-      existing,
-      terminal.binding,
-      frozen.inputDigest,
-      frozen.subjectScope,
-      frozen.commandType,
-    );
-  }
+  const finalized = reuseFinalizedPreview(existing, frozen);
+  if (finalized !== undefined) return finalized;
   const row = assertPreviewReadyRow(existing);
   const binding = storedBinding(row.payload_json, frozen.secret);
   if (row.envelope_id !== frozen.previewId) throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
@@ -774,16 +801,11 @@ export function createServerPreview(
       frozen.idempotencyKey,
     );
     if (existing) {
-      if (isTerminalAuthorityCandidate(existing)) {
-        const terminal = assertRepositoryAuthorityRow(existing, frozen.secret);
-        if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
-        assertPreviewIdentityConflicts(
-          existing,
-          terminal.binding,
-          frozen.inputDigest,
-          frozen.subjectScope,
-          frozen.commandType,
-        );
+      const finalized = reuseFinalizedPreview(existing, frozen);
+      if (finalized !== undefined) {
+        frozen.database.exec("ROLLBACK");
+        transactionOpen = false;
+        return finalized;
       }
       const row = assertPreviewReadyRow(existing);
       const originalBinding = storedBinding(row.payload_json, frozen.secret);
