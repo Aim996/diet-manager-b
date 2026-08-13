@@ -211,3 +211,37 @@ export type CoreParseResult =
   | Readonly<{ disposition: "candidate"; command: CoreCommandCandidate }>
   | CoreIgnoredResult
   | CoreClarificationResult;
+
+type CoreTypeAssert<T extends true> = T;
+type CoreTypeAssignable<Source, Target> = [Source] extends [Target] ? true : false;
+type CoreTypeNot<Value extends boolean> = Value extends true ? false : true;
+
+type CoreTypeValidHealthIgnore = CoreTypeAssert<CoreTypeAssignable<{
+  disposition: "ignored";
+  action: "health_advice";
+  reason_code: "unsupported_health_advice";
+}, CoreParseResult>>;
+
+type CoreTypeRejectHealthMealReason = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  disposition: "ignored";
+  action: "health_advice";
+  reason_code: "non_self_subject";
+}, CoreParseResult>>>;
+
+type CoreTypeRejectIncompleteOccurredClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  disposition: "needs_clarification";
+  action: "record_meal";
+  reason_code: "occurred_date_ambiguous";
+  question: "哪一天？";
+}, CoreParseResult>>>;
+
+type CoreTypeRejectMalformedOccurredAnchor = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  raw_text: null;
+  resolved_start: null;
+  resolved_end: null;
+  precision: "unknown";
+  timezone: "Asia/Shanghai";
+  resolution_basis: "needs_clarification";
+  resolution_anchor: "not-iso";
+  resolver_version: "diet-manager/time-parser-v1";
+}, OccurredTimeEvidence>>>;

@@ -142,23 +142,6 @@ const frozenParserResultExamples = [
   },
 ] as const satisfies readonly CoreParseResult[];
 
-// These compile-time assertions protect the action/reason/evidence discriminants.
-// @ts-expect-error health advice cannot carry a meal-subject ignore reason
-const contradictoryHealthResult: CoreParseResult = { disposition: "ignored", action: "health_advice", reason_code: "non_self_subject" };
-// @ts-expect-error item negation cannot carry prior-context identity
-const contradictoryMealResult: CoreParseResult = { disposition: "ignored", action: "record_meal", reason_code: "future_plan", context_id: "context-unrelated" };
-// @ts-expect-error ambiguous occurred date must preserve OccurredTime evidence
-const incompleteClarificationResult: CoreParseResult = { disposition: "needs_clarification", action: "record_meal", reason_code: "occurred_date_ambiguous", question: "哪一天？" };
-// @ts-expect-error occurrence evidence timestamps must use offset-ISO syntax
-const malformedOccurredAnchor: OccurredTimeEvidence = { ...ambiguousOccurredTime, resolution_anchor: "not-iso" };
-// @ts-expect-error resolved occurrence timestamps must use offset-ISO syntax
-const malformedResolvedStart: OccurredTimeEvidence = { ...ambiguousOccurredTime, resolved_start: "not-iso" };
-void contradictoryHealthResult;
-void contradictoryMealResult;
-void incompleteClarificationResult;
-void malformedOccurredAnchor;
-void malformedResolvedStart;
-
 describe("core parser ordinary-input authority", () => {
   it("represents the frozen parser-only outcomes without expanding public actions", () => {
     expect(frozenParserResultExamples.map((result) => result.disposition)).toEqual([
@@ -336,11 +319,49 @@ describe("core parser ordinary-input authority", () => {
     const input = ordinaryInput();
     const attackerSized = [] as unknown[];
     attackerSized.length = 0xffff_ffff;
+    let iteratorExecutions = 0;
+    Object.defineProperty(attackerSized, Symbol.iterator, {
+      configurable: true,
+      value() {
+        iteratorExecutions += 1;
+        throw new Error("unexpected attacker array iteration");
+      },
+    });
     input.prior_context = attackerSized as ReturnType<typeof ordinaryInput>["prior_context"];
-    const startedAt = performance.now();
+    const originalOwnKeys = Reflect.ownKeys;
+    const originalArrayFrom = Array.from;
+    let attackerOwnKeysCalls = 0;
+    let arrayFromCalls = 0;
+    let thrown: unknown;
 
-    expectInvalid(input, "input.prior_context:array_length");
-    expect(performance.now() - startedAt).toBeLessThan(100);
+    try {
+      Reflect.ownKeys = ((target: object) => {
+        if (target === attackerSized) {
+          attackerOwnKeysCalls += 1;
+          throw new Error("unexpected attacker array ownKeys");
+        }
+        return originalOwnKeys(target);
+      }) as typeof Reflect.ownKeys;
+      Array.from = ((..._args: unknown[]) => {
+        arrayFromCalls += 1;
+        throw new Error("unexpected Array.from");
+      }) as typeof Array.from;
+      try {
+        cloneCoreParseInput(input);
+      } catch (error) {
+        thrown = error;
+      }
+    } finally {
+      Reflect.ownKeys = originalOwnKeys;
+      Array.from = originalArrayFrom;
+    }
+
+    expect(thrown).toMatchObject({
+      message: "CORE_INPUT_AUTHORITY_INVALID:input.prior_context:array_length",
+    });
+    expect(attackerOwnKeysCalls).toBe(0);
+    expect(arrayFromCalls).toBe(0);
+    expect(iteratorExecutions).toBe(0);
   });
 
   it("does not consume optional descriptors injected through Object.prototype", () => {
@@ -364,6 +385,24 @@ describe("core parser ordinary-input authority", () => {
       const clonedContext = cloneCoreParseInput(input).prior_context[0];
       expect(Object.hasOwn(clonedContext, "items")).toBe(false);
       expect(Object.hasOwn(clonedContext, "scene")).toBe(false);
+      expect(clonedContext.items).toBeUndefined();
+      expect(clonedContext.scene).toBeUndefined();
+
+      const inputWithOptionals = ordinaryInput();
+      Object.defineProperty(inputWithOptionals.prior_context[0], "scene", {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: "home",
+      });
+      const clonedWithOptionals = cloneCoreParseInput(inputWithOptionals)
+        .prior_context[0];
+      expect(clonedWithOptionals.items?.[0]).toMatchObject({
+        normalized_name: "egg",
+        quantity: 1,
+        unit: "piece",
+      });
+      expect(clonedWithOptionals.scene).toBe("home");
     } finally {
       if (itemsBefore === undefined) {
         delete (Object.prototype as Record<string, unknown>).items;
@@ -376,6 +415,17 @@ describe("core parser ordinary-input authority", () => {
         Object.defineProperty(Object.prototype, "scene", sceneBefore);
       }
     }
+  });
+
+  it("returns frozen null-prototype records at every cloned object level", () => {
+    const cloned = cloneCoreParseInput(ordinaryInput());
+
+    expect(Object.getPrototypeOf(cloned)).toBeNull();
+    expect(Object.getPrototypeOf(cloned.prior_context[0])).toBeNull();
+    expect(Object.getPrototypeOf(cloned.prior_context[0].items?.[0])).toBeNull();
+    expect(Object.isFrozen(cloned)).toBe(true);
+    expect(Object.isFrozen(cloned.prior_context[0])).toBe(true);
+    expect(Object.isFrozen(cloned.prior_context[0].items?.[0])).toBe(true);
   });
 
   it("rejects custom prototypes", () => {

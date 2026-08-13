@@ -24,6 +24,23 @@ interface InspectedObject {
   readonly descriptors: Readonly<Record<string, PropertyDescriptor>>;
 }
 
+function nullRecord(): Record<string, unknown> {
+  return Object.create(null) as Record<string, unknown>;
+}
+
+function defineCloneValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  });
+}
+
 function inspectObject(
   value: unknown,
   path: string,
@@ -217,18 +234,30 @@ function cloneContextItem(value: unknown, path: string): Readonly<CoreContextIte
     path,
     ["normalized_name", "quantity", "unit"],
   );
-  return Object.freeze({
-    normalized_name: boundedString(
+  const result = nullRecord();
+  defineCloneValue(
+    result,
+    "normalized_name",
+    boundedString(
       descriptorValue(inspected, "normalized_name"),
       `${path}.normalized_name`,
       MAX_CONTEXT_TEXT_LENGTH,
     ),
-    quantity: nullableNumber(
+  );
+  defineCloneValue(
+    result,
+    "quantity",
+    nullableNumber(
       descriptorValue(inspected, "quantity"),
       `${path}.quantity`,
     ),
-    unit: nullableString(descriptorValue(inspected, "unit"), `${path}.unit`),
-  });
+  );
+  defineCloneValue(
+    result,
+    "unit",
+    nullableString(descriptorValue(inspected, "unit"), `${path}.unit`),
+  );
+  return Object.freeze(result) as unknown as Readonly<CoreContextItem>;
 }
 
 function cloneContextItems(value: unknown, path: string): readonly CoreContextItem[] {
@@ -262,7 +291,7 @@ function cloneContextEntry(value: unknown, path: string): Readonly<CoreContextEn
     return invalid(`${path}.revision:number`);
   }
 
-  const result: {
+  const result = nullRecord() as Record<string, unknown> & {
     context_id: string;
     conversation_id: string;
     revision: number;
@@ -273,66 +302,63 @@ function cloneContextEntry(value: unknown, path: string): Readonly<CoreContextEn
     scope: "meal" | "meal_date";
     items?: readonly CoreContextItem[];
     scene?: CoreScene;
-  } = {
-    context_id: boundedString(
+  };
+  defineCloneValue(result, "context_id", boundedString(
       descriptorValue(inspected, "context_id"),
       `${path}.context_id`,
       MAX_ID_LENGTH,
-    ),
-    conversation_id: boundedString(
+  ));
+  defineCloneValue(result, "conversation_id", boundedString(
       descriptorValue(inspected, "conversation_id"),
       `${path}.conversation_id`,
       MAX_ID_LENGTH,
-    ),
-    revision,
-    generated_at: offsetIsoTimestamp(
+  ));
+  defineCloneValue(result, "revision", revision);
+  defineCloneValue(result, "generated_at", offsetIsoTimestamp(
       descriptorValue(inspected, "generated_at"),
       `${path}.generated_at`,
-    ),
-    valid_until: offsetIsoTimestamp(
+  ));
+  defineCloneValue(result, "valid_until", offsetIsoTimestamp(
       descriptorValue(inspected, "valid_until"),
       `${path}.valid_until`,
-    ),
-    source_message_id: boundedString(
+  ));
+  defineCloneValue(result, "source_message_id", boundedString(
       descriptorValue(inspected, "source_message_id"),
       `${path}.source_message_id`,
       MAX_ID_LENGTH,
-    ),
-    rule_version: literalValue(
+  ));
+  defineCloneValue(result, "rule_version", literalValue(
       descriptorValue(inspected, "rule_version"),
       `${path}.rule_version`,
       ["diet-manager/context-v1"],
-    ),
-    scope: literalValue(
+  ));
+  defineCloneValue(result, "scope", literalValue(
       descriptorValue(inspected, "scope"),
       `${path}.scope`,
       ["meal", "meal_date"],
-    ),
-  };
+  ));
   if (Object.hasOwn(inspected.descriptors, "items")) {
-    Object.defineProperty(result, "items", {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: cloneContextItems(
+    defineCloneValue(
+      result,
+      "items",
+      cloneContextItems(
         descriptorValue(inspected, "items"),
         `${path}.items`,
       ),
-    });
+    );
   }
   if (Object.hasOwn(inspected.descriptors, "scene")) {
-    Object.defineProperty(result, "scene", {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: literalValue(
+    defineCloneValue(
+      result,
+      "scene",
+      literalValue(
         descriptorValue(inspected, "scene"),
         `${path}.scene`,
         ["home", "outside", "company", "unknown"],
       ),
-    });
+    );
   }
-  return Object.freeze(result);
+  return Object.freeze(result) as Readonly<CoreContextEntry>;
 }
 
 function clonePriorContext(value: unknown): readonly CoreContextEntry[] {
@@ -355,38 +381,38 @@ export function cloneCoreParseInput(value: unknown): Readonly<CoreParseInput> {
     "prior_context",
   ]);
 
-  return Object.freeze({
-    source_text: boundedString(
+  const result = nullRecord();
+  defineCloneValue(result, "source_text", boundedString(
       descriptorValue(inspected, "source_text"),
       "input.source_text",
       MAX_SOURCE_TEXT_LENGTH,
-    ),
-    received_at: offsetIsoTimestamp(
+  ));
+  defineCloneValue(result, "received_at", offsetIsoTimestamp(
       descriptorValue(inspected, "received_at"),
       "input.received_at",
-    ),
-    timezone: literalValue(
+  ));
+  defineCloneValue(result, "timezone", literalValue(
       descriptorValue(inspected, "timezone"),
       "input.timezone",
       ["Asia/Shanghai"],
-    ),
-    operation_id: boundedString(
+  ));
+  defineCloneValue(result, "operation_id", boundedString(
       descriptorValue(inspected, "operation_id"),
       "input.operation_id",
       MAX_ID_LENGTH,
-    ),
-    source_message_id: boundedString(
+  ));
+  defineCloneValue(result, "source_message_id", boundedString(
       descriptorValue(inspected, "source_message_id"),
       "input.source_message_id",
       MAX_ID_LENGTH,
-    ),
-    conversation_id: boundedString(
+  ));
+  defineCloneValue(result, "conversation_id", boundedString(
       descriptorValue(inspected, "conversation_id"),
       "input.conversation_id",
       MAX_ID_LENGTH,
-    ),
-    prior_context: clonePriorContext(
+  ));
+  defineCloneValue(result, "prior_context", clonePriorContext(
       descriptorValue(inspected, "prior_context"),
-    ),
-  });
+  ));
+  return Object.freeze(result) as unknown as Readonly<CoreParseInput>;
 }
