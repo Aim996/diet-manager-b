@@ -5,8 +5,10 @@ export interface PredicateSourceSpan {
 }
 
 export interface IngestionPredicateFrame {
+  readonly event_index: number;
+  readonly event_id: string;
   readonly predicate: "eat" | "drink";
-  readonly coordination: "none" | "inherit_previous";
+  readonly coordination: "none" | "inherit_previous" | "ambiguous";
   readonly clause_span: Readonly<PredicateSourceSpan>;
   readonly frame_span: Readonly<PredicateSourceSpan>;
   readonly subject_prefix_span: Readonly<PredicateSourceSpan>;
@@ -24,6 +26,11 @@ interface PredicateAnchor {
   readonly end: number;
   readonly predicate: "eat" | "drink";
 }
+
+const EAT_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|汤|茶|面)/u;
+const DRINK_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|白水|水|牛奶|豆浆|汤|咖啡|茶)/u;
+const OWNED_OBJECT_PREFIX = /^\s*(?:了|过|完)?\s*(?:(?:两个?|二个)\s*鸡蛋|鸡蛋|两片\s*面包|面包|(?:[0-9]+\s*ml|一瓶)\s*牛奶|牛奶|一个\s*苹果|苹果|香蕉|米饭|一碗\s*面|一块\s*鸡胸肉|鸡胸肉|两盘\s*炒饭|炒饭|汤|豆浆|咖啡|茶|[0-9]+\s*ml\s*(?:白水|水))/u;
+const LEADING_CONNECTOR = /^(然后|接着|后来|和|又)/u;
 
 interface FrameBoundary {
   readonly frame_start: number;
@@ -79,15 +86,33 @@ function predicateAnchors(
   sourceText: string,
   clause: ClauseSpan,
 ): readonly PredicateAnchor[] {
-  const anchors = Array.from(
-    sourceText.slice(clause.start, clause.end).matchAll(/[吃喝]/gu),
-    (match) => frozenRecord({
-      start: clause.start + match.index,
-      end: clause.start + match.index + match[0].length,
+  const anchors: PredicateAnchor[] = [];
+  for (const match of sourceText.slice(clause.start, clause.end).matchAll(/[吃喝]/gu)) {
+    const start = clause.start + match.index;
+    const remainder = sourceText.slice(
+      start + 1,
+      Math.min(clause.end, start + 17),
+    ).trimStart();
+    const positiveStart = match[0] === "吃" ? EAT_OBJECT_START : DRINK_OBJECT_START;
+    if (remainder.length > 0 && !positiveStart.test(remainder)) continue;
+    anchors.push(frozenRecord({
+      start,
+      end: start + match[0].length,
       predicate: match[0] === "吃" ? "eat" as const : "drink" as const,
-    }),
-  );
+    }));
+  }
   return Object.freeze(anchors);
+}
+
+function objectPrefixEnd(
+  sourceText: string,
+  previous: PredicateAnchor,
+  current: PredicateAnchor,
+): number | null {
+  const between = sourceText.slice(previous.end, current.start);
+  const match = OWNED_OBJECT_PREFIX.exec(between);
+  if (match === null) return null;
+  return previous.end + match[0].length;
 }
 
 function nextBoundary(
@@ -96,31 +121,33 @@ function nextBoundary(
   current: PredicateAnchor,
 ): FrameBoundary {
   const between = sourceText.slice(previous.end, current.start);
-  let connectorIndex = -1;
-  let connectorLength = 0;
-  for (const match of between.matchAll(/然后|接着|后来|和|又/gu)) {
-    connectorIndex = match.index;
-    connectorLength = match[0].length;
-  }
-  if (connectorIndex < 0) {
-    const explicitSelf = between.lastIndexOf("我");
-    const frameStart = explicitSelf < 0
-      ? current.start
-      : previous.end + explicitSelf;
+  const ownedEnd = objectPrefixEnd(sourceText, previous, current);
+  if (ownedEnd === null) {
     return frozenRecord({
-      frame_start: frameStart,
-      previous_frame_end: frameStart,
-      coordination: "none" as const,
+      frame_start: previous.end,
+      previous_frame_end: previous.end,
+      coordination: "ambiguous" as const,
     });
   }
-
-  const connectorStart = previous.end + connectorIndex;
-  const afterConnector = connectorStart + connectorLength;
-  const hasSubjectPrefix = sourceText.slice(afterConnector, current.start).trim().length > 0;
+  let nextStart = ownedEnd;
+  while (nextStart < current.start && /\s/u.test(sourceText[nextStart] ?? "")) {
+    nextStart += 1;
+  }
+  const residual = sourceText.slice(nextStart, current.start);
+  const connector = LEADING_CONNECTOR.exec(residual);
+  if (connector !== null) {
+    const afterConnector = nextStart + connector[0].length;
+    const hasSubject = sourceText.slice(afterConnector, current.start).trim().length > 0;
+    return frozenRecord({
+      frame_start: hasSubject ? afterConnector : nextStart,
+      previous_frame_end: nextStart,
+      coordination: hasSubject ? "none" as const : "inherit_previous" as const,
+    });
+  }
   return frozenRecord({
-    frame_start: hasSubjectPrefix ? afterConnector : connectorStart,
-    previous_frame_end: connectorStart,
-    coordination: hasSubjectPrefix ? "none" as const : "inherit_previous" as const,
+    frame_start: nextStart,
+    previous_frame_end: nextStart,
+    coordination: "none" as const,
   });
 }
 
@@ -161,6 +188,8 @@ export function parseIngestionPredicateFrames(
       const frameEnd = ends[index];
       if (anchor === undefined || frameStart === undefined || frameEnd === undefined) continue;
       frames.push(frozenRecord({
+        event_index: frames.length,
+        event_id: `predicate:${frames.length}:${anchor.start}-${anchor.end}`,
         predicate: anchor.predicate,
         coordination: coordinations[index] ?? "none",
         clause_span: sourceSpan(sourceText, clause.start, clause.end),

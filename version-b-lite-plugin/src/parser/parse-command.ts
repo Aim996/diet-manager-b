@@ -3,11 +3,9 @@ import { resolveMealContext } from "./context.js";
 import { cloneCoreParseInput } from "./input-authority.js";
 import {
   classifyMealLiquid,
-  hasNonSelfExplicitPlainWater,
-  matchExplicitPlainWater,
-  matchExplicitPlainWaters,
+  resolveWaterFrames,
 } from "./liquid.js";
-import { proposeMealItems, resolveMealFrames } from "./meal.js";
+import { resolveMealFrames } from "./meal.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
@@ -21,11 +19,24 @@ import type {
 import type { ResolvedSubjectEvidence } from "./subject.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_TERMINOLOGY_EXPLANATION = /(?:^|[，,。；;！？!?])\s*(?:(?:请\s*解释|帮我\s*理解|我想知道)\s*(?:医疗\s*诊断|减重\s*建议))(?:这个词)?(?:\s*(?:是(?:什么|什么意思)|是什么意思))?(?=$|[\s，,。；;！？!?])/u;
-const HEALTH_ADVICE_REQUEST = /(?:^|[，,。；;！？!?])\s*(?:(?:请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?=$|[\s，,。；;！？!?或和与])/u;
+const HEALTH_ACTUAL_CLAUSE = /^(?:(?:我\s*需要|能\s*给我|请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?:\s*(?:或|和|与)\s*(?:医疗\s*诊断|减重\s*建议))*\s*(?:吗|么|嘛)?$/u;
+const HEALTH_EXPLANATION_CLAUSE = /^(?:(?:(?:请\s*解释|帮我\s*理解|我想知道)\s*(?:医疗\s*诊断|减重\s*建议))(?:这个词)?(?:\s*(?:是(?:什么|什么意思)|是什么意思))?|什么\s*是\s*(?:医疗\s*诊断|减重\s*建议))$/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+
+type HealthIntent = "actual_request" | "terminology_explanation" | null;
+
+function classifyHealthIntent(sourceText: string): HealthIntent {
+  let explanation = false;
+  for (const rawClause of sourceText.split(/(?:[，,。；;！？!?]+|然后)/u)) {
+    const clause = rawClause.trim();
+    if (clause.length === 0) continue;
+    if (HEALTH_ACTUAL_CLAUSE.test(clause)) return "actual_request";
+    if (HEALTH_EXPLANATION_CLAUSE.test(clause)) explanation = true;
+  }
+  return explanation ? "terminology_explanation" : null;
+}
 
 function detachedFrozen<T>(value: T): Readonly<T> {
   if (Array.isArray(value)) {
@@ -123,12 +134,43 @@ function subjectEvidence(subject: Readonly<ResolvedSubjectEvidence>) {
   };
 }
 
+type ProceedCompletion = Extract<
+  ReturnType<typeof classifyCompletion>,
+  { disposition: "proceed" }
+>;
+type MealProposal = ReturnType<typeof resolveMealFrames>;
+
+interface RetainedMealEntry {
+  readonly occurrence: MealProposal["proposed_items"][number];
+  readonly item: MealProposal["items"][number];
+}
+
+function retainedMealEntries(
+  meal: MealProposal,
+  completion: ProceedCompletion,
+): readonly Readonly<RetainedMealEntry>[] {
+  const retained: Readonly<RetainedMealEntry>[] = [];
+  for (let index = 0; index < meal.proposed_items.length; index += 1) {
+    const occurrence = meal.proposed_items[index];
+    const item = meal.items[index];
+    if (occurrence === undefined || item === undefined) continue;
+    const excluded = completion.excluded_items.some((evidence) =>
+      evidence.normalized_name === occurrence.normalized_name &&
+      occurrence.position >= evidence.matched_evidence.start &&
+      occurrence.end <= evidence.matched_evidence.end
+    );
+    if (!excluded) retained.push({ occurrence, item });
+  }
+  return Object.freeze(retained);
+}
+
 function mealCandidate(
   input: Readonly<CoreParseInput>,
-  completion: Extract<ReturnType<typeof classifyCompletion>, { disposition: "proceed" }>,
+  completion: ProceedCompletion,
   occurredTime: OccurredTimeEvidence,
+  meal: MealProposal,
+  retained: readonly Readonly<RetainedMealEntry>[],
 ): CoreParseResult {
-  const meal = resolveMealFrames(input.source_text);
   if (meal.disposition === "unresolved" || meal.subject === null) {
     return detachedFrozen({
       disposition: "ignored",
@@ -136,11 +178,7 @@ function mealCandidate(
       reason_code: "non_self_subject",
     });
   }
-  const items = meal.items.filter((item) =>
-    !completion.excluded_items.some((excluded) =>
-      excluded.normalized_name === item.normalized_name
-    )
-  ).map((item, order) => ({ ...item, order }));
+  const items = retained.map(({ item }, order) => ({ ...item, order }));
   if (items.length === 0) {
     return detachedFrozen({
       disposition: "needs_clarification",
@@ -170,7 +208,9 @@ function mealCandidate(
     source_text: input.source_text,
     parser_version: PARSER_VERSION,
     occurred_time: occurredTime,
-    subject: subjectEvidence(meal.subject),
+    subject: subjectEvidence(
+      retained[0]?.occurrence.subject_evidence ?? meal.subject,
+    ),
     items,
     ...(completion.completion_evidence === null
       ? {}
@@ -188,7 +228,9 @@ function mealCandidate(
           matched_span: excluded.matched_span,
           rule_version: excluded.rule_version,
         })) }),
-    ...(meal.group_amount_evidence === undefined
+    ...(meal.group_amount_evidence === undefined || !retained.some(({ occurrence }) =>
+        occurrence.occurrence_id === meal.group_amount_evidence?.occurrence_id
+      )
       ? {}
       : { group_amount_evidence: {
           quantity: meal.group_amount_evidence.quantity,
@@ -217,25 +259,26 @@ function mealCandidate(
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value: unknown): CoreParseResult {
   const input = cloneCoreParseInput(value);
-  const initialMealItems = proposeMealItems(input.source_text);
-  const initialWater = matchExplicitPlainWater(input.source_text);
+  const meal = resolveMealFrames(input.source_text);
+  const waterResolution = resolveWaterFrames(input.source_text);
+  const healthIntent = classifyHealthIntent(input.source_text);
+  const hasIngestionOccurrence = meal.proposed_items.length > 0 ||
+    waterResolution.self_matches.length > 0;
 
-  if (HEALTH_TERMINOLOGY_EXPLANATION.test(input.source_text) &&
-      initialMealItems.length === 0 && initialWater === null) {
+  if (healthIntent === "actual_request" && !hasIngestionOccurrence) {
+    return detachedFrozen({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
+  }
+
+  if (healthIntent === "terminology_explanation" && !hasIngestionOccurrence) {
     return detachedFrozen({
       disposition: "needs_clarification",
       action: "health_advice",
       reason_code: "unsupported_command",
       question: "这是术语解释请求，不会作为饮食记录处理。",
-    });
-  }
-
-  if (HEALTH_ADVICE_REQUEST.test(input.source_text) &&
-      initialMealItems.length === 0 && initialWater === null) {
-    return detachedFrozen({
-      disposition: "ignored",
-      action: "health_advice",
-      reason_code: "unsupported_health_advice",
     });
   }
 
@@ -265,6 +308,7 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
       reason_code: "future_plan" as const,
     });
   }
+  const retainedMeal = retainedMealEntries(meal, completion);
 
   if (PURCHASE_WITHOUT_EXPIRY.test(input.source_text)) {
     const command = inventoryCandidate(input);
@@ -293,7 +337,7 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
 
-  const waters = matchExplicitPlainWaters(input.source_text);
+  const waters = waterResolution.self_matches;
   if (waters.length > 1) {
     return detachedFrozen({
       disposition: "needs_clarification",
@@ -304,12 +348,7 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
   const water = waters[0] ?? null;
   if (water !== null) {
-    const mealItems = resolveMealFrames(input.source_text).items.filter((item) =>
-      !completion.excluded_items.some((excluded) =>
-        excluded.normalized_name === item.normalized_name
-      )
-    );
-    if (mealItems.length > 0) {
+    if (retainedMeal.length > 0) {
       return detachedFrozen({
         disposition: "needs_clarification",
         action: "record_meal",
@@ -338,8 +377,8 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
 
   if (
-    hasNonSelfExplicitPlainWater(input.source_text) &&
-    resolveMealFrames(input.source_text).items.length === 0
+    waterResolution.non_self_direct_count > 0 &&
+    retainedMeal.length === 0
   ) {
     return detachedFrozen({
       disposition: "ignored",
@@ -348,5 +387,5 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
 
-  return mealCandidate(input, completion, occurredTime);
+  return mealCandidate(input, completion, occurredTime, meal, retainedMeal);
 }

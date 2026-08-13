@@ -4,6 +4,8 @@ import casesCatalog from "../../../shared/acceptance-cases/cases.json";
 import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.json";
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
 import { parseIngestionPredicateFrames } from "../../src/parser/predicate-frame.js";
+import { resolveMealFrames } from "../../src/parser/meal.js";
+import { matchExplicitPlainWaters } from "../../src/parser/liquid.js";
 import type { CoreParseResult } from "../../src/parser/types.js";
 
 const SELECTED_IDS = Object.freeze([
@@ -836,6 +838,189 @@ describe("core parser quality boundaries", () => {
     expectDeepFrozen(frames);
   });
 
+  it("assigns deterministic event identities to owned predicate spans", () => {
+    const frames = parseIngestionPredicateFrames("我吃了鸡蛋，又吃了一个苹果。");
+
+    expect(frames.map((frame) => frame.event_id)).toEqual([
+      "predicate:0:1-2",
+      "predicate:1:7-8",
+    ]);
+    expectDeepFrozen(frames);
+  });
+
+  it("assigns deterministic occurrence identities to owned object spans", () => {
+    const meal = resolveMealFrames("我吃了鸡蛋，又吃了一个苹果。");
+
+    expect(meal.proposed_items.map((item) => ({
+      event_id: item.event_id,
+      occurrence_id: item.occurrence_id,
+      span: [item.position, item.end],
+    }))).toEqual([
+      {
+        event_id: "predicate:0:1-2",
+        occurrence_id: "object:0:0:3-5",
+        span: [3, 5],
+      },
+      {
+        event_id: "predicate:1:7-8",
+        occurrence_id: "object:1:0:11-13",
+        span: [11, 13],
+      },
+    ]);
+    expectDeepFrozen(meal);
+  });
+
+  it.each([
+    [
+      "我吃了鸡蛋朋友吃了两个鸡蛋",
+      ["我", "朋友"],
+    ],
+    [
+      "我吃苹果朋友又吃鸡蛋",
+      ["我", "朋友又"],
+    ],
+    [
+      "我吃苹果张经理接着吃鸡蛋",
+      ["我", "张经理接着"],
+    ],
+  ])("gives an unpunctuated next subject span to the next predicate: %s", (
+    sourceText,
+    prefixes,
+  ) => {
+    expect(parseIngestionPredicateFrames(sourceText).map((frame) =>
+      frame.subject_prefix_span.raw
+    )).toEqual(prefixes);
+  });
+
+  it.each([
+    ["我吃了鸡蛋朋友吃了两个鸡蛋", ["egg"]],
+    ["我吃苹果朋友又吃鸡蛋", ["apple"]],
+    ["我吃苹果张经理接着吃鸡蛋", ["apple"]],
+  ])("uses event-local subject ownership for an unpunctuated switch: %s", (
+    sourceText,
+    itemNames,
+  ) => {
+    expect(requiredMeal(variant(sourceText)).items.map((item) =>
+      item.normalized_name
+    )).toEqual(itemNames);
+  });
+
+  it("preserves an explicit self subject before a continuation connector", () => {
+    const sourceText = "张经理吃鸡蛋我接着吃苹果";
+
+    expect(parseIngestionPredicateFrames(sourceText).map((frame) =>
+      frame.subject_prefix_span.raw
+    )).toEqual(["张经理", "我接着"]);
+    expect(requiredMeal(variant(sourceText)).items.map((item) =>
+      item.normalized_name
+    )).toEqual(["apple"]);
+  });
+
+  it("keeps an unpunctuated non-self water event out of the self record", () => {
+    expect(variant("我喝了500ml水朋友喝了300ml水")).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_water",
+        plain_water_ml_milli: 500_000,
+      },
+    });
+  });
+
+  it.each([
+    "我吃亏买了一个苹果。",
+    "我吃惊地看见一个苹果。",
+    "我喝彩时拿着一杯茶。",
+  ])("does not tokenize a non-ingestion compound as a predicate: %s", (
+    sourceText,
+  ) => {
+    expect(parseIngestionPredicateFrames(sourceText)).toEqual([]);
+    expect(variant(sourceText).disposition).not.toBe("candidate");
+  });
+
+  it.each([
+    "我吃了一个苹果汁。",
+    "我吃了鸡蛋饼。",
+    "我吃了面包车。",
+    "我吃了香蕉奶昔。",
+    "我喝了咖啡色的饮料。",
+    "我吃了米饭团。",
+  ])("requires a positive boundary for a meal item occurrence: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText).disposition).not.toBe("candidate");
+  });
+
+  it.each([
+    [
+      "我吃了两个鸡蛋，我们吃了两盘炒饭。",
+      [["egg", 2], ["fried_rice", null]],
+    ],
+    [
+      "我们吃了两盘炒饭，我吃了两个鸡蛋。",
+      [["fried_rice", null], ["egg", 2]],
+    ],
+  ] as const)("keeps collective group evidence local to its item occurrence: %s", (
+    sourceText,
+    expectedItems,
+  ) => {
+    const command = requiredMeal(variant(sourceText));
+
+    expect(command.items.map((item) => [
+      item.normalized_name,
+      item.quantity,
+    ])).toEqual(expectedItems);
+    expect(command.group_amount_evidence).toMatchObject({
+      quantity: 2,
+      unit: "plate",
+      assigned_to_self: false,
+    });
+  });
+
+  it.each([
+    "我喝了咖啡和300ml水。",
+    "我喝了500ml咖啡和300ml水。",
+  ])("detects coordinated direct water after another drink object: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it("assigns coordinated water to its predicate event and object occurrence", () => {
+    const waters = matchExplicitPlainWaters("我喝了咖啡和300ml水。");
+
+    expect(waters).toMatchObject([{
+      event_id: "predicate:0:1-2",
+      occurrence_id: "water:0:0:6-12",
+      start: 6,
+      end: 12,
+      quantity_ml: 300,
+    }]);
+    expectDeepFrozen(waters);
+  });
+
+  it("applies item negation to its occurrence instead of its normalized name", () => {
+    const command = requiredMeal(
+      variant("我没吃苹果，后来还是吃了苹果。"),
+    );
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "apple",
+      quantity: null,
+      unit: null,
+      estimated: null,
+    }]);
+    expect(command.excluded_items).toMatchObject([{
+      normalized_name: "apple",
+      reason_code: "item_scoped_negation",
+    }]);
+  });
+
   it.each([
     ["吃了一个苹果吗？", "record_meal"],
     ["吃了一个苹果吗?", "record_meal"],
@@ -1193,6 +1378,36 @@ describe("core parser quality boundaries", () => {
       action: "health_advice",
       reason_code: "unsupported_health_advice",
     });
+  });
+
+  it.each([
+    "我需要减重建议。",
+    "能给我减重建议吗？",
+  ])("routes a natural health-advice request to the health scope: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
+  });
+
+  it("routes a natural health terminology question to health clarification", () => {
+    expect(variant("什么是医疗诊断？")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "health_advice",
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it("gives an actual health request precedence over an explanation clause", () => {
+    expect(variant("请解释医疗诊断，然后给我减重建议。"))
+      .toMatchObject({
+        disposition: "ignored",
+        action: "health_advice",
+        reason_code: "unsupported_health_advice",
+      });
   });
 
   it("still rejects the frozen pure health-advice request", () => {

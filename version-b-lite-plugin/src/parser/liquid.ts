@@ -7,32 +7,51 @@ import { resolvePredicateFrameSubject } from "./subject.js";
 import type { PredicateFrameSubjectResolution } from "./subject.js";
 
 export interface PlainWaterMatch {
+  readonly event_id: string;
+  readonly occurrence_id: string;
+  readonly start: number;
+  readonly end: number;
   readonly raw_text: string;
   readonly quantity_ml: number;
 }
 
-const DIRECT_WATER_OBJECT = /^\s*了?\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
-const COORDINATED_WATER_OBJECT = /(?:和|与|、)\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/gu;
+const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
+const ADJUNCT_START = /(?:时|后)?(?:看见|看到|拿着|放着|旁边|桌上|还有|使用|用了)/u;
 const PUNCTUATED_WATER_CONTINUATION = /^\s*[，,]\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
 
-function plainWaterMatch(
-  match: RegExpExecArray,
-  rawPrefix = "",
-): Readonly<PlainWaterMatch> | null {
-  const quantity = Number(match[1]);
+function frozenRecord<T extends object>(entries: T): Readonly<T> {
+  return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
+}
+
+function plainWaterMatch(entries: {
+  readonly event_id: string;
+  readonly occurrence_id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly raw_text: string;
+  readonly quantity_text: string;
+}): Readonly<PlainWaterMatch> | null {
+  const quantity = Number(entries.quantity_text);
   if (
     !Number.isSafeInteger(quantity) || quantity <= 0 ||
     !Number.isSafeInteger(quantity * 1_000)
   ) return null;
-  return Object.freeze({ raw_text: `${rawPrefix}${match[0]}`, quantity_ml: quantity });
+  return frozenRecord({
+    event_id: entries.event_id,
+    occurrence_id: entries.occurrence_id,
+    start: entries.start,
+    end: entries.end,
+    raw_text: entries.raw_text,
+    quantity_ml: quantity,
+  });
 }
 
-interface WaterFrameScan {
+export interface WaterFrameScan {
   readonly self_matches: readonly Readonly<PlainWaterMatch>[];
   readonly non_self_direct_count: number;
 }
 
-function scanWaterFrames(sourceText: string): Readonly<WaterFrameScan> {
+export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan> {
   const selfMatches: Readonly<PlainWaterMatch>[] = [];
   let nonSelfDirectCount = 0;
   let inherited: PredicateFrameSubjectResolution | null = null;
@@ -40,26 +59,58 @@ function scanWaterFrames(sourceText: string): Readonly<WaterFrameScan> {
     const subject = resolvePredicateFrameSubject(frame, inherited);
     inherited = subject;
     if (frame.predicate !== "drink") continue;
-    const direct = DIRECT_WATER_OBJECT.exec(frame.object_span.raw);
-    if (direct === null) continue;
-    if (subject.disposition !== "resolved") {
-      nonSelfDirectCount += 1;
-      continue;
+    const aspect = /^\s*(?:了|过|完)?\s*/u.exec(frame.object_span.raw);
+    const directStart = frame.object_span.start + (aspect?.[0].length ?? 0);
+    const unboundedDirect = sourceText.slice(directStart, frame.object_span.end);
+    const adjunct = ADJUNCT_START.exec(unboundedDirect);
+    const directText = adjunct === null
+      ? unboundedDirect
+      : unboundedDirect.slice(0, adjunct.index);
+    let waterIndex = 0;
+    for (const direct of directText.matchAll(DIRECT_OR_COORDINATED_WATER)) {
+      const quantityText = direct[1];
+      const waterText = direct[2];
+      if (quantityText === undefined || waterText === undefined) continue;
+      const quantityOffset = direct[0].indexOf(quantityText);
+      const tokenStart = directStart + direct.index + quantityOffset;
+      const tokenEnd = directStart + direct.index + direct[0].length;
+      const rawStart = direct.index === 0
+        ? frame.predicate_span.start
+        : directStart + direct.index;
+      const match = plainWaterMatch({
+        event_id: frame.event_id,
+        occurrence_id: `water:${frame.event_index}:${waterIndex}:${tokenStart}-${tokenEnd}`,
+        start: tokenStart,
+        end: tokenEnd,
+        raw_text: sourceText.slice(rawStart, tokenEnd),
+        quantity_text: quantityText,
+      });
+      waterIndex += 1;
+      if (match === null) continue;
+      if (subject.disposition === "resolved") selfMatches.push(match);
+      else nonSelfDirectCount += 1;
     }
-    const first = plainWaterMatch(direct, frame.predicate_span.raw);
-    if (first !== null) selfMatches.push(first);
-    for (const coordinated of frame.object_span.raw.matchAll(COORDINATED_WATER_OBJECT)) {
-      const match = plainWaterMatch(coordinated);
-      if (match !== null) selfMatches.push(match);
-    }
+    if (subject.disposition !== "resolved") continue;
     const afterFrame = sourceText.slice(frame.frame_span.end);
     const punctuated = PUNCTUATED_WATER_CONTINUATION.exec(afterFrame);
     if (punctuated !== null) {
-      const match = plainWaterMatch(punctuated);
+      const quantityText = punctuated[1];
+      if (quantityText === undefined) continue;
+      const quantityOffset = punctuated[0].indexOf(quantityText);
+      const tokenStart = frame.frame_span.end + quantityOffset;
+      const tokenEnd = frame.frame_span.end + punctuated[0].length;
+      const match = plainWaterMatch({
+        event_id: frame.event_id,
+        occurrence_id: `water:${frame.event_index}:${waterIndex}:${tokenStart}-${tokenEnd}`,
+        start: tokenStart,
+        end: tokenEnd,
+        raw_text: punctuated[0],
+        quantity_text: quantityText,
+      });
       if (match !== null) selfMatches.push(match);
     }
   }
-  return Object.freeze({
+  return frozenRecord({
     self_matches: Object.freeze(selfMatches),
     non_self_direct_count: nonSelfDirectCount,
   });
@@ -74,11 +125,11 @@ export function matchExplicitPlainWater(sourceText: string): Readonly<PlainWater
 export function matchExplicitPlainWaters(
   sourceText: string,
 ): readonly Readonly<PlainWaterMatch>[] {
-  return scanWaterFrames(sourceText).self_matches;
+  return resolveWaterFrames(sourceText).self_matches;
 }
 
 export function hasNonSelfExplicitPlainWater(sourceText: string): boolean {
-  return scanWaterFrames(sourceText).non_self_direct_count > 0;
+  return resolveWaterFrames(sourceText).non_self_direct_count > 0;
 }
 
 /** Classify nutrition liquids as food and never as plain-water events. */
