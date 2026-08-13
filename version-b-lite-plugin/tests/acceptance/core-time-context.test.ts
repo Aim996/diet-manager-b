@@ -391,6 +391,59 @@ describe("core occurred-time resolution", () => {
     expect(cloned.prior_context[0].valid_until).toBe(occurred.resolved_end);
   });
 
+  it("clarifies a relative last-night time whose derived interval leaves the year domain", () => {
+    expect(resolveOccurredTime(
+      "昨晚11点吃了一个苹果。",
+      "1000-01-01T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: "昨晚11点",
+      resolved_start: null,
+      resolved_end: null,
+      precision: "unknown",
+      resolution_basis: "needs_clarification",
+      resolution_anchor: "1000-01-01T08:30:00+08:00",
+    });
+  });
+
+  it("round-trips an in-range relative last-night interval through core input authority", () => {
+    const occurred = resolveOccurredTime(
+      "昨晚11点吃了一个苹果。",
+      "1000-01-02T08:30:00+08:00",
+    );
+    expect(occurred).toMatchObject({
+      raw_text: "昨晚11点",
+      resolved_start: "1000-01-01T23:00:00+08:00",
+      resolved_end: "1000-01-01T23:01:00+08:00",
+      precision: "exact",
+      resolution_basis: "relative_to_received_at",
+      resolution_anchor: "1000-01-02T08:30:00+08:00",
+    });
+    if (occurred.resolved_start === null || occurred.resolved_end === null) {
+      throw new Error("expected exact relative occurrence evidence");
+    }
+    const base = validContextFromCatalog();
+
+    const cloned = cloneCoreParseInput({
+      source_text: "昨晚11点吃了一个苹果。",
+      received_at: occurred.resolution_anchor,
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-roundtrip-relative-time",
+      source_message_id: "message-roundtrip-relative-current",
+      conversation_id: "conversation-core-v1",
+      prior_context: [{
+        ...base,
+        context_id: "context-roundtrip-relative-time",
+        generated_at: occurred.resolved_start,
+        valid_until: occurred.resolved_end,
+        source_message_id: "message-roundtrip-relative-prior",
+      }],
+    });
+
+    expect(cloned.received_at).toBe(occurred.resolution_anchor);
+    expect(cloned.prior_context[0].generated_at).toBe(occurred.resolved_start);
+    expect(cloned.prior_context[0].valid_until).toBe(occurred.resolved_end);
+  });
+
   it("does not turn purchase or shelf-life evidence into an ingestion date", () => {
     const meal = catalogCase("CASE-MEAL-002");
     const purchase = catalogCase("CASE-PURCHASE-004");

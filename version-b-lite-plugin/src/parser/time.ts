@@ -167,9 +167,19 @@ export function resolveOccurredTime(
         priorDate.getUTCDate(),
         resolvedHour,
       );
+      const resolvedEpoch = localEpoch - SHANGHAI_OFFSET_MINUTES * MINUTE_MS;
+      if (!hasSupportedEvidenceInterval(resolvedEpoch)) {
+        return evidence(
+          lastNight[0],
+          null,
+          "unknown",
+          "needs_clarification",
+          anchor,
+        );
+      }
       return evidence(
         lastNight[0],
-        localEpoch - SHANGHAI_OFFSET_MINUTES * MINUTE_MS,
+        resolvedEpoch,
         "exact",
         "relative_to_received_at",
         anchor,
