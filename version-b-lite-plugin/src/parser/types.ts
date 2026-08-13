@@ -173,11 +173,13 @@ export type CoreIgnoredResult =
       disposition: "ignored";
       action: "health_advice";
       reason_code: "unsupported_health_advice";
+      context_id?: never;
     }>
   | Readonly<{
       disposition: "ignored";
       action: "record_meal";
       reason_code: "non_self_subject" | "future_plan";
+      context_id?: never;
     }>
   | Readonly<{
       disposition: "ignored";
@@ -193,18 +195,23 @@ export type CoreClarificationResult =
       reason_code: "occurred_date_ambiguous";
       question: string;
       occurred_time: OccurredTimeEvidence;
+      context_id?: never;
     }>
   | Readonly<{
       disposition: "needs_clarification";
       action: "record_meal" | "record_water";
       reason_code: "amount_ambiguous";
       question: string;
+      occurred_time?: never;
+      context_id?: never;
     }>
   | Readonly<{
       disposition: "needs_clarification";
       action: "add_inventory";
       reason_code: "unsupported_command";
       question: string;
+      occurred_time?: never;
+      context_id?: never;
     }>;
 
 export type CoreParseResult =
@@ -227,6 +234,34 @@ type CoreTypeRejectHealthMealReason = CoreTypeAssert<CoreTypeNot<CoreTypeAssigna
   action: "health_advice";
   reason_code: "non_self_subject";
 }, CoreParseResult>>>;
+
+type CoreTypeRejectSpreadFutureContext = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  readonly disposition: "ignored";
+  readonly action: "record_meal";
+  readonly reason_code: "future_plan";
+  readonly context_id: "context-unrelated";
+}, CoreParseResult>>>;
+
+type CoreTypeRejectSpreadNonSelfContext = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  readonly disposition: "ignored";
+  readonly action: "record_meal";
+  readonly reason_code: "non_self_subject";
+  readonly context_id: "context-unrelated";
+}, CoreParseResult>>>;
+
+type CoreTypeRejectSpreadHealthContext = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
+  readonly disposition: "ignored";
+  readonly action: "health_advice";
+  readonly reason_code: "unsupported_health_advice";
+  readonly context_id: "context-unrelated";
+}, CoreParseResult>>>;
+
+type CoreTypeAcceptNotOccurredContext = CoreTypeAssert<CoreTypeAssignable<{
+  readonly disposition: "ignored";
+  readonly action: "record_meal";
+  readonly reason_code: "not_occurred";
+  readonly context_id: "context-meal-016-v1";
+}, CoreParseResult>>;
 
 type CoreTypeRejectIncompleteOccurredClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
   disposition: "needs_clarification";
