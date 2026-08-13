@@ -14,6 +14,16 @@ const SELECTED_IDS = Object.freeze([
   "CASE-WATER-004",
 ] as const);
 
+const PARSER_ORACLE_IDS = Object.freeze([
+  "CASE-MEAL-001", "CASE-MEAL-021", "CASE-MEAL-017", "CASE-MEAL-009",
+  "CASE-WATER-001", "CASE-SCOPE-001", "CASE-MEAL-002", "CASE-PURCHASE-004",
+  "CASE-MEAL-010", "CASE-MEAL-011", "CASE-MEAL-012", "CASE-MEAL-013",
+  "CASE-MEAL-014", "CASE-MEAL-015", "CASE-MEAL-016", "CASE-MEAL-018",
+  "CASE-MEAL-019", "CASE-MEAL-020", "CASE-WATER-003", "CASE-WATER-004",
+] as const);
+
+const REACHABILITY_ONLY_ID = "CASE-RECEIPT-002" as const;
+
 type CatalogCase = (typeof casesCatalog.cases)[number];
 
 const byId = new Map(casesCatalog.cases.map((entry) => [entry.id, entry]));
@@ -54,20 +64,31 @@ function expectDeepFrozen(value: unknown): void {
   for (const nested of Object.values(value)) expectDeepFrozen(nested);
 }
 
-function parserDisposition(entry: CatalogCase): string {
+function parserOracle(entry: CatalogCase) {
   const parsing = "parsing" in entry.oracle ? entry.oracle.parsing : undefined;
+  const command = "command" in entry.oracle ? entry.oracle.command : undefined;
+  if (parsing === undefined && command === undefined) {
+    throw new Error(`CORE_PARSER_TEST_ORACLE_MISSING:${entry.id}`);
+  }
+  return { parsing, command };
+}
+
+function parserDisposition(entry: CatalogCase): string {
+  const { parsing, command } = parserOracle(entry);
   if (parsing !== undefined && "disposition" in parsing) {
     return parsing.disposition;
   }
-  const command = "command" in entry.oracle ? entry.oracle.command : undefined;
-  return command !== undefined && "status" in command && command.status !== "committed"
-    ? command.status
-    : "candidate";
+  if (command === undefined || !("status" in command)) {
+    throw new Error(`CORE_PARSER_TEST_DISPOSITION_MISSING:${entry.id}`);
+  }
+  return command.status === "committed" ? "candidate" : command.status;
 }
 
-function commandIntent(entry: CatalogCase): string | undefined {
-  const command = "command" in entry.oracle ? entry.oracle.command : undefined;
-  if (command === undefined || !("intent" in command)) return undefined;
+function commandIntent(entry: CatalogCase): string {
+  const { command } = parserOracle(entry);
+  if (command === undefined || !("intent" in command)) {
+    throw new Error(`CORE_PARSER_TEST_INTENT_MISSING:${entry.id}`);
+  }
   return command.intent === "record_purchase" ? "add_inventory" : command.intent;
 }
 
@@ -83,7 +104,7 @@ function assertParserOracle(entry: CatalogCase, result: CoreParseResult): void {
     return;
   }
 
-  expect(result.command.action).toBe(expectedIntent ?? "record_meal");
+  expect(result.command.action).toBe(expectedIntent);
   expect(result.command.operation_id).toBe(`operation-${entry.id.toLowerCase()}`);
   expect(result.command.source_text).toBe(entry.source_text);
   expect(result.command.parser_version).toBe("diet-manager/core-parser-v1");
@@ -149,44 +170,499 @@ function assertParserOracle(entry: CatalogCase, result: CoreParseResult): void {
   }
 }
 
-function assertParserForbidden(entry: CatalogCase, result: CoreParseResult): void {
-  const forbidden = new Set(entry.forbidden);
-  if (forbidden.has("milk_as_plain_water_event")) {
-    expect(result.disposition === "candidate" && result.command.action === "record_water")
-      .toBe(false);
+const PARSER_ENFORCEABLE_FORBIDDEN = new Set<string>([
+  "alternate_single_item_schema",
+  "ambiguous_date_guessed",
+  "automatic_weight_loss_advice",
+  "banana_omitted",
+  "cancelled_meal_recorded",
+  "child_meal_recorded_as_self",
+  "coffee_as_plain_water_event",
+  "completed_fact_discarded",
+  "cross_day_shifted_forward",
+  "default_time_without_basis",
+  "estimated_explicit_amount",
+  "expired_company_scene_reused",
+  "food_context_lost",
+  "food_water_above_liquid_volume",
+  "friend_share_recorded",
+  "future_plan_recorded_as_fact",
+  "group_total_assigned_to_self",
+  "group_total_recorded_as_self",
+  "host_clock_used",
+  "host_timezone_used",
+  "ingestion_time_used_as_expiration_anchor",
+  "initial_reluctance_treated_as_final",
+  "invented_explicit_expiration",
+  "invented_user_fact",
+  "liquid_recorded_twice",
+  "meal_fact_discarded",
+  "medical_diagnosis_generated",
+  "milk_as_plain_water_event",
+  "missing_expiration_coerced_to_received_at",
+  "negated_egg_recorded",
+  "negation_scope_reversed",
+  "non_self_fact_recorded",
+  "occurred_time_evidence_dropped",
+  "omitted_subject_rejected",
+  "plain_water_contribution_nonzero",
+  "purchase_date_used_as_ingestion_date",
+  "purchase_evidence_discarded",
+  "received_date_silently_selected",
+  "received_date_used_without_relative_resolution",
+  "self_participation_discarded",
+  "soup_as_plain_water_event",
+  "soy_milk_as_plain_water_event",
+  "subject_entity_created",
+  "tea_as_plain_water_event",
+  "unknown_amount_coerced_to_zero",
+  "unknown_scene_skips_inventory_read",
+  "unversioned_shelf_life_rule",
+  "water_as_meal_event",
+  "whole_utterance_rejected",
+]);
+
+const DEFERRED_FORBIDDEN = new Set<string>([
+  "duplicate_hydration_contribution",
+  "explicit_field_marked_as_estimate",
+  "factual_data_deleted",
+  "family_member_created",
+  "forced_option_selection",
+  "health_record_created",
+  "inferred_field_without_evidence_label",
+  "internal_id_in_receipt",
+  "inventory_effect_created",
+  "meal_event_created",
+  "meal_event_created_before_clarification",
+  "missing_meal_id",
+  "non_self_fact_committed",
+  "prior_candidate_committed",
+  "progress_from_extra_query",
+  "progress_not_last",
+  "success_from_nonterminal_state",
+  "success_receipt_visible",
+  "unbounded_quick_options",
+]);
+
+function requiredCandidate(result: CoreParseResult) {
+  expect(result.disposition).toBe("candidate");
+  if (result.disposition !== "candidate") {
+    throw new Error("CORE_PARSER_TEST_EXPECTED_CANDIDATE");
   }
-  if (forbidden.has("unknown_amount_coerced_to_zero") && result.disposition === "candidate" && "items" in result.command) {
-    for (const item of result.command.items) {
-      if (item.quantity === null) expect(item.quantity).not.toBe(0);
-    }
+  return result.command;
+}
+
+function requiredMeal(result: CoreParseResult) {
+  const command = requiredCandidate(result);
+  expect(command.action).toBe("record_meal");
+  if (command.action !== "record_meal") {
+    throw new Error("CORE_PARSER_TEST_EXPECTED_MEAL");
   }
-  if (forbidden.has("group_total_assigned_to_self") && result.disposition === "candidate" && "items" in result.command) {
-    expect(result.command.items.some((item) => item.quantity === 2)).toBe(false);
+  return command;
+}
+
+function requiredParsing(entry: CatalogCase) {
+  const { parsing } = parserOracle(entry);
+  if (parsing === undefined) {
+    throw new Error(`CORE_PARSER_TEST_PARSING_MISSING:${entry.id}`);
   }
-  if (forbidden.has("expired_company_scene_reused") && result.disposition === "candidate" && "context" in result.command) {
-    expect(result.command.context?.scene).not.toBe("company");
+  return parsing;
+}
+
+function requiredParsingItems(entry: CatalogCase) {
+  const parsing = requiredParsing(entry);
+  if (!("items" in parsing) || parsing.items === undefined) {
+    throw new Error(`CORE_PARSER_TEST_ITEMS_MISSING:${entry.id}`);
   }
-  if (forbidden.has("plain_water_contribution_nonzero") && result.disposition === "candidate" && "liquid_classification" in result.command) {
-    expect(result.command.liquid_classification?.plain_water_contribution_ml).toBe(0);
+  return parsing.items;
+}
+
+function requiredOccurredTime(entry: CatalogCase) {
+  const parsing = requiredParsing(entry);
+  if (!("occurred_time" in parsing) || parsing.occurred_time === undefined) {
+    throw new Error(`CORE_PARSER_TEST_TIME_MISSING:${entry.id}`);
   }
-  if (forbidden.has("purchase_date_used_as_ingestion_date") && result.disposition === "candidate" && "purchase_evidence" in result.command) {
-    expect(result.command.purchase_evidence?.affects_ingestion_date).toBe(false);
-  }
-  if (forbidden.has("ingestion_time_used_as_expiration_anchor") && result.disposition === "candidate" && result.command.action === "add_inventory") {
-    expect(result.command.expiration_resolution_basis).toBe("stocked_at");
-    expect(result.command.ingestion_at).toBeNull();
-  }
-  if (forbidden.has("medical_diagnosis_generated")) {
-    expect(result).toMatchObject({
-      disposition: "ignored",
-      action: "health_advice",
-      reason_code: "unsupported_health_advice",
-    });
+  return parsing.occurred_time;
+}
+
+function assertIgnored(
+  result: CoreParseResult,
+  reasonCode: "unsupported_health_advice" | "non_self_subject" | "future_plan" | "not_occurred",
+): void {
+  expect(result).toMatchObject({
+    disposition: "ignored",
+    reason_code: reasonCode,
+  });
+}
+
+function assertNutritionLiquid(result: CoreParseResult, normalizedName?: string): void {
+  const command = requiredMeal(result);
+  expect(command.liquid_classification).toMatchObject({
+    plain_water: false,
+    plain_water_contribution_ml: 0,
+  });
+  expect(Object.hasOwn(command, "plain_water_ml_milli")).toBe(false);
+  if (normalizedName !== undefined) {
+    expect(command.items.map((item) => item.normalized_name)).toContain(
+      normalizedName,
+    );
   }
 }
 
+function assertParserForbiddenToken(
+  token: string,
+  entry: CatalogCase,
+  result: CoreParseResult,
+): void {
+  switch (token) {
+    case "alternate_single_item_schema":
+    case "invented_user_fact": {
+      const command = requiredMeal(result);
+      expect(Array.isArray(command.items)).toBe(true);
+      expect(command.items).toEqual(requiredParsingItems(entry));
+      return;
+    }
+    case "milk_as_plain_water_event":
+      assertNutritionLiquid(result, "milk");
+      return;
+    case "soup_as_plain_water_event":
+      assertNutritionLiquid(result, "soup");
+      return;
+    case "soy_milk_as_plain_water_event":
+      assertNutritionLiquid(result, "soy_milk");
+      return;
+    case "coffee_as_plain_water_event":
+      assertNutritionLiquid(result, "coffee");
+      return;
+    case "tea_as_plain_water_event":
+      assertNutritionLiquid(result, "tea");
+      return;
+    case "omitted_subject_rejected": {
+      const command = requiredMeal(result);
+      expect(command.subject.resolution_basis).toBe("omitted_subject_default");
+      return;
+    }
+    case "subject_entity_created": {
+      const command = requiredMeal(result);
+      expect(command.subject.subject_entity_created).toBe(false);
+      return;
+    }
+    case "child_meal_recorded_as_self":
+      assertIgnored(result, "non_self_subject");
+      return;
+    case "non_self_fact_recorded": {
+      const command = requiredMeal(result);
+      expect(command.subject.kind).toBe("self");
+      return;
+    }
+    case "negated_egg_recorded":
+    case "negation_scope_reversed": {
+      const command = requiredMeal(result);
+      expect(command.items).toEqual(requiredParsingItems(entry));
+      expect(command.items.map((item) => item.normalized_name)).not.toContain("egg");
+      expect(command.excluded_items).toMatchObject([
+        { normalized_name: "egg", reason_code: "item_scoped_negation" },
+      ]);
+      return;
+    }
+    case "banana_omitted": {
+      const command = requiredMeal(result);
+      expect(command.items.map((item) => item.normalized_name)).toContain("banana");
+      return;
+    }
+    case "whole_utterance_rejected":
+    case "completed_fact_discarded":
+    case "meal_fact_discarded":
+      requiredCandidate(result);
+      return;
+    case "water_as_meal_event": {
+      const command = requiredCandidate(result);
+      expect(command.action).toBe("record_water");
+      return;
+    }
+    case "estimated_explicit_amount": {
+      const command = requiredCandidate(result);
+      if (command.action !== "record_water") {
+        throw new Error("CORE_PARSER_TEST_EXPECTED_WATER");
+      }
+      expect(command.amount_evidence.estimated).toBe(false);
+      expect(command.plain_water_ml_milli).toBe(
+        command.amount_evidence.quantity * 1_000,
+      );
+      return;
+    }
+    case "medical_diagnosis_generated":
+    case "automatic_weight_loss_advice":
+      assertIgnored(result, "unsupported_health_advice");
+      return;
+    case "purchase_date_used_as_ingestion_date": {
+      const command = requiredMeal(result);
+      expect(command.purchase_evidence?.affects_ingestion_date).toBe(false);
+      expect(command.occurred_time.resolution_basis).toBe("default_received_at");
+      return;
+    }
+    case "purchase_evidence_discarded": {
+      const command = requiredMeal(result);
+      expect(command.purchase_evidence).toEqual(
+        (requiredParsing(entry) as { readonly purchase_evidence: unknown })
+          .purchase_evidence,
+      );
+      return;
+    }
+    case "unknown_amount_coerced_to_zero": {
+      const command = requiredMeal(result);
+      const expectedItems = requiredParsingItems(entry);
+      const unknownNames = expectedItems
+        .filter((item) => item.quantity === null)
+        .map((item) => item.normalized_name);
+      expect(unknownNames.length).toBeGreaterThan(0);
+      for (const name of unknownNames) {
+        expect(command.items.find((item) => item.normalized_name === name))
+          .toMatchObject({ quantity: null, unit: null, estimated: null });
+      }
+      return;
+    }
+    case "ingestion_time_used_as_expiration_anchor": {
+      const command = requiredCandidate(result);
+      if (command.action !== "add_inventory") {
+        throw new Error("CORE_PARSER_TEST_EXPECTED_INVENTORY");
+      }
+      expect(command.expiration_resolution_basis).toBe("stocked_at");
+      expect(command.ingestion_at).toBeNull();
+      return;
+    }
+    case "missing_expiration_coerced_to_received_at": {
+      const command = requiredCandidate(result);
+      if (command.action !== "add_inventory") {
+        throw new Error("CORE_PARSER_TEST_EXPECTED_INVENTORY");
+      }
+      expect(command.estimated_expires_at).not.toBe(command.received_at);
+      return;
+    }
+    case "unversioned_shelf_life_rule": {
+      const command = requiredCandidate(result);
+      if (command.action !== "add_inventory") {
+        throw new Error("CORE_PARSER_TEST_EXPECTED_INVENTORY");
+      }
+      expect(command.shelf_life_rule_version).toBe(
+        requiredParsing(entry).time_anchors.rule_version,
+      );
+      return;
+    }
+    case "invented_explicit_expiration": {
+      const command = requiredCandidate(result);
+      if (command.action !== "add_inventory") {
+        throw new Error("CORE_PARSER_TEST_EXPECTED_INVENTORY");
+      }
+      expect(Object.hasOwn(command, "explicit_expires_at")).toBe(false);
+      expect(command.estimated_expires_at).toBe(
+        requiredParsing(entry).time_anchors.estimated_expires_at,
+      );
+      return;
+    }
+    case "initial_reluctance_treated_as_final": {
+      const command = requiredMeal(result);
+      expect(command.completion_evidence).toMatchObject({
+        initial_state: "reluctance",
+        final_state: "completed",
+      });
+      return;
+    }
+    case "food_context_lost": {
+      const command = requiredMeal(result);
+      expect(command.items.map((item) => item.normalized_name)).toContain("egg");
+      return;
+    }
+    case "host_timezone_used": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time.timezone).toBe("Asia/Shanghai");
+      return;
+    }
+    case "received_date_used_without_relative_resolution": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time.resolution_basis).toBe(
+        "relative_to_received_at",
+      );
+      return;
+    }
+    case "occurred_time_evidence_dropped": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time).toEqual(requiredOccurredTime(entry));
+      return;
+    }
+    case "cross_day_shifted_forward": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time.resolved_start).toBe(
+        requiredOccurredTime(entry).resolved_start,
+      );
+      return;
+    }
+    case "ambiguous_date_guessed":
+    case "received_date_silently_selected":
+      expect(result).toMatchObject({
+        disposition: "needs_clarification",
+        reason_code: "occurred_date_ambiguous",
+        occurred_time: { resolved_start: null, resolved_end: null },
+      });
+      return;
+    case "default_time_without_basis": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time.resolution_basis).toBe("default_received_at");
+      return;
+    }
+    case "host_clock_used": {
+      const command = requiredMeal(result);
+      expect(command.occurred_time.resolution_anchor).toBe(
+        requiredOccurredTime(entry).resolution_anchor,
+      );
+      return;
+    }
+    case "future_plan_recorded_as_fact":
+      assertIgnored(result, "future_plan");
+      return;
+    case "cancelled_meal_recorded":
+      assertIgnored(result, "not_occurred");
+      return;
+    case "friend_share_recorded": {
+      const command = requiredMeal(result);
+      expect(command.subject.excluded_non_self_share_count).toBe(1);
+      return;
+    }
+    case "group_total_recorded_as_self": {
+      const command = requiredMeal(result);
+      expect(command.items).toMatchObject([{ quantity: 1, unit: "bottle" }]);
+      expect(command.subject.excluded_non_self_share_count).toBe(1);
+      return;
+    }
+    case "group_total_assigned_to_self": {
+      const command = requiredMeal(result);
+      expect(command.group_amount_evidence?.assigned_to_self).toBe(false);
+      expect(command.items).toMatchObject([
+        { quantity: null, unit: null, estimated: null },
+      ]);
+      return;
+    }
+    case "self_participation_discarded": {
+      const command = requiredMeal(result);
+      expect(command.subject).toMatchObject({
+        resolution_basis: "collective_self_participation",
+        self_participated: true,
+      });
+      return;
+    }
+    case "expired_company_scene_reused": {
+      const command = requiredMeal(result);
+      expect(command.context).toMatchObject({
+        scene: "unknown",
+        expired_context_ids: ["context-meal-020-expired-v1"],
+      });
+      return;
+    }
+    case "unknown_scene_skips_inventory_read": {
+      const command = requiredMeal(result);
+      expect(command.context).toMatchObject({
+        scene: "unknown",
+        inventory_read: true,
+      });
+      return;
+    }
+    case "plain_water_contribution_nonzero": {
+      const command = requiredMeal(result);
+      expect(command.liquid_classification?.plain_water_contribution_ml).toBe(0);
+      return;
+    }
+    case "liquid_recorded_twice": {
+      const command = requiredMeal(result);
+      expect(Object.hasOwn(command, "plain_water_ml_milli")).toBe(false);
+      expect(command.items).toEqual(requiredParsingItems(entry));
+      return;
+    }
+    case "food_water_above_liquid_volume": {
+      const command = requiredMeal(result);
+      const liquidVolume = command.items
+        .filter((item) => item.kind === "nutritious_drink" && item.unit === "ml")
+        .reduce((total, item) => total + (item.quantity ?? 0), 0);
+      expect(command.liquid_classification?.food_water_upper_bound_ml)
+        .toBeLessThanOrEqual(liquidVolume);
+      return;
+    }
+    default:
+      throw new Error(`CORE_PARSER_FORBIDDEN_ASSERTION_MISSING:${token}`);
+  }
+}
+
+function assertParserForbidden(entry: CatalogCase, result: CoreParseResult): void {
+  for (const token of entry.forbidden) {
+    const parserClass = assertForbiddenClassification(token);
+    if (parserClass) assertParserForbiddenToken(token, entry, result);
+  }
+}
+
+function assertForbiddenClassification(token: string): boolean {
+  const parserClass = PARSER_ENFORCEABLE_FORBIDDEN.has(token);
+  const deferredClass = DEFERRED_FORBIDDEN.has(token);
+  if (Number(parserClass) + Number(deferredClass) !== 1) {
+    throw new Error(`CORE_PARSER_FORBIDDEN_CLASSIFICATION_INVALID:${token}`);
+  }
+  return parserClass;
+}
+
+function assertSelectedForbiddenClassification(): Readonly<{
+  readonly unique: number;
+  readonly parser: number;
+  readonly deferred: number;
+}> {
+  const observed = new Set<string>();
+  for (const id of SELECTED_IDS) {
+    const entry = selectedCase(id);
+    for (const token of entry.forbidden) observed.add(token);
+    assertParserForbidden(entry, parseSelected(id));
+  }
+  const parser = [...observed].filter((token) =>
+    PARSER_ENFORCEABLE_FORBIDDEN.has(token)
+  ).length;
+  const deferred = [...observed].filter((token) =>
+    DEFERRED_FORBIDDEN.has(token)
+  ).length;
+  return Object.freeze({ unique: observed.size, parser, deferred });
+}
+
 describe("selected core command composition", () => {
-  it.each(SELECTED_IDS)("matches the single catalog Oracle for %s", (id) => {
+  it("classifies every selected forbidden token exactly once", () => {
+    expect(assertSelectedForbiddenClassification()).toEqual({
+      unique: 68,
+      parser: 49,
+      deferred: 19,
+    });
+  });
+
+  it("fails closed for an unknown or multiply classified forbidden token", () => {
+    expect(() => assertForbiddenClassification("future_forbidden_token"))
+      .toThrowError(
+        "CORE_PARSER_FORBIDDEN_CLASSIFICATION_INVALID:future_forbidden_token",
+      );
+
+    DEFERRED_FORBIDDEN.add("milk_as_plain_water_event");
+    try {
+      expect(() => assertForbiddenClassification("milk_as_plain_water_event"))
+        .toThrowError(
+          "CORE_PARSER_FORBIDDEN_CLASSIFICATION_INVALID:milk_as_plain_water_event",
+        );
+    } finally {
+      DEFERRED_FORBIDDEN.delete("milk_as_plain_water_event");
+    }
+  });
+
+  it("fails closed instead of defaulting a case without a parser Oracle", () => {
+    const entry = selectedCase("CASE-RECEIPT-002");
+    const result = parseSelected(entry.id);
+
+    expect(() => assertParserOracle(entry, result)).toThrowError(
+      "CORE_PARSER_TEST_ORACLE_MISSING:CASE-RECEIPT-002",
+    );
+  });
+
+  it.each(PARSER_ORACLE_IDS)("matches the single catalog Oracle for %s", (id) => {
     const entry = selectedCase(id);
     const input = parseInput(entry);
     const inputSnapshot = structuredClone(input);
@@ -249,19 +725,20 @@ describe("selected core command composition", () => {
     });
   });
 
-  it("keeps receipt meal evidence reachable without inventing a catalog parsing Oracle", () => {
-    const result = parseSelected("CASE-RECEIPT-002");
+  it("keeps the non-Oracle receipt case reachable without creating an expected result", () => {
+    const entry = selectedCase(REACHABILITY_ONLY_ID);
 
-    expect(result).toMatchObject({
-      disposition: "candidate",
-      command: {
-        action: "record_meal",
-        items: [
-          { order: 0, normalized_name: "rice", quantity: null },
-          { order: 1, normalized_name: "chicken", quantity: 1, unit: "piece" },
-        ],
-      },
-    });
+    expect(entry.id).toBe(REACHABILITY_ONLY_ID);
+    const result = parseCoreCommand(parseInput(entry));
+    expect(["candidate", "ignored", "needs_clarification"]).toContain(
+      result.disposition,
+    );
+    if (result.disposition === "candidate") {
+      expect(result.command.action).not.toBe("record_water");
+    } else {
+      expect(result.action).not.toBe("health_advice");
+    }
+    expectDeepFrozen(result);
   });
 
   it("lets ambiguous occurrence time win before omitted-subject fallback", () => {
