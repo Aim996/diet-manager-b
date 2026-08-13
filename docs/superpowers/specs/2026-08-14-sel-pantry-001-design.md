@@ -102,7 +102,7 @@ meal FactCommit 永远先于库存 effect。库存歧义、未知、单位不兼
 
 ### 4.6 追加式位置更正
 
-`CorrectInventoryLocationOperation` 以 batch ID、base revision、previous/next location evidence 为输入。它提交一个 `inventory_location_correction` event，再由 effect 更新 batch projection 和 applicable expiration。原 purchase event、旧 projection evidence 与 audit previous value 保留；同 key 重试返回同一事件，不重复应用。
+公开动作复用冻结的 `correct_record`。`CorrectInventoryLocationOperation` 以 `kind: "correct_record"`、`correction_kind: "inventory_location"`、batch ID、base revision、previous/next location evidence 为输入。它提交一个 schema 已允许的 `inventory_adjusted` event，并在 exact payload 中保存 `adjustment_kind: "location_correction"`，再由 effect 更新 batch projection 和 applicable expiration。原 purchase event、旧 projection evidence 与 audit previous value 保留；同 key 重试返回同一事件，不重复应用。
 
 ## 5. 组件边界与数据流
 
@@ -124,8 +124,8 @@ Parser 继续先于数据库/secret 执行，只做 bounded lexical evidence：�
 
 - 0 个 identity：派生新 product；
 - 1 个 exact identity：复用；
-- 多个：返回 clarification，零 FactCommit；
-- 多商品：按原文顺序映射为多个 domain operations；
+- 多个：返回带 2–4 个净化可读选项和自由文本出口的 clarification，零 FactCommit；
+- 多商品：按原文顺序映射为同一父 envelope 内的多个 domain operations；公开 `record_id` 保持首事件身份，并只在多事件成功时附加有序 `record_ids`；
 - 更正：解析为 batch-bound correction operation。
 
 公开 handler 仍只返回净化、冻结 outcome。`ignored`/clarification/unsupported 不创建数据库或业务行；只有需要数据库消歧的 candidate 才打开 runtime。
