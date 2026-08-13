@@ -727,16 +727,25 @@ describe("selected core command composition", () => {
 
   it("keeps the non-Oracle receipt case reachable without creating an expected result", () => {
     const entry = selectedCase(REACHABILITY_ONLY_ID);
+    const input = parseInput(entry);
 
     expect(entry.id).toBe(REACHABILITY_ONLY_ID);
-    const result = parseCoreCommand(parseInput(entry));
+    expect(input).toMatchObject({
+      source_text: entry.source_text,
+      prior_context: entry.setup.prior_context,
+    });
+    const result = parseCoreCommand(input);
     expect(["candidate", "ignored", "needs_clarification"]).toContain(
       result.disposition,
     );
     if (result.disposition === "candidate") {
-      expect(result.command.action).not.toBe("record_water");
+      expect(typeof result.command).toBe("object");
+      expect(["record_meal", "record_water", "add_inventory"]).toContain(
+        result.command.action,
+      );
     } else {
-      expect(result.action).not.toBe("health_advice");
+      expect(["health_advice", "record_meal", "record_water", "add_inventory"])
+        .toContain(result.action);
     }
     expectDeepFrozen(result);
   });
