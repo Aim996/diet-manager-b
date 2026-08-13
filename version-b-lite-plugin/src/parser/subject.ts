@@ -51,6 +51,9 @@ export type PredicateFrameSubjectResolution =
       subject: Readonly<ResolvedSubjectEvidence>;
     }>
   | Readonly<{
+      disposition: "non_self";
+    }>
+  | Readonly<{
       disposition: "unresolved";
     }>;
 
@@ -82,8 +85,8 @@ interface SubjectRule {
   readonly pattern: RegExp;
 }
 
-const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|在公司|然后|接着|后来|又)\s*)*$/u;
-const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|没(?:有)?)?$/u;
+const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|在公司|然后|接着|后来|又|没|没有)\s*)*$/u;
+const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|后来|没(?:有)?)?$/u;
 const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
 
 function frozenFrameRecord<T extends object>(entries: T): Readonly<T> {
@@ -136,12 +139,23 @@ export function resolvePredicateFrameSubject(
     return frozenFrameRecord({ disposition: "unresolved" as const });
   }
   if (frame.coordination === "inherit_previous") {
-    return inherited?.disposition === "resolved"
-      ? inherited
-      : frozenFrameRecord({ disposition: "unresolved" as const });
+    return inherited ?? frozenFrameRecord({ disposition: "unresolved" as const });
   }
 
   const prefix = frame.subject_prefix_span.raw.trim();
+  if (/^我\s*和\s*朋友\s*一人$/u.test(prefix)) {
+    const relativeStart = frame.subject_prefix_span.raw.indexOf("我");
+    return resolvedFrameSubject(
+      "explicit_self_share",
+      frameMatchedEvidence(
+        frame,
+        "subject.explicit-self-share.friend",
+        prefix,
+        relativeStart,
+      ),
+      { excluded_non_self_share_count: 1 },
+    );
+  }
   if (prefix === "我们") {
     const evidence = frameMatchedEvidence(
       frame,
@@ -180,7 +194,11 @@ export function resolvePredicateFrameSubject(
     return resolvedFrameSubject("omitted_subject_default", null);
   }
 
-  return frozenFrameRecord({ disposition: "unresolved" as const });
+  if (/^(?:但是|但|可是)\s*没(?:有)?$/u.test(prefix)) {
+    return frozenFrameRecord({ disposition: "unresolved" as const });
+  }
+
+  return frozenFrameRecord({ disposition: "non_self" as const });
 }
 
 // These rules intentionally cover only the frozen PRODUCT-0.1 subject forms.

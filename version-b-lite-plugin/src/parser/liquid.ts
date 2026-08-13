@@ -18,6 +18,7 @@ export interface PlainWaterMatch {
 const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
 const ADJUNCT_START = /(?:时|后)?(?:看见|看到|拿着|放着|旁边|桌上|还有|使用|用了)/u;
 const PUNCTUATED_WATER_CONTINUATION = /^\s*[，,]\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
+const MAX_WATER_OCCURRENCES = 256;
 
 function frozenRecord<T extends object>(entries: T): Readonly<T> {
   return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
@@ -49,11 +50,13 @@ function plainWaterMatch(entries: {
 export interface WaterFrameScan {
   readonly self_matches: readonly Readonly<PlainWaterMatch>[];
   readonly non_self_direct_count: number;
+  readonly occurrence_limit_exceeded: boolean;
 }
 
 export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan> {
   const selfMatches: Readonly<PlainWaterMatch>[] = [];
   let nonSelfDirectCount = 0;
+  let occurrenceLimitExceeded = false;
   let inherited: PredicateFrameSubjectResolution | null = null;
   for (const frame of parseIngestionPredicateFrames(sourceText)) {
     const subject = resolvePredicateFrameSubject(frame, inherited);
@@ -87,8 +90,18 @@ export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan>
       });
       waterIndex += 1;
       if (match === null) continue;
-      if (subject.disposition === "resolved") selfMatches.push(match);
-      else nonSelfDirectCount += 1;
+      if (subject.disposition === "resolved") {
+        if (selfMatches.length >= MAX_WATER_OCCURRENCES) {
+          occurrenceLimitExceeded = true;
+        } else {
+          selfMatches.push(match);
+        }
+      } else if (subject.disposition === "non_self" &&
+        nonSelfDirectCount >= MAX_WATER_OCCURRENCES) {
+        occurrenceLimitExceeded = true;
+      } else if (subject.disposition === "non_self") {
+        nonSelfDirectCount += 1;
+      }
     }
     if (subject.disposition !== "resolved") continue;
     const afterFrame = sourceText.slice(frame.frame_span.end);
@@ -107,12 +120,19 @@ export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan>
         raw_text: punctuated[0],
         quantity_text: quantityText,
       });
-      if (match !== null) selfMatches.push(match);
+      if (match !== null) {
+        if (selfMatches.length >= MAX_WATER_OCCURRENCES) {
+          occurrenceLimitExceeded = true;
+        } else {
+          selfMatches.push(match);
+        }
+      }
     }
   }
   return frozenRecord({
     self_matches: Object.freeze(selfMatches),
     non_self_direct_count: nonSelfDirectCount,
+    occurrence_limit_exceeded: occurrenceLimitExceeded,
   });
 }
 
@@ -138,12 +158,21 @@ export function classifyMealLiquid(
 ): Readonly<CoreLiquidClassification> | null {
   const liquids = items.filter((item) => item.kind === "nutritious_drink");
   if (liquids.length === 0) return null;
-  const knownMl = liquids.every((item) =>
-    item.unit === "ml" && item.quantity !== null
-  )
-    ? liquids.reduce((total, item) => total + (item.quantity ?? 0), 0)
-    : null;
-  return Object.freeze({
+  let knownMl: number | null = 0;
+  for (const item of liquids) {
+    if (knownMl === null) break;
+    if (item.unit !== "ml" || item.quantity === null) {
+      knownMl = null;
+      break;
+    }
+    const nextTotal: number = knownMl + item.quantity;
+    if (!Number.isSafeInteger(nextTotal) || nextTotal <= 0) {
+      knownMl = null;
+      break;
+    }
+    knownMl = nextTotal;
+  }
+  return frozenRecord({
     plain_water: false,
     plain_water_contribution_ml: 0,
     ...(knownMl === null ? {} : { food_water_upper_bound_ml: knownMl }),

@@ -5,7 +5,11 @@ import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.j
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
 import { parseIngestionPredicateFrames } from "../../src/parser/predicate-frame.js";
 import { resolveMealFrames } from "../../src/parser/meal.js";
-import { matchExplicitPlainWaters } from "../../src/parser/liquid.js";
+import {
+  classifyMealLiquid,
+  matchExplicitPlainWaters,
+  resolveWaterFrames,
+} from "../../src/parser/liquid.js";
 import type { CoreParseResult } from "../../src/parser/types.js";
 
 const SELECTED_IDS = Object.freeze([
@@ -846,6 +850,241 @@ describe("core parser quality boundaries", () => {
       "predicate:1:7-8",
     ]);
     expectDeepFrozen(frames);
+  });
+
+  it("models the frozen self-share construction as an event-local drink fact", () => {
+    const sourceText = "我和朋友一人一瓶牛奶。";
+    const frames = parseIngestionPredicateFrames(sourceText);
+    const meal = resolveMealFrames(sourceText);
+
+    expect(frames).toMatchObject([{
+      event_id: "predicate:0:6-6",
+      predicate: "drink",
+      subject_prefix_span: { raw: "我和朋友一人", start: 0, end: 6 },
+      predicate_span: { raw: "", start: 6, end: 6 },
+      object_span: { raw: "一瓶牛奶", start: 6, end: 10 },
+    }]);
+    expect(meal.proposed_items).toMatchObject([{
+      event_id: "predicate:0:6-6",
+      occurrence_id: "object:0:0:8-10",
+      normalized_name: "milk",
+    }]);
+    expectDeepFrozen(frames);
+    expectDeepFrozen(meal);
+  });
+
+  it.each([
+    "朋友说我和朋友一人一瓶牛奶。",
+    "我买了我和朋友一人一瓶牛奶。",
+    "我和朋友一人一瓶牛奶，但是没喝。",
+  ])("does not let self-share text bypass event completion: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText).disposition).not.toBe("candidate");
+  });
+
+  it("aggregates self-share with another real meal event", () => {
+    expect(requiredMeal(
+      variant("我吃了一个苹果，我和朋友一人一瓶牛奶。"),
+    ).items).toMatchObject([
+      { normalized_name: "apple", quantity: 1, unit: "piece" },
+      { normalized_name: "milk", quantity: 1, unit: "bottle" },
+    ]);
+  });
+
+  it.each([
+    ["我吃了亏后来买了一个苹果。", "买", "apple"],
+    ["我吃完饭后买了苹果。", "买", "apple"],
+    ["我喝了药然后买了茶。", "买", "tea"],
+    ["我喝了咖啡时看见一瓶牛奶。", "看见", "milk"],
+    ["我吃了一个苹果后拿着一片面包。", "拿着", "bread"],
+    ["我吃了一个苹果时提到一块鸡胸肉。", "提到", "chicken"],
+    ["我吃了一个苹果后说鸡蛋。", "说", "egg"],
+    ["我吃了一个苹果后问面包。", "问", "bread"],
+    ["我吃了一个苹果后购买牛奶。", "购买", "milk"],
+  ])("terminates a predicate object before a non-ingestion action: %s", (
+    sourceText,
+    terminal,
+    forbiddenItem,
+  ) => {
+    const frames = parseIngestionPredicateFrames(sourceText);
+    expect(frames[0]?.object_span.raw).not.toContain(terminal);
+    const result = variant(sourceText);
+    if (result.disposition === "candidate" && result.command.action === "record_meal") {
+      expect(result.command.items.map((item) => item.normalized_name))
+        .not.toContain(forbiddenItem);
+    }
+  });
+
+  it("keeps the frozen purchase modifier inside the milk object", () => {
+    expect(requiredMeal(parseSelected("CASE-MEAL-002")).items).toMatchObject([{
+      normalized_name: "milk",
+    }]);
+  });
+
+  it.each([
+    "又",
+    "再",
+    "并",
+    "并且",
+    "同时",
+    "然后",
+    "接着",
+    "后来",
+    "随后",
+    "以及",
+    "和",
+    "与",
+    "、",
+  ])("inherits a completed self event through the bounded connector: %s", (
+    connector,
+  ) => {
+    expect(requiredMeal(variant(`我吃鸡蛋${connector}吃苹果。`)).items.map((item) =>
+      item.normalized_name
+    )).toEqual(["egg", "apple"]);
+  });
+
+  it.each(["再", "并", "同时"])(
+    "fails a mixed meal/water continuation closed: %s",
+    (connector) => {
+      const result = variant(`我喝了咖啡${connector}喝300ml水。`);
+      expect(result).toMatchObject({
+        disposition: "needs_clarification",
+        action: "record_meal",
+      });
+    },
+  );
+
+  it("fails multiple coordinated water occurrences closed", () => {
+    expect(variant("我喝了300ml水然后又喝200ml水。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_water",
+    });
+  });
+
+  it.each([
+    "我吃鸡蛋又吃药。",
+    "我喝300ml水再喝药。",
+  ])("does not partially commit an incomplete continuation: %s", (sourceText) => {
+    expect(variant(sourceText).disposition).toBe("needs_clarification");
+  });
+
+  it("keeps a complete catalog object before a continued event", () => {
+    expect(requiredMeal(variant("我吃了一个香蕉然后吃了鸡蛋。")).items.map((item) =>
+      item.normalized_name
+    )).toEqual(["banana", "egg"]);
+  });
+
+  it.each([
+    ["我吃了两个香蕉。", 2],
+    ["我吃了三个香蕉。", 3],
+    ["我吃了十个香蕉。", 10],
+    ["我吃了香蕉。", 1],
+    ["我吃了三个苹果。", 3],
+  ])("binds an adjacent bounded amount to its occurrence: %s", (
+    sourceText,
+    quantity,
+  ) => {
+    expect(requiredMeal(variant(sourceText)).items[0]).toMatchObject({
+      quantity,
+      unit: "piece",
+      estimated: false,
+    });
+  });
+
+  it.each([
+    "我吃了0个香蕉。",
+    "我吃了两片香蕉。",
+    "我喝了9007199254740992ml牛奶。",
+  ])("fails invalid explicit amount evidence closed: %s", (sourceText) => {
+    expect(variant(sourceText).disposition).toBe("needs_clarification");
+  });
+
+  it("does not truncate long safe milk evidence", () => {
+    expect(requiredMeal(
+      variant("我喝了9007199254740991ml牛奶。"),
+    ).items[0]).toMatchObject({
+      normalized_name: "milk",
+      quantity: 9_007_199_254_740_991,
+      unit: "ml",
+    });
+  });
+
+  it("fails a safe-item but unsafe liquid aggregate closed", () => {
+    expect(variant(
+      "我喝了9007199254740990ml牛奶又喝了2ml牛奶。",
+    ).disposition).toBe("needs_clarification");
+  });
+
+  it("excludes every direct object owned by a negated event", () => {
+    const command = requiredMeal(
+      variant("没吃鸡蛋和香蕉，后来吃了苹果。"),
+    );
+    expect(command.items.map((item) => item.normalized_name)).toEqual(["apple"]);
+    expect(command.excluded_items?.map((item) => item.normalized_name)).toEqual([
+      "egg",
+      "banana",
+    ]);
+  });
+
+  it("retains a later positive occurrence of the same negated item", () => {
+    const command = requiredMeal(variant("我没吃苹果又吃了苹果。"));
+    expect(command.items.map((item) => item.normalized_name)).toEqual(["apple"]);
+    expect(command.excluded_items?.map((item) => item.normalized_name)).toEqual([
+      "apple",
+    ]);
+  });
+
+  it.each([
+    "请解释医疗诊断，同时给我减重建议。",
+    "请解释医疗诊断\n给我减重建议。",
+    "可以给我减重建议吗？",
+    "我想要减重建议。",
+  ])("gives a bounded actual health request zero-write precedence: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
+  });
+
+  it("keeps liquid classification recursively immutable and null-prototype", () => {
+    const classification = classifyMealLiquid([{
+      order: 0,
+      kind: "nutritious_drink",
+      normalized_name: "milk",
+      quantity: 250,
+      unit: "ml",
+      estimated: false,
+    }]);
+    expect(classification).not.toBeNull();
+    expectDeepFrozen(classification);
+  });
+
+  it("caps meal occurrence output and clarifies atomically", () => {
+    const sourceText = `我吃了${Array.from({ length: 257 }, () => "鸡蛋").join("、")}。`;
+    const meal = resolveMealFrames(sourceText);
+    expect(meal.proposed_items).toHaveLength(256);
+    expect(meal.occurrence_limit_exceeded).toBe(true);
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_meal",
+    });
+    expectDeepFrozen(meal);
+  });
+
+  it("caps plain-water occurrence output and clarifies atomically", () => {
+    const sourceText = `我喝了${Array.from({ length: 257 }, () => "1ml水").join("和")}。`;
+    const water = resolveWaterFrames(sourceText);
+    expect(water.self_matches).toHaveLength(256);
+    expect(water.occurrence_limit_exceeded).toBe(true);
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_water",
+    });
+    expectDeepFrozen(water);
   });
 
   it("assigns deterministic occurrence identities to owned object spans", () => {

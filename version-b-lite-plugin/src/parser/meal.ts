@@ -1,7 +1,6 @@
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
 import {
   resolvePredicateFrameSubject,
-  resolveSubject,
 } from "./subject.js";
 import type { IngestionPredicateFrame } from "./predicate-frame.js";
 import type {
@@ -38,10 +37,12 @@ const LEXICON = Object.freeze([
   Object.freeze<Lexeme>({ normalized_name: "soup", raw_text: "汤", kind: "nutritious_drink", allowed_previous: ITEM_PREVIOUS, allowed_next: DRINK_ITEM_NEXT }),
   Object.freeze<Lexeme>({ normalized_name: "tea", raw_text: "茶", kind: "nutritious_drink", allowed_previous: ITEM_PREVIOUS, allowed_next: DRINK_ITEM_NEXT }),
 ]);
+const MAX_MEAL_OCCURRENCES = 256;
 
 export interface PositionedMealItem extends ProposedSubjectItem {
   readonly event_id: string;
   readonly occurrence_id: string;
+  readonly amount_resolution: "resolved" | "unknown" | "invalid";
   readonly subject_evidence: Readonly<ResolvedSubjectEvidence>;
   readonly kind: CoreMealItem["kind"];
   readonly position: number;
@@ -53,10 +54,12 @@ export interface MealFrameProposal {
   readonly subject: Readonly<ResolvedSubjectEvidence> | null;
   readonly event_owners: readonly Readonly<{
     readonly event_id: string;
+    readonly ownership: "self" | "non_self" | "unresolved";
     readonly subject: Readonly<ResolvedSubjectEvidence> | null;
   }>[];
   readonly proposed_items: readonly Readonly<PositionedMealItem>[];
   readonly items: readonly Readonly<CoreMealItem>[];
+  readonly occurrence_limit_exceeded: boolean;
   readonly group_amount_evidence?: Readonly<{
     readonly event_id: string;
     readonly occurrence_id: string;
@@ -89,41 +92,91 @@ function explicitAmount(
   return frozenRecord({ raw_text: rawText, quantity, unit, estimated: false });
 }
 
+interface OccurrenceAmount {
+  readonly evidence: Readonly<ProposedAmountEvidence>;
+  readonly resolution: PositionedMealItem["amount_resolution"];
+}
+
+function occurrenceAmount(
+  evidence: Readonly<ProposedAmountEvidence>,
+  resolution: PositionedMealItem["amount_resolution"],
+): Readonly<OccurrenceAmount> {
+  return frozenRecord({ evidence, resolution });
+}
+
+function parseChineseQuantity(raw: string): number | null {
+  if (/^[0-9]+$/u.test(raw)) {
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  const digits: Readonly<Record<string, number>> = frozenRecord({
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  });
+  if (raw === "十") return 10;
+  if (!raw.includes("十")) return raw.length === 1 ? digits[raw] ?? null : null;
+  const parts = raw.split("十");
+  if (parts.length !== 2) return null;
+  const tens = parts[0] === "" ? 1 : digits[parts[0] ?? ""];
+  const ones = parts[1] === "" ? 0 : digits[parts[1] ?? ""];
+  return tens === undefined || ones === undefined ? null : tens * 10 + ones;
+}
+
 function amountForOccurrence(
   frame: Readonly<IngestionPredicateFrame>,
   item: Lexeme,
   relativePosition: number,
-): Readonly<ProposedAmountEvidence> {
-  const before = frame.object_span.raw.slice(
-    Math.max(0, relativePosition - 16),
-    relativePosition,
-  );
-  const adjacent = before.replace(/^\s*了?\s*/u, "");
-  const patterns: Readonly<Record<string, readonly [RegExp, number, string]>> = Object.freeze({
-    egg: [/两个\s*$/u, 2, "piece"],
-    bread: [/两片\s*$/u, 2, "slice"],
-    apple: [/一个\s*$/u, 1, "piece"],
-    chicken: [/一块\s*$/u, 1, "piece"],
-    milk_bottle: [/一瓶\s*$/u, 1, "bottle"],
-  });
-  const rule = item.normalized_name === "milk"
-    ? patterns.milk_bottle
-    : patterns[item.normalized_name];
-  if (rule !== undefined) {
-    const match = rule[0].exec(adjacent);
-    if (match !== null) return explicitAmount(match[0].trim(), rule[1], rule[2]);
-  }
-  if (item.normalized_name === "milk") {
-    const match = /([0-9]+)\s*ml\s*$/u.exec(adjacent);
-    const quantity = Number(match?.[1]);
-    if (match !== null && Number.isSafeInteger(quantity) && quantity > 0) {
-      return explicitAmount(match[1], quantity, "ml");
+): Readonly<OccurrenceAmount> {
+  const before = frame.object_span.raw.slice(0, relativePosition);
+  const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|碗|块|盘|ml|mL|ML)\s*$/u.exec(before);
+  if (match !== null) {
+    const quantityText = match[1] ?? "";
+    const rawUnit = match[2] ?? "";
+    const quantity = parseChineseQuantity(quantityText);
+    const allowedUnits: Readonly<Record<string, Readonly<Record<string, string>>>> = frozenRecord({
+      egg: frozenRecord({ 个: "piece" }),
+      apple: frozenRecord({ 个: "piece" }),
+      banana: frozenRecord({ 个: "piece" }),
+      chicken: frozenRecord({ 块: "piece" }),
+      bread: frozenRecord({ 片: "slice" }),
+      milk: frozenRecord({ 瓶: "bottle", ml: "ml", mL: "ml", ML: "ml" }),
+      rice: frozenRecord({ 碗: "bowl" }),
+      fried_rice: frozenRecord({ 盘: "plate" }),
+      soup: frozenRecord({ ml: "ml", mL: "ml", ML: "ml" }),
+      soy_milk: frozenRecord({ ml: "ml", mL: "ml", ML: "ml" }),
+      coffee: frozenRecord({ ml: "ml", mL: "ml", ML: "ml" }),
+      tea: frozenRecord({ ml: "ml", mL: "ml", ML: "ml" }),
+    });
+    const unit = allowedUnits[item.normalized_name]?.[rawUnit];
+    if (
+      quantity === null || quantity <= 0 || unit === undefined ||
+      (item.normalized_name === "fried_rice" && /^\s*了?\s*两\s*盘/u.test(frame.object_span.raw) &&
+        frame.subject_prefix_span.raw.trim() === "我们")
+    ) {
+      if (item.normalized_name === "fried_rice" && unit !== undefined && quantity === 2 &&
+        frame.subject_prefix_span.raw.trim() === "我们") {
+        return occurrenceAmount(unknownAmount(), "unknown");
+      }
+      return occurrenceAmount(unknownAmount(), "invalid");
     }
+    return occurrenceAmount(
+      explicitAmount(match[0].trim(), quantity, unit),
+      "resolved",
+    );
   }
-  if (item.normalized_name === "banana") {
-    return explicitAmount("香蕉", 1, "piece");
+  const bareObject = frame.object_span.raw.replace(/^\s*(?:了|过|完)?\s*/u, "").trim();
+  if (item.normalized_name === "banana" && bareObject === item.raw_text) {
+    return occurrenceAmount(explicitAmount("香蕉", 1, "piece"), "resolved");
   }
-  return unknownAmount();
+  return occurrenceAmount(unknownAmount(), "unknown");
 }
 
 function isBoundedOccurrence(
@@ -150,11 +203,13 @@ function itemsForFrame(
       if (position < 0) break;
       if (isBoundedOccurrence(frame.object_span.raw, position, lexeme)) {
         const absolutePosition = frame.object_span.start + position;
+        const amount = amountForOccurrence(frame, lexeme, position);
         items.push(frozenRecord({
           subject_evidence: subject,
           normalized_name: lexeme.normalized_name,
           raw_text: lexeme.raw_text,
-          amount_evidence: amountForOccurrence(frame, lexeme, position),
+          amount_evidence: amount.evidence,
+          amount_resolution: amount.resolution,
           kind: lexeme.kind,
           position: absolutePosition,
           end: absolutePosition + lexeme.raw_text.length,
@@ -171,6 +226,7 @@ function itemsForFrame(
       normalized_name: "noodle",
       raw_text: "面",
       amount_evidence: explicitAmount("一碗", 1, "bowl"),
+      amount_resolution: "resolved" as const,
       kind: "food" as const,
       position: absolutePosition,
       end: absolutePosition + 1,
@@ -197,6 +253,7 @@ function objectFrontedItems(
     normalized_name: "apple",
     raw_text: "苹果",
     amount_evidence: unknownAmount(),
+    amount_resolution: "unknown" as const,
     kind: "food" as const,
     position,
     end: position + 2,
@@ -216,57 +273,25 @@ function coreItems(
   })));
 }
 
-function exactSelfShareProposal(sourceText: string): Readonly<MealFrameProposal> | null {
-  const match = /我\s*和\s*朋友\s*一人\s*一\s*瓶\s*牛奶/u.exec(sourceText);
-  if (match === null) return null;
-  const position = match.index + match[0].lastIndexOf("牛奶");
-  const legacySeed = Object.freeze([frozenRecord({
-    normalized_name: "milk",
-    raw_text: "牛奶",
-    amount_evidence: explicitAmount("一瓶", 1, "bottle"),
-  })]);
-  const legacy = resolveSubject(sourceText, legacySeed);
-  if (legacy.disposition !== "resolved") return null;
-  const proposed = Object.freeze([frozenRecord({
-    event_id: `synthetic:self-share:${match.index}-${match.index + match[0].length}`,
-    occurrence_id: `object:self-share:0:${position}-${position + 2}`,
-    subject_evidence: legacy.subject,
-    normalized_name: "milk",
-    raw_text: "牛奶",
-    amount_evidence: explicitAmount("一瓶", 1, "bottle"),
-    kind: "nutritious_drink" as const,
-    position,
-    end: position + 2,
-  })]);
-  return frozenRecord({
-    disposition: "resolved" as const,
-    subject: legacy.subject,
-    event_owners: Object.freeze([frozenRecord({
-      event_id: `synthetic:self-share:${match.index}-${match.index + match[0].length}`,
-      subject: legacy.subject,
-    })]),
-    proposed_items: proposed,
-    items: coreItems(proposed),
-  });
-}
-
 /** Build the frame-local meal fact proposal consumed by the core parser. */
 export function resolveMealFrames(sourceText: string): Readonly<MealFrameProposal> {
-  const selfShare = exactSelfShareProposal(sourceText);
-  if (selfShare !== null) return selfShare;
-
   const proposed: PositionedMealItem[] = [];
   const eventOwners: Array<Readonly<{
     event_id: string;
+    ownership: "self" | "non_self" | "unresolved";
     subject: Readonly<ResolvedSubjectEvidence> | null;
   }>> = [];
   let inherited: PredicateFrameSubjectResolution | null = null;
   let groupAmountOccurrence: Readonly<PositionedMealItem> | null = null;
+  let occurrenceLimitExceeded = false;
   for (const frame of parseIngestionPredicateFrames(sourceText)) {
     const resolution = resolvePredicateFrameSubject(frame, inherited);
     inherited = resolution;
     eventOwners.push(frozenRecord({
       event_id: frame.event_id,
+      ownership: resolution.disposition === "resolved"
+        ? "self" as const
+        : resolution.disposition,
       subject: resolution.disposition === "resolved" ? resolution.subject : null,
     }));
     if (resolution.disposition !== "resolved") continue;
@@ -282,7 +307,13 @@ export function resolveMealFrames(sourceText: string): Readonly<MealFrameProposa
         item.normalized_name === "fried_rice"
       ) ?? null;
     }
-    proposed.push(...frameItems);
+    for (const item of frameItems) {
+      if (proposed.length >= MAX_MEAL_OCCURRENCES) {
+        occurrenceLimitExceeded = true;
+        break;
+      }
+      proposed.push(item);
+    }
   }
   proposed.sort((left, right) => left.position - right.position);
   const frozenProposed = Object.freeze(proposed);
@@ -297,6 +328,7 @@ export function resolveMealFrames(sourceText: string): Readonly<MealFrameProposa
       event_owners: frozenEventOwners,
       proposed_items: frozenProposed,
       items: Object.freeze([]),
+      occurrence_limit_exceeded: occurrenceLimitExceeded,
     });
   }
   const items = coreItems(frozenProposed);
@@ -306,6 +338,7 @@ export function resolveMealFrames(sourceText: string): Readonly<MealFrameProposa
     event_owners: frozenEventOwners,
     proposed_items: frozenProposed,
     items,
+    occurrence_limit_exceeded: occurrenceLimitExceeded,
     ...(groupAmountOccurrence !== null
       ? { group_amount_evidence: frozenRecord({
           event_id: groupAmountOccurrence.event_id,

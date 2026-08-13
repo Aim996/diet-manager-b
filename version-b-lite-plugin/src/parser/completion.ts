@@ -1,3 +1,7 @@
+import { resolveMealFrames } from "./meal.js";
+import { parseIngestionPredicateFrames } from "./predicate-frame.js";
+import type { PositionedMealItem } from "./meal.js";
+
 export const COMPLETION_RULE_VERSION = "diet-manager/completion-v1" as const;
 
 export interface CompletionMatchedEvidence {
@@ -83,78 +87,6 @@ function clarificationAction(sourceText: string): "record_meal" | "record_water"
     : "record_meal";
 }
 
-interface ItemNegationRule extends CompletionRule {
-  readonly normalized_name: string;
-}
-
-const ITEM_NEGATION_RULES = Object.freeze([
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.egg",
-    normalized_name: "egg",
-    pattern: /没(?:有)?\s*吃\s*鸡蛋(?!糕)/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.apple",
-    normalized_name: "apple",
-    pattern: /没(?:有)?\s*吃\s*苹果(?!派)/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.banana",
-    normalized_name: "banana",
-    pattern: /没(?:有)?\s*吃\s*香蕉(?!船)/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.bread",
-    normalized_name: "bread",
-    pattern: /没(?:有)?\s*吃\s*面包(?!虫)/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.rice",
-    normalized_name: "rice",
-    pattern: /没(?:有)?\s*吃\s*米饭/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.fried_rice",
-    normalized_name: "fried_rice",
-    pattern: /没(?:有)?\s*吃\s*炒饭/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.noodle",
-    normalized_name: "noodle",
-    pattern: /没(?:有)?\s*吃\s*面(?!包)/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.chicken",
-    normalized_name: "chicken",
-    pattern: /没(?:有)?\s*吃\s*鸡胸肉/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.milk",
-    normalized_name: "milk",
-    pattern: /没(?:有)?\s*喝\s*牛奶/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.soup",
-    normalized_name: "soup",
-    pattern: /没(?:有)?\s*喝\s*汤/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.soy_milk",
-    normalized_name: "soy_milk",
-    pattern: /没(?:有)?\s*喝\s*豆浆/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.coffee",
-    normalized_name: "coffee",
-    pattern: /没(?:有)?\s*喝\s*咖啡/u,
-  }),
-  Object.freeze<ItemNegationRule>({
-    rule_id: "completion.item-negation.tea",
-    normalized_name: "tea",
-    pattern: /没(?:有)?\s*喝\s*茶/u,
-  }),
-]);
-
 function matchEvidence(
   sourceText: string,
   rule: CompletionRule,
@@ -206,6 +138,7 @@ function matchInterrogativeEvidence(
 
 export function classifyCompletion(
   sourceText: string,
+  parsedOccurrences?: readonly Readonly<PositionedMealItem>[],
 ): CompletionClassification {
   const interrogative = matchInterrogativeEvidence(sourceText);
   if (interrogative !== null) {
@@ -263,11 +196,28 @@ export function classifyCompletion(
         rule_version: COMPLETION_RULE_VERSION,
       });
 
-  const excludedItems = ITEM_NEGATION_RULES.flatMap((rule) => {
-    const evidence = matchEvidence(sourceText, rule);
-    if (evidence === null) return [];
+  const occurrences = parsedOccurrences ?? resolveMealFrames(sourceText).proposed_items;
+  const negatedEvents = new Map<string, number>();
+  for (const frame of parseIngestionPredicateFrames(sourceText)) {
+    const negation = /没(?:有)?\s*$/u.exec(frame.subject_prefix_span.raw);
+    if (negation === null) continue;
+    negatedEvents.set(
+      frame.event_id,
+      frame.subject_prefix_span.start + negation.index,
+    );
+  }
+  const excludedItems = occurrences.flatMap((occurrence) => {
+    const negationStart = negatedEvents.get(occurrence.event_id);
+    if (negationStart === undefined) return [];
+    const evidence = Object.freeze({
+      rule_id: `completion.item-negation.${occurrence.normalized_name}` as const,
+      raw: sourceText.slice(negationStart, occurrence.end),
+      start: negationStart,
+      end: occurrence.end,
+      rule_version: COMPLETION_RULE_VERSION,
+    });
     return [Object.freeze({
-      normalized_name: rule.normalized_name,
+      normalized_name: occurrence.normalized_name,
       reason_code: "item_scoped_negation" as const,
       matched_span: evidence.raw,
       matched_evidence: evidence,

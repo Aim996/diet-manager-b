@@ -29,8 +29,13 @@ interface PredicateAnchor {
 
 const EAT_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|汤|茶|面)/u;
 const DRINK_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|白水|水|牛奶|豆浆|汤|咖啡|茶)/u;
-const OWNED_OBJECT_PREFIX = /^\s*(?:了|过|完)?\s*(?:(?:两个?|二个)\s*鸡蛋|鸡蛋|两片\s*面包|面包|(?:[0-9]+\s*ml|一瓶)\s*牛奶|牛奶|一个\s*苹果|苹果|香蕉|米饭|一碗\s*面|一块\s*鸡胸肉|鸡胸肉|两盘\s*炒饭|炒饭|汤|豆浆|咖啡|茶|[0-9]+\s*ml\s*(?:白水|水))/u;
-const LEADING_CONNECTOR = /^(然后|接着|后来|和|又)/u;
+const OWNED_OBJECT_ATOM = String.raw`(?:(?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|碗|块|盘|ml|mL|ML)\s*)?(?:鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包))`;
+const OWNED_OBJECT_PREFIX = new RegExp(
+  String.raw`^\s*(?:了|过|完)?\s*(?:昨天\s*买\s*的\s*)?${OWNED_OBJECT_ATOM}(?:\s*(?:和|与|、)\s*${OWNED_OBJECT_ATOM})*`,
+  "u",
+);
+const LEADING_CONNECTOR = /^(?:(?:然后|接着|后来|随后|又|再|并且|并|同时|以及|和|与|、)\s*)+/u;
+const NON_INGESTION_ACTION = /(购买|看见|拿着|提到|买|说|问)/gu;
 
 interface FrameBoundary {
   readonly frame_start: number;
@@ -86,8 +91,18 @@ function predicateAnchors(
   sourceText: string,
   clause: ClauseSpan,
 ): readonly PredicateAnchor[] {
+  const clauseText = sourceText.slice(clause.start, clause.end);
+  const selfShare = /^我\s*和\s*朋友\s*一人\s*(?=一\s*瓶\s*牛奶\s*$)/u.exec(clauseText);
+  if (selfShare !== null) {
+    const position = clause.start + selfShare[0].length;
+    return Object.freeze([frozenRecord({
+      start: position,
+      end: position,
+      predicate: "drink" as const,
+    })]);
+  }
   const anchors: PredicateAnchor[] = [];
-  for (const match of sourceText.slice(clause.start, clause.end).matchAll(/[吃喝]/gu)) {
+  for (const match of clauseText.matchAll(/[吃喝]/gu)) {
     const start = clause.start + match.index;
     const remainder = sourceText.slice(
       start + 1,
@@ -151,6 +166,24 @@ function nextBoundary(
   });
 }
 
+function boundedObjectEnd(
+  sourceText: string,
+  start: number,
+  end: number,
+): number {
+  const raw = sourceText.slice(start, end);
+  for (const match of raw.matchAll(NON_INGESTION_ACTION)) {
+    const token = match[0];
+    const before = raw.slice(0, match.index);
+    const after = raw.slice(match.index + token.length);
+    if (token === "买" && /昨天\s*$/u.test(before) && /^\s*的/u.test(after)) {
+      continue;
+    }
+    return start + match.index;
+  }
+  return end;
+}
+
 /**
  * Split bounded Chinese ingestion syntax into immutable predicate-local spans.
  * This is a lexical frame pass only; subject authority is resolved separately.
@@ -187,16 +220,17 @@ export function parseIngestionPredicateFrames(
       const frameStart = starts[index];
       const frameEnd = ends[index];
       if (anchor === undefined || frameStart === undefined || frameEnd === undefined) continue;
+      const objectEnd = boundedObjectEnd(sourceText, anchor.end, frameEnd);
       frames.push(frozenRecord({
         event_index: frames.length,
         event_id: `predicate:${frames.length}:${anchor.start}-${anchor.end}`,
         predicate: anchor.predicate,
         coordination: coordinations[index] ?? "none",
         clause_span: sourceSpan(sourceText, clause.start, clause.end),
-        frame_span: sourceSpan(sourceText, frameStart, frameEnd),
+        frame_span: sourceSpan(sourceText, frameStart, objectEnd),
         subject_prefix_span: sourceSpan(sourceText, frameStart, anchor.start),
         predicate_span: sourceSpan(sourceText, anchor.start, anchor.end),
-        object_span: sourceSpan(sourceText, anchor.end, frameEnd),
+        object_span: sourceSpan(sourceText, anchor.end, objectEnd),
       }));
     }
   }

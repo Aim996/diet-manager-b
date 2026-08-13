@@ -6,6 +6,7 @@ import {
   resolveWaterFrames,
 } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
+import { parseIngestionPredicateFrames } from "./predicate-frame.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
@@ -19,17 +20,18 @@ import type {
 import type { ResolvedSubjectEvidence } from "./subject.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_ACTUAL_CLAUSE = /^(?:(?:我\s*需要|能\s*给我|请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?:\s*(?:或|和|与)\s*(?:医疗\s*诊断|减重\s*建议))*\s*(?:吗|么|嘛)?$/u;
+const HEALTH_ACTUAL_CLAUSE = /^(?:(?:我\s*(?:需要|想要)|能\s*给我|可以\s*给我|请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?:\s*(?:或|和|与)\s*(?:医疗\s*诊断|减重\s*建议))*\s*(?:吗|么|嘛)?$/u;
 const HEALTH_EXPLANATION_CLAUSE = /^(?:(?:(?:请\s*解释|帮我\s*理解|我想知道)\s*(?:医疗\s*诊断|减重\s*建议))(?:这个词)?(?:\s*(?:是(?:什么|什么意思)|是什么意思))?|什么\s*是\s*(?:医疗\s*诊断|减重\s*建议))$/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+const MAX_CORE_OCCURRENCES = 256;
 
 type HealthIntent = "actual_request" | "terminology_explanation" | null;
 
 function classifyHealthIntent(sourceText: string): HealthIntent {
   let explanation = false;
-  for (const rawClause of sourceText.split(/(?:[，,。；;！？!?]+|然后)/u)) {
+  for (const rawClause of sourceText.split(/(?:[，,。；;！？!?\r\n]+|然后|同时)/u)) {
     const clause = rawClause.trim();
     if (clause.length === 0) continue;
     if (HEALTH_ACTUAL_CLAUSE.test(clause)) return "actual_request";
@@ -164,6 +166,23 @@ function retainedMealEntries(
   return Object.freeze(retained);
 }
 
+function hasUnsafeMealLiquidAggregate(
+  retained: readonly Readonly<RetainedMealEntry>[],
+): boolean {
+  let knownMl = 0;
+  for (const { item } of retained) {
+    if (
+      item.kind !== "nutritious_drink" || item.unit !== "ml" ||
+      item.quantity === null
+    ) continue;
+    const next = knownMl + item.quantity;
+    if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0 ||
+      !Number.isSafeInteger(next)) return true;
+    knownMl = next;
+  }
+  return false;
+}
+
 function mealCandidate(
   input: Readonly<CoreParseInput>,
   completion: ProceedCompletion,
@@ -282,7 +301,23 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
 
-  const completion = classifyCompletion(input.source_text);
+  const occurrenceCount = meal.proposed_items.length +
+    waterResolution.self_matches.length +
+    waterResolution.non_self_direct_count;
+  if (
+    meal.occurrence_limit_exceeded ||
+    waterResolution.occurrence_limit_exceeded ||
+    occurrenceCount > MAX_CORE_OCCURRENCES
+  ) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: meal.proposed_items.length > 0 ? "record_meal" : "record_water",
+      reason_code: "unsupported_command",
+      question: "单条消息中的饮食项目过多，请拆分后记录。",
+    });
+  }
+
+  const completion = classifyCompletion(input.source_text, meal.proposed_items);
   if (completion.disposition === "needs_clarification") {
     return detachedFrozen({
       disposition: "needs_clarification",
@@ -309,6 +344,45 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
   const retainedMeal = retainedMealEntries(meal, completion);
+  if (
+    retainedMeal.some(({ occurrence }) =>
+      occurrence.amount_resolution === "invalid"
+    ) || hasUnsafeMealLiquidAggregate(retainedMeal)
+  ) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "amount_ambiguous",
+      question: "数量无效或超出可安全记录的范围，请重新说明。",
+    });
+  }
+  const recognizedEventIds = new Set([
+    ...meal.proposed_items.map((item) => item.event_id),
+    ...waterResolution.self_matches.map((match) => match.event_id),
+  ]);
+  if (completion.completion_evidence !== null) {
+    for (const frame of parseIngestionPredicateFrames(input.source_text)) {
+      if (frame.frame_span.raw.includes(completion.completion_evidence.winning_span)) {
+        recognizedEventIds.add(frame.event_id);
+      }
+    }
+  }
+  const hasResolvedOccurrence = retainedMeal.length > 0 ||
+    waterResolution.self_matches.length > 0;
+  if (
+    hasResolvedOccurrence &&
+    meal.event_owners.some((owner) =>
+      owner.ownership === "unresolved" ||
+      (owner.ownership === "self" && !recognizedEventIds.has(owner.event_id))
+    )
+  ) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: retainedMeal.length > 0 ? "record_meal" : "record_water",
+      reason_code: "unsupported_command",
+      question: "请把无法确认主体或完成状态的饮食分开说明。",
+    });
+  }
 
   if (PURCHASE_WITHOUT_EXPIRY.test(input.source_text)) {
     const command = inventoryCandidate(input);
