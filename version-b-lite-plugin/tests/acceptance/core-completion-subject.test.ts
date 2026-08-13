@@ -584,4 +584,65 @@ describe("subject clause safety", () => {
       requiredItems("CASE-MEAL-017")[0].quantity,
     );
   });
+
+  it.each([
+    "小明吃了两个鸡蛋。",
+    "王老师吃了两个鸡蛋。",
+    "妈妈吃了两个鸡蛋。",
+    "隔壁阿姨喝了一瓶牛奶。",
+  ])("requires positive self proof instead of treating an unknown name as self: %s", (sourceText) => {
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+    });
+    if (result.disposition !== "ignored") throw new Error("expected ignored");
+    expect(sourceText.slice(
+      result.matched_evidence.start,
+      result.matched_evidence.end,
+    )).toBe(result.matched_evidence.raw);
+    expect(result.matched_evidence.rule_id).toBe(
+      "subject.explicit-non-self.unknown-subject",
+    );
+  });
+
+  it("does not treat the 他 substring in 其他 as an explicit third-person subject", () => {
+    const sourceText = "其他时候吃了两个鸡蛋。";
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "resolved",
+      subject: {
+        kind: "self",
+        resolution_basis: "omitted_subject_default",
+      },
+    });
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.subject.matched_evidence).toBeNull();
+  });
+
+  it("accepts an explicit self clause without relying on omission", () => {
+    const sourceText = "我吃了两个鸡蛋。";
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "resolved",
+      subject: {
+        kind: "self",
+        resolution_basis: "explicit_self",
+        matched_span: "我",
+      },
+    });
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expectMatchedSpan(
+      sourceText,
+      result.subject.matched_evidence!,
+      "subject.explicit-self.me",
+      "diet-manager/subject-v1",
+    );
+  });
 });

@@ -17,6 +17,8 @@ export interface SubjectMatchedEvidence {
   readonly rule_id:
     | "subject.explicit-non-self.child"
     | "subject.explicit-non-self.third-person"
+    | "subject.explicit-non-self.unknown-subject"
+    | "subject.explicit-self.me"
     | "subject.explicit-self-share.friend"
     | "subject.collective-self.we"
     | "subject.group-amount.two-plates";
@@ -30,6 +32,7 @@ interface ResolvedSubjectEvidence {
   readonly kind: "self";
   readonly resolution_basis:
     | "omitted_subject_default"
+    | "explicit_self"
     | "explicit_self_share"
     | "collective_self_participation";
   readonly subject_entity_created: false;
@@ -71,18 +74,24 @@ interface SubjectRule {
 // These rules intentionally cover only the frozen PRODUCT-0.1 subject forms.
 const EXPLICIT_NON_SELF_CHILD = Object.freeze<SubjectRule>({
   rule_id: "subject.explicit-non-self.child",
-  pattern: /孩子(?=\s*(?:吃|喝))/u,
+  pattern: /^\s*孩子(?=\s*(?:吃|喝))/u,
 });
 
 const EXPLICIT_NON_SELF_THIRD_PERSON = Object.freeze<SubjectRule>({
   rule_id: "subject.explicit-non-self.third-person",
-  pattern: /(?:朋友|同事|家人|他们|他|她)(?=\s*(?:吃|喝))/u,
+  pattern: /^\s*(?:朋友|同事|家人|他们|他|她)(?=\s*(?:吃|喝))/u,
 });
 
-const UNRESOLVED_THIRD_PERSON_MARKER = Object.freeze<SubjectRule>({
-  rule_id: "subject.explicit-non-self.third-person",
-  pattern: /(?:朋友|孩子|同事|家人|他们|他|她)/u,
+const EXPLICIT_SELF = Object.freeze<SubjectRule>({
+  rule_id: "subject.explicit-self.me",
+  pattern: /^\s*我(?=\s*(?:吃|喝))/u,
 });
+
+const OMITTED_SUBJECT_GRAMMAR = Object.freeze([
+  /^\s*(?:吃|喝)(?:了|过)?/u,
+  /^\s*(?:(?:今天|昨天|前天|刚才|刚刚|早上|上午|中午|下午|晚上|夜里|其他时候|早餐|午餐|晚餐)\s*)+(?:吃|喝)(?:了|过)?/u,
+  /^\s*(?:本来不想|后来还是)\s*(?:吃|喝)(?:了|过)?/u,
+]);
 
 const EXPLICIT_SELF_SHARE_FRIEND = Object.freeze<SubjectRule>({
   rule_id: "subject.explicit-self-share.friend",
@@ -174,6 +183,42 @@ function firstClauseEvidence(
   for (const clause of clauses) {
     const evidence = matchEvidence(clause, rule);
     if (evidence !== null) return { clause, evidence };
+  }
+  return null;
+}
+
+function isOmittedSubjectClause(clause: SubjectClause): boolean {
+  return OMITTED_SUBJECT_GRAMMAR.some((pattern) => pattern.test(clause.raw));
+}
+
+function unknownClauseEvidence(clause: SubjectClause): SubjectMatchedEvidence {
+  const leadingWhitespace = /^\s*/u.exec(clause.raw)?.[0].length ?? 0;
+  const raw = clause.raw.slice(leadingWhitespace);
+  return Object.freeze({
+    rule_id: "subject.explicit-non-self.unknown-subject",
+    raw,
+    start: clause.start + leadingWhitespace,
+    end: clause.start + leadingWhitespace + raw.length,
+    rule_version: SUBJECT_RULE_VERSION,
+  });
+}
+
+function unknownSubjectEvidence(
+  clauses: readonly SubjectClause[],
+): SubjectMatchedEvidence | null {
+  const pattern = /^[^\p{Script=Han}A-Za-z]*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z0-9·]{0,15}?)(?=\s*(?:吃|喝))/u;
+  for (const clause of clauses) {
+    const match = pattern.exec(clause.raw);
+    const raw = match?.[1];
+    if (match === null || raw === undefined) continue;
+    const relativeStart = match[0].lastIndexOf(raw);
+    return Object.freeze({
+      rule_id: "subject.explicit-non-self.unknown-subject",
+      raw,
+      start: clause.start + relativeStart,
+      end: clause.start + relativeStart + raw.length,
+      rule_version: SUBJECT_RULE_VERSION,
+    });
   }
   return null;
 }
@@ -375,33 +420,69 @@ export function resolveSubject(
     });
   }
 
-  const unresolvedThirdPerson = firstEvidence(
-    relevantClauses,
-    UNRESOLVED_THIRD_PERSON_MARKER,
-  );
-  if (unresolvedThirdPerson !== null) {
+  const explicitSelf = firstClauseEvidence(relevantClauses, EXPLICIT_SELF);
+  if (explicitSelf !== null) {
+    return Object.freeze({
+      disposition: "resolved",
+      subject: Object.freeze({
+        kind: "self",
+        resolution_basis: "explicit_self",
+        subject_entity_created: false,
+        matched_span: explicitSelf.evidence.raw,
+        matched_evidence: explicitSelf.evidence,
+        rule_version: SUBJECT_RULE_VERSION,
+      }),
+      items: resolveFrozenItemAmounts(
+        [explicitSelf.clause],
+        proposedItems,
+        OMITTED_SUBJECT_ITEM_AMOUNTS,
+      ),
+    });
+  }
+
+  const omittedSubjectClause = relevantClauses.find(isOmittedSubjectClause);
+  if (omittedSubjectClause !== undefined) {
+    return Object.freeze({
+      disposition: "resolved",
+      subject: Object.freeze({
+        kind: "self",
+        resolution_basis: "omitted_subject_default",
+        subject_entity_created: false,
+        matched_span: null,
+        matched_evidence: null,
+        rule_version: SUBJECT_RULE_VERSION,
+      }),
+      items: resolveFrozenItemAmounts(
+        [omittedSubjectClause],
+        proposedItems,
+        OMITTED_SUBJECT_ITEM_AMOUNTS,
+      ),
+    });
+  }
+
+  const unknownSubject = unknownSubjectEvidence(relevantClauses) ??
+    (relevantClauses[0] === undefined
+      ? null
+      : unknownClauseEvidence(relevantClauses[0]));
+  if (unknownSubject !== null) {
     return Object.freeze({
       disposition: "ignored",
       action: "record_meal",
       reason_code: "non_self_subject",
-      matched_evidence: unresolvedThirdPerson,
+      matched_evidence: unknownSubject,
     });
   }
 
   return Object.freeze({
-    disposition: "resolved",
-    subject: Object.freeze({
-      kind: "self",
-      resolution_basis: "omitted_subject_default",
-      subject_entity_created: false,
-      matched_span: null,
-      matched_evidence: null,
+    disposition: "ignored",
+    action: "record_meal",
+    reason_code: "non_self_subject",
+    matched_evidence: Object.freeze({
+      rule_id: "subject.explicit-non-self.unknown-subject",
+      raw: sourceText,
+      start: 0,
+      end: sourceText.length,
       rule_version: SUBJECT_RULE_VERSION,
     }),
-    items: resolveFrozenItemAmounts(
-      relevantClauses,
-      proposedItems,
-      OMITTED_SUBJECT_ITEM_AMOUNTS,
-    ),
   });
 }
