@@ -18,7 +18,7 @@ export interface MealContextResolutionInput {
 }
 
 const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/u;
-const EXPLICIT_CORRECTION_PATTERN = /^\s*(?:更正|纠正|不对|改成|改为)\s*[：:]/u;
+const EXPLICIT_CORRECTION_PATTERN = /^\s*(?:更正(?:一下)?|纠正(?:一下)?|不对|改成|改为)/u;
 const INVENTORY_DISAMBIGUATION_PATTERN = /(?:公司[^。！？!?]*(?:还是|或者|或)[^。！？!?]*回家|回家[^。！？!?]*(?:还是|或者|或)[^。！？!?]*公司)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 
@@ -80,15 +80,22 @@ function copyContext(entry: CoreContextEntry): Readonly<CoreContextEntry> {
   return Object.freeze(copied);
 }
 
-function structurallyRelevant(
+function hasRevisionIdentity(
   entry: CoreContextEntry,
   input: MealContextResolutionInput,
 ): boolean {
   return entry.conversation_id === input.conversation_id &&
     entry.source_message_id !== input.source_message_id &&
     entry.source_message_id.length > 0 &&
+    Number.isSafeInteger(entry.revision) && entry.revision >= 1;
+}
+
+function structurallyRelevant(
+  entry: CoreContextEntry,
+  input: MealContextResolutionInput,
+): boolean {
+  return hasRevisionIdentity(entry, input) &&
     entry.rule_version === CONTEXT_RULE_VERSION &&
-    Number.isSafeInteger(entry.revision) && entry.revision >= 1 &&
     timestampEpoch(entry.generated_at) !== null &&
     timestampEpoch(entry.valid_until) !== null;
 }
@@ -111,19 +118,38 @@ export function resolveMealContext(
 
   const latestRevisionBySource = new Map<string, number>();
   for (const entry of input.prior_context) {
-    if (!structurallyRelevant(entry, input)) continue;
+    if (!hasRevisionIdentity(entry, input)) continue;
     latestRevisionBySource.set(
       entry.source_message_id,
       Math.max(latestRevisionBySource.get(entry.source_message_id) ?? 0, entry.revision),
     );
   }
 
+  const blockedLatestSources = new Set<string>();
+  const latestEntryCountBySource = new Map<string, number>();
+  for (const entry of input.prior_context) {
+    if (!hasRevisionIdentity(entry, input)) continue;
+    if (entry.revision !== latestRevisionBySource.get(entry.source_message_id)) continue;
+    latestEntryCountBySource.set(
+      entry.source_message_id,
+      (latestEntryCountBySource.get(entry.source_message_id) ?? 0) + 1,
+    );
+    if (!structurallyRelevant(entry, input)) {
+      blockedLatestSources.add(entry.source_message_id);
+    }
+  }
+  for (const [sourceMessageId, count] of latestEntryCountBySource) {
+    if (count !== 1) blockedLatestSources.add(sourceMessageId);
+  }
+
   const occurrenceEpoch = targetOccurrenceEpoch(input, receivedEpoch);
   const expiredContextIds: string[] = [];
   const candidates: Array<{ readonly entry: CoreContextEntry; readonly generated: number }> = [];
   for (const entry of input.prior_context) {
-    if (!structurallyRelevant(entry, input)) continue;
+    if (!hasRevisionIdentity(entry, input)) continue;
     if (entry.revision !== latestRevisionBySource.get(entry.source_message_id)) continue;
+    if (blockedLatestSources.has(entry.source_message_id)) continue;
+    if (!structurallyRelevant(entry, input)) continue;
     const generated = timestampEpoch(entry.generated_at);
     const validUntil = timestampEpoch(entry.valid_until);
     if (generated === null || validUntil === null) continue;

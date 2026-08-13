@@ -173,6 +173,43 @@ describe("core occurred-time resolution", () => {
     });
   });
 
+  it.each([
+    ["2026-08-10T16:00:00.123+08:00", "2026-08-10T16:00:00.123+08:00"],
+    ["2026-08-10T08:00:00.123Z", "2026-08-10T16:00:00.123+08:00"],
+    ["2026-08-10T17:00:00.123+09:00", "2026-08-10T16:00:00.123+08:00"],
+  ] as const)(
+    "preserves the exact fractional instant for explicit offset input %s",
+    (explicit, expectedStart) => {
+      const entry = catalogCase("CASE-MEAL-014");
+
+      expect(resolveOccurredTime(
+        `${entry.source_text} ${explicit}`,
+        "2026-08-11T08:30:00.456+08:00",
+      )).toMatchObject({
+        raw_text: explicit,
+        resolved_start: expectedStart,
+        resolved_end: "2026-08-10T16:01:00.123+08:00",
+        resolution_basis: "explicit",
+        resolution_anchor: "2026-08-11T08:30:00.456+08:00",
+      });
+    },
+  );
+
+  it("preserves fractional received-time evidence for the default interval and anchor", () => {
+    const entry = catalogCase("CASE-MEAL-014");
+
+    expect(resolveOccurredTime(
+      entry.source_text,
+      "2026-08-11T08:30:00.123+08:00",
+    )).toMatchObject({
+      raw_text: null,
+      resolved_start: "2026-08-11T08:30:00.123+08:00",
+      resolved_end: "2026-08-11T08:31:00.123+08:00",
+      resolution_basis: "default_received_at",
+      resolution_anchor: "2026-08-11T08:30:00.123+08:00",
+    });
+  });
+
   it("does not turn purchase or shelf-life evidence into an ingestion date", () => {
     const meal = catalogCase("CASE-MEAL-002");
     const purchase = catalogCase("CASE-PURCHASE-004");
@@ -271,6 +308,31 @@ describe("bounded meal context resolution", () => {
     });
   });
 
+  it.each([
+    [
+      "wrong rule version",
+      { rule_version: "diet-manager/context-v0" as "diet-manager/context-v1" },
+    ],
+    [
+      "malformed validity",
+      { valid_until: "not-an-offset-time" as OffsetIsoTimestamp },
+    ],
+  ])("does not resurrect revision one when revision two has %s", (_label, invalidFields) => {
+    const entry = catalogCase("CASE-MEAL-020");
+    const first = validContextFromCatalog();
+    const invalidSecond = {
+      ...first,
+      context_id: "context-meal-020-current-v2",
+      revision: 2,
+      ...invalidFields,
+    };
+
+    const result = resolveMealContext(contextInput(entry, [first, invalidSecond]));
+
+    expect(result.accepted_context).toBeNull();
+    expect(result.scene).toBe("unknown");
+  });
+
   it("rejects future, expired, cross-date, wrong-rule, and explicitly corrected context", () => {
     const entry = catalogCase("CASE-MEAL-020");
     const valid = validContextFromCatalog();
@@ -289,10 +351,17 @@ describe("bounded meal context resolution", () => {
       expect(resolveMealContext(contextInput(entry, [invalid])).accepted_context).toBeNull();
     }
 
-    const corrected = resolveMealContext(contextInput(entry, [valid], {
-      source_text: `更正：${entry.source_text}`,
-    }));
-    expect(corrected.accepted_context).toBeNull();
-    expect(corrected.scene).toBe("unknown");
+    for (const sourceText of [
+      `更正：${entry.source_text}`,
+      `更正一下，${entry.source_text}`,
+      `不对，${entry.source_text}`,
+      `改为${entry.source_text}`,
+      `不对:${entry.source_text}`,
+      `改为：${entry.source_text}`,
+    ]) {
+      const corrected = resolveMealContext(contextInput(entry, [valid], { source_text: sourceText }));
+      expect(corrected.accepted_context).toBeNull();
+      expect(corrected.scene).toBe("unknown");
+    }
   });
 });

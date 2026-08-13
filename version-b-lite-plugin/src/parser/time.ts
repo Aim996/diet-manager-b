@@ -59,8 +59,11 @@ function twoDigits(value: number): string {
 
 function formatShanghai(epochMs: number): OffsetIsoTimestamp {
   const local = new Date(epochMs + SHANGHAI_OFFSET_MINUTES * MINUTE_MS);
+  const fractional = local.getUTCMilliseconds() === 0
+    ? ""
+    : `.${String(local.getUTCMilliseconds()).padStart(3, "0")}`;
   return `${local.getUTCFullYear()}-${twoDigits(local.getUTCMonth() + 1)}-${twoDigits(local.getUTCDate())}` +
-    `T${twoDigits(local.getUTCHours())}:${twoDigits(local.getUTCMinutes())}:${twoDigits(local.getUTCSeconds())}+08:00` as OffsetIsoTimestamp;
+    `T${twoDigits(local.getUTCHours())}:${twoDigits(local.getUTCMinutes())}:${twoDigits(local.getUTCSeconds())}${fractional}+08:00` as OffsetIsoTimestamp;
 }
 
 function evidence(
