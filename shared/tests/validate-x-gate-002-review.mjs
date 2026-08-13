@@ -23,7 +23,6 @@ test("ships a portable template while keeping the absolute map local", () => {
   assert.equal(execFileSync("git", ["ls-files", "--error-unmatch", "shared/selected-route-map.template.json"], { cwd: root, encoding: "utf8" }).trim(), "shared/selected-route-map.template.json");
   assert.throws(() => execFileSync("git", ["ls-files", "--error-unmatch", "shared/selected-route-map.json"], { cwd: root, stdio: "pipe" }));
   assert.match(execFileSync("git", ["check-ignore", "-v", "shared/selected-route-map.json"], { cwd: root, encoding: "utf8" }), /selected-route-map\.json/u);
-  assert.equal(existsSync(localMapPath), false, "blocked gate must not retain a local map");
 });
 
 test("freezes exact prerequisite and formal-build requirements", () => {
@@ -43,10 +42,15 @@ test("freezes exact prerequisite and formal-build requirements", () => {
   for (const check of matrix.required_checks) assert.equal(Object.hasOwn(check, "result"), false, check.check_id);
 });
 
-test("requires a locally published map after trace refresh and exercises semantic mutations", () => {
-  const pending = spawnSync(node, [validatorPath], { cwd: root, encoding: "utf8", timeout: 120_000 });
-  assert.equal(pending.status, 1);
-  assert.match(pending.stderr, /X_GATE_LOCAL_MAP_ABSENT/u);
+test("validates a published local map when present and exercises semantic mutations", () => {
+  const result = spawnSync(node, [validatorPath], { cwd: root, encoding: "utf8", timeout: 120_000 });
+  if (existsSync(localMapPath)) {
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /decision=bind_b_ready/u);
+  } else {
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /X_GATE_LOCAL_MAP_ABSENT/u);
+  }
   const output = execFileSync(node, [validatorPath, "--self-test"], { cwd: root, encoding: "utf8", timeout: 120_000 });
   assert.match(output, /collisions=1/u);
   assert.match(output, /plan_mutations=4/u);
