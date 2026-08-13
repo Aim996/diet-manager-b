@@ -237,6 +237,13 @@ function validateStructuredAmount(value: unknown, field: string): void {
   enumValue(amount.evidence, ["explicit", "estimated_upper_bound"], `${field}.evidence`);
 }
 
+function validateKnownStructuredAmount(value: unknown, field: string): void {
+  validateStructuredAmount(value, field);
+  if ((value as Record<string, unknown>).observed_microunits === null) {
+    return invalid(`${field}.observed_microunits`);
+  }
+}
+
 function validateOperation(value: unknown, field: string): RecordWaterOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
@@ -249,7 +256,7 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     text(product.product_id, `${field}.product.product_id`);
     text(product.normalized_name, `${field}.product.normalized_name`);
     text(product.product_type, `${field}.product.product_type`);
-    validateStructuredAmount(candidate.amount, `${field}.amount`);
+    validateKnownStructuredAmount(candidate.amount, `${field}.amount`);
     validateNutritionSources(candidate.nutrition_sources, `${field}.nutrition_sources`);
     return;
   }
@@ -316,10 +323,7 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     text(candidate.target_event_id, `${field}.target_event_id`);
     safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
     safeNonnegativeInteger(candidate.item_order, `${field}.item_order`);
-    validateStructuredAmount(candidate.replacement_amount, `${field}.replacement_amount`);
-    if ((candidate.replacement_amount as Record<string, unknown>).observed_microunits === null) {
-      return invalid(`${field}.replacement_amount.observed_microunits`);
-    }
+    validateKnownStructuredAmount(candidate.replacement_amount, `${field}.replacement_amount`);
     return;
   }
   if (kind === "undo_record") {

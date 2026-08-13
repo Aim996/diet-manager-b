@@ -322,6 +322,9 @@ export function prepareCorrectionOperation(
     operation.kind !== input.commandType
   ) return invalid("correction_operation");
   const current = readEffectiveMealState(input.database, operation.target_event_id);
+  if (current.snapshot.items.some((item) => item.amount.observed_microunits === null)) {
+    throw new Error("DIET_DOMAIN_REQUEST_INVALID:unknown_target_amount");
+  }
   if (operation.base_revision !== current.revision) {
     throw new Error("CORRECTION_TARGET_INVALID:stale_revision");
   }
@@ -1808,7 +1811,9 @@ function readAppliedMealResultInTransaction(
     const transactionId = transactions[0]?.transaction_id ?? null;
     const inventoryMatch = transactionId !== null
       ? "matched" as const
-      : input.location === "outside"
+      : issueCodes[0] === "inventory_amount_unknown"
+        ? "skipped_amount_unknown" as const
+        : input.location === "outside"
         ? "skipped_outside" as const
         : issueCodes[0] === "inventory_multiple_candidates"
           ? "skipped_ambiguous" as const
@@ -1816,9 +1821,7 @@ function readAppliedMealResultInTransaction(
             ? "skipped_insufficient" as const
             : issueCodes[0] === "inventory_unit_incompatible"
               ? "skipped_unit_incompatible" as const
-              : issueCodes[0] === "inventory_amount_unknown"
-                ? "skipped_amount_unknown" as const
-                : (() => { throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_inventory"); })();
+              : (() => { throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_inventory"); })();
     const profileVersion = Number(snapshot.profile_version);
     if (!Number.isSafeInteger(profileVersion) || profileVersion < 1) {
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
