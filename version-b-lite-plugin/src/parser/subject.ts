@@ -84,12 +84,12 @@ const EXPLICIT_NON_SELF_THIRD_PERSON = Object.freeze<SubjectRule>({
 
 const EXPLICIT_SELF = Object.freeze<SubjectRule>({
   rule_id: "subject.explicit-self.me",
-  pattern: /^\s*我(?=\s*(?:吃|喝))/u,
+  pattern: /^\s*我(?=\s*(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐)\s*)*(?:吃|喝))/u,
 });
 
 const OMITTED_SUBJECT_GRAMMAR = Object.freeze([
   /^\s*(?:吃|喝)(?:了|过)?/u,
-  /^\s*(?:(?:今天|昨天|前天|刚才|刚刚|早上|上午|中午|下午|晚上|夜里|其他时候|早餐|午餐|晚餐)\s*)+(?:吃|喝)(?:了|过)?/u,
+  /^\s*(?:(?:今天|昨天|前天|今早|昨晚|今晚|刚才|刚刚|早上|上午|中午|下午|晚上|夜里|其他时候|早餐|午餐|晚餐|早餐后|午餐后|晚餐后|回家后)\s*)+(?:\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?\s*)?(?:吃|喝)(?:了|过)?/u,
   /^\s*(?:本来不想|后来还是)\s*(?:吃|喝)(?:了|过)?/u,
 ]);
 
@@ -189,6 +189,25 @@ function firstClauseEvidence(
 
 function isOmittedSubjectClause(clause: SubjectClause): boolean {
   return OMITTED_SUBJECT_GRAMMAR.some((pattern) => pattern.test(clause.raw));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function isObjectFrontedCompletedClause(
+  clause: SubjectClause,
+  proposedItems: readonly ProposedSubjectItem[],
+): boolean {
+  return proposedItems.some((item) => {
+    if (item.raw_text.length === 0) return false;
+    const itemPattern = escapeRegExp(item.raw_text);
+    const pattern = new RegExp(
+      `^\\s*${itemPattern}\\s*记不清\\s*是\\s*在\\s*公司\\s*还是\\s*回家后\\s*(?:吃|喝)的\\s*$`,
+      "u",
+    );
+    return pattern.test(clause.raw);
+  });
 }
 
 function unknownClauseEvidence(clause: SubjectClause): SubjectMatchedEvidence {
@@ -441,7 +460,11 @@ export function resolveSubject(
   }
 
   const omittedSubjectClause = relevantClauses.find(isOmittedSubjectClause);
-  if (omittedSubjectClause !== undefined) {
+  const objectFrontedClause = relevantClauses.find((clause) =>
+    isObjectFrontedCompletedClause(clause, proposedItems)
+  );
+  const positiveOmittedClause = omittedSubjectClause ?? objectFrontedClause;
+  if (positiveOmittedClause !== undefined) {
     return Object.freeze({
       disposition: "resolved",
       subject: Object.freeze({
@@ -453,7 +476,7 @@ export function resolveSubject(
         rule_version: SUBJECT_RULE_VERSION,
       }),
       items: resolveFrozenItemAmounts(
-        [omittedSubjectClause],
+        [positiveOmittedClause],
         proposedItems,
         OMITTED_SUBJECT_ITEM_AMOUNTS,
       ),

@@ -154,6 +154,8 @@ const TEST_ONLY_RAW_ITEM_LEXICON = Object.freeze([
   Object.freeze({ raw_text: "鸡蛋", normalized_name: "egg" }),
   Object.freeze({ raw_text: "牛奶", normalized_name: "milk" }),
   Object.freeze({ raw_text: "炒饭", normalized_name: "fried_rice" }),
+  Object.freeze({ raw_text: "面", normalized_name: "noodle" }),
+  Object.freeze({ raw_text: "苹果", normalized_name: "apple" }),
 ]);
 
 // This supplies only source-derived raw candidates to the subject stage. It
@@ -644,5 +646,63 @@ describe("subject clause safety", () => {
       "subject.explicit-self.me",
       "diet-manager/subject-v1",
     );
+  });
+
+  it.each([
+    "我刚才吃了两个鸡蛋。",
+    "我早餐吃了两个鸡蛋。",
+  ])("accepts explicit self with a bounded temporal or meal modifier: %s", (sourceText) => {
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "resolved",
+      subject: {
+        kind: "self",
+        resolution_basis: "explicit_self",
+      },
+    });
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expectMatchedSpan(
+      sourceText,
+      result.subject.matched_evidence!,
+      "subject.explicit-self.me",
+      "diet-manager/subject-v1",
+    );
+  });
+
+  it.each([
+    ["CASE-MEAL-012", "time-first omitted-subject route"],
+    ["CASE-MEAL-020", "object-fronted completed route"],
+  ])("keeps %s reachable through the subject stage (%s)", (id) => {
+    const sourceText = catalogCase(id).source_text;
+    const oracle = candidateOracle(id);
+    const subjectAuthority = requiredSubject("CASE-MEAL-017");
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "subject"),
+    );
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.subject).toMatchObject({
+      kind: subjectAuthority.kind,
+      resolution_basis: subjectAuthority.resolution_basis,
+      subject_entity_created: subjectAuthority.subject_entity_created,
+    });
+    expect(result.subject.matched_evidence).toBeNull();
+  });
+
+  it("accepts a bounded post-meal temporal phrase without treating it as a name", () => {
+    const sourceText = "早餐后吃了两个鸡蛋。";
+
+    const result = resolveSubject(sourceText, lexicalSeed(sourceText));
+
+    expect(result).toMatchObject({
+      disposition: "resolved",
+      subject: {
+        kind: "self",
+        resolution_basis: "omitted_subject_default",
+      },
+    });
   });
 });
