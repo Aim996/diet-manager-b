@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -15,6 +16,11 @@ const expectedIdsFromBrief = [
 ] as const;
 
 type CatalogCase = { id: string; stage: string; [key: string]: unknown };
+
+function testIdentity(file: string): string {
+  const stats = lstatSync(file, { bigint: true });
+  return `${stats.dev}:${stats.ino}`;
+}
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
@@ -66,7 +72,106 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
       cwd: projectRoot,
       encoding: "utf8",
     });
-    expect(selfTestOutput.trim()).toBe("SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=12|controls=1");
+    expect(selfTestOutput.trim()).toBe("SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=17|controls=1");
     expect(readdirSync(isolatedRoot)).toEqual([]);
+  });
+
+  it("preserves an externally replaced UUID child and its canary", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterMarker: (paths: { child: string }) => void }) => void;
+    };
+    const displaced = join(isolatedRoot, "test-displaced-owned-child");
+    let replacement = "";
+    let replacementIdentity = "";
+    let displacedIdentity = "";
+    let displacedMarker = "";
+    let markerIdentity = "";
+    let canaryIdentity = "";
+
+    mkdirSync(officialRoot, { recursive: true });
+    mkdirSync(isolatedRoot, { recursive: true });
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+
+    try {
+      expect(() => validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        afterMarker: ({ child, marker }: { child: string; marker: string }) => {
+          displacedIdentity = testIdentity(child);
+          displacedMarker = join(displaced, ".sel-pantry-root-marker");
+          markerIdentity = testIdentity(marker);
+          renameSync(child, displaced);
+          mkdirSync(child);
+          writeFileSync(join(child, "foreign-canary"), "foreign-owned");
+          replacement = child;
+          replacementIdentity = testIdentity(child);
+          canaryIdentity = testIdentity(join(child, "foreign-canary"));
+        },
+      })).toThrow("SEL_PANTRY_ROOT_ISOLATED_CHILD_REPLACED");
+      expect(readFileSync(join(replacement, "foreign-canary"), "utf8")).toBe("foreign-owned");
+    } finally {
+      if (replacement) {
+        const canary = join(replacement, "foreign-canary");
+        if (testIdentity(canary) !== canaryIdentity || testIdentity(replacement) !== replacementIdentity) throw new Error("foreign replacement preserved");
+        unlinkSync(canary);
+        rmdirSync(replacement);
+      }
+      if (displacedMarker) {
+        if (testIdentity(displacedMarker) !== markerIdentity || testIdentity(displaced) !== displacedIdentity) throw new Error("displaced owned child preserved");
+        unlinkSync(displacedMarker);
+        rmdirSync(displaced);
+      }
+      expect(readdirSync(isolatedRoot)).toEqual([]);
+    }
+  });
+
+  it("rejects an external path that only impersonates the required suffix", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }) => void;
+    };
+
+    expect(() => validateRoots({
+      officialRoot: "E:\\external\\official-manifest-sentinel\\SEL-PANTRY-001",
+      isolatedBase: isolatedRoot,
+    })).toThrow("SEL_PANTRY_ROOT_OFFICIAL_BINDING");
+  });
+
+  it("rejects an isolated-base replacement before writing into the foreign root", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterSnapshot: () => void }) => void;
+    };
+    const displaced = join(dirname(isolatedRoot), `.test-displaced-${randomUUID()}`);
+    const canary = join(isolatedRoot, `foreign-canary-${randomUUID()}`);
+    let foreignRootIdentity = "";
+
+    mkdirSync(officialRoot, { recursive: true });
+    mkdirSync(isolatedRoot, { recursive: true });
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+    try {
+      expect(() => validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        afterSnapshot: () => {
+          renameSync(isolatedRoot, displaced);
+          mkdirSync(isolatedRoot);
+          foreignRootIdentity = testIdentity(isolatedRoot);
+          writeFileSync(canary, "foreign-owned", { flag: "wx" });
+        },
+      })).toThrow("SEL_PANTRY_ROOT_ISOLATED_PATH_REPLACED");
+      expect(readFileSync(canary, "utf8")).toBe("foreign-owned");
+    } finally {
+      if (testIdentity(canary) === "") throw new Error("foreign canary preserved");
+      unlinkSync(canary);
+      if (testIdentity(isolatedRoot) !== foreignRootIdentity) throw new Error("foreign isolated replacement preserved");
+      rmdirSync(isolatedRoot);
+      renameSync(displaced, isolatedRoot);
+    }
   });
 });
