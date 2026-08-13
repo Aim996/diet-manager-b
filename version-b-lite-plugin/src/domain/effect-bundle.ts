@@ -1340,7 +1340,8 @@ export interface ReadAppliedMealResultInput extends MealTerminalReadbackInput {
 
 function assertExpectedMealFactInput(input: ReadAppliedMealResultInput): void {
   if (
-    input.operationSequence !== 0 || input.expectedFact.database !== input.database ||
+    !Number.isSafeInteger(input.operationSequence) || input.operationSequence < 0 ||
+    input.expectedFact.database !== input.database ||
     input.expectedFact.operationId !== input.operationId ||
     input.expectedFact.sequence !== input.operationSequence ||
     input.expectedFact.event.operationId !== input.operationId ||

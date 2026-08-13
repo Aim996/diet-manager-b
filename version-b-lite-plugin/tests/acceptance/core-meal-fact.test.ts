@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,8 +6,9 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
-import { canonicalJson } from "../../src/authority/canonical-json.js";
+import { canonicalJson, canonicalSha256 } from "../../src/authority/canonical-json.js";
 import { prepareMealOperation } from "../../src/domain/effect-bundle.js";
+import { digestDomainEnvelope } from "../../src/domain/identity.js";
 import { createDietDomainService, type DietDomainService } from "../../src/domain/service.js";
 import type {
   DomainEnvelopeInput,
@@ -93,6 +94,23 @@ function legacyEnvelope(): DomainEnvelopeInput {
 
 function ordinaryClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function testMealFactIdentityMac(authority: {
+  binding: unknown;
+  input_digest: string;
+  meal_fact_identities: readonly unknown[];
+}): string {
+  return createHmac("sha256", secret)
+    .update("diet-manager/meal-fact-preview-authority/v1\n", "ascii")
+    .update(canonicalJson({
+      authority_kind: "diet-manager/server-preview/v2",
+      binding: authority.binding,
+      input_digest: authority.input_digest,
+      meal_fact_identities: authority.meal_fact_identities,
+    }), "utf8")
+    .digest("hex")
+    .toUpperCase();
 }
 
 function parserMealEnvelope(suffix: string): DomainEnvelopeInput {
@@ -429,6 +447,91 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
     });
   });
 
+  it("rejects an extra v2 meal identity even when its public preview hash is recomputed", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("manifest-extra-identity");
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      const row = database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const payload = JSON.parse(row.payload_json) as {
+        binding: { preview_hash: string };
+        input_digest: string;
+        meal_fact_identities: Array<Record<string, unknown>>;
+        meal_fact_identity_mac: string;
+      };
+      const extra = ordinaryClone(payload.meal_fact_identities[0]!);
+      extra.sequence = 1;
+      extra.event_id = `${String(extra.event_id)}-extra`;
+      extra.operation_id = `${String(extra.operation_id)}-extra`;
+      payload.meal_fact_identities.push(extra);
+      payload.binding.preview_hash = canonicalSha256({
+        authority_kind: "diet-manager/domain-preview/v2",
+        input_digest: payload.input_digest,
+        meal_fact_identities: payload.meal_fact_identities,
+      });
+      payload.meal_fact_identity_mac = testMealFactIdentityMac(payload);
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(payload), envelope.envelope_id);
+      const before = databaseSnapshot(database);
+
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-manifest-extra-identity",
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
+  it("rejects a public event-manifest-hash forge while querying multiple meal rows", () => {
+    withService(({ database, service }) => {
+      const forgedEnvelope = parserMealEnvelope("public-forge-a");
+      const peerEnvelope = parserMealEnvelope("public-forge-b");
+      const forgedPreview = service.preview(forgedEnvelope);
+      expect(service.execute(executionInput(forgedEnvelope, forgedPreview)).status).toBe("committed");
+      const peerPreview = service.preview(peerEnvelope);
+      expect(service.execute(executionInput(peerEnvelope, peerPreview)).status).toBe("committed");
+      replaceStoredMealPayload(database, forgedEnvelope.envelope_id, (payload) => {
+        payload.source_text = "schema-valid public forge";
+      });
+      const event = database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(forgedEnvelope.envelope_id) as { payload_json: string };
+      const stableEventPayload = JSON.parse(event.payload_json) as Record<string, unknown>;
+      Reflect.deleteProperty(stableEventPayload, "progress_reservation");
+      const command = database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(forgedEnvelope.envelope_id) as { payload_json: string };
+      const authority = JSON.parse(command.payload_json) as {
+        binding: { preview_hash: string };
+        input_digest: string;
+        meal_fact_identities: Array<{ payload_digest: string }>;
+      };
+      authority.meal_fact_identities[0]!.payload_digest = canonicalSha256(stableEventPayload);
+      authority.binding.preview_hash = canonicalSha256({
+        authority_kind: "diet-manager/domain-preview/v2",
+        input_digest: authority.input_digest,
+        meal_fact_identities: authority.meal_fact_identities,
+      });
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(authority), forgedEnvelope.envelope_id);
+      const before = databaseSnapshot(database);
+
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-public-forge-multiple",
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
   it("reuses and executes a received legacy v1 preview created before manifest support", () => {
     withService(({ database, service }) => {
       const envelope = legacyEnvelope();
@@ -472,6 +575,50 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
     });
   });
 
+  it("rejects direct execution of an evidence envelope authorized only by an old v1 preview", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("old-v1-direct-execute");
+      const inputDigest = digestDomainEnvelope(envelope);
+      const dataRevision = computeRepositoryDataRevision(database);
+      const oldPreview = createServerPreview({
+        database,
+        secret,
+        previewId: envelope.envelope_id,
+        idempotencyKey: envelope.idempotency_key,
+        inputDigest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        previewMaterial: Object.freeze({
+          authority_kind: "diet-manager/domain-preview/v1",
+          envelope,
+        }),
+        now: envelope.received_at,
+      });
+      const before = databaseSnapshot(database);
+
+      expect(() => service.execute({
+        envelope,
+        token: oldPreview.token,
+        input_digest: inputDigest,
+        data_revision: dataRevision,
+      })).toThrowError("PREVIEW_AUTHORITY_INVALID:meal_fact_identity");
+      expect(businessWriteCounts(database)).toEqual({
+        event_records: 0,
+        meal_items: 0,
+        effect_outbox: 0,
+        effect_bundle_commits: 0,
+        nutrition_snapshots: 0,
+        daily_progress_snapshots: 0,
+        inventory_transactions: 0,
+        issues: 0,
+      });
+      expect(databaseSnapshot(database)).toBe(before);
+    });
+  });
+
   it("stores parser occurrence, self-subject, context, and source evidence in the immutable meal fact", () => {
     withService(({ database, service }) => {
       const envelope = parserMealEnvelope("stored");
@@ -483,10 +630,13 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
       const previewAuthority = JSON.parse(previewAuthorityJson) as {
         authority_kind: string;
         meal_fact_identities?: readonly unknown[];
+        meal_fact_identity_mac?: string;
       };
       expect(previewAuthority.authority_kind).toBe("diet-manager/server-preview/v2");
       expect(previewAuthority.meal_fact_identities).toHaveLength(1);
+      expect(previewAuthority.meal_fact_identity_mac).toMatch(/^[A-F0-9]{64}$/);
       expect(previewAuthorityJson).not.toContain(operation.source_text as string);
+      expect(previewAuthorityJson).not.toContain(secret.toString("utf8"));
       expect(previewAuthorityJson).not.toContain("diet-manager/time-parser-v1");
       expect(previewAuthorityJson).not.toContain("omitted_subject_default");
       expect(previewAuthorityJson).not.toContain("context-core-meal-evidence-v1");
@@ -589,6 +739,37 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
         "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
       ).get(envelope.envelope_id) as { payload_json: string }).payload_json).toBe(before);
       expect(before).not.toContain(requiredMealOperation(envelope).source_text as string);
+    });
+  });
+
+  it("rejects a tampered v2 manifest MAC on reuse, execute, and query without writes", () => {
+    withService(({ database, service }) => {
+      const envelope = parserMealEnvelope("manifest-mac-tamper");
+      const preview = service.preview(envelope);
+      expect(service.execute(executionInput(envelope, preview)).status).toBe("committed");
+      const row = database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const authority = JSON.parse(row.payload_json) as Record<string, unknown>;
+      authority.meal_fact_identity_mac = "A".repeat(64);
+      database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(authority), envelope.envelope_id);
+      const before = databaseSnapshot(database);
+
+      expect(() => service.preview(envelope)).toThrowError(
+        /^PREVIEW_AUTHORITY_INVALID:/,
+      );
+      expect(() => service.execute(executionInput(envelope, preview))).toThrowError(
+        /^PREVIEW_AUTHORITY_INVALID:/,
+      );
+      expect(() => service.query({
+        kind: "query_meals",
+        operation_id: "query-manifest-mac-tamper",
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrowError("INVENTORY_PROJECTION_INVALID:meal_event_identity");
+      expect(databaseSnapshot(database)).toBe(before);
     });
   });
 

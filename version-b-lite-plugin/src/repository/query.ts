@@ -1,18 +1,17 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import { canonicalJson } from "../authority/canonical-json.js";
 import {
   createMealFactIdentity,
   mealFactIdentityEquals,
-  parseMealFactPreviewMaterial,
 } from "../authority/meal-fact-identity.js";
 import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
-import { freezePreviewBinding } from "../preview/token.js";
+import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 
 const QUERY_FIELDS = ["batchId", "database"] as const;
 const LIST_QUERY_FIELDS = ["database"] as const;
-const DATE_QUERY_FIELDS = ["database", "date", "timezone"] as const;
+const DATE_QUERY_FIELDS = ["authoritySecret", "database", "date", "timezone"] as const;
 const PROJECTION_PAYLOAD_FIELDS = [
   "authority_kind",
   "batch_id",
@@ -47,6 +46,7 @@ export interface InventoryProjectionListQuery {
 }
 
 export interface DateRangeQuery {
+  authoritySecret: Uint8Array;
   database: DatabaseSync;
   date: string;
   timezone: "Asia/Shanghai";
@@ -273,11 +273,23 @@ function ordinalCompare(left: string, right: string): number {
 
 function dateQuery(
   input: DateRangeQuery,
-): { database: DatabaseSync; date: string; timezone: "Asia/Shanghai"; start: string; end: string } {
+): {
+  authoritySecret: Uint8Array;
+  database: DatabaseSync;
+  date: string;
+  timezone: "Asia/Shanghai";
+  start: string;
+  end: string;
+} {
   const fields = exactDataProperties(input, DATE_QUERY_FIELDS);
   if (typeof fields.database.value !== "object" || fields.database.value === null) {
     return invalid("database");
   }
+  if (
+    !(fields.authoritySecret.value instanceof Uint8Array) ||
+    fields.authoritySecret.value.byteLength < 32 ||
+    fields.authoritySecret.value.byteLength > 1024
+  ) return invalid("authority_secret");
   if (
     typeof fields.date.value !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(fields.date.value) ||
@@ -296,6 +308,7 @@ function dateQuery(
   const end = new Date(startMilliseconds + 86_400_000).toISOString();
   if (start.slice(0, 10) === end.slice(0, 10)) return invalid("date_range");
   return {
+    authoritySecret: Uint8Array.from(fields.authoritySecret.value),
     database: fields.database.value as DatabaseSync,
     date: fields.date.value,
     timezone: "Asia/Shanghai",
@@ -372,30 +385,35 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
         `SELECT item_id, item_order, item_type, normalized_name, payload_json
          FROM meal_items WHERE event_id = ? ORDER BY item_order`,
       ).all(row.event_id) as unknown as MealItemQueryRow[];
-      let previewPayload: Record<string, unknown>;
       try {
-        previewPayload = parseCanonicalRecord(row.preview_payload_json, "meal_preview");
+        const previewAuthority = authenticateStoredPreviewAuthority(
+          row.preview_payload_json,
+          query.authoritySecret,
+        );
         if (row.input_digest !== row.idempotency_input_digest) {
           return invalid("meal_event_identity");
         }
-        const binding = freezePreviewBinding(previewPayload.binding);
+        const binding = previewAuthority.binding;
         if (
           binding.preview_id !== row.envelope_id ||
           binding.input_digest !== row.input_digest
         ) return invalid("meal_event_identity");
-        if (previewPayload.authority_kind === "diet-manager/server-preview/v2") {
+        if (previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2") {
+          const material = previewAuthority.meal_fact_preview_material;
+          if (material === undefined || material.input_digest !== row.input_digest) {
+            return invalid("meal_event_identity");
+          }
+          const storedMealIds = query.database.prepare(
+            `SELECT event_id FROM event_records
+             WHERE envelope_id = ? AND event_type = 'diet_meal'
+             ORDER BY event_id`,
+          ).all(row.envelope_id) as Array<{ event_id: string }>;
+          const expectedMealIds = material.meal_fact_identities
+            .map((identity) => identity.event_id)
+            .sort();
           if (
-            Object.keys(previewPayload).sort().join("\u0000") !==
-              "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities"
-          ) return invalid("meal_event_identity");
-          const material = parseMealFactPreviewMaterial({
-            authority_kind: "diet-manager/domain-preview/v2",
-            input_digest: previewPayload.input_digest,
-            meal_fact_identities: previewPayload.meal_fact_identities,
-          });
-          if (
-            material.input_digest !== row.input_digest ||
-            binding.preview_hash !== canonicalSha256(material)
+            storedMealIds.length !== expectedMealIds.length ||
+            storedMealIds.some((stored, index) => stored.event_id !== expectedMealIds[index])
           ) return invalid("meal_event_identity");
           const expected = material.meal_fact_identities.find((identity) =>
             identity.event_id === row.event_id && identity.operation_id === row.operation_id);
@@ -425,8 +443,6 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
           if (!mealFactIdentityEquals(actual, expected)) return invalid("meal_event_identity");
         } else {
           if (
-            previewPayload.authority_kind !== "diet-manager/server-preview/v1" ||
-            Object.keys(previewPayload).sort().join("\u0000") !== "authority_kind\u0000binding" ||
             ["source_text", "occurred_time", "subject", "context"].some((field) =>
               Object.hasOwn(eventPayload, field))
           ) return invalid("meal_event_identity");

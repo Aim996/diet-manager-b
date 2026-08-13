@@ -14,7 +14,7 @@ import {
   prepareMealOperation,
   preparePurchaseOperation,
 } from "../src/domain/effect-bundle.js";
-import { deriveDomainId } from "../src/domain/identity.js";
+import { deriveDomainId, digestDomainEnvelope } from "../src/domain/identity.js";
 import { createServerPreview } from "../src/preview/store.js";
 import { buildQuickPrompt, buildReceiptData } from "../src/domain/receipt.js";
 import {
@@ -1970,6 +1970,112 @@ describe("B-SLICE-001 ordered mixed purchase and meal orchestration", () => {
       removeOwnedRoot(root);
     }
   });
+
+  it("rejects direct mixed evidence execution authorized only by an old v1 preview", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: "old-v1-direct-evidence" });
+      const meal = envelope.operations[1];
+      if (meal?.kind !== "record_meal") throw new Error("mixed meal fixture");
+      (meal as unknown as { source_text: string }).source_text = "drank one carton";
+      const inputDigest = digestDomainEnvelope(envelope);
+      const dataRevision = computeRepositoryDataRevision(runtime.database);
+      const oldPreview = createServerPreview({
+        database: runtime.database,
+        secret,
+        previewId: envelope.envelope_id,
+        idempotencyKey: envelope.idempotency_key,
+        inputDigest,
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        dataRevision,
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        previewMaterial: Object.freeze({
+          authority_kind: "diet-manager/domain-preview/v1",
+          envelope,
+        }),
+        now: envelope.received_at,
+      });
+      const before = canonicalBusinessSnapshot(runtime.database);
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T03:00:01.000Z",
+      });
+
+      expect(() => service.execute({
+        envelope,
+        token: oldPreview.token,
+        input_digest: inputDigest,
+        data_revision: dataRevision,
+      })).toThrowError("PREVIEW_AUTHORITY_INVALID:meal_fact_identity");
+      expect(canonicalBusinessSnapshot(runtime.database)).toEqual(before);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it.each([
+    ["finalized", undefined],
+    ["effects_stable", "after_mixed_seal"],
+  ] as const)(
+    "rejects a valid mixed meal evidence mutation during %s replay",
+    (_state, fault) => {
+      const root = newTestRoot();
+      const runtime = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const envelope = mixedPurchaseAndDrinkEnvelope({ suffix: `replay-evidence-${_state}` });
+        const meal = envelope.operations[1];
+        if (meal?.kind !== "record_meal") throw new Error("mixed meal fixture");
+        (meal as unknown as { source_text: string }).source_text = "drank one carton";
+        const service = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-12T03:00:01.000Z",
+          ...(fault === undefined ? {} : { fault }),
+        });
+        const preview = service.preview(envelope);
+        const input = {
+          envelope,
+          token: preview.token,
+          input_digest: preview.input_digest,
+          data_revision: preview.data_revision,
+        } as const;
+        if (fault === undefined) {
+          expect(service.execute(input).status).toBe("committed");
+        } else {
+          expect(() => service.execute(input)).toThrowError(
+            "DIET_DOMAIN_EXECUTION_FAILED:after_mixed_seal",
+          );
+        }
+        const row = runtime.database.prepare(
+          "SELECT event_id, payload_json FROM event_records WHERE envelope_id = ? AND event_type = 'diet_meal'",
+        ).get(envelope.envelope_id) as { event_id: string; payload_json: string };
+        const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+        payload.source_text = "drank two cartons";
+        runtime.database.prepare(
+          "UPDATE event_records SET payload_json = ? WHERE event_id = ?",
+        ).run(canonicalJson(payload), row.event_id);
+        const before = canonicalBusinessSnapshot(runtime.database);
+        const replay = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-12T03:00:02.000Z",
+        });
+
+        expect(() => replay.execute(input)).toThrowError(
+          "MEAL_EFFECT_AUTHORITY_INVALID:terminal_event_payload",
+        );
+        expect(canonicalBusinessSnapshot(runtime.database)).toEqual(before);
+      } finally {
+        runtime.close();
+        removeOwnedRoot(root);
+      }
+    },
+  );
 });
 
 describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {

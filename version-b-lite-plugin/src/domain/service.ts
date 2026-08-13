@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
-import { createMealFactIdentity } from "../authority/meal-fact-identity.js";
+import {
+  createMealFactIdentity,
+  type MealFactPreviewMaterial,
+} from "../authority/meal-fact-identity.js";
 import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
@@ -11,6 +14,7 @@ import {
   authorizeRepositoryPreview,
   createServerPreview,
   reuseServerPreview,
+  type AuthorizedRepositoryPreview,
 } from "../preview/store.js";
 import {
   appendPreparedOperationFact,
@@ -596,7 +600,8 @@ function writeOperations(
 function mealFactPreviewMaterial(
   envelope: DomainEnvelopeInput,
   inputDigest: string,
-): Readonly<Record<string, unknown>> {
+): Readonly<{ authority_kind: "diet-manager/domain-preview/v1"; envelope: DomainEnvelopeInput }> |
+  MealFactPreviewMaterial {
   const meals = envelope.operations.flatMap((operation, sequence) =>
     operation.kind === "record_meal" ? [{ operation, sequence }] : []);
   const hasEvidence = meals.some(({ operation }) =>
@@ -647,6 +652,25 @@ function mealFactPreviewMaterial(
         })),
       }))),
   });
+}
+
+function assertMealFactPreviewAuthority(
+  authority: AuthorizedRepositoryPreview,
+  expected: ReturnType<typeof mealFactPreviewMaterial>,
+): void {
+  if (expected.authority_kind === "diet-manager/domain-preview/v1") {
+    if (authority.preview_authority_kind !== "diet-manager/server-preview/v1") {
+      throw new Error("PREVIEW_AUTHORITY_INVALID:meal_fact_identity");
+    }
+    return;
+  }
+  if (
+    authority.preview_authority_kind !== "diet-manager/server-preview/v2" ||
+    authority.meal_fact_preview_material === undefined ||
+    canonicalJson(authority.meal_fact_preview_material) !== canonicalJson(expected)
+  ) {
+    throw new Error("PREVIEW_AUTHORITY_INVALID:meal_fact_identity");
+  }
 }
 
 function timestampAfter(value: string, offsetMilliseconds: number): string {
@@ -868,6 +892,7 @@ export function createDietDomainService(
       const operations = writeOperations(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
+      const expectedPreviewMaterial = mealFactPreviewMaterial(envelope, inputDigest);
       const authority = authorizeRepositoryPreview({
         database: options.database,
         secret: options.secret,
@@ -880,6 +905,7 @@ export function createDietDomainService(
       if (authority.binding.preview_id !== envelope.envelope_id) {
         return invalid("envelope_id");
       }
+      assertMealFactPreviewAuthority(authority, expectedPreviewMaterial);
       const existingProgressReservation = readEnvelopeProgressReservation(
         options.database,
         envelope.envelope_id,
@@ -895,6 +921,47 @@ export function createDietDomainService(
       if (operations.length === 2) {
         const [purchaseOperation, mealOperation] = operations;
         const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
+        const purchaseIdentityKey = deriveDomainId(
+          "idempotency",
+          envelope.idempotency_key,
+          0,
+        );
+        const mealIdentityKey = deriveDomainId(
+          "idempotency",
+          envelope.idempotency_key,
+          1,
+        );
+        const purchaseAt = timestampAfter(committedAt, 0);
+        const mealAt = timestampAfter(committedAt, 1);
+        const finalizedAt = timestampAfter(committedAt, 2);
+        const preparedMeal = prepareMealOperation({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          dataRevision: execution.data_revision,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          effectIdentityKey: mealIdentityKey,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt: mealAt,
+          sequence: 1,
+          operation: mealOperation,
+        });
+        if (authority.envelope_state !== "received") {
+          assertStoredMealFactMatchesExpected({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: mealOperation.operation_id,
+            operationSequence: 1,
+            idempotencyKey: mealIdentityKey,
+            location: mealOperation.location,
+            expectedFact: preparedMeal.fact,
+          });
+        }
         if (authority.envelope_state === "finalized") {
           const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
           return finalize({
@@ -920,19 +987,6 @@ export function createDietDomainService(
         ) {
           throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
         }
-        const purchaseIdentityKey = deriveDomainId(
-          "idempotency",
-          envelope.idempotency_key,
-          0,
-        );
-        const mealIdentityKey = deriveDomainId(
-          "idempotency",
-          envelope.idempotency_key,
-          1,
-        );
-        const purchaseAt = timestampAfter(committedAt, 0);
-        const mealAt = timestampAfter(committedAt, 1);
-        const finalizedAt = timestampAfter(committedAt, 2);
         const preparedPurchase = preparePurchaseOperation({
           database: options.database,
           secret: options.secret,
@@ -977,23 +1031,6 @@ export function createDietDomainService(
             "INVENTORY_EFFECT_FAILED",
           );
         }
-        const preparedMeal = prepareMealOperation({
-          database: options.database,
-          secret: options.secret,
-          token: execution.token,
-          inputDigest,
-          dataRevision: execution.data_revision,
-          subjectScope: envelope.subject_scope,
-          commandType: envelope.command_type,
-          idempotencyKey: envelope.idempotency_key,
-          effectIdentityKey: mealIdentityKey,
-          sourceMessageId: envelope.source_message_id,
-          conversationId: envelope.conversation_id,
-          receivedAt: envelope.received_at,
-          committedAt: mealAt,
-          sequence: 1,
-          operation: mealOperation,
-        });
         if (authority.envelope_state === "received") {
           appendFactWithFailure(preparedMeal.fact, options.failureSink);
         }
@@ -1559,7 +1596,7 @@ export function createDietDomainService(
     },
 
     query(operation: DomainQueryOperation): DomainQueryResult {
-      return queryDomainReadModel(options.database, operation);
+      return queryDomainReadModel(options.database, options.secret, operation);
     },
   });
 }

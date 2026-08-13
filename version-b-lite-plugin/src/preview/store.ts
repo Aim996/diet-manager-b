@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import {
@@ -111,6 +112,10 @@ export interface AuthorizedServerPreview {
 export interface AuthorizedRepositoryPreview {
   binding: PreviewBindingV1;
   idempotency_key: string;
+  preview_authority_kind:
+    | "diet-manager/server-preview/v1"
+    | "diet-manager/server-preview/v2";
+  meal_fact_preview_material?: MealFactPreviewMaterial;
   envelope_state: "received" | "effects_pending" | "effects_stable" | "finalized";
   result_status:
     | "preview_ready"
@@ -118,6 +123,12 @@ export interface AuthorizedRepositoryPreview {
     | "effects_stable"
     | "committed"
     | "committed_with_issues";
+}
+
+export interface StoredPreviewAuthority {
+  readonly binding: PreviewBindingV1;
+  readonly preview_authority_kind: AuthorizedRepositoryPreview["preview_authority_kind"];
+  readonly meal_fact_preview_material?: MealFactPreviewMaterial;
 }
 
 interface FrozenCreateInput {
@@ -323,6 +334,7 @@ function freezeReuseInput(value: ReuseServerPreviewInput): FrozenReuseInput {
 
 function authorityPayload(
   binding: PreviewBindingV1,
+  authoritySecret: Uint8Array,
   material?: MealFactPreviewMaterial,
 ): string {
   return material === undefined
@@ -335,10 +347,31 @@ function authorityPayload(
         binding,
         input_digest: material.input_digest,
         meal_fact_identities: material.meal_fact_identities,
+        meal_fact_identity_mac: mealFactIdentityMac(binding, material, authoritySecret),
       });
 }
 
-function storedBinding(payloadJson: string): PreviewBindingV1 {
+function mealFactIdentityMac(
+  binding: PreviewBindingV1,
+  material: MealFactPreviewMaterial,
+  authoritySecret: Uint8Array,
+): string {
+  return createHmac("sha256", secret(authoritySecret))
+    .update("diet-manager/meal-fact-preview-authority/v1\n", "ascii")
+    .update(canonicalJson({
+      authority_kind: "diet-manager/server-preview/v2",
+      binding,
+      input_digest: material.input_digest,
+      meal_fact_identities: material.meal_fact_identities,
+    }), "utf8")
+    .digest("hex")
+    .toUpperCase();
+}
+
+function storedPreviewAuthority(
+  payloadJson: string,
+  authoritySecret: Uint8Array,
+): StoredPreviewAuthority {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payloadJson) as unknown;
@@ -354,12 +387,14 @@ function storedBinding(payloadJson: string): PreviewBindingV1 {
     binding?: unknown;
     input_digest?: unknown;
     meal_fact_identities?: unknown;
+    meal_fact_identity_mac?: unknown;
   };
   const keys = Object.keys(candidate).sort().join("\u0000");
   const v1 = candidate.authority_kind === "diet-manager/server-preview/v1" &&
     keys === "authority_kind\u0000binding";
   const v2 = candidate.authority_kind === "diet-manager/server-preview/v2" &&
-    keys === "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities";
+    keys ===
+      "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities\u0000meal_fact_identity_mac";
   if (!v1 && !v2) {
     return authorityInvalid("binding");
   }
@@ -375,11 +410,43 @@ function storedBinding(payloadJson: string): PreviewBindingV1 {
         binding.input_digest !== material.input_digest ||
         binding.preview_hash !== canonicalSha256(material)
       ) return authorityInvalid("binding");
+      if (
+        typeof candidate.meal_fact_identity_mac !== "string" ||
+        !/^[A-F0-9]{64}$/.test(candidate.meal_fact_identity_mac)
+      ) return authorityInvalid("meal_fact_identity_mac");
+      const suppliedMac = Buffer.from(candidate.meal_fact_identity_mac, "hex");
+      const expectedMac = Buffer.from(
+        mealFactIdentityMac(binding, material, authoritySecret),
+        "hex",
+      );
+      if (
+        suppliedMac.length !== expectedMac.length ||
+        !timingSafeEqual(suppliedMac, expectedMac)
+      ) return authorityInvalid("meal_fact_identity_mac");
+      return Object.freeze({
+        binding,
+        preview_authority_kind: "diet-manager/server-preview/v2",
+        meal_fact_preview_material: material,
+      });
     }
-    return binding;
+    return Object.freeze({
+      binding,
+      preview_authority_kind: "diet-manager/server-preview/v1",
+    });
   } catch {
     return authorityInvalid("binding");
   }
+}
+
+export function authenticateStoredPreviewAuthority(
+  payloadJson: string,
+  authoritySecret: Uint8Array,
+): StoredPreviewAuthority {
+  return storedPreviewAuthority(payloadJson, secret(authoritySecret));
+}
+
+function storedBinding(payloadJson: string, authoritySecret: Uint8Array): PreviewBindingV1 {
+  return storedPreviewAuthority(payloadJson, authoritySecret).binding;
 }
 
 function findAuthorityByIdempotencyKey(
@@ -492,10 +559,13 @@ function bindingEquals(left: PreviewBindingV1, right: PreviewBindingV1): boolean
 
 function assertRepositoryAuthorityRow(
   row: ExistingAuthorityRow | undefined,
+  authoritySecret: Uint8Array,
   expectedBinding?: PreviewBindingV1,
 ): {
   binding: PreviewBindingV1;
   idempotency_key: string;
+  preview_authority_kind: AuthorizedRepositoryPreview["preview_authority_kind"];
+  meal_fact_preview_material?: MealFactPreviewMaterial;
   envelope_state: AuthorizedRepositoryPreview["envelope_state"];
   result_status: AuthorizedRepositoryPreview["result_status"];
 } {
@@ -543,7 +613,8 @@ function assertRepositoryAuthorityRow(
     return authorityInvalid("state");
   }
 
-  const binding = storedBinding(row.payload_json);
+  const previewAuthority = storedPreviewAuthority(row.payload_json, authoritySecret);
+  const binding = previewAuthority.binding;
   if (
     binding.preview_id !== row.envelope_id ||
     binding.input_digest !== row.envelope_input_digest ||
@@ -554,6 +625,10 @@ function assertRepositoryAuthorityRow(
   return {
     binding,
     idempotency_key: row.idempotency_key,
+    preview_authority_kind: previewAuthority.preview_authority_kind,
+    ...(previewAuthority.meal_fact_preview_material === undefined
+      ? {}
+      : { meal_fact_preview_material: previewAuthority.meal_fact_preview_material }),
     envelope_state: previewReady
       ? "received"
       : finalized
@@ -579,7 +654,7 @@ export function reuseServerPreview(
   const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
   if (!existing) return undefined;
   if (isTerminalAuthorityCandidate(existing)) {
-    const terminal = assertRepositoryAuthorityRow(existing);
+    const terminal = assertRepositoryAuthorityRow(existing, frozen.secret);
     if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
     assertPreviewIdentityConflicts(
       existing,
@@ -590,7 +665,7 @@ export function reuseServerPreview(
     );
   }
   const row = assertPreviewReadyRow(existing);
-  const binding = storedBinding(row.payload_json);
+  const binding = storedBinding(row.payload_json, frozen.secret);
   if (row.envelope_id !== frozen.previewId) throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
   if (row.idempotency_input_digest !== frozen.inputDigest) {
     throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
@@ -649,7 +724,7 @@ export function createServerPreview(
     );
     if (existing) {
       if (isTerminalAuthorityCandidate(existing)) {
-        const terminal = assertRepositoryAuthorityRow(existing);
+        const terminal = assertRepositoryAuthorityRow(existing, frozen.secret);
         if (terminal.envelope_state !== "finalized") return authorityInvalid("state");
         assertPreviewIdentityConflicts(
           existing,
@@ -660,7 +735,7 @@ export function createServerPreview(
         );
       }
       const row = assertPreviewReadyRow(existing);
-      const originalBinding = storedBinding(row.payload_json);
+      const originalBinding = storedBinding(row.payload_json, frozen.secret);
       if (row.idempotency_input_digest !== frozen.inputDigest) {
         throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
       }
@@ -702,7 +777,7 @@ export function createServerPreview(
         frozen.sourceMessageId,
         frozen.conversationId,
         frozen.now,
-        authorityPayload(candidateBinding, frozen.previewMaterialV2),
+        authorityPayload(candidateBinding, frozen.secret, frozen.previewMaterialV2),
       );
     if (fault === "after_envelope") {
       throw new Error("PREVIEW_STORE_FAILED:after_envelope");
@@ -763,7 +838,7 @@ export function authorizeServerPreview(
   const row = assertPreviewReadyRow(
     findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id),
   );
-  const authoritativeBinding = storedBinding(row.payload_json);
+  const authoritativeBinding = storedBinding(row.payload_json, frozen.secret);
   if (!bindingEquals(authoritativeBinding, tokenBinding)) {
     return authorityInvalid("binding");
   }
@@ -799,11 +874,15 @@ export function authorizeRepositoryPreview(
   }
 
   const row = findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id);
-  const authority = assertRepositoryAuthorityRow(row, tokenBinding);
+  const authority = assertRepositoryAuthorityRow(row, frozen.secret, tokenBinding);
 
   return Object.freeze({
     binding: authority.binding,
     idempotency_key: authority.idempotency_key,
+    preview_authority_kind: authority.preview_authority_kind,
+    ...(authority.meal_fact_preview_material === undefined
+      ? {}
+      : { meal_fact_preview_material: authority.meal_fact_preview_material }),
     envelope_state: authority.envelope_state,
     result_status: authority.result_status,
   });

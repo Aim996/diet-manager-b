@@ -43,6 +43,7 @@ export type DomainQueryResult =
 
 export function queryDomainReadModel(
   database: DatabaseSync,
+  authoritySecret: Uint8Array,
   operation: DomainQueryOperation,
 ): DomainQueryResult {
   if (operation.kind === "query_inventory") {
@@ -57,6 +58,7 @@ export function queryDomainReadModel(
       date: operation.date,
       timezone: operation.timezone,
       meals: listMealProjection({
+        authoritySecret,
         database,
         date: operation.date,
         timezone: operation.timezone,
@@ -64,6 +66,7 @@ export function queryDomainReadModel(
     });
   }
   const summary = summarizeDailyProgress({
+    authoritySecret,
     database,
     date: operation.date,
     timezone: operation.timezone,
