@@ -210,6 +210,49 @@ describe("core occurred-time resolution", () => {
     });
   });
 
+  it.each([
+    "2026-08-11T08:30:00+08:00",
+    "2026-08-11T08:30:00.1+08:00",
+    "2026-08-11T08:30:00.12+08:00",
+    "2026-08-11T08:30:00.123+08:00",
+  ] as const)("handles every received-time precision admitted by input authority: %s", (receivedAt) => {
+    const entry = catalogCase("CASE-MEAL-014");
+
+    expect(resolveOccurredTime(entry.source_text, receivedAt)).toMatchObject({
+      resolution_basis: "default_received_at",
+      resolution_anchor: expect.stringMatching(/^2026-08-11T08:30:00(?:\.\d{3})?\+08:00$/u),
+    });
+  });
+
+  it.each([
+    ["昨晚11点半吃了苹果", "昨晚11点半"],
+    ["昨晚11点59分吃了苹果", "昨晚11点59分"],
+    ["昨晚11点多吃了苹果", "昨晚11点多"],
+  ] as const)("does not truncate an unsupported richer time expression: %s", (sourceText, rawText) => {
+    expect(resolveOccurredTime(sourceText, "2026-08-11T08:30:00+08:00")).toMatchObject({
+      raw_text: rawText,
+      resolved_start: null,
+      resolved_end: null,
+      precision: "unknown",
+      resolution_basis: "needs_clarification",
+    });
+  });
+
+  it("does not truncate an explicit ISO timestamp beyond millisecond precision", () => {
+    const explicit = "2026-08-10T08:00:00.1234Z";
+
+    expect(resolveOccurredTime(
+      `吃了一个苹果。${explicit}`,
+      "2026-08-11T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: explicit,
+      resolved_start: null,
+      resolved_end: null,
+      precision: "unknown",
+      resolution_basis: "needs_clarification",
+    });
+  });
+
   it("does not turn purchase or shelf-life evidence into an ingestion date", () => {
     const meal = catalogCase("CASE-MEAL-002");
     const purchase = catalogCase("CASE-PURCHASE-004");
@@ -305,6 +348,23 @@ describe("bounded meal context resolution", () => {
       source_message_id: first.source_message_id,
       revision: 2,
       scene: "home",
+    });
+  });
+
+  it("uses UTF-16 code-unit order for equal generated-time and revision ties", () => {
+    const entry = catalogCase("CASE-MEAL-020");
+    const base = validContextFromCatalog();
+    const tied = [
+      { ...base, context_id: "context-z", source_message_id: "source-z", scene: "outside" as const },
+      { ...base, context_id: "context-ä", source_message_id: "source-ä", scene: "home" as const },
+      { ...base, context_id: "context-中", source_message_id: "source-中", scene: "company" as const },
+    ];
+
+    const result = resolveMealContext(contextInput(entry, tied));
+
+    expect(result.accepted_context).toMatchObject({
+      context_id: "context-中",
+      scene: "company",
     });
   });
 

@@ -474,6 +474,26 @@ describe("core parser ordinary-input authority", () => {
   });
 
   it.each([
+    ["received_at", "2026-08-11T08:30:00.1234+08:00", "input.received_at:iso_timestamp"],
+    ["received_at", "2026-08-11T00:30:00.123456789Z", "input.received_at:iso_timestamp"],
+  ])("rejects sub-millisecond core input time %s", (key, value, reason) => {
+    const input = ordinaryInput() as ReturnType<typeof ordinaryInput> & Record<string, unknown>;
+    input[key] = value;
+    expectInvalid(input, reason);
+  });
+
+  it.each([
+    "2026-08-11T08:30:00.1+08:00",
+    "2026-08-11T08:30:00.12+08:00",
+    "2026-08-11T08:30:00.123+08:00",
+  ])("accepts core input time up to millisecond precision: %s", (receivedAt) => {
+    const input = ordinaryInput();
+    input.received_at = receivedAt;
+
+    expect(cloneCoreParseInput(input).received_at).toBe(receivedAt);
+  });
+
+  it.each([
     ["context_id", "", "input.prior_context[0].context_id:length"],
     ["context_id", "x".repeat(257), "input.prior_context[0].context_id:length"],
     ["generated_at", "not-iso", "input.prior_context[0].generated_at:iso_timestamp"],
@@ -482,5 +502,15 @@ describe("core parser ordinary-input authority", () => {
     const input = ordinaryInput();
     (input.prior_context[0] as Record<string, unknown>)[key] = value;
     expectInvalid(input, reason);
+  });
+
+  it.each([
+    ["generated_at", "2026-08-11T08:20:00.1234+08:00"],
+    ["valid_until", "2026-08-11T08:40:00.123456789+08:00"],
+  ])("rejects sub-millisecond context time %s", (key, value) => {
+    const input = ordinaryInput();
+    (input.prior_context[0] as Record<string, unknown>)[key] = value;
+
+    expectInvalid(input, `input.prior_context[0].${key}:iso_timestamp`);
   });
 });

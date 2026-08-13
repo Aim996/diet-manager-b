@@ -10,8 +10,10 @@ const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const OFFSET_ISO_PATTERN = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})/u;
 const FULL_OFFSET_ISO_PATTERN = new RegExp(`^${OFFSET_ISO_PATTERN.source}$`, "u");
+const SUB_MILLISECOND_OFFSET_ISO_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{4,}(?:Z|[+-]\d{2}:\d{2})/u;
 const AMBIGUOUS_LATE_NIGHT_PATTERN = /凌晨\s*\d{1,2}\s*点(?:\s*补记\s*昨天\s*夜宵|[^。！？!?]*(?:记不清)[^。！？!?]*昨晚[^。！？!?]*今早)/u;
-const LAST_NIGHT_PATTERN = /昨晚\s*(\d{1,2})\s*点/u;
+const RICH_LAST_NIGHT_PATTERN = /昨晚\s*\d{1,2}\s*点\s*(?:半|多|\d{1,2}\s*分)/u;
+const LAST_NIGHT_PATTERN = /昨晚\s*(\d{1,2})\s*点(?=$|[\s，。；：！？、,:;.!?]|[吃喝])/u;
 
 interface ParsedOffsetIso {
   readonly epoch_ms: number;
@@ -105,12 +107,34 @@ export function resolveOccurredTime(
     );
   }
 
+  const subMillisecondIso = SUB_MILLISECOND_OFFSET_ISO_PATTERN.exec(sourceText);
+  if (subMillisecondIso !== null) {
+    return evidence(
+      subMillisecondIso[0],
+      null,
+      "unknown",
+      "needs_clarification",
+      anchor,
+    );
+  }
+
   const explicit = OFFSET_ISO_PATTERN.exec(sourceText);
   if (explicit !== null) {
     const parsed = parseOffsetIso(explicit[0]);
     if (parsed !== null) {
       return evidence(explicit[0], parsed.epoch_ms, "exact", "explicit", anchor);
     }
+  }
+
+  const richerLastNight = RICH_LAST_NIGHT_PATTERN.exec(sourceText);
+  if (richerLastNight !== null) {
+    return evidence(
+      richerLastNight[0],
+      null,
+      "unknown",
+      "needs_clarification",
+      anchor,
+    );
   }
 
   const lastNight = LAST_NIGHT_PATTERN.exec(sourceText);

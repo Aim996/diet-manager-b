@@ -3,6 +3,10 @@ import type { DietManagerAction } from "../contracts.js";
 export type CoreScene = "home" | "outside" | "company" | "unknown";
 
 type OffsetIsoZone = "Z" | `${"+" | "-"}${number}:${number}`;
+// Runtime input authority freezes the exact grammar, including its 0-3 digit
+// millisecond limit. TypeScript cannot express that digit bound without an
+// unrepresentably large union, so this type checks the broad ISO shape while
+// cloneCoreParseInput remains the precision and calendar authority.
 export type OffsetIsoTimestamp =
   | `${number}-${number}-${number}T${number}:${number}:${number}${OffsetIsoZone}`
   | `${number}-${number}-${number}T${number}:${number}:${number}.${number}${OffsetIsoZone}`;

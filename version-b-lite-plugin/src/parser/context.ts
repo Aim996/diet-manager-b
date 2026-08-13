@@ -115,6 +115,12 @@ function isExplicitCorrection(sourceText: string): boolean {
   return EXPLICIT_CORRECTION_PATTERNS.some((pattern) => pattern.test(sourceText));
 }
 
+function compareUtf16CodeUnits(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 /** Resolve short-lived context without creating persistent chat state. */
 export function resolveMealContext(
   input: MealContextResolutionInput,
@@ -173,7 +179,7 @@ export function resolveMealContext(
   candidates.sort((left, right) =>
     right.generated - left.generated ||
     right.entry.revision - left.entry.revision ||
-    right.entry.context_id.localeCompare(left.entry.context_id)
+    compareUtf16CodeUnits(right.entry.context_id, left.entry.context_id)
   );
   const accepted = candidates[0]?.entry;
   const copied = accepted === undefined ? null : copyContext(accepted);

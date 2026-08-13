@@ -14,7 +14,7 @@ const MAX_SOURCE_TEXT_LENGTH = 4_096;
 const MAX_CONTEXT_TEXT_LENGTH = 256;
 const MAX_UNIT_LENGTH = 64;
 const MAX_ISO_TIMESTAMP_LENGTH = 64;
-const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|([+-])(\d{2}):(\d{2}))$/;
+const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|([+-])(\d{2}):(\d{2}))$/;
 
 function invalid(reason: string): never {
   throw new TypeError(`CORE_INPUT_AUTHORITY_INVALID:${reason}`);
