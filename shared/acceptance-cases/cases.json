@@ -1,6 +1,6 @@
 {
   "case_set_id": "diet-manager/core-acceptance-cases-v1",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "contract": {
     "contract_id": "diet-manager/contract-v2",
     "contract_version": 2
@@ -768,6 +768,141 @@
         }
       },
       "forbidden": ["explicit_field_marked_as_estimate", "inferred_field_without_evidence_label", "unbounded_quick_options", "forced_option_selection", "progress_not_last", "success_from_nonterminal_state"]
+    },
+    {
+      "id": "CASE-PURCHASE-003",
+      "requirement_ids": ["REQ-PURCHASE-002", "REQ-PRODUCT-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了鲜牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-default-location-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_event": {"event_count": 1, "status": "committed"}}, "product": {"location_evidence": {"location": "refrigerator", "basis": "configured_home_default", "rule_version": "diet-manager/default-location-v1"}}, "receipt": {"inferred_fields_labeled": ["location"]}},
+      "forbidden": ["unlabeled_location_inference", "invented_user_statement"]
+    },
+    {
+      "id": "CASE-PURCHASE-007",
+      "requirement_ids": ["REQ-PRODUCT-001", "REQ-PURCHASE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "又买了同品牌同口味同规格的250ml牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-exact-identity-reuse-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_event": {"event_count": 1, "status": "committed"}}, "product_identity": {"product_id": "fixture-product-milk-whole-250", "match": "exact_exhausted_historical_identity"}, "inventory_batch": {"batch_count": 1, "new_batch": true}, "nutrition_profile_reuse": {"product_id": "fixture-product-milk-whole-250", "profile_version": 2}},
+      "forbidden": ["merging_non_exact_variant", "deleting_identity_history"]
+    },
+    {
+      "id": "CASE-INVENTORY-001",
+      "requirement_ids": ["REQ-PANTRY-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了一盒这个牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-unique-milk-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "effect_bundle": {"inventory_match": {"status": "matched_unique", "product_id": "fixture-product-milk-whole-250"}, "inventory_transactions": [{"before_quantity": 6, "after_quantity": 5, "unit": "carton"}]}},
+      "forbidden": ["duplicate_deduction", "template_amount_as_stock_evidence"]
+    },
+    {
+      "id": "CASE-INVENTORY-002",
+      "requirement_ids": ["REQ-PANTRY-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了两盒这个牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-multi-batch-fefo-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "effect_bundle": {"inventory_match": {"status": "matched_fefo_fifo", "requested_quantity": 2, "unit": "carton"}, "batch_allocations": [{"batch_id": "fixture-batch-milk-fefo-001", "quantity": 1}, {"batch_id": "fixture-batch-milk-fifo-001", "quantity": 1}]}},
+      "forbidden": ["different_product_auto_selection", "expired_first", "negative_stock"]
+    },
+    {
+      "id": "CASE-INVENTORY-005",
+      "requirement_ids": ["REQ-PANTRY-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了半碗米饭。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-unit-incompatible-rice-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "effect_bundle": {"inventory_match": {"status": "skipped_unit_incompatible", "quantity_changed": false}, "issue": {"issue_count": 1, "code": "inventory_unit_conversion_unproven"}}, "amount_authority": {"nutrition_amount_evidence": "bounded_grams", "inventory_quantity": null}},
+      "forbidden": ["nutrition_grams_as_inventory_quantity", "zero_invented"]
+    },
+    {
+      "id": "CASE-INVENTORY-004",
+      "requirement_ids": ["REQ-PANTRY-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了一盒这个牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-insufficient-milk-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "effect_bundle": {"inventory_match": {"status": "skipped_insufficient", "quantity_changed": false}, "issue": {"issue_count": 1, "code": "inventory_insufficient"}}, "business_effects": {"inventory_nonnegative": true}},
+      "forbidden": ["partial_deduction_without_authorization", "fact_rollback"]
+    },
+    {
+      "id": "CASE-INVENTORY-009",
+      "requirement_ids": ["REQ-PANTRY-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了一盒这个牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-expired-and-fresh-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "effect_bundle": {"inventory_match": {"status": "matched_fefo", "expired_candidates_excluded": true}, "batch_allocations": [{"batch_id": "fixture-batch-milk-fresh-001", "quantity": 1}]}, "business_effects": {"expired_batch_unchanged": true}},
+      "forbidden": ["automatic_expired_selection", "expired_batch_deletion"]
+    },
+    {
+      "id": "CASE-MEAL-004",
+      "requirement_ids": ["REQ-PANTRY-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "在公司吃了一个苹果。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-meal-company-apple-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "parsing": {"context": {"scene": "company", "inventory_scope": "outside"}}, "effect_bundle": {"inventory_match": {"status": "skipped_outside_context", "quantity_changed": false}}, "business_effects": {"inventory_read_count": 0}},
+      "forbidden": ["home_default_inventory_access", "home_default_inventory_deduction"]
+    },
+    {
+      "id": "CASE-MEAL-005",
+      "requirement_ids": ["REQ-PANTRY-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个苹果，只记录，别扣库存。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-meal-explicit-inventory-skip-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"meal_event": {"event_count": 1, "status": "committed"}}, "parsing": {"inventory_directive": {"action": "skip", "explicit": true}}, "effect_bundle": {"inventory_match": {"status": "skipped_explicit", "quantity_changed": false}}, "business_effects": {"inventory_read_count": 0}},
+      "forbidden": ["ignoring_explicit_skip", "fact_rollback"]
+    },
+    {
+      "id": "CASE-PURCHASE-002",
+      "requirement_ids": ["REQ-PURCHASE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了一袋鸡蛋。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-eggs-outer-only-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_event": {"event_count": 1, "status": "committed"}}, "quantity_equation": {"outer_count": 1, "inner_count": null, "capacity_per_inner": null, "total": null}, "effect_bundle": {"inventory_batch": {"batch_count": 1, "stocked_quantity": null}}},
+      "forbidden": ["outer_amount_missing", "inventing_eggs_per_bag"]
+    },
+    {
+      "id": "CASE-PURCHASE-005",
+      "requirement_ids": ["REQ-PRODUCT-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了这个商品，包装上没有可靠保质期。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-unreliable-expiry-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_event": {"event_count": 1, "status": "committed"}}, "product": {"expiration_evidence": {"expires_at": null, "reliability": "unreliable", "duration_days": null}}, "receipt": {"time_anchor": {"field": "stocked_at", "value": "2026-08-11T08:30:00+08:00"}}},
+      "forbidden": ["guessed_expiry", "guessed_expiry_days"]
+    },
+    {
+      "id": "CASE-PURCHASE-006",
+      "requirement_ids": ["REQ-PURCHASE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了牛奶、鸡蛋和苹果。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-multi-product-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_events": {"event_count": 3, "ordered_products": ["milk", "egg", "apple"]}}, "effect_bundle": {"inventory_batches": {"batch_count": 3}}, "receipt": {"items": {"line_count": 3}, "shared_issues": {"deduplicated": true}}},
+      "forbidden": ["blended_product_batch", "duplicated_shared_issue"]
+    },
+    {
+      "id": "CASE-PURCHASE-008",
+      "requirement_ids": ["REQ-PRODUCT-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "买了这个牛奶。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-identity-ambiguous-v1", "prior_context": []},
+      "oracle": {"command": {"intent": "record_purchase", "status": "clarification_required", "business_write_count": 0}, "product_identity": {"status": "ambiguous"}, "clarification": {"options": {"min": 2, "max": 3, "free_text": true}}, "business_effects": {"purchase_event_count": 0, "inventory_batch_count": 0}},
+      "forbidden": ["silent_identity_reuse", "forced_option", "unbounded_list"]
+    },
+    {
+      "id": "CASE-PURCHASE-009",
+      "requirement_ids": ["REQ-PRODUCT-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "刚买的这瓶牛奶已经喝了一部分。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-purchase-partially-opened-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"purchase_event": {"event_count": 1, "status": "committed"}}, "product": {"opening_evidence": {"partial_use_explicit": true, "opening_inference_labeled": true, "rule_version": "diet-manager/opening-evidence-v1"}, "expiration_evidence": {"recomputed": true, "accepted_opening_evidence": true}}},
+      "forbidden": ["silent_opening_without_evidence", "rewriting_source_text"]
+    },
+    {
+      "id": "CASE-PURCHASE-010",
+      "requirement_ids": ["REQ-PRODUCT-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "更正：这批牛奶放在冷藏室，不是常温柜。",
+      "setup": {"environment_fixture": "env-zh-cn-20260811", "goals_fixture": null, "query_view_fixture": null, "domain_scenario_fixture": "domain-inventory-location-correction-v1", "prior_context": []},
+      "oracle": {"fact_commit": {"location_correction_event": {"event_count": 1, "write_policy": "append_only"}}, "product": {"location_evidence": {"current_location": "refrigerator"}, "expiration_evidence": {"recomputed_count": 1}}, "audit": {"previous_value_visible": true}},
+      "forbidden": ["physical_overwrite", "duplicated_correction", "stale_expiry"]
     },
     {
       "id": "CASE-MEAL-010",

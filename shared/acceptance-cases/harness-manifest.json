@@ -27,15 +27,15 @@
   "case_catalog": {
     "path": "shared/acceptance-cases/cases.json",
     "case_set_id": "diet-manager/core-acceptance-cases-v1",
-    "version": "1.5.0",
-    "case_count": 44,
-    "sha256": "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64"
+    "version": "1.6.0",
+    "case_count": 59,
+    "sha256": "5736FAB34BD80F6F4C29A9AF461DDEC9FFCA314580393B1A67977CED111CBBBB"
   },
   "fixture_catalog": {
     "path": "shared/acceptance-cases/fixtures/core-v1.json",
     "fixture_catalog_id": "diet-manager/core-fixtures-v1",
-    "version": "1.3.0",
-    "sha256": "346FAED1EF37E9ABAF4FDDDE6F841C15F9802C0CEB04BB384F5A95F1714CA881"
+    "version": "1.4.0",
+    "sha256": "E7828D446AEAFB6B68BD04DB5E7F12E1A2924ADA1B7BFAEEAEF1B660EEC3CE65"
   },
   "b_slice_input_catalog": {
     "path": "shared/acceptance-cases/b-slice-inputs.json",

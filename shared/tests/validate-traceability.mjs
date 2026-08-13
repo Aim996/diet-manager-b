@@ -31,7 +31,7 @@ const EXPECTED_COUNTS = Object.freeze({
   changes: 7,
   governance: 70,
   evidence: 37,
-  catalogCases: 44,
+  catalogCases: 59,
 });
 
 const EXPECTED_SELECTOR_COUNTS = Object.freeze({
@@ -426,7 +426,7 @@ function parseRequirements(planText, catalog) {
   requireTrace(caseMap.size === EXPECTED_COUNTS.cases, 'TRACE_CASE_COUNT', `${caseMap.size}`);
 
   requireTrace(catalog && Array.isArray(catalog.cases), 'TRACE_CASE_CATALOG_INVALID', CATALOG_RELATIVE_PATH);
-  requireTrace(catalog.version === '1.5.0', 'TRACE_CASE_CATALOG_VERSION', String(catalog.version));
+  requireTrace(catalog.version === '1.6.0', 'TRACE_CASE_CATALOG_VERSION', String(catalog.version));
   requireTrace(catalog.cases.length === EXPECTED_COUNTS.catalogCases, 'TRACE_CASE_CATALOG_COUNT', `${catalog.cases.length}`);
   const catalogMap = new Map();
   for (const item of catalog.cases) {
