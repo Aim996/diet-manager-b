@@ -3,18 +3,18 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 323241,
-      "sha256": "571C0404789EBBAF90EEB99AABA3EA6AEECB76EBC5D9549964AEB7C5513102DB"
+      "length": 323911,
+      "sha256": "EADA08592739297191D44AD991E3A6117AD8C6CF9269E81DE9CF24336263C628"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 30962,
-      "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
+      "length": 51882,
+      "sha256": "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42250,
-      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
+      "length": 54042,
+      "sha256": "03A395DB20CE6BB92B996D454AE9D7575F6BA1B081186386A5E28BA871F8B9DF"
     }
   },
   "counts": {
@@ -662,13 +662,13 @@
       "reference_ids": [
         "SH-TRACE-001",
         "CHG-20260813-002",
-        "EV-20260813-035"
+        "EV-20260813-037"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
       "status_owner": "closed / 治理负责人",
       "task": "SH-TRACE-001",
       "mitigation": "CHG-20260813-002改变计划/生成器后立即重开；四镜像已确定性重生成并重新独立复核",
-      "evidence": "EV-20260813-035证明74 REQ/153 CASE/63 TASK/70 governance/35 EV当前闭环；后续计划、生成器或案例变化再次重开"
+      "evidence": "EV-20260813-037证明74 REQ/153 CASE/63 TASK/70 governance/37 EV当前闭环；后续计划、生成器或案例变化再次重开"
     },
     {
       "id": "RISK-011",
@@ -760,13 +760,13 @@
         "X-GATE-002",
         "EV-20260812-030",
         "EV-20260813-036",
-        "SEL-CORE-001"
+        "EV-20260813-037"
       ],
       "risk": "把“用户选B”误写成B已安全、已就绪或map可生成；严重/G1-B-only/G2-B-only",
       "status_owner": "closed / 计划负责人",
       "task": "X-GATE-001、X-GATE-002",
       "mitigation": "门只绑定B；冻结contract hash、实际预检、忽略本地map、两轮独立复核后才关闭",
-      "evidence": "EV-20260812-030与EV-20260813-036；只解锁SEL-CORE-001，不外推产品可用性"
+      "evidence": "EV-20260812-030、EV-20260813-036与EV-20260813-037；核心切片关闭后仍不外推产品可用性"
     },
     {
       "id": "RISK-018",
@@ -1004,15 +1004,14 @@
       "reference_ids": [
         "X-GATE-002",
         "SH-TRACE-001",
-        "EV-20260813-035",
-        "EV-20260813-036",
-        "SEL-CORE-001"
+        "EV-20260813-037",
+        "SEL-PANTRY-001"
       ],
-      "source_change": "X-GATE-002开源可移植性与发布原子性复审；L2门产物兼容修复",
-      "impact": "仓库提交相对selected-route-map.template.json；机器绝对selected-route-map.json改为Git忽略的本地门产物；matrix只声明可移植要求，不预填pass；验证器解析§29.6、运行有界预检、绑定实际回执，并以同卷hard-link no-replace发布，碰撞或任一检查失败都不覆盖/不发布新map",
+      "source_change": "X-GATE-002开源可移植性、发布原子性与正式build完整身份复审；L2门产物兼容修复",
+      "impact": "仓库提交相对模板、机器绝对map保持Git忽略；验证器以同卷hard-link no-replace发布；SEL-CORE关闭时又把正式build从2个代表文件扩为全部44个dist JavaScript的精确path/bytes/SHA-256清单，并拒绝source/dist构建后漂移，不执行第二次build",
       "owner_approver": "X-GATE实现者 / 独立架构与安全复核",
       "tasks": "SH-TRACE-001、X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
-      "status_evidence": "已验证；EV-20260813-035关闭追踪前置，EV-20260813-036绑定8项实际预检、原子本地map及两轮独立复核；当前EV总数36，X-GATE-002=bind_b_ready且只解锁SEL-CORE-001"
+      "status_evidence": "已验证；EV-20260813-037绑定44/44产物、18项身份变异、2项构建后漂移变异与两轮独立复核；当前EV总数37，只解锁SEL-PANTRY-001"
     }
   ]
 }

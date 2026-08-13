@@ -3,24 +3,24 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 323241,
-      "sha256": "571C0404789EBBAF90EEB99AABA3EA6AEECB76EBC5D9549964AEB7C5513102DB"
+      "length": 323911,
+      "sha256": "EADA08592739297191D44AD991E3A6117AD8C6CF9269E81DE9CF24336263C628"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 30962,
-      "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
+      "length": 51882,
+      "sha256": "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42250,
-      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
+      "length": 54042,
+      "sha256": "03A395DB20CE6BB92B996D454AE9D7575F6BA1B081186386A5E28BA871F8B9DF"
     }
   },
   "counts": {
     "requirements": 74,
     "cases": 153,
-    "shared_catalog_cases": 27
+    "shared_catalog_cases": 44
   },
   "selectors": {
     "G1_COMMON_B_ONLY": [
@@ -2001,8 +2001,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-TIME-003"
+      ]
     },
     {
       "id": "CASE-MEAL-003",
@@ -2080,8 +2083,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-002",
+        "REQ-MEAL-001"
+      ]
     },
     {
       "id": "CASE-MEAL-010",
@@ -2091,8 +2097,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-002",
+        "REQ-MEAL-001"
+      ]
     },
     {
       "id": "CASE-MEAL-011",
@@ -2102,8 +2111,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-SCOPE-001"
+      ]
     },
     {
       "id": "CASE-MEAL-012",
@@ -2113,8 +2125,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-TIME-001"
+      ]
     },
     {
       "id": "CASE-MEAL-013",
@@ -2124,8 +2139,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-TIME-001"
+      ]
     },
     {
       "id": "CASE-MEAL-014",
@@ -2135,8 +2153,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-TIME-001"
+      ]
     },
     {
       "id": "CASE-MEAL-015",
@@ -2146,8 +2167,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-002",
+        "REQ-MEAL-001"
+      ]
     },
     {
       "id": "CASE-MEAL-016",
@@ -2157,8 +2181,12 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-CONTEXT-002",
+        "REQ-MEAL-001"
+      ]
     },
     {
       "id": "CASE-MEAL-017",
@@ -2169,8 +2197,12 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-MEAL-001",
+        "REQ-SCOPE-001"
+      ]
     },
     {
       "id": "CASE-MEAL-018",
@@ -2181,8 +2213,12 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-MEAL-001",
+        "REQ-SCOPE-001"
+      ]
     },
     {
       "id": "CASE-MEAL-019",
@@ -2193,8 +2229,12 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-001",
+        "REQ-MEAL-001",
+        "REQ-SCOPE-001"
+      ]
     },
     {
       "id": "CASE-MEAL-020",
@@ -2205,8 +2245,12 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-CONTEXT-003",
+        "REQ-MEAL-001",
+        "REQ-PANTRY-001"
+      ]
     },
     {
       "id": "CASE-MEAL-021",
@@ -2726,8 +2770,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-PRODUCT-003",
+        "REQ-TIME-003"
+      ]
     },
     {
       "id": "CASE-PURCHASE-005",
@@ -3068,8 +3115,10 @@
       "stages": [
         "EXCLUDED"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-SCOPE-002"
+      ]
     },
     {
       "id": "CASE-SOURCE-001",
@@ -3283,8 +3332,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-WATER-001"
+      ]
     },
     {
       "id": "CASE-WATER-004",
@@ -3294,8 +3346,11 @@
       "stages": [
         "PRODUCT-0.1"
       ],
-      "shared_catalog_status": "planned",
-      "shared_catalog_requirement_ids": []
+      "shared_catalog_status": "implemented_static_oracle",
+      "shared_catalog_requirement_ids": [
+        "REQ-MEAL-001",
+        "REQ-WATER-001"
+      ]
     },
     {
       "id": "CASE-WATER-005",

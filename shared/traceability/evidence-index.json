@@ -3,23 +3,23 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 323241,
-      "sha256": "571C0404789EBBAF90EEB99AABA3EA6AEECB76EBC5D9549964AEB7C5513102DB"
+      "length": 323911,
+      "sha256": "EADA08592739297191D44AD991E3A6117AD8C6CF9269E81DE9CF24336263C628"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 30962,
-      "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
+      "length": 51882,
+      "sha256": "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42250,
-      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
+      "length": 54042,
+      "sha256": "03A395DB20CE6BB92B996D454AE9D7575F6BA1B081186386A5E28BA871F8B9DF"
     }
   },
   "counts": {
-    "evidence": 36,
-    "files_present": 34,
+    "evidence": 37,
+    "files_present": 35,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -652,6 +652,26 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "X-GATE-002"
+      ]
+    },
+    {
+      "id": "EV-20260813-037",
+      "scope": "SEL-CORE-001 选中核心命令切片",
+      "result": "产品候选01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c通过21个选中ID的声明路径、535项核心验收、788项全插件测试、事务/崩溃/OpenClaw隔离门和两轮独立复核；正式build只执行1次，44/44产物由429cfc21a4bf05e98a4fe47fe3771cb46a1f1a47完整绑定；P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭SEL-CORE-001并按依赖与计划顺序只解锁SEL-PANTRY-001；20个解析Oracle+CASE-RECEIPT-002可达性，full_case_set=none，不证明21案E2E、安装、发布、远程验收或PRODUCT-0.1可用",
+      "reference_ids": [
+        "SEL-CORE-001",
+        "SEL-PANTRY-001",
+        "CASE-RECEIPT-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-037-sel-core-001.md",
+        "length": 3149,
+        "sha256": "69078233A51D4CBB0AB94D72A093B7FC43750F940B5AAC15CE0271BC82DE5F69"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SEL-CORE-001"
       ]
     }
   ]

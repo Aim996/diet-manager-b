@@ -30,8 +30,8 @@ const EXPECTED_COUNTS = Object.freeze({
   debts: 7,
   changes: 7,
   governance: 70,
-  evidence: 36,
-  catalogCases: 27,
+  evidence: 37,
+  catalogCases: 44,
 });
 
 const EXPECTED_SELECTOR_COUNTS = Object.freeze({
@@ -196,17 +196,25 @@ function validateSelectorCountProse(planText) {
   }
 }
 
-function parseCaseAssertionMetadata(projectRoot, taskId) {
+function readTaskBrief(projectRoot, taskId, briefTextByTask = {}) {
   const candidates = [
     `docs/work-items/${taskId}-v2-brief.md`,
     `docs/work-items/${taskId}-brief.md`,
   ];
   const relativePath = candidates.find((candidate) => fs.existsSync(path.join(projectRoot, candidate)));
   if (!relativePath) {
-    return { brief_path: null, case_assertion_paths: {}, full_case_set: null };
+    return { relativePath: null, text: null };
   }
+  const text = Object.hasOwn(briefTextByTask, taskId)
+    ? briefTextByTask[taskId]
+    : fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
+  requireTrace(typeof text === 'string', 'TRACE_ACTIVE_TASK_BRIEF_OVERRIDE_INVALID', taskId);
+  return { relativePath, text };
+}
 
-  const text = fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
+function parseCaseAssertionMetadata(projectRoot, taskId, briefTextByTask = {}) {
+  const { relativePath, text } = readTaskBrief(projectRoot, taskId, briefTextByTask);
+  if (!relativePath) return { brief_path: null, case_assertion_paths: {}, full_case_set: null, active_fields: null };
   const lines = text.split(/\r?\n/);
   const assertions = {};
   const start = lines.findIndex((line) => line.trim() === 'case_assertion_paths:');
@@ -241,7 +249,137 @@ function parseCaseAssertionMetadata(projectRoot, taskId) {
     brief_path: relativePath,
     case_assertion_paths: assertions,
     full_case_set: fullCaseSet,
+    active_fields: parseActiveTaskFields(text, taskId),
   };
+}
+
+function parseActiveTaskFields(text, taskId) {
+  const match = text.match(/```json trace-active-task\r?\n([\s\S]*?)\r?\n```/);
+  if (!match) return null;
+  try {
+    const value = JSON.parse(match[1]);
+    requireTrace(value && typeof value === 'object' && !Array.isArray(value), 'TRACE_ACTIVE_TASK_BRIEF_INVALID', taskId);
+    return value;
+  } catch (error) {
+    if (error instanceof TraceabilityError) throw error;
+    fail('TRACE_ACTIVE_TASK_BRIEF_INVALID', taskId);
+  }
+}
+
+function requireString(value, taskId, field) {
+  requireTrace(typeof value === 'string' && value.trim() !== '', 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${taskId}:${field}`);
+}
+
+function requireStringArray(value, taskId, field, { allowEmpty = false } = {}) {
+  requireTrace(Array.isArray(value) && (allowEmpty || value.length > 0), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${taskId}:${field}`);
+  requireTrace(value.every((item) => typeof item === 'string' && item.trim() !== ''), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${taskId}:${field}`);
+  requireTrace(new Set(value).size === value.length, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${taskId}:${field}:duplicate`);
+}
+
+function requireExactArray(actual, expected, taskId, field) {
+  requireStringArray(actual, taskId, field, { allowEmpty: expected.length === 0 });
+  requireTrace(JSON.stringify(actual) === JSON.stringify(expected), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${taskId}:${field}`);
+}
+
+function parseActiveOracleCaseIds(text, taskId) {
+  const start = text.indexOf('## 完整验收 Oracle');
+  const end = text.indexOf('## 交付物', start);
+  requireTrace(start >= 0 && end > start, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${taskId}:acceptance_oracle`);
+  const rows = text.slice(start, end).split(/\r?\n/).filter((line) => /^\| `CASE-[A-Z0-9-]+` \|/.test(line));
+  return rows.map((line) => {
+    const cells = parseMarkdownRow(line, `${taskId}:acceptance_oracle`);
+    requireTrace(cells.length === 4, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${taskId}:acceptance_oracle`);
+    const caseId = exactCodeId(cells[0], CASE_ID_PATTERN, `${taskId}:acceptance_oracle`);
+    requireTrace(cells.slice(1).every((cell) => stripMarkdown(cell) !== ''), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${taskId}:acceptance_oracle:${caseId}`);
+    return caseId;
+  });
+}
+
+function validateActiveTaskBrief(task, metadata, projectRoot, planText, text) {
+  const { id, cells, requirementIdsForTask, caseIdsForTask, dependencyTaskIds, dependencyEvidenceIds, evidenceIds, status } = task;
+  if (status !== '进行中' || caseIdsForTask.length === 0) return;
+  const active = metadata.active_fields;
+  requireTrace(active, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${id}:trace-active-task`);
+  for (const field of [
+    'task_id', 'product_scope', 'milestone', 'task_kind', 'route', 'objective', 'owner', 'reviewer',
+    'status', 'blocker', 'next_action', 'reopen_condition', 'project_root', 'plugin_root', 'node_exe',
+  ]) requireString(active[field], id, field);
+  for (const field of [
+    'requirement_ids', 'case_ids', 'dependency_task_ids', 'dependency_evidence_ids', 'deliverables',
+    'verification_commands', 'acceptance_oracle_case_ids', 'required_evidence_types', 'actual_evidence_ids',
+    'risk_ids', 'decision_ids', 'change_ids', 'official_data_roots', 'isolated_test_roots',
+  ]) requireStringArray(active[field], id, field, { allowEmpty: ['dependency_evidence_ids', 'actual_evidence_ids'].includes(field) });
+
+  requireTrace(active.task_id === id, 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:task_id`);
+  const [milestone, kind] = stripMarkdown(cells[1]).split('/');
+  requireTrace(active.milestone === milestone && active.task_kind === kind, 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:milestone_task_kind`);
+  requireTrace(active.route === 'B', 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:route`);
+  requireTrace(active.objective === stripMarkdown(cells[2].replace(/；R\[[^\]]*\]；C\[[^\]]*\](?:；NA=[^（;；]+(?:（[^）]+）)?)?/, '')), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:objective`);
+  requireExactArray(active.requirement_ids, requirementIdsForTask, id, 'requirement_ids');
+  requireExactArray(active.case_ids, caseIdsForTask, id, 'case_ids');
+  requireExactArray(active.dependency_task_ids, dependencyTaskIds, id, 'dependency_task_ids');
+  requireExactArray(active.dependency_evidence_ids, dependencyEvidenceIds, id, 'dependency_evidence_ids');
+  requireExactArray(active.deliverables, [stripMarkdown(cells[4])], id, 'deliverables');
+  requireExactArray(active.acceptance_oracle_case_ids, caseIdsForTask, id, 'acceptance_oracle_case_ids');
+  requireExactArray(parseActiveOracleCaseIds(text, id), caseIdsForTask, id, 'acceptance_oracle_rows');
+  requireTrace(metadata.full_case_set !== null, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${id}:full_case_set`);
+  requireTrace(active.forbidden_oracle_enforced === true, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${id}:forbidden_oracle_enforced`);
+  requireExactArray(active.required_evidence_types, stripMarkdown(cells[5]).match(/E-[A-Z]+/g) ?? [], id, 'required_evidence_types');
+  requireExactArray(active.actual_evidence_ids, evidenceIds, id, 'actual_evidence_ids');
+  requireTrace(`${active.owner} / ${active.reviewer}` === stripMarkdown(cells[8]), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:owner_reviewer`);
+  requireTrace(active.status === status, 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:status`);
+  requireTrace(stripMarkdown(cells[10]).includes(active.next_action) && stripMarkdown(cells[10]).includes(active.reopen_condition), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:next_reopen`);
+
+  for (const [field, pattern] of [['risk_ids', /^RISK-\d{3}$/], ['decision_ids', /^DEC-\d{3}$/], ['change_ids', /^CHG-\d{8}-\d{3}$/]]) {
+    requireTrace(active[field].every((value) => pattern.test(value)), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${id}:${field}`);
+    for (const value of active[field]) {
+      requireTrace(planText.split(/\r?\n/).some((line) => line.startsWith(`| \`${value}\` |`)), 'TRACE_ORPHAN_REFERENCE', `${id}:${value}`);
+    }
+  }
+  for (const field of ['project_root', 'plugin_root', 'node_exe']) {
+    requireTrace(path.win32.isAbsolute(active[field]), 'TRACE_ACTIVE_TASK_BRIEF_PATH_INVALID', `${id}:${field}`);
+  }
+  requireTrace(path.resolve(active.project_root) === path.resolve(projectRoot), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:project_root`);
+  requireTrace(path.resolve(active.plugin_root) === path.resolve(projectRoot, 'version-b-lite-plugin'), 'TRACE_ACTIVE_TASK_BRIEF_MISMATCH', `${id}:plugin_root`);
+  requireTrace(fs.existsSync(active.node_exe) && fs.lstatSync(active.node_exe).isFile(), 'TRACE_ACTIVE_TASK_BRIEF_PATH_INVALID', `${id}:node_exe`);
+  for (const field of ['official_data_roots', 'isolated_test_roots']) {
+    requireTrace(active[field].every((value) => path.win32.isAbsolute(value) && value.includes(id)), 'TRACE_ACTIVE_TASK_BRIEF_PATH_INVALID', `${id}:${field}`);
+  }
+  requireTrace(active.official_data_roots.every((value) => value.includes('official-manifest-sentinel')), 'TRACE_ACTIVE_TASK_BRIEF_PATH_INVALID', `${id}:official_data_roots`);
+  requireTrace(active.verification_commands.length === 8, 'TRACE_ACTIVE_TASK_BRIEF_FIELD_INVALID', `${id}:verification_commands`);
+  const projectLocationIndex = active.verification_commands.indexOf('Set-Location -LiteralPath $projectRoot');
+  const rootGateIndex = active.verification_commands.findIndex((command) => command.includes('validate-sel-pantry-roots.mjs'));
+  const pluginLocationIndex = active.verification_commands.indexOf('Set-Location -LiteralPath $pluginRoot');
+  const pluginCommandIndexes = active.verification_commands
+    .map((command, index) => ({ command, index }))
+    .filter(({ command }) => command.includes('node_modules/'))
+    .map(({ index }) => index);
+  requireTrace(projectLocationIndex === 0, 'TRACE_ACTIVE_TASK_BRIEF_COMMAND_INVALID', `${id}:project_location`);
+  requireTrace(rootGateIndex > projectLocationIndex
+    && active.verification_commands[rootGateIndex].includes('$officialVerificationRoot')
+    && active.verification_commands[rootGateIndex].includes('$isolatedTestRootBase'),
+  'TRACE_ACTIVE_TASK_BRIEF_COMMAND_INVALID', `${id}:root_gate`);
+  requireTrace(pluginLocationIndex > rootGateIndex
+    && pluginCommandIndexes.length >= 3
+    && pluginCommandIndexes.every((index) => index > pluginLocationIndex),
+  'TRACE_ACTIVE_TASK_BRIEF_COMMAND_INVALID', `${id}:plugin_location`);
+  const humanText = text.replace(/```json trace-active-task\r?\n[\s\S]*?\r?\n```/, '');
+  const exactBindings = [
+    ['$nodeExe', active.node_exe],
+    ['$projectRoot', active.project_root],
+    ['$pluginRoot', active.plugin_root],
+    ['$officialVerificationRoot', active.official_data_roots[0]],
+    ['$isolatedTestRootBase', active.isolated_test_roots[0]],
+  ];
+  for (const [variable, value] of exactBindings) {
+    requireTrace(humanText.includes(`${variable} = '${value}'`), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${id}:binding:${variable}`);
+  }
+  for (const command of active.verification_commands) {
+    requireTrace(humanText.includes(command), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${id}:verification_command`);
+  }
+  for (const caseId of caseIdsForTask) {
+    requireTrace(text.includes(`| \`${caseId}\` |`), 'TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', `${id}:oracle:${caseId}`);
+  }
 }
 
 function parseRequirements(planText, catalog) {
@@ -288,7 +426,7 @@ function parseRequirements(planText, catalog) {
   requireTrace(caseMap.size === EXPECTED_COUNTS.cases, 'TRACE_CASE_COUNT', `${caseMap.size}`);
 
   requireTrace(catalog && Array.isArray(catalog.cases), 'TRACE_CASE_CATALOG_INVALID', CATALOG_RELATIVE_PATH);
-  requireTrace(catalog.version === '1.4.0', 'TRACE_CASE_CATALOG_VERSION', String(catalog.version));
+  requireTrace(catalog.version === '1.5.0', 'TRACE_CASE_CATALOG_VERSION', String(catalog.version));
   requireTrace(catalog.cases.length === EXPECTED_COUNTS.catalogCases, 'TRACE_CASE_CATALOG_COUNT', `${catalog.cases.length}`);
   const catalogMap = new Map();
   for (const item of catalog.cases) {
@@ -353,7 +491,7 @@ function parseRequirements(planText, catalog) {
   };
 }
 
-function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
+function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors, briefTextByTask = {}) {
   const sectionStart = planText.indexOf('### 31.3 ');
   requireTrace(sectionStart >= 0, 'TRACE_TASK_SECTION_MISSING', '31.3');
   const rows = planText.slice(sectionStart).split(/\r?\n/)
@@ -381,7 +519,7 @@ function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
     if (requirementIdsForTask.length === 0 && caseIdsForTask.length === 0) {
       requireTrace(naMatch, 'TRACE_TASK_GOVERNANCE_MARKER_MISSING', id);
     }
-    const assertionMetadata = parseCaseAssertionMetadata(projectRoot, id);
+    const assertionMetadata = parseCaseAssertionMetadata(projectRoot, id, briefTextByTask);
     for (const assertionCaseId of Object.keys(assertionMetadata.case_assertion_paths)) {
       requireTrace(caseIdsForTask.includes(assertionCaseId), 'TRACE_BRIEF_CASE_NOT_CLAIMED', `${id}:${assertionCaseId}`);
       const values = assertionMetadata.case_assertion_paths[assertionCaseId];
@@ -403,9 +541,10 @@ function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
     else if (caseIdsForTask.length > 0 && status === '已完成' && evidenceIds.length > 0 && LEGACY_FULL_CASE_EVIDENCE_TASKS.has(id)) assertionState = 'legacy_evidence_migration';
     else if (caseIdsForTask.length > 0) assertionState = 'brief_pending';
 
-    if (caseIdsForTask.length > 0 && status === '已完成') {
-      requireTrace(assertionState !== 'brief_pending', 'TRACE_COMPLETED_TASK_ASSERTIONS_MISSING', id);
-    }
+    requireTaskAssertionState(caseIdsForTask, status, assertionState, id);
+    validateActiveTaskBrief({
+      id, cells, requirementIdsForTask, caseIdsForTask, dependencyTaskIds, dependencyEvidenceIds, evidenceIds, status,
+    }, assertionMetadata, projectRoot, planText, assertionMetadata.brief_path ? readTaskBrief(projectRoot, id, briefTextByTask).text : '');
 
     return {
       id,
@@ -433,6 +572,7 @@ function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
   requireUnique(tasks, 'tasks');
   requireTrace(tasks.length === EXPECTED_COUNTS.tasks, 'TRACE_TASK_COUNT', `${tasks.length}`);
   const taskIds = new Set(tasks.map((task) => task.id));
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
   for (const task of tasks) {
     for (const dependencyId of task.dependency_task_ids) {
       requireTrace(taskIds.has(dependencyId), 'TRACE_ORPHAN_REFERENCE', `${task.id}:${dependencyId}`);
@@ -440,6 +580,11 @@ function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
     }
     if (task.status === '已完成') {
       requireTrace(task.actual_evidence_ids.length > 0, 'TRACE_COMPLETED_TASK_EVIDENCE_MISSING', task.id);
+    }
+    if (task.status === '进行中') {
+      for (const dependencyId of task.dependency_task_ids) {
+        requireTrace(tasksById.get(dependencyId)?.status === '已完成', 'TRACE_ACTIVE_TASK_DEPENDENCY_NOT_COMPLETE', `${task.id}:${dependencyId}`);
+      }
     }
   }
 
@@ -492,6 +637,15 @@ function parseTasks(planText, projectRoot, requirementIds, caseIds, selectors) {
   requireTrace(cancelledMatch && Number(cancelledMatch[1]) === (statusCounts['已取消'] ?? 0), 'TRACE_DASHBOARD_COUNT_MISMATCH', '已取消');
 
   return { tasks, taskIds, caseProducerMatrix, fullCaseResponsibilities, fullCaseResponsibilityMatrix, statusCounts };
+}
+
+function requireTaskAssertionState(caseIdsForTask, status, assertionState, id) {
+  if (caseIdsForTask.length > 0 && status === '已完成') {
+    requireTrace(assertionState !== 'brief_pending', 'TRACE_COMPLETED_TASK_ASSERTIONS_MISSING', id);
+  }
+  if (caseIdsForTask.length > 0 && status === '进行中') {
+    requireTrace(assertionState !== 'brief_pending', 'TRACE_ACTIVE_TASK_ASSERTIONS_MISSING', id);
+  }
 }
 
 const GOVERNANCE_SHAPES = Object.freeze({
@@ -662,7 +816,7 @@ export function buildTraceability(projectRoot = PROJECT_ROOT, overrides = {}) {
   const requirements = parseRequirements(planText, catalog);
   validateSelectorCountProse(planText);
   const requirementIds = new Set(requirements.requirements.map((row) => row.id));
-  const tasks = parseTasks(planText, projectRoot, requirementIds, requirements.caseIds, requirements.selectors);
+  const tasks = parseTasks(planText, projectRoot, requirementIds, requirements.caseIds, requirements.selectors, overrides.briefTextByTask ?? {});
   const governance = parseGovernance(planText);
   const evidence = parseEvidence(planText, projectRoot);
   validateReferences(requirements, tasks, governance, evidence);
@@ -787,16 +941,16 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 70, evidence: 36 });
+  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 70, evidence: 37 });
   assert.deepEqual(baseline.mirrors.tasks.counts.status, {
-    '未开始': 25,
-    '已完成': 29,
+    '未开始': 24,
+    '已完成': 30,
     '进行中': 1,
     '已取消': 8,
   });
   assert.deepEqual(
     baseline.mirrors.tasks.tasks.filter((task) => task.status === '进行中').map((task) => task.id),
-    ['SEL-CORE-001'],
+    ['SEL-PANTRY-001'],
   );
   const traceTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SH-TRACE-001');
   assert.equal(traceTask?.status, '已完成');
@@ -805,10 +959,13 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   assert.equal(xGateTask?.status, '已完成');
   assert.deepEqual(xGateTask?.actual_evidence_ids, ['EV-20260813-036']);
   const coreTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SEL-CORE-001');
-  assert.equal(coreTask?.status, '进行中');
-  const closureEvidence = baseline.mirrors.evidence.evidence.find((record) => record.id === 'EV-20260813-036');
+  assert.equal(coreTask?.status, '已完成');
+  assert.deepEqual(coreTask?.actual_evidence_ids, ['EV-20260813-037']);
+  const pantryTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SEL-PANTRY-001');
+  assert.equal(pantryTask?.status, '进行中');
+  const closureEvidence = baseline.mirrors.evidence.evidence.find((record) => record.id === 'EV-20260813-037');
   assert.equal(closureEvidence?.file_status, 'present');
-  assert.equal(closureEvidence?.file?.path, 'docs/evidence/EV-20260813-036-x-gate-002.md');
+  assert.equal(closureEvidence?.file?.path, 'docs/evidence/EV-20260813-037-sel-core-001.md');
 
   const planBytes = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH));
   const historicalPlanPath = '总功能开发计划0.3.md';
@@ -884,7 +1041,7 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
       ? line.replace('CASE-MEAL-011', 'CASE-ORPHAN-999')
       : line
   )).join('\n');
-  expectFailure('TRACE_ORPHAN_REFERENCE', () => buildTraceability(projectRoot, {
+  expectFailure('TRACE_CASE_CATALOG_ORPHAN', () => buildTraceability(projectRoot, {
     planText: orphanCasePlan,
   }));
 
@@ -909,6 +1066,23 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
     planText: taskRowMutation(planText, 'SH-TRACE-001', (cells) => { cells[3] += '、`B-NOT-REAL-999`'; }),
   }));
 
+  const pantryBriefPath = path.join(projectRoot, 'docs/work-items/SEL-PANTRY-001-brief.md');
+  const pantryBriefText = fs.readFileSync(pantryBriefPath, 'utf8');
+  expectFailure('TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', () => buildTraceability(projectRoot, {
+    briefTextByTask: {
+      'SEL-PANTRY-001': pantryBriefText.replace('  "owner": "Codex /root",\n', ''),
+    },
+  }));
+
+  expectFailure('TRACE_ACTIVE_TASK_BRIEF_COMMAND_INVALID', () => buildTraceability(projectRoot, {
+    briefTextByTask: {
+      'SEL-PANTRY-001': pantryBriefText.replace(
+        '    "Set-Location -LiteralPath $pluginRoot",\n',
+        '    "Set-Location -LiteralPath $missingPluginRoot",\n',
+      ),
+    },
+  }));
+
   const badCatalog = structuredClone(catalog);
   badCatalog.cases[0].id = 'CASE-ORPHAN-998';
   expectFailure('TRACE_CASE_CATALOG_ORPHAN', () => buildTraceability(projectRoot, { catalog: badCatalog }));
@@ -916,7 +1090,7 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const bytes = mirrorBytes(baseline.mirrors);
   assert.equal(bytes.requirements.includes(projectRoot), false, 'generated mirror leaked an absolute project path');
   assert.equal(bytes.tasks.includes('oracle"'), false, 'task mirror leaked an Oracle payload');
-  return 15;
+  return 17;
 }
 
 function printPass(mode, summary, mutations = null) {

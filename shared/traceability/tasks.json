@@ -3,25 +3,25 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 323241,
-      "sha256": "571C0404789EBBAF90EEB99AABA3EA6AEECB76EBC5D9549964AEB7C5513102DB"
+      "length": 323911,
+      "sha256": "EADA08592739297191D44AD991E3A6117AD8C6CF9269E81DE9CF24336263C628"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 30962,
-      "sha256": "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41"
+      "length": 51882,
+      "sha256": "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42250,
-      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
+      "length": 54042,
+      "sha256": "03A395DB20CE6BB92B996D454AE9D7575F6BA1B081186386A5E28BA871F8B9DF"
     }
   },
   "counts": {
     "tasks": 63,
     "status": {
-      "未开始": 25,
-      "已完成": 29,
+      "未开始": 24,
+      "已完成": 30,
       "已取消": 8,
       "进行中": 1
     },
@@ -3243,9 +3243,13 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/inventory_transactions"
+          ]
         }
       ]
     },
@@ -3254,9 +3258,13 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/batch_allocations"
+          ]
         }
       ]
     },
@@ -3299,9 +3307,13 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/issue"
+          ]
         }
       ]
     },
@@ -3360,9 +3372,14 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/issue",
+            "/oracle/business_effects/inventory_nonnegative"
+          ]
         }
       ]
     },
@@ -3379,9 +3396,14 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/issue",
+            "/oracle/amount_authority"
+          ]
         }
       ]
     },
@@ -3476,9 +3498,14 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/effect_bundle/batch_allocations",
+            "/oracle/business_effects/expired_batch_unchanged"
+          ]
         }
       ]
     },
@@ -3666,9 +3693,13 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3677,9 +3708,15 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/occurred_time",
+            "/oracle/parsing/purchase_evidence",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3745,9 +3782,14 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/parsing/context",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/business_effects/inventory_read_count"
+          ]
         }
       ]
     },
@@ -3756,9 +3798,14 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/meal_event",
+            "/oracle/parsing/inventory_directive",
+            "/oracle/effect_bundle/inventory_match",
+            "/oracle/business_effects/inventory_read_count"
+          ]
         }
       ]
     },
@@ -3822,9 +3869,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/excluded_items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3833,9 +3885,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/completion_evidence",
+            "/oracle/parsing/items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3844,9 +3901,13 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -3855,9 +3916,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/occurred_time",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3866,9 +3932,13 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -3877,9 +3947,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/occurred_time",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3888,9 +3963,13 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -3899,9 +3978,13 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -3910,9 +3993,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/subject",
+            "/oracle/parsing/items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3921,9 +4009,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/subject",
+            "/oracle/parsing/items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3932,9 +4025,15 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/subject",
+            "/oracle/parsing/items",
+            "/oracle/parsing/group_amount_evidence",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3943,9 +4042,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/context",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -3965,9 +4069,13 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -4818,9 +4926,13 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/effect_bundle/inventory_batch",
+            "/oracle/quantity_equation"
+          ]
         }
       ]
     },
@@ -4829,9 +4941,13 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/quantity_equation",
+            "/oracle/effect_bundle/inventory_batch"
+          ]
         }
       ]
     },
@@ -4840,9 +4956,13 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/product/location_evidence",
+            "/oracle/receipt/inferred_fields_labeled"
+          ]
         }
       ]
     },
@@ -4851,9 +4971,11 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/parsing/time_anchors"
+          ]
         }
       ]
     },
@@ -4862,9 +4984,13 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/product/expiration_evidence",
+            "/oracle/receipt/time_anchor"
+          ]
         }
       ]
     },
@@ -4873,9 +4999,14 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_events",
+            "/oracle/effect_bundle/inventory_batches",
+            "/oracle/receipt/items",
+            "/oracle/receipt/shared_issues"
+          ]
         }
       ]
     },
@@ -4892,9 +5023,14 @@
         },
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/product_identity",
+            "/oracle/inventory_batch",
+            "/oracle/nutrition_profile_reuse"
+          ]
         }
       ]
     },
@@ -4903,9 +5039,14 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/product_identity",
+            "/oracle/clarification/options",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -4914,9 +5055,13 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/purchase_event",
+            "/oracle/product/opening_evidence",
+            "/oracle/product/expiration_evidence"
+          ]
         }
       ]
     },
@@ -4925,9 +5070,14 @@
       "producers": [
         {
           "task_id": "SEL-PANTRY-001",
-          "task_status": "未开始",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "进行中",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/fact_commit/location_correction_event",
+            "/oracle/product/location_evidence",
+            "/oracle/product/expiration_evidence",
+            "/oracle/audit/previous_value_visible"
+          ]
         }
       ]
     },
@@ -5132,9 +5282,12 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/receipt/explicit_fields_unlabeled",
+            "/oracle/receipt/inferred_fields_labeled"
+          ]
         },
         {
           "task_id": "SEL-RECEIPT-001",
@@ -5386,9 +5539,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing",
+            "/oracle/factual_query",
+            "/oracle/business_effects"
+          ]
         }
       ]
     },
@@ -5970,9 +6128,12 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/fact_commit/water_event"
+          ]
         }
       ]
     },
@@ -5992,9 +6153,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/liquid_classification",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -6003,9 +6169,14 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "/oracle/command",
+            "/oracle/parsing/items",
+            "/oracle/parsing/liquid_classification",
+            "/oracle/fact_commit/meal_event"
+          ]
         }
       ]
     },
@@ -8100,14 +8271,132 @@
       "deliverables": "selected parser+domain commands",
       "verification": "精确R字段连接§30最低案例；E-CASE+E-STOR",
       "roots": "选中路线根",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 待分配独立产品复核",
-      "status": "进行中",
-      "next_reopen": "EV-20260813-036已授权；先按21个冻结案例TDD实现，需求/解析变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "actual_evidence_ids": [
+        "EV-20260813-037"
+      ],
+      "owner_reviewer": "Codex /root / 两名独立规格与质量复核",
+      "status": "已完成",
+      "next_reopen": "产品候选01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c；20个解析Oracle+1个收据可达性，full_case_set=none；需求/解析/事务/OpenClaw或正式产物变化即重开",
+      "brief_path": "docs/work-items/SEL-CORE-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-MEAL-001": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-021": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-017": [
+          "/oracle/command",
+          "/oracle/parsing/subject",
+          "/oracle/parsing/items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-009": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/excluded_items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-WATER-001": [
+          "/oracle/command",
+          "/oracle/fact_commit/water_event"
+        ],
+        "CASE-SCOPE-001": [
+          "/oracle/command",
+          "/oracle/parsing",
+          "/oracle/factual_query",
+          "/oracle/business_effects"
+        ],
+        "CASE-MEAL-002": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/occurred_time",
+          "/oracle/parsing/purchase_evidence",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-PURCHASE-004": [
+          "/oracle/parsing/time_anchors"
+        ],
+        "CASE-RECEIPT-002": [
+          "/oracle/receipt/explicit_fields_unlabeled",
+          "/oracle/receipt/inferred_fields_labeled"
+        ],
+        "CASE-MEAL-010": [
+          "/oracle/command",
+          "/oracle/parsing/completion_evidence",
+          "/oracle/parsing/items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-011": [
+          "/oracle/command",
+          "/oracle/parsing",
+          "/oracle/business_effects"
+        ],
+        "CASE-MEAL-012": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/occurred_time",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-013": [
+          "/oracle/command",
+          "/oracle/parsing",
+          "/oracle/business_effects"
+        ],
+        "CASE-MEAL-014": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/occurred_time",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-015": [
+          "/oracle/command",
+          "/oracle/parsing",
+          "/oracle/business_effects"
+        ],
+        "CASE-MEAL-016": [
+          "/oracle/command",
+          "/oracle/parsing",
+          "/oracle/business_effects"
+        ],
+        "CASE-MEAL-018": [
+          "/oracle/command",
+          "/oracle/parsing/subject",
+          "/oracle/parsing/items",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-019": [
+          "/oracle/command",
+          "/oracle/parsing/subject",
+          "/oracle/parsing/items",
+          "/oracle/parsing/group_amount_evidence",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-MEAL-020": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/context",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-WATER-003": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/liquid_classification",
+          "/oracle/fact_commit/meal_event"
+        ],
+        "CASE-WATER-004": [
+          "/oracle/command",
+          "/oracle/parsing/items",
+          "/oracle/parsing/liquid_classification",
+          "/oracle/fact_commit/meal_event"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "SEL-PANTRY-001",
@@ -8154,13 +8443,108 @@
       "verification": "精确R字段连接§30最低案例+并发；E-CASE+E-STOR",
       "roots": "选中路线根",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立领域复核",
-      "status": "未开始",
-      "next_reopen": "next=四量和模板库存隔离；规则变化重开",
-      "brief_path": null,
-      "case_assertion_paths": {},
-      "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "owner_reviewer": "Codex /root / 待分配独立领域复核",
+      "status": "进行中",
+      "next_reopen": "next=先补齐§4.5 brief和实施计划，再做四量、模板库存隔离与并发TDD；规则变化重开",
+      "brief_path": "docs/work-items/SEL-PANTRY-001-brief.md",
+      "case_assertion_paths": {
+        "CASE-PURCHASE-001": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/effect_bundle/inventory_batch",
+          "/oracle/quantity_equation"
+        ],
+        "CASE-PURCHASE-003": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/product/location_evidence",
+          "/oracle/receipt/inferred_fields_labeled"
+        ],
+        "CASE-PURCHASE-007": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/product_identity",
+          "/oracle/inventory_batch",
+          "/oracle/nutrition_profile_reuse"
+        ],
+        "CASE-INVENTORY-001": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/inventory_transactions"
+        ],
+        "CASE-INVENTORY-002": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/batch_allocations"
+        ],
+        "CASE-INVENTORY-003": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/issue"
+        ],
+        "CASE-INVENTORY-005": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/issue",
+          "/oracle/amount_authority"
+        ],
+        "CASE-INVENTORY-004": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/issue",
+          "/oracle/business_effects/inventory_nonnegative"
+        ],
+        "CASE-INVENTORY-009": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/effect_bundle/batch_allocations",
+          "/oracle/business_effects/expired_batch_unchanged"
+        ],
+        "CASE-MEAL-004": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/parsing/context",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/business_effects/inventory_read_count"
+        ],
+        "CASE-MEAL-005": [
+          "/oracle/fact_commit/meal_event",
+          "/oracle/parsing/inventory_directive",
+          "/oracle/effect_bundle/inventory_match",
+          "/oracle/business_effects/inventory_read_count"
+        ],
+        "CASE-PURCHASE-002": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/quantity_equation",
+          "/oracle/effect_bundle/inventory_batch"
+        ],
+        "CASE-PURCHASE-005": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/product/expiration_evidence",
+          "/oracle/receipt/time_anchor"
+        ],
+        "CASE-PURCHASE-006": [
+          "/oracle/fact_commit/purchase_events",
+          "/oracle/effect_bundle/inventory_batches",
+          "/oracle/receipt/items",
+          "/oracle/receipt/shared_issues"
+        ],
+        "CASE-PURCHASE-008": [
+          "/oracle/command",
+          "/oracle/product_identity",
+          "/oracle/clarification/options",
+          "/oracle/business_effects"
+        ],
+        "CASE-PURCHASE-009": [
+          "/oracle/fact_commit/purchase_event",
+          "/oracle/product/opening_evidence",
+          "/oracle/product/expiration_evidence"
+        ],
+        "CASE-PURCHASE-010": [
+          "/oracle/fact_commit/location_correction_event",
+          "/oracle/product/location_evidence",
+          "/oracle/product/expiration_evidence",
+          "/oracle/audit/previous_value_visible"
+        ]
+      },
+      "full_case_set": "none",
+      "assertion_state": "declared"
     },
     {
       "id": "SEL-NUTR-001",
