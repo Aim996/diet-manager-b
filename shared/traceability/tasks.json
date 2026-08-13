@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322801,
-      "sha256": "36D3FB4264B7B31231BF8049D6EA9BD21934915B1C1D51C509C5D3F12D61301E"
+      "length": 323202,
+      "sha256": "DA28596644B13F7A448181E8E70F1EB82AD024040C988355BB3F89608DB7C47E"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,15 +13,15 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42136,
-      "sha256": "DBBB1B2E162258A989ADBDFEA65F67915A9B3A8C0C3894E4893CE683FF4EB53A"
+      "length": 42250,
+      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
     }
   },
   "counts": {
     "tasks": 63,
     "status": {
-      "未开始": 26,
-      "已完成": 28,
+      "未开始": 25,
+      "已完成": 29,
       "已取消": 8,
       "进行中": 1
     },
@@ -2861,9 +2861,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "docs/evidence/EV-20260812-031-b-slice-001.md",
+            "docs/evidence/EV-20260812-032-b-fault-001.md"
+          ]
         },
         {
           "task_id": "SEL-FACTEFFECT-001",
@@ -3009,9 +3012,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "docs/evidence/EV-20260812-031-b-slice-001.md",
+            "docs/evidence/EV-20260812-032-b-fault-001.md"
+          ]
         },
         {
           "task_id": "SEL-FACTEFFECT-001",
@@ -3660,7 +3666,7 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3671,7 +3677,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3816,7 +3822,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3827,7 +3833,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3838,7 +3844,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3849,7 +3855,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3860,7 +3866,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3871,7 +3877,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3882,7 +3888,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3893,7 +3899,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3904,7 +3910,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3915,7 +3921,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3926,7 +3932,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3937,7 +3943,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -3959,7 +3965,7 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -4471,9 +4477,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/tests/validate-x-gate-002.mjs",
+            "docs/work-items/X-GATE-002-matrix.json"
+          ]
         },
         {
           "task_id": "SEL-TEMPLATE-001",
@@ -4503,9 +4512,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "shared/tests/validate-x-gate-002-review.mjs",
+            "shared/selected-route-map.template.json"
+          ]
         },
         {
           "task_id": "SEL-LIFE-001",
@@ -4839,7 +4851,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -5120,7 +5132,7 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5374,7 +5386,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -5738,9 +5750,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "docs/evidence/EV-20260812-030-x-gate-001.md",
+            "docs/evidence/EV-20260812-032-b-fault-001.md"
+          ]
         },
         {
           "task_id": "SEL-FACTEFFECT-001",
@@ -5862,9 +5877,12 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
-          "assertion_state": "brief_pending",
-          "assertion_paths": []
+          "task_status": "已完成",
+          "assertion_state": "declared",
+          "assertion_paths": [
+            "docs/evidence/EV-20260812-030-x-gate-001.md",
+            "docs/evidence/EV-20260812-032-b-fault-001.md"
+          ]
         },
         {
           "task_id": "SEL-FACTEFFECT-001",
@@ -5952,7 +5970,7 @@
         },
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -5974,7 +5992,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -5985,7 +6003,7 @@
       "producers": [
         {
           "task_id": "SEL-CORE-001",
-          "task_status": "未开始",
+          "task_status": "进行中",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         }
@@ -8000,14 +8018,41 @@
       "deliverables": "B-only就绪报告、仓库相对shared/selected-route-map.template.json、忽略的本机shared/selected-route-map.json及机器预检回执",
       "verification": "解析§29.6；B纵切/故障完整Oracle、路径/命令/root/contract hash、实际预检回执、原子no-replace和碰撞回归完整；不评分；E-GATE",
       "roots": "ROOT-SHARED",
-      "actual_evidence_ids": [],
-      "owner_reviewer": "Codex /root / 至少两名独立复核",
-      "status": "进行中",
-      "next_reopen": "追踪前置已由EV-20260813-035关闭；现运行有界预检并修复复审P2，预检全通过后才原子生成本地map；两轮复核前不得解锁产品任务",
-      "brief_path": null,
-      "case_assertion_paths": {},
+      "actual_evidence_ids": [
+        "EV-20260813-036"
+      ],
+      "owner_reviewer": "Codex /root / /root/xgate002_spec_review与/root/xgate002_quality_review",
+      "status": "已完成",
+      "next_reopen": "bind_b_ready；8项预检、21任务/43路径、原子本地map与两轮复核P0/P1/P2=0；只授权SEL-CORE-001，contract/template/前置/候选变化即重开",
+      "brief_path": "docs/work-items/X-GATE-002-brief.md",
+      "case_assertion_paths": {
+        "CASE-POLICY-001": [
+          "shared/tests/validate-x-gate-002.mjs",
+          "docs/work-items/X-GATE-002-matrix.json"
+        ],
+        "CASE-POLICY-002": [
+          "shared/tests/validate-x-gate-002-review.mjs",
+          "shared/selected-route-map.template.json"
+        ],
+        "CASE-EFFECT-001": [
+          "docs/evidence/EV-20260812-031-b-slice-001.md",
+          "docs/evidence/EV-20260812-032-b-fault-001.md"
+        ],
+        "CASE-EFFECT-003": [
+          "docs/evidence/EV-20260812-031-b-slice-001.md",
+          "docs/evidence/EV-20260812-032-b-fault-001.md"
+        ],
+        "CASE-STORAGE-006": [
+          "docs/evidence/EV-20260812-030-x-gate-001.md",
+          "docs/evidence/EV-20260812-032-b-fault-001.md"
+        ],
+        "CASE-STORAGE-007": [
+          "docs/evidence/EV-20260812-030-x-gate-001.md",
+          "docs/evidence/EV-20260812-032-b-fault-001.md"
+        ]
+      },
       "full_case_set": null,
-      "assertion_state": "brief_pending"
+      "assertion_state": "declared"
     },
     {
       "id": "SEL-CORE-001",
@@ -8056,9 +8101,9 @@
       "verification": "精确R字段连接§30最低案例；E-CASE+E-STOR",
       "roots": "选中路线根",
       "actual_evidence_ids": [],
-      "owner_reviewer": "未分配/独立产品复核",
-      "status": "未开始",
-      "next_reopen": "next=G2后绑定路线；需求/解析变化重开",
+      "owner_reviewer": "Codex /root / 待分配独立产品复核",
+      "status": "进行中",
+      "next_reopen": "EV-20260813-036已授权；先按21个冻结案例TDD实现，需求/解析变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

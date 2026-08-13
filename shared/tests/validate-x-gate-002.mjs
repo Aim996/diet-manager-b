@@ -477,7 +477,7 @@ function buildTraceIdentity(trace) {
     cases: 153,
     tasks: 63,
     governance: 70,
-    evidence: 35,
+    evidence: 36,
   };
 }
 

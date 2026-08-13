@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322801,
-      "sha256": "36D3FB4264B7B31231BF8049D6EA9BD21934915B1C1D51C509C5D3F12D61301E"
+      "length": 323202,
+      "sha256": "DA28596644B13F7A448181E8E70F1EB82AD024040C988355BB3F89608DB7C47E"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42136,
-      "sha256": "DBBB1B2E162258A989ADBDFEA65F67915A9B3A8C0C3894E4893CE683FF4EB53A"
+      "length": 42250,
+      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
     }
   },
   "counts": {
-    "evidence": 35,
-    "files_present": 33,
+    "evidence": 36,
+    "files_present": 34,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -633,6 +633,25 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "SH-TRACE-001"
+      ]
+    },
+    {
+      "id": "EV-20260813-036",
+      "scope": "X-GATE-002 B-only就绪与路径绑定门",
+      "result": "候选4646194fe8a7acc03157419f1789bbb6a9460ee6上21任务/43路径、4项前置、8项实际检查、正式build回执、原子no-replace本地map及两轮独立复核全部通过；P0/P1/P2=0、Ready=YES、决策=bind_b_ready",
+      "limitation": "关闭X-GATE-002并只解锁SEL-CORE-001；map为Git忽略的环境绑定状态，不证明产品可安装、可发布或远程OpenClaw已验收",
+      "reference_ids": [
+        "X-GATE-002",
+        "SEL-CORE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-036-x-gate-002.md",
+        "length": 3359,
+        "sha256": "748E514DB17B2B9C31B92B90809DC9A193F7ED870C955F8776C4328E6EFFDBA3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "X-GATE-002"
       ]
     }
   ]

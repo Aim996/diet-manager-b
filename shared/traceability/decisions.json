@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322801,
-      "sha256": "36D3FB4264B7B31231BF8049D6EA9BD21934915B1C1D51C509C5D3F12D61301E"
+      "length": 323202,
+      "sha256": "DA28596644B13F7A448181E8E70F1EB82AD024040C988355BB3F89608DB7C47E"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42136,
-      "sha256": "DBBB1B2E162258A989ADBDFEA65F67915A9B3A8C0C3894E4893CE683FF4EB53A"
+      "length": 42250,
+      "sha256": "104DEB3472289469ECB6988B49EB63B53610F38E06CECFB5D1CF6FBC2830EDCC"
     }
   },
   "counts": {
@@ -757,13 +757,16 @@
       "kind": "RISK",
       "reference_ids": [
         "X-GATE-001",
-        "X-GATE-002"
+        "X-GATE-002",
+        "EV-20260812-030",
+        "EV-20260813-036",
+        "SEL-CORE-001"
       ],
       "risk": "把“用户选B”误写成B已安全、已就绪或map可生成；严重/G1-B-only/G2-B-only",
-      "status_owner": "open / 计划负责人",
+      "status_owner": "closed / 计划负责人",
       "task": "X-GATE-001、X-GATE-002",
-      "mitigation": "门只绑定B且保持未开始；contract hash未知时拒绝map",
-      "evidence": "B硬安全与纵切新鲜EV、冻结contract hash和B-only map"
+      "mitigation": "门只绑定B；冻结contract hash、实际预检、忽略本地map、两轮独立复核后才关闭",
+      "evidence": "EV-20260812-030与EV-20260813-036；只解锁SEL-CORE-001，不外推产品可用性"
     },
     {
       "id": "RISK-018",
@@ -1001,13 +1004,15 @@
       "reference_ids": [
         "X-GATE-002",
         "SH-TRACE-001",
-        "EV-20260813-035"
+        "EV-20260813-035",
+        "EV-20260813-036",
+        "SEL-CORE-001"
       ],
       "source_change": "X-GATE-002开源可移植性与发布原子性复审；L2门产物兼容修复",
       "impact": "仓库提交相对selected-route-map.template.json；机器绝对selected-route-map.json改为Git忽略的本地门产物；matrix只声明可移植要求，不预填pass；验证器解析§29.6、运行有界预检、绑定实际回执，并以同卷hard-link no-replace发布，碰撞或任一检查失败都不覆盖/不发布新map",
       "owner_approver": "X-GATE实现者 / 独立架构与安全复核",
       "tasks": "SH-TRACE-001、X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
-      "status_evidence": "实施中；追踪刷新已由EV-20260813-035关闭，当前EV总数35且X-GATE-002为唯一WIP；允许运行实际有界预检，但所有检查通过前本地map必须缺席，门完成两轮复核前不得解锁产品任务"
+      "status_evidence": "已验证；EV-20260813-035关闭追踪前置，EV-20260813-036绑定8项实际预检、原子本地map及两轮独立复核；当前EV总数36，X-GATE-002=bind_b_ready且只解锁SEL-CORE-001"
     }
   ]
 }
