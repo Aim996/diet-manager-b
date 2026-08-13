@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,9 +14,138 @@ const FORBIDDEN_OFFICIAL_LEAVES = new Set([
   'diet-manager-b.sqlite3', 'diet-manager-b.sqlite3-wal', 'diet-manager-b.sqlite3-shm',
   'secret', 'secret.json', 'secrets', 'state', 'state.json',
 ]);
+const NATIVE_POWERSHELL = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+const NATIVE_TIMEOUT_MS = 10_000;
+const NATIVE_MAX_BYTES = 64 * 1024;
 
 function fail(code) {
   throw new Error(`SEL_PANTRY_ROOT_${code}`);
+}
+
+function nativeScript(lines) {
+  return lines.join('\n');
+}
+
+const NATIVE_TYPES = nativeScript([
+  'Add-Type -TypeDefinition @"',
+  'using System; using System.Runtime.InteropServices;',
+  'public static class PantryNative {',
+  '[StructLayout(LayoutKind.Sequential)] public struct INFO { public uint Attributes; public System.Runtime.InteropServices.ComTypes.FILETIME Creation; public System.Runtime.InteropServices.ComTypes.FILETIME Access; public System.Runtime.InteropServices.ComTypes.FILETIME Write; public uint Volume; public uint SizeHigh; public uint SizeLow; public uint Links; public uint IndexHigh; public uint IndexLow; }',
+  '[StructLayout(LayoutKind.Sequential)] public struct DISPOSITION { public byte DeleteFile; }',
+  '[DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr CreateFileW(string name,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);',
+  '[DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool GetFileInformationByHandle(IntPtr h,out INFO info);',
+  '[DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool SetFileInformationByHandle(IntPtr h,int klass,ref DISPOSITION info,uint size);',
+  '[DllImport("kernel32.dll", SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool CloseHandle(IntPtr h);',
+  '}',
+  '"@',
+  '$read=[uint32]0x80; $delete=[uint32]0x10000; $shareRead=[uint32]1; $open=[uint32]3; $flags=[uint32]0x02200000; $invalid=[IntPtr](-1)',
+  'function OpenNative([string]$p,[bool]$deleteAccess) { $access=$read; if($deleteAccess){$access=$access -bor $delete}; $h=[PantryNative]::CreateFileW($p,$access,$shareRead,[IntPtr]::Zero,$open,$flags,[IntPtr]::Zero); if($h -eq $invalid){throw ("OPEN="+$p+":"+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; return $h }',
+  'function NativeId([IntPtr]$h) { $i=New-Object PantryNative+INFO; if(-not [PantryNative]::GetFileInformationByHandle($h,[ref]$i)){throw ("INFO="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; return ("$($i.Volume):$($i.IndexHigh):$($i.IndexLow)") }',
+]);
+
+function encodeNative(script) {
+  return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function spawnNative(script, env, label, stdin = 'STOP\n') {
+  if (process.platform !== 'win32') return Promise.reject(new Error(`SEL_PANTRY_ROOT_NATIVE_PLATFORM:${process.platform}`));
+  return new Promise((resolve, reject) => {
+    const child = spawn(NATIVE_POWERSHELL, ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeNative(script)], {
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ...env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`SEL_PANTRY_ROOT_NATIVE_TIMEOUT:${label}`)); }, NATIVE_TIMEOUT_MS);
+    const append = (target, chunk) => {
+      const value = target + chunk.toString('utf8');
+      if (Buffer.byteLength(value, 'utf8') > NATIVE_MAX_BYTES) {
+        child.kill();
+        reject(new Error(`SEL_PANTRY_ROOT_NATIVE_MAX_BUFFER:${label}`));
+      }
+      return value;
+    };
+    child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
+    child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
+    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(`SEL_PANTRY_ROOT_NATIVE_EXIT:${label}:${code}:${stderr.trim()}`));
+      else resolve(stdout.trim());
+    });
+    child.stdin.end(stdin);
+  });
+}
+
+async function nativeIdentity(file) {
+  const output = await spawnNative(nativeScript([
+    '$ErrorActionPreference="Stop"', NATIVE_TYPES,
+    '$h=[IntPtr]::Zero',
+    'try { $h=OpenNative $env:SEL_PANTRY_NATIVE_PATH $false; [Console]::Out.WriteLine("IDENTITY|$(NativeId $h)") } finally { if($h -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($h)|Out-Null} }',
+  ]), { SEL_PANTRY_NATIVE_PATH: file }, 'identity', '');
+  const match = output.match(/^IDENTITY\|(.+)$/m);
+  if (!match) fail('NATIVE_IDENTITY');
+  return match[1];
+}
+
+async function nativeCleanup({ base, child, marker, baseId, childId, markerId }) {
+  const output = await spawnNative(nativeScript([
+    '$ErrorActionPreference="Stop"', NATIVE_TYPES,
+    '$base=[IntPtr]::Zero; $child=[IntPtr]::Zero; $marker=[IntPtr]::Zero',
+    'try {',
+    '$base=OpenNative $env:SEL_PANTRY_NATIVE_BASE $false; if((NativeId $base) -ne $env:SEL_PANTRY_NATIVE_BASE_ID){throw "MISMATCH_BASE"}',
+    '$child=OpenNative $env:SEL_PANTRY_NATIVE_CHILD $true; if((NativeId $child) -ne $env:SEL_PANTRY_NATIVE_CHILD_ID){throw "MISMATCH_CHILD"}',
+    '$marker=OpenNative $env:SEL_PANTRY_NATIVE_MARKER $true; if((NativeId $marker) -ne $env:SEL_PANTRY_NATIVE_MARKER_ID){throw "MISMATCH_MARKER"}',
+    '$d=New-Object PantryNative+DISPOSITION; $d.DeleteFile=1; if(-not [PantryNative]::SetFileInformationByHandle($marker,4,[ref]$d,1)){throw ("DELETE_MARKER="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; [PantryNative]::CloseHandle($marker)|Out-Null; $marker=[IntPtr]::Zero;',
+    'if(-not [PantryNative]::SetFileInformationByHandle($child,4,[ref]$d,1)){throw ("DELETE_CHILD="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; [PantryNative]::CloseHandle($child)|Out-Null; $child=[IntPtr]::Zero; [Console]::Out.WriteLine("CLEANUP|PASS")',
+    '} catch { [Console]::Out.WriteLine("CLEANUP|FAIL|$($_.Exception.Message)"); exit 0 } finally { if($marker -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($marker)|Out-Null}; if($child -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($child)|Out-Null}; if($base -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($base)|Out-Null} }',
+  ]), {
+    SEL_PANTRY_NATIVE_BASE: base, SEL_PANTRY_NATIVE_CHILD: child, SEL_PANTRY_NATIVE_MARKER: marker,
+    SEL_PANTRY_NATIVE_BASE_ID: baseId, SEL_PANTRY_NATIVE_CHILD_ID: childId, SEL_PANTRY_NATIVE_MARKER_ID: markerId,
+  }, 'cleanup', '');
+  if (output !== 'CLEANUP|PASS') fail(`ISOLATED_NATIVE_CLEANUP:${output}`);
+}
+
+async function startOfficialGuard(root, hookEnv = {}) {
+  const script = nativeScript([
+    '$ErrorActionPreference="Stop"', NATIVE_TYPES,
+    '$root=$env:SEL_PANTRY_NATIVE_ROOT; $paths=@(); $p=[IO.Path]::GetFullPath($root); while($true){if(Test-Path -LiteralPath $p){$paths+=,$p};$parent=[IO.Directory]::GetParent($p);if($null -eq $parent){break};$p=$parent.FullName}; [array]::Reverse($paths); $handles=@(); $ids=@(); $watcher=$null',
+    'try { foreach($entry in $paths){$h=OpenNative $entry $false;$handles+=,$h;$ids+=,(NativeId $h)}; $watcher=New-Object IO.FileSystemWatcher $root; $watcher.IncludeSubdirectories=$true; $watcher.NotifyFilter=[IO.NotifyFilters]::FileName -bor [IO.NotifyFilters]::DirectoryName -bor [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size -bor [IO.NotifyFilters]::Security; $watcher.EnableRaisingEvents=$true; foreach($kind in @("Changed","Created","Deleted","Renamed","Error")){Register-ObjectEvent -InputObject $watcher -EventName $kind -SourceIdentifier ("sel-pantry-native-"+$kind)|Out-Null}; [Console]::Out.WriteLine("READY|$($ids -join ",")"); [Console]::Out.Flush(); $null=[Console]::In.ReadLine(); Start-Sleep -Milliseconds 100; $events=@(Get-Event|Where-Object{$_.SourceIdentifier -like "sel-pantry-native-*"}); $errs=@($events|Where-Object{$_.SourceIdentifier -eq "sel-pantry-native-Error"}); $after=@();foreach($h in $handles){$after+=,(NativeId $h)}; $forced=($env:SEL_PANTRY_NATIVE_FORCE_ERROR -eq "1") -or ($env:SEL_PANTRY_NATIVE_FORCE_OVERFLOW -eq "1"); $changed=($events.Count -gt 0) -or $forced; $hasError=($errs.Count -gt 0) -or $forced; [Console]::Out.WriteLine("STATUS|changed=$changed|error=$hasError|ids_exact=$([string]($ids -join ",") -eq [string]($after -join ","))"); [Console]::Out.Flush() } catch { [Console]::Out.WriteLine("STATUS|changed=true|error=true|ids_exact=false|message=$($_.Exception.Message)"); [Console]::Out.Flush() } finally { if($watcher){$watcher.EnableRaisingEvents=$false;$watcher.Dispose()};foreach($h in $handles){[PantryNative]::CloseHandle($h)|Out-Null} }',
+  ]);
+  if (process.platform !== 'win32') fail(`NATIVE_PLATFORM:${process.platform}`);
+  const child = spawn(NATIVE_POWERSHELL, ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeNative(script)], {
+    shell: false, windowsHide: true, env: { ...process.env, SEL_PANTRY_NATIVE_ROOT: root, ...hookEnv }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  let resolved = false;
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { child.kill(); reject(new Error('SEL_PANTRY_ROOT_NATIVE_READY_TIMEOUT')); }, NATIVE_TIMEOUT_MS);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+      if (Buffer.byteLength(stdout, 'utf8') > NATIVE_MAX_BYTES) { child.kill(); reject(new Error('SEL_PANTRY_ROOT_NATIVE_MAX_BUFFER:guard')); }
+      if (!resolved && stdout.includes('READY|')) { resolved = true; clearTimeout(timer); resolve(); }
+    });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.once('error', reject);
+    child.once('exit', (code) => { if (!resolved) reject(new Error(`SEL_PANTRY_ROOT_NATIVE_READY_EXIT:${code}:${stderr.trim()}`)); });
+  });
+  await ready;
+  return {
+    async stop() {
+      return new Promise((resolve, reject) => {
+        child.once('exit', (code) => {
+          if (code !== 0) { reject(new Error(`SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT:${code}:${stderr.trim()}`)); return; }
+          const status = stdout.match(/STATUS\|changed=(True|False)\|error=(True|False)\|ids_exact=(True|False)/);
+          if (!status) { reject(new Error(`SEL_PANTRY_ROOT_NATIVE_GUARD_STATUS:${stdout.trim()}`)); return; }
+          resolve({ changed: status[1] === 'True', error: status[2] === 'True', idsExact: status[3] === 'True' });
+        });
+        child.stdin.end('STOP\n');
+      });
+    },
+  };
 }
 
 function parseArgs(argv) {
@@ -166,32 +296,7 @@ function assertOwnedMarker(marker, expected) {
   if (!actual.isFile() || !sameIdentity(expected, actual)) fail('ISOLATED_MARKER_REPLACED');
 }
 
-function cleanupOwnedChild({ child, marker, childStats, markerStats, official, isolated }) {
-  assertBothAuthorities(official, isolated);
-  const current = maybeLstat(child);
-  if (!current) return;
-  if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(childStats, current)) fail('ISOLATED_CHILD_REPLACED');
-  const currentMarker = maybeLstat(marker);
-  if (currentMarker) {
-    if (!markerStats || !currentMarker.isFile() || currentMarker.isSymbolicLink() || !sameIdentity(markerStats, currentMarker)) fail('ISOLATED_MARKER_REPLACED');
-    assertBothAuthorities(official, isolated);
-    assertOwnedChild(child, childStats);
-    assertOwnedMarker(marker, markerStats);
-    fs.unlinkSync(marker);
-    if (maybeLstat(marker)) fail('ISOLATED_MARKER_REPLACED');
-  }
-  assertBothAuthorities(official, isolated);
-  assertOwnedChild(child, childStats);
-  // Never recurse: a nonempty child is preserved for inspection instead of deleted.
-  try {
-    fs.rmdirSync(child);
-  } catch {
-    fail('ISOLATED_CLEANUP_NONEMPTY');
-  }
-  if (maybeLstat(child)) fail('ISOLATED_CLEANUP');
-}
-
-export function validateRoots({ officialRoot, isolatedBase }, hooks = {}) {
+export async function validateRoots({ officialRoot, isolatedBase }, hooks = {}) {
   if (typeof officialRoot !== 'string' || !path.win32.isAbsolute(officialRoot)) fail('OFFICIAL_NOT_ABSOLUTE');
   if (typeof isolatedBase !== 'string' || !path.win32.isAbsolute(isolatedBase)) fail('ISOLATED_NOT_ABSOLUTE');
   if (path.resolve(officialRoot).toLowerCase() === path.resolve(isolatedBase).toLowerCase()) fail('ROLES_SAME');
@@ -199,25 +304,32 @@ export function validateRoots({ officialRoot, isolatedBase }, hooks = {}) {
   const isolated = captureRoot('ISOLATED', isolatedBase, ISOLATED_SUFFIX);
   assertBothAuthorities(official, isolated);
   assertEmptyIsolatedBase(isolatedBase);
-  const before = snapshotOfficial(officialRoot, official);
-  hooks.afterSnapshot?.({ officialRoot, isolatedBase });
-
+  const guard = await startOfficialGuard(officialRoot, hooks.nativeGuardEnv);
+  let isolatedNativeId;
   const child = path.join(isolatedBase, crypto.randomUUID());
   const marker = path.join(child, '.sel-pantry-root-marker');
   let ownedChild;
   let ownedMarker;
+  let nativeChildId;
+  let nativeMarkerId;
   let failure;
+  let before;
   try {
+    isolatedNativeId = await nativeIdentity(isolatedBase);
+    before = snapshotOfficial(officialRoot, official);
+    hooks.afterSnapshot?.({ officialRoot, isolatedBase });
     assertBothAuthorities(official, isolated);
     fs.mkdirSync(child);
     ownedChild = lstatOrdinary(child, 'ISOLATED_CHILD');
     if (!ownedChild.isDirectory()) fail('ISOLATED_CHILD_NOT_DIRECTORY');
+    nativeChildId = await nativeIdentity(child);
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     const markerValue = `SEL-PANTRY-001:${path.basename(child)}`;
     fs.writeFileSync(marker, markerValue, { encoding: 'utf8', flag: 'wx' });
     ownedMarker = lstatOrdinary(marker, 'ISOLATED_MARKER');
     if (!ownedMarker.isFile()) fail('ISOLATED_MARKER_REPLACED');
+    nativeMarkerId = await nativeIdentity(marker);
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     assertOwnedMarker(marker, ownedMarker);
@@ -229,7 +341,7 @@ export function validateRoots({ officialRoot, isolatedBase }, hooks = {}) {
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     assertOwnedMarker(marker, ownedMarker);
-    cleanupOwnedChild({ child, marker, childStats: ownedChild, markerStats: ownedMarker, official, isolated });
+    await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId });
     ownedChild = undefined;
     ownedMarker = undefined;
 
@@ -242,19 +354,27 @@ export function validateRoots({ officialRoot, isolatedBase }, hooks = {}) {
   } finally {
     if (ownedChild) {
       try {
-        cleanupOwnedChild({ child, marker, childStats: ownedChild, markerStats: ownedMarker, official, isolated });
+        await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId });
       } catch (cleanupError) {
         if (!failure) failure = cleanupError;
       }
+    }
+    try {
+      const status = await guard.stop();
+      if (status.changed || status.error || !status.idsExact) {
+        if (!failure) failure = new Error('SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED');
+      }
+    } catch (guardError) {
+      if (!failure) failure = guardError;
     }
   }
   if (failure) throw failure;
   return { official_delta: 0, isolated_removed: true };
 }
 
-function expectRejected(label, options, hooks, expectedCode) {
+async function expectRejected(label, options, hooks, expectedCode) {
   try {
-    validateRoots(options, hooks);
+    await validateRoots(options, hooks);
   } catch (error) {
     if (error.message === `SEL_PANTRY_ROOT_${expectedCode}`) return;
     fail(`SELF_TEST_WRONG:${label}:${error.message}`);
@@ -288,18 +408,18 @@ function removeOwnedDirectory(owned) {
   fs.rmdirSync(owned.file);
 }
 
-function selfTest(options) {
+async function selfTest(options) {
   const { officialRoot, isolatedBase } = options;
-  validateRoots(options);
-  expectRejected('relative official', { officialRoot: 'relative', isolatedBase }, {}, 'OFFICIAL_NOT_ABSOLUTE');
-  expectRejected('wrong official suffix', { officialRoot: path.dirname(officialRoot), isolatedBase }, {}, 'OFFICIAL_SUFFIX');
-  expectRejected('same role path', { officialRoot, isolatedBase: officialRoot }, {}, 'ROLES_SAME');
-  expectRejected('external suffix impersonation', { officialRoot: 'E:\\external\\official-manifest-sentinel\\SEL-PANTRY-001', isolatedBase }, {}, 'OFFICIAL_BINDING');
+  await validateRoots(options);
+  await expectRejected('relative official', { officialRoot: 'relative', isolatedBase }, {}, 'OFFICIAL_NOT_ABSOLUTE');
+  await expectRejected('wrong official suffix', { officialRoot: path.dirname(officialRoot), isolatedBase }, {}, 'OFFICIAL_SUFFIX');
+  await expectRejected('same role path', { officialRoot, isolatedBase: officialRoot }, {}, 'ROLES_SAME');
+  await expectRejected('external suffix impersonation', { officialRoot: 'E:\\external\\official-manifest-sentinel\\SEL-PANTRY-001', isolatedBase }, {}, 'OFFICIAL_BINDING');
 
   const reparse = path.join(officialRoot, `.sel-pantry-self-${crypto.randomUUID()}`);
   fs.symlinkSync(officialRoot, reparse, 'junction');
   const reparseStats = fs.lstatSync(reparse, { bigint: true });
-  try { expectRejected('official reparse child', options, {}, 'OFFICIAL_ENTRY_REPARSE'); }
+    try { await expectRejected('official reparse child', options, {}, 'OFFICIAL_ENTRY_REPARSE'); }
   finally {
     const actual = maybeLstat(reparse);
     if (actual && sameIdentity(reparseStats, actual)) fs.unlinkSync(reparse);
@@ -310,7 +430,7 @@ function selfTest(options) {
     const file = { file: path.join(container.file, leaf), stats: undefined };
     fs.writeFileSync(file.file, 'forbidden', { flag: 'wx' });
     file.stats = lstatOrdinary(file.file, 'SELF_TEST');
-    try { expectRejected(`official file ${leaf}`, options, {}, `OFFICIAL_FORBIDDEN_LEAF:${leaf}`); }
+    try { await expectRejected(`official file ${leaf}`, options, {}, `OFFICIAL_FORBIDDEN_LEAF:${leaf}`); }
     finally { removeOwnedFile(file); removeOwnedDirectory(container); }
   }
   for (const leaf of ['secret', 'state']) {
@@ -318,17 +438,19 @@ function selfTest(options) {
     const directory = { file: path.join(container.file, leaf), stats: undefined };
     fs.mkdirSync(directory.file);
     directory.stats = lstatOrdinary(directory.file, 'SELF_TEST');
-    try { expectRejected(`official directory ${leaf}`, options, {}, `OFFICIAL_FORBIDDEN_LEAF:${leaf}`); }
+    try { await expectRejected(`official directory ${leaf}`, options, {}, `OFFICIAL_FORBIDDEN_LEAF:${leaf}`); }
     finally { removeOwnedDirectory(directory); removeOwnedDirectory(container); }
   }
 
   let changed;
-  expectRejected('official content replacement', options, {
+  await expectRejected('official content replacement', options, {
     afterSnapshot: ({ officialRoot: root }) => { changed = createOwnedFile(root, 'changed'); },
   }, 'OFFICIAL_DELTA');
   removeOwnedFile(changed);
+  await expectRejected('native watcher error', options, { nativeGuardEnv: { SEL_PANTRY_NATIVE_FORCE_ERROR: '1' } }, 'OFFICIAL_NATIVE_CHANGED');
+  await expectRejected('native watcher overflow', options, { nativeGuardEnv: { SEL_PANTRY_NATIVE_FORCE_OVERFLOW: '1' } }, 'OFFICIAL_NATIVE_CHANGED');
   let leftover;
-  expectRejected('isolated leftover', options, {
+  await expectRejected('isolated leftover', options, {
     afterSnapshot: ({ isolatedBase: base }) => { leftover = createOwnedDirectory(base); },
   }, 'ISOLATED_RESIDUE');
   removeOwnedDirectory(leftover);
@@ -337,7 +459,7 @@ function selfTest(options) {
   let foreignChild;
   let foreignCanary;
   let displacedMarker;
-  expectRejected('isolated child replacement preserves foreign canary', options, {
+  await expectRejected('isolated child replacement preserves foreign canary', options, {
     afterMarker: ({ child, marker }) => {
       displacedChild = { file: path.join(isolatedBase, `.sel-pantry-self-${crypto.randomUUID()}`), stats: lstatOrdinary(child, 'SELF_TEST') };
       displacedMarker = { file: path.join(displacedChild.file, path.basename(marker)), stats: lstatOrdinary(marker, 'SELF_TEST') };
@@ -358,7 +480,7 @@ function selfTest(options) {
   let officialOriginal;
   let officialDisplaced;
   let officialReplacement;
-  expectRejected('official root replacement', options, {
+  await expectRejected('official root replacement', options, {
     afterSnapshot: () => {
       officialOriginal = lstatOrdinary(officialRoot, 'SELF_TEST');
       officialDisplaced = path.join(path.dirname(officialRoot), `.sel-pantry-self-${crypto.randomUUID()}`);
@@ -367,14 +489,16 @@ function selfTest(options) {
       officialReplacement = { file: officialRoot, stats: lstatOrdinary(officialRoot, 'SELF_TEST') };
     },
   }, 'OFFICIAL_PATH_REPLACED');
-  removeOwnedDirectory(officialReplacement);
-  if (!sameIdentity(officialOriginal, lstatOrdinary(officialDisplaced, 'SELF_TEST'))) fail('SELF_TEST_FOREIGN_PRESERVED');
-  fs.renameSync(officialDisplaced, officialRoot);
+  if (officialReplacement) {
+    removeOwnedDirectory(officialReplacement);
+    if (!sameIdentity(officialOriginal, lstatOrdinary(officialDisplaced, 'SELF_TEST'))) fail('SELF_TEST_FOREIGN_PRESERVED');
+    fs.renameSync(officialDisplaced, officialRoot);
+  }
 
   let isolatedOriginal;
   let isolatedDisplaced;
   let isolatedReplacement;
-  expectRejected('isolated base replacement', options, {
+  await expectRejected('isolated base replacement', options, {
     afterSnapshot: () => {
       isolatedOriginal = lstatOrdinary(isolatedBase, 'SELF_TEST');
       isolatedDisplaced = path.join(path.dirname(isolatedBase), `.sel-pantry-self-${crypto.randomUUID()}`);
@@ -386,19 +510,21 @@ function selfTest(options) {
   removeOwnedDirectory(isolatedReplacement);
   if (!sameIdentity(isolatedOriginal, lstatOrdinary(isolatedDisplaced, 'SELF_TEST'))) fail('SELF_TEST_FOREIGN_PRESERVED');
   fs.renameSync(isolatedDisplaced, isolatedBase);
-  console.log('SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=17|controls=1');
+  console.log('SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=19|controls=1');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try {
-    const options = parseArgs(process.argv.slice(2).filter((arg) => arg !== '--self-test'));
-    if (process.argv.includes('--self-test')) selfTest(options);
-    else {
-      validateRoots(options);
-      console.log('SEL_PANTRY_ROOTS|PASS|official_delta=0|isolated_removed=true');
+  (async () => {
+    try {
+      const options = parseArgs(process.argv.slice(2).filter((arg) => arg !== '--self-test'));
+      if (process.argv.includes('--self-test')) await selfTest(options);
+      else {
+        await validateRoots(options);
+        console.log('SEL_PANTRY_ROOTS|PASS|official_delta=0|isolated_removed=true');
+      }
+    } catch (error) {
+      console.error(error.message);
+      process.exitCode = 1;
     }
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+  })();
 }

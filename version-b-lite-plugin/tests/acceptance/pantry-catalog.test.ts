@@ -72,7 +72,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
       cwd: projectRoot,
       encoding: "utf8",
     });
-    expect(selfTestOutput.trim()).toBe("SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=17|controls=1");
+    expect(selfTestOutput.trim()).toBe("SEL_PANTRY_ROOTS|SELF_TEST|PASS|mutations=19|controls=1");
     expect(readdirSync(isolatedRoot)).toEqual([]);
   });
 
@@ -97,7 +97,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     expect(readdirSync(isolatedRoot)).toEqual([]);
 
     try {
-      expect(() => validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
         afterMarker: ({ child, marker }: { child: string; marker: string }) => {
           displacedIdentity = testIdentity(child);
           displacedMarker = join(displaced, ".sel-pantry-root-marker");
@@ -109,7 +109,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
           replacementIdentity = testIdentity(child);
           canaryIdentity = testIdentity(join(child, "foreign-canary"));
         },
-      })).toThrow("SEL_PANTRY_ROOT_ISOLATED_CHILD_REPLACED");
+      })).rejects.toThrow("SEL_PANTRY_ROOT_ISOLATED_CHILD_REPLACED");
       expect(readFileSync(join(replacement, "foreign-canary"), "utf8")).toBe("foreign-owned");
     } finally {
       if (replacement) {
@@ -135,10 +135,10 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }) => void;
     };
 
-    expect(() => validateRoots({
+    await expect(validateRoots({
       officialRoot: "E:\\external\\official-manifest-sentinel\\SEL-PANTRY-001",
       isolatedBase: isolatedRoot,
-    })).toThrow("SEL_PANTRY_ROOT_OFFICIAL_BINDING");
+    })).rejects.toThrow("SEL_PANTRY_ROOT_OFFICIAL_BINDING");
   });
 
   it("rejects an isolated-base replacement before writing into the foreign root", async () => {
@@ -157,14 +157,14 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     mkdirSync(isolatedRoot, { recursive: true });
     expect(readdirSync(isolatedRoot)).toEqual([]);
     try {
-      expect(() => validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
         afterSnapshot: () => {
           renameSync(isolatedRoot, displaced);
           mkdirSync(isolatedRoot);
           foreignRootIdentity = testIdentity(isolatedRoot);
           writeFileSync(canary, "foreign-owned", { flag: "wx" });
         },
-      })).toThrow("SEL_PANTRY_ROOT_ISOLATED_PATH_REPLACED");
+      })).rejects.toThrow("SEL_PANTRY_ROOT_ISOLATED_PATH_REPLACED");
       expect(readFileSync(canary, "utf8")).toBe("foreign-owned");
     } finally {
       if (testIdentity(canary) === "") throw new Error("foreign canary preserved");
