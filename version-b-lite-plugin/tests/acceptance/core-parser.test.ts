@@ -829,6 +829,26 @@ describe("core parser quality boundaries", () => {
   });
 
   it.each([
+    ["吃了一个苹果吗", "record_meal"],
+    ["喝了500ml白水么", "record_water"],
+    ["吃了一个苹果嘛", "record_meal"],
+    ["“吃了一个苹果吗”  ", "record_meal"],
+    ["喝了500ml白水么\"  ", "record_water"],
+  ])("treats an unpunctuated final question particle as incomplete: %s", (
+    sourceText,
+    action,
+  ) => {
+    const result = variant(sourceText);
+
+    expect(result).toMatchObject({
+      disposition: "needs_clarification",
+      action,
+      reason_code: "unsupported_command",
+    });
+    expect(Object.hasOwn(result, "command")).toBe(false);
+  });
+
+  it.each([
     ["如果吃了一个苹果。", "record_meal"],
     ["要是喝了500ml白水。", "record_water"],
   ])("never treats a bounded conditional as a completed fact: %s", (sourceText, action) => {
@@ -842,6 +862,8 @@ describe("core parser quality boundaries", () => {
   it.each([
     ["没吃苹果，吃了香蕉。", "banana", "apple"],
     ["没吃香蕉，吃了一个苹果。", "apple", "banana"],
+    ["没有吃苹果，吃了香蕉。", "banana", "apple"],
+    ["没有喝牛奶，喝了茶。", "tea", "milk"],
   ])("scopes non-egg item negation: %s", (sourceText, kept, excluded) => {
     expect(variant(sourceText)).toMatchObject({
       disposition: "candidate",
@@ -863,6 +885,24 @@ describe("core parser quality boundaries", () => {
   ])("binds proposed foods to the current-user ingestion clause: %s", (sourceText) => {
     const result = variant(sourceText);
     const command = requiredMeal(result);
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "apple",
+      quantity: 1,
+      unit: "piece",
+      estimated: false,
+    }]);
+  });
+
+  it.each([
+    "我让朋友吃了两个鸡蛋，我吃了一个苹果。",
+    "我给朋友吃了两个鸡蛋，我吃了一个苹果。",
+  ])("does not attribute a causative recipient clause to the current user: %s", (
+    sourceText,
+  ) => {
+    const command = requiredMeal(variant(sourceText));
 
     expect(command.items).toEqual([{
       order: 0,
@@ -917,6 +957,17 @@ describe("core parser quality boundaries", () => {
     });
   });
 
+  it("fails closed instead of truncating multiple explicit water records", () => {
+    const result = variant("我喝了500ml白水，又喝了200ml水。");
+
+    expect(result).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_water",
+      reason_code: "unsupported_command",
+    });
+    expect(Object.hasOwn(result, "command")).toBe(false);
+  });
+
   it.each([
     "这句话里只是在讨论医疗诊断这个词，我吃了一个苹果。",
     "这不是医疗诊断，我吃了一个苹果。",
@@ -936,6 +987,22 @@ describe("core parser quality boundaries", () => {
       action: "health_advice",
     });
     expect(result.disposition).not.toBe("candidate");
+  });
+
+  it.each([
+    "请解释医疗诊断这个词。",
+    "帮我理解减重建议。",
+  ])("clarifies a terminology explanation instead of rejecting health advice: %s", (
+    sourceText,
+  ) => {
+    const result = variant(sourceText);
+
+    expect(result).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+    });
+    expect(Object.hasOwn(result, "command")).toBe(false);
   });
 
   it("still rejects the frozen pure health-advice request", () => {

@@ -1,7 +1,11 @@
 import { classifyCompletion } from "./completion.js";
 import { resolveMealContext } from "./context.js";
 import { cloneCoreParseInput } from "./input-authority.js";
-import { classifyMealLiquid, matchExplicitPlainWater } from "./liquid.js";
+import {
+  classifyMealLiquid,
+  matchExplicitPlainWater,
+  matchExplicitPlainWaters,
+} from "./liquid.js";
 import { proposeMealItems, toCoreMealItems } from "./meal.js";
 import { resolveSubject } from "./subject.js";
 import { resolveOccurredTime } from "./time.js";
@@ -16,7 +20,8 @@ import type {
 } from "./types.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_ADVICE_REQUEST = /(?:给我|请|帮我)[^。！？!?]*(?:医疗\s*诊断|减重\s*建议)/u;
+const HEALTH_TERMINOLOGY_EXPLANATION = /(?:请\s*解释|帮我\s*理解)[^。！？!?]*(?:医疗\s*诊断|减重\s*建议)/u;
+const HEALTH_ADVICE_REQUEST = /(?:给我|请|帮我)[^。！？!?]*(?:(?:做|进行)\s*医疗\s*诊断|(?:提供|给|做|制定)?\s*减重\s*建议)/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
@@ -212,10 +217,21 @@ function mealCandidate(
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value: unknown): CoreParseResult {
   const input = cloneCoreParseInput(value);
+  const initialMealItems = proposeMealItems(input.source_text);
+  const initialWater = matchExplicitPlainWater(input.source_text);
+
+  if (HEALTH_TERMINOLOGY_EXPLANATION.test(input.source_text) &&
+      initialMealItems.length === 0 && initialWater === null) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+      question: "这是术语解释请求，不会作为饮食记录处理。",
+    });
+  }
 
   if (HEALTH_ADVICE_REQUEST.test(input.source_text) &&
-      proposeMealItems(input.source_text).length === 0 &&
-      matchExplicitPlainWater(input.source_text) === null) {
+      initialMealItems.length === 0 && initialWater === null) {
     return detachedFrozen({
       disposition: "ignored",
       action: "health_advice",
@@ -277,7 +293,16 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
 
-  const water = matchExplicitPlainWater(input.source_text);
+  const waters = matchExplicitPlainWaters(input.source_text);
+  if (waters.length > 1) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: "record_water",
+      reason_code: "unsupported_command",
+      question: "请把多次饮水分成多条消息记录。",
+    });
+  }
+  const water = waters[0] ?? null;
   if (water !== null) {
     const mealItems = proposeMealItems(input.source_text).filter((item) =>
       !completion.excluded_items.some((excluded) =>

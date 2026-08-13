@@ -38,6 +38,7 @@ interface MealClause {
 }
 
 const EXPLICIT_NON_SELF_INGESTION = /^\s*(?:朋友|孩子|同事|家人|他们|他|她)\s*(?:吃|喝)/u;
+const CAUSATIVE_NON_SELF_INGESTION = /^\s*我\s*(?:让|给)\s*(?:朋友|孩子|同事|家人|他们|他|她)\s*(?:吃|喝)/u;
 const COMPLETION_CLAUSE = /(?:吃|喝)(?:了|过)?/u;
 const SELF_SHARE_CLAUSE = /我\s*和\s*朋友\s*一人\s*一\s*瓶/u;
 const OBJECT_FRONTED_COMPLETION = /记不清\s*是\s*在\s*公司\s*还是\s*回家后\s*(?:吃|喝)的/u;
@@ -61,6 +62,7 @@ function splitMealClauses(sourceText: string): readonly MealClause[] {
 
 function isCurrentUserIngestionClause(clause: MealClause): boolean {
   if (EXPLICIT_NON_SELF_INGESTION.test(clause.raw)) return false;
+  if (CAUSATIVE_NON_SELF_INGESTION.test(clause.raw)) return false;
   if (/买/u.test(clause.raw) && !COMPLETION_CLAUSE.test(clause.raw)) return false;
   return COMPLETION_CLAUSE.test(clause.raw) ||
     SELF_SHARE_CLAUSE.test(clause.raw) ||
