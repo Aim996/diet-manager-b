@@ -1,7 +1,7 @@
 {
   "id": "diet-manager-b",
-  "name": "Diet Manager B Foundation",
-  "description": "A non-writing Diet Manager B foundation tool boundary.",
+  "name": "Diet Manager B",
+  "description": "A deterministic meal and plain-water recording tool.",
   "version": "0.1.0",
   "configSchema": {
     "type": "object",
@@ -11,7 +11,7 @@
     "properties": {
       "official_data_root": {
         "type": "string",
-        "description": "Absolute existing runtime root owned by the Diet Manager backend; gate validation does not open or create it.",
+        "description": "Absolute existing runtime root owned and configured only by the Diet Manager backend.",
         "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root"
       }
     },

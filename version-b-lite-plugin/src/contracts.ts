@@ -18,7 +18,6 @@ export const dietManagerActions = [
 export type DietManagerAction = (typeof dietManagerActions)[number];
 
 export const dietManagerStatuses = [
-  "foundation_not_implemented",
   "committed",
   "committed_with_issues",
   "needs_clarification",
@@ -27,22 +26,6 @@ export const dietManagerStatuses = [
 ] as const;
 
 export type DietManagerStatus = (typeof dietManagerStatuses)[number];
-
-export interface DietManagerItem {
-  name: string;
-  quantity?: number;
-  unit?: string;
-  per_item_amount?: number;
-  per_item_unit?: string;
-}
-
-export interface DietManagerRequest {
-  action: DietManagerAction;
-  operation_id?: string;
-  source_text?: string;
-  occurred_at_text?: string;
-  items?: DietManagerItem[];
-}
 
 export interface CoreApplicationRequest {
   readonly action: DietManagerAction;
@@ -53,14 +36,6 @@ export interface CoreApplicationRequest {
   readonly source_message_id: string;
   readonly conversation_id: string;
   readonly prior_context: readonly import("./parser/types.js").CoreContextEntry[];
-}
-
-export interface FoundationOutcome {
-  action: DietManagerAction;
-  status: "foundation_not_implemented";
-  committed: false;
-  operation_id?: never;
-  record_id?: never;
 }
 
 export interface FailedOutcome {
@@ -90,7 +65,6 @@ export interface CommittedOutcome {
 }
 
 export type DietManagerOutcome =
-  | FoundationOutcome
   | FailedOutcome
   | NonWritingOutcome
   | CommittedOutcome;

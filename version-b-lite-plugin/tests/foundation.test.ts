@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import { getToolPluginMetadata } from "openclaw/plugin-sdk/tool-plugin";
 import { describe, expect, test } from "vitest";
 import * as foundation from "../src/index";
+import * as openClawPlugin from "../src/openclaw/plugin.js";
 import pluginEntry, {
   dietManagerParameters,
-  handleFoundationAction,
 } from "../src/index";
 
 const testsDirectory = dirname(fileURLToPath(import.meta.url));
@@ -31,7 +31,6 @@ const expectedActions = [
   "undo_record",
 ] as const;
 const expectedStatuses = [
-  "foundation_not_implemented",
   "committed",
   "committed_with_issues",
   "needs_clarification",
@@ -47,7 +46,7 @@ function businessDataFiles(): string[] {
   });
 }
 
-describe("diet manager B 基底", () => {
+describe("diet manager B core plugin boundary", () => {
   test("declares the official tool-plugin metadata and exact action boundary", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
     const metadata = getToolPluginMetadata(pluginEntry);
@@ -58,6 +57,9 @@ describe("diet manager B 基底", () => {
       description: manifest.description,
       activation: { onStartup: true },
     });
+    expect(metadata?.name).toBe("Diet Manager B");
+    expect(metadata?.description).not.toContain("foundation");
+    expect(metadata?.description).not.toContain("non-writing");
     expect(manifest).toMatchObject({
       configSchema: { type: "object", properties: {}, additionalProperties: false },
       activation: { onStartup: true },
@@ -71,12 +73,28 @@ describe("diet manager B 基底", () => {
       anyOf: Array<{ const: string }>;
     };
     expect(actionSchema.anyOf.map((item) => item.const)).toEqual(expectedActions);
-    expect(dietManagerParameters.properties).toMatchObject({
-      operation_id: { type: "string" },
-      source_text: { type: "string" },
-      occurred_at_text: { type: "string" },
-      items: { type: "array" },
-    });
+    expect(Object.keys(dietManagerParameters.properties).sort()).toEqual([
+      "action",
+      "conversation_id",
+      "operation_id",
+      "received_at",
+      "source_message_id",
+      "source_text",
+      "timezone",
+    ]);
+    expect(dietManagerParameters.required).toEqual([
+      "action",
+      "source_text",
+      "received_at",
+      "timezone",
+      "operation_id",
+      "source_message_id",
+      "conversation_id",
+    ]);
+    expect(dietManagerParameters.additionalProperties).toBe(false);
+    for (const field of ["official_data_root", "secret", "token", "data_revision", "prior_context"]) {
+      expect(dietManagerParameters.properties).not.toHaveProperty(field);
+    }
   });
 
   test("binds the frozen contract and sole official data-root key across runtime schemas and manifest", () => {
@@ -96,6 +114,7 @@ describe("diet manager B 基底", () => {
       properties: {
         official_data_root: {
           type: "string",
+          description: expect.not.stringContaining("gate validation"),
           "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root",
         },
       },
@@ -114,6 +133,20 @@ describe("diet manager B 基底", () => {
     expect(skill).toContain("只有工具返回 `committed=true` 才能告诉用户“已记录”");
     expect(skill).toContain("技术日志可以说明失败原因，但不属于饮食记录");
     expect(skill).toContain("`official_data_root` 只由后端配置和管理");
+    expect(skill).toContain("把用户原话逐字放入 `source_text`");
+    expect(skill).toContain("不要传入数据路径、secret、token 或 revision");
+    expect(skill).toContain("牛奶、汤、豆浆、咖啡和茶按饮食处理，不按白水处理");
+    expect(skill).toContain("健康建议请求不进入饮食记录");
+    expect(skill).toContain("保留整句原话并单次使用 `record_meal`");
+    expect(skill).toContain("本阶段后端可能返回 `needs_clarification`");
+    expect(skill).toContain("不要擅自改写原话拆成两次调用");
+  });
+
+  test("keeps runtime/root ownership private to the OpenClaw module", () => {
+    expect(Object.keys(openClawPlugin).sort()).toEqual([
+      "default",
+      "dietManagerParameters",
+    ]);
   });
 
   test("declares OpenClaw extension packaging and the required dependencies", () => {
@@ -127,6 +160,7 @@ describe("diet manager B 基底", () => {
     };
 
     expect(packageManifest.dependencies?.typebox).toBeDefined();
+    expect((packageManifest as { name?: unknown }).name).toBe("diet-manager-b");
     expect(packageManifest.devDependencies?.["@types/node"]).toBe("^24.0.0");
     expect(packageManifest.engines?.node).toBe(">=24.15.0 <25");
     expect(packageManifest.peerDependencies?.openclaw).toBe(">=2026.5.17");
@@ -148,19 +182,12 @@ describe("diet manager B 基底", () => {
     expect(dependencyNames.filter((name) => name.toLowerCase().includes("sqlite"))).toEqual([]);
   });
 
-  test.each(expectedActions)("returns the non-writing foundation outcome for %s", async (action) => {
-    const before = businessDataFiles();
-
-    const result = await handleFoundationAction({ action });
-
-    expect(result).toMatchObject({
-      action,
-      status: "foundation_not_implemented",
-      committed: false,
-    });
-    expect(result).not.toHaveProperty("operation_id");
-    expect(result).not.toHaveProperty("record_id");
-    expect(businessDataFiles()).toEqual(before);
+  test("removes the obsolete public foundation handler and status", () => {
+    expect(Reflect.has(foundation, "handleFoundationAction")).toBe(false);
+    expect(Reflect.get(foundation, "dietManagerStatuses")).not.toContain(
+      "foundation_not_implemented",
+    );
+    expect(businessDataFiles()).toEqual([]);
   });
 
   test("rejects outcomes whose committed flag contradicts their status", () => {
@@ -193,7 +220,7 @@ describe("diet manager B 基底", () => {
     ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:failed_record_id");
   });
 
-  test("implements the CONTRACT-v2 non-writing and committed outcome boundary", () => {
+  test("implements the exact CONTRACT-v2 command outcome boundary", () => {
     const statuses = Reflect.get(foundation, "dietManagerStatuses") as
       | readonly string[]
       | undefined;
