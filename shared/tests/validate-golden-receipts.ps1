@@ -76,8 +76,11 @@ $script:ExpectedGoldenCaseCatalogIds = @(
     'CASE-RECEIPT-005',
     'CASE-RECEIPT-006',
     'CASE-PROGRESS-006',
-    'CASE-STORAGE-006'
+    'CASE-STORAGE-006',
+    'CASE-STORAGE-001'
 )
+
+$script:ExpectedGoldenOwnedCatalogCount = 26
 
 $script:PreviousGoldenCaseHashes = [ordered]@{
     'CASE-MEAL-001' = '167089A439136DA84BE755D6B4021774488749FD6B79F85DFE3AABCED1967BB2'
@@ -272,7 +275,7 @@ function Assert-GoldenCaseCatalogCandidate {
 
     Assert-GoldenExactProperties $CaseSet @('case_set_id', 'version', 'contract', 'fixture_catalog', 'package_invariants', 'cases') 'GOLDEN_CASE_SET_SHAPE_INVALID'
     Assert-GoldenTrue ([string]$CaseSet.case_set_id -ceq 'diet-manager/core-acceptance-cases-v1') 'GOLDEN_CASE_SET_ID_INVALID'
-    Assert-GoldenTrue ([string]$CaseSet.version -ceq '1.3.0') 'GOLDEN_CASE_SET_VERSION_INVALID'
+    Assert-GoldenTrue ([string]$CaseSet.version -ceq '1.4.0') 'GOLDEN_CASE_SET_VERSION_INVALID'
     Assert-GoldenTrue ($CaseSet.cases -is [Array]) 'GOLDEN_CASE_SET_CASES_INVALID'
 
     $cases = @($CaseSet.cases)
@@ -286,7 +289,7 @@ function Assert-GoldenCaseCatalogCandidate {
         Assert-GoldenTrue ($actualHash -ceq [string]$script:PreviousGoldenCaseHashes[$caseId]) ('GOLDEN_PREVIOUS_CASE_CHANGED:{0}' -f $caseId)
     }
 
-    for ($index = 20; $index -lt $cases.Count; $index++) {
+    for ($index = 20; $index -lt $script:ExpectedGoldenOwnedCatalogCount; $index++) {
         $case = $cases[$index]
         $caseId = [string]$case.id
         Assert-GoldenExactProperties $case $script:GoldenCaseProperties ('GOLDEN_APPENDED_CASE_SHAPE:{0}' -f $caseId)

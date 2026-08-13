@@ -41,7 +41,8 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-RECEIPT-005",
     "CASE-RECEIPT-006",
     "CASE-PROGRESS-006",
-    "CASE-STORAGE-006"
+    "CASE-STORAGE-006",
+    "CASE-STORAGE-001"
 )
 
 $ExpectedDomainCaseIds = @(
@@ -53,7 +54,8 @@ $ExpectedDomainCaseIds = @(
     "CASE-MIXED-001",
     "CASE-EFFECT-001",
     "CASE-EFFECT-003",
-    "CASE-STORAGE-007"
+    "CASE-STORAGE-007",
+    "CASE-STORAGE-001"
 )
 
 $ExpectedDomainScenarioIds = @(
@@ -375,6 +377,20 @@ function Assert-DomainCases {
         Assert-DomainEqual 0 $conflict.business_write_count "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-007:writes"
         Assert-DomainEqual $false $conflict.returned_original_result "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-007:result"
     }
+
+    $retry = Get-DomainCaseById $CaseSet "CASE-STORAGE-001"
+    Assert-DomainCaseCommon $retry "CASE-STORAGE-001" @("REQ-CORE-003", "REQ-SAFE-003") "5pep6aSQ5ZCD5LqG5LiA5Liq6Iu55p6c44CC572R57uc5ZON5bqU5Lii5aSx5ZCO77yM55So5ZCM5LiA5bmC562J6ZSu5ZKM55u45ZCM6L6T5YWl6YeN6K+V44CC" "domain-idempotency-conflict-v1"
+    Assert-DomainExactProperties $retry.oracle @("idempotency") "DOMAIN_CASE_ORACLE_INVALID:CASE-STORAGE-001"
+    Assert-DomainExactProperties $retry.oracle.idempotency @("original_key", "first_execution", "same_key_same_input") "DOMAIN_CASE_ORACLE_INVALID:CASE-STORAGE-001:idempotency"
+    Assert-DomainEqual "idem-fixed-001" ([string]$retry.oracle.idempotency.original_key) "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:key"
+    Assert-DomainEqual 1 $retry.oracle.idempotency.first_execution.meal_event_count "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:first_event"
+    Assert-DomainEqual 1 $retry.oracle.idempotency.first_execution.inventory_effect_count "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:first_inventory"
+    Assert-DomainEqual 1 $retry.oracle.idempotency.first_execution.product_template_count "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:first_template"
+    Assert-DomainEqual $true $retry.oracle.idempotency.same_key_same_input.returned_exact_original_result "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:result"
+    Assert-DomainEqual 0 $retry.oracle.idempotency.same_key_same_input.business_write_count "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:writes"
+    Assert-DomainEqual 0 $retry.oracle.idempotency.same_key_same_input.meal_event_count_delta "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:event_delta"
+    Assert-DomainEqual 0 $retry.oracle.idempotency.same_key_same_input.inventory_effect_count_delta "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:inventory_delta"
+    Assert-DomainEqual 0 $retry.oracle.idempotency.same_key_same_input.product_template_count_delta "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:template_delta"
 }
 
 function Test-DomainCaseCandidate {
@@ -389,7 +405,7 @@ function Test-DomainCaseCandidate {
         "cases"
     ) "DOMAIN_CASE_SET_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "DOMAIN_CASE_SET_ID_INVALID"
-    Assert-DomainEqual "1.3.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
+    Assert-DomainEqual "1.4.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
     Assert-DomainExactProperties $CaseSet.package_invariants @(
         "adapters_may_rewrite_oracle", "technical_log", "technical_log_counts_as_record",
         "fact_commit_failure_business_write_count", "fact_commit_failure_forbidden_artifacts"
@@ -509,9 +525,15 @@ Invoke-DomainMutation "MUT-DOMAIN-REUSE-IDEMPOTENCY-RESULT" {
     $case.oracle.idempotency.conflicts[0].returned_original_result = $true
 } "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-007:result" $caseSet $fixtures
 
+Invoke-DomainMutation "MUT-DOMAIN-REEXECUTE-SAME-IDEMPOTENCY-KEY" {
+    param($casesCandidate, $fixturesCandidate)
+    $case = @($casesCandidate.cases | Where-Object { [string]$_.id -ceq "CASE-STORAGE-001" })[0]
+    $case.oracle.idempotency.same_key_same_input.business_write_count = 1
+} "DOMAIN_CASE_VALUE_INVALID:CASE-STORAGE-001:writes" $caseSet $fixtures
+
 Invoke-DomainMutation "MUT-DOMAIN-ALLOW-FAILED-FACT-BUSINESS-WRITE" {
     param($casesCandidate, $fixturesCandidate)
     $casesCandidate.package_invariants.fact_commit_failure_business_write_count = 1
 } "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID" $caseSet $fixtures
 
-"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.3.0|cases=9|scenarios=9|mutations=11"
+"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.4.0|cases=10|scenarios=9|mutations=12"

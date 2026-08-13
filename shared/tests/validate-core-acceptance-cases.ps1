@@ -161,7 +161,7 @@ function Test-CaseSetCandidate {
 
     Assert-CaseSetRoot $CaseSet
     Assert-CaseEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "CORE_CASE_SET_ID_INVALID"
-    Assert-CaseEqual "1.3.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
+    Assert-CaseEqual "1.4.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
     Assert-ExactProperties $CaseSet.contract @("contract_id", "contract_version") "CORE_CASE_CONTRACT_INVALID"
     Assert-CaseEqual "diet-manager/contract-v2" ([string]$CaseSet.contract.contract_id) "CORE_CASE_CONTRACT_ID_INVALID"
     Assert-CaseEqual 2 ([int]$CaseSet.contract.contract_version) "CORE_CASE_CONTRACT_VERSION_INVALID"
@@ -195,7 +195,7 @@ function Test-CaseSetCandidate {
         "CASE-PURCHASE-001", "CASE-INVENTORY-003", "CASE-NUTR-001", "CASE-ISSUE-001", "CASE-CORR-001",
         "CASE-MIXED-001", "CASE-EFFECT-001", "CASE-EFFECT-003", "CASE-STORAGE-007",
         "CASE-PRIV-001", "CASE-FOUNDATION-002", "CASE-OPS-001", "CASE-OPS-003", "CASE-OPS-010", "CASE-EXPORT-004",
-        "CASE-RECEIPT-002", "CASE-RECEIPT-004", "CASE-RECEIPT-005", "CASE-RECEIPT-006", "CASE-PROGRESS-006", "CASE-STORAGE-006"
+        "CASE-RECEIPT-002", "CASE-RECEIPT-004", "CASE-RECEIPT-005", "CASE-RECEIPT-006", "CASE-PROGRESS-006", "CASE-STORAGE-006", "CASE-STORAGE-001"
     )
     $actualIds = @($CaseSet.cases | ForEach-Object { [string]$_.id })
     Assert-ExactStringArray $expectedIds $actualIds "CORE_CASE_IDS_INVALID"
@@ -436,4 +436,4 @@ Invoke-CaseMutation "MUT-CASE-FAILED-FACT-ALLOWS-MEAL" {
     )
 } "CORE_CASE_FAILED_FACT_ARTIFACTS_INVALID" $caseSet $fixtures
 
-"CORE_ACCEPTANCE_CASES|PASS|version=1.3.0|cases=5|fixtures=3|mutations=8"
+"CORE_ACCEPTANCE_CASES|PASS|version=1.4.0|cases=5|fixtures=3|mutations=8"
