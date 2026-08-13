@@ -21,10 +21,11 @@ function inspectObject(
   requiredKeys: readonly string[],
   optionalKeys: readonly string[] = [],
 ): InspectedObject {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (typeof value !== "object" || value === null) {
     return invalid(`${path}:shape`);
   }
   if (isProxy(value)) return invalid(`${path}:proxy`);
+  if (Array.isArray(value)) return invalid(`${path}:shape`);
   if (Object.getPrototypeOf(value) !== Object.prototype) {
     return invalid(`${path}:prototype`);
   }
@@ -98,8 +99,11 @@ function literalValue<const T extends string>(
 }
 
 function inspectArray(value: unknown, path: string): readonly unknown[] {
-  if (!Array.isArray(value)) return invalid(`${path}:shape`);
+  if (typeof value !== "object" || value === null) {
+    return invalid(`${path}:shape`);
+  }
   if (isProxy(value)) return invalid(`${path}:proxy`);
+  if (!Array.isArray(value)) return invalid(`${path}:shape`);
   if (Object.getPrototypeOf(value) !== Array.prototype) {
     return invalid(`${path}:prototype`);
   }

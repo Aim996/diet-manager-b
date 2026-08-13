@@ -55,6 +55,8 @@ export interface CoreSubjectEvidence {
   readonly subject_entity_created?: false;
   readonly excluded_non_self_share_count?: number;
   readonly self_participated?: true;
+  readonly matched_span: string | null;
+  readonly rule_version: "diet-manager/subject-v1";
 }
 
 export interface CoreCompletionEvidence {
@@ -68,6 +70,7 @@ export interface CoreContextEvidence {
   readonly scene: CoreScene;
   readonly expired_context_ids: readonly string[];
   readonly inventory_read: boolean;
+  readonly accepted_context: Readonly<CoreContextEntry> | null;
   readonly rule_version: "diet-manager/context-v1";
 }
 
@@ -83,6 +86,21 @@ export interface CoreLiquidClassification {
   readonly food_water_upper_bound_ml?: number;
 }
 
+export interface CoreExcludedItemEvidence {
+  readonly normalized_name: string;
+  readonly reason_code: "item_scoped_negation";
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/completion-v1";
+}
+
+export interface CoreGroupAmountEvidence {
+  readonly quantity: number;
+  readonly unit: string;
+  readonly assigned_to_self: false;
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/subject-v1";
+}
+
 export interface CoreAmountEvidence {
   readonly raw_text: string;
   readonly quantity: number;
@@ -94,11 +112,14 @@ export interface CoreMealCommandCandidate {
   readonly action: "record_meal";
   readonly operation_id: string;
   readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
   readonly occurred_time: OccurredTimeEvidence;
   readonly subject: CoreSubjectEvidence;
   readonly items: readonly CoreMealItem[];
   readonly completion_evidence?: CoreCompletionEvidence;
   readonly context?: CoreContextEvidence;
+  readonly excluded_items?: readonly CoreExcludedItemEvidence[];
+  readonly group_amount_evidence?: CoreGroupAmountEvidence;
   readonly purchase_evidence?: CorePurchaseEvidence;
   readonly liquid_classification?: CoreLiquidClassification;
 }
@@ -107,6 +128,7 @@ export interface CoreWaterCommandCandidate {
   readonly action: "record_water";
   readonly operation_id: string;
   readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
   readonly occurred_time: OccurredTimeEvidence;
   readonly plain_water_ml_milli: number;
   readonly amount_evidence: CoreAmountEvidence;
@@ -137,16 +159,20 @@ export type CoreClarificationReason =
   | "unsupported_command"
   | "amount_ambiguous";
 
+export type CoreRecognizedAction = DietManagerAction | "health_advice";
+
 export type CoreParseResult =
   | Readonly<{ disposition: "candidate"; command: CoreCommandCandidate }>
   | Readonly<{
       disposition: "ignored";
-      action: DietManagerAction;
+      action: CoreRecognizedAction;
       reason_code: CoreIgnoreReason;
+      context_id?: string;
     }>
   | Readonly<{
       disposition: "needs_clarification";
-      action: DietManagerAction;
+      action: CoreRecognizedAction;
       reason_code: CoreClarificationReason;
       question: string;
+      occurred_time?: OccurredTimeEvidence;
     }>;
