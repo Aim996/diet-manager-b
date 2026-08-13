@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322763,
-      "sha256": "CF03DC09396DEC3F4AA28746A3D4A84931593FE3260C23DC46F5946A8DFAFEF8"
+      "length": 322801,
+      "sha256": "36D3FB4264B7B31231BF8049D6EA9BD21934915B1C1D51C509C5D3F12D61301E"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -1000,13 +1000,14 @@
       "kind": "CHG",
       "reference_ids": [
         "X-GATE-002",
-        "SH-TRACE-001"
+        "SH-TRACE-001",
+        "EV-20260813-035"
       ],
       "source_change": "X-GATE-002开源可移植性与发布原子性复审；L2门产物兼容修复",
       "impact": "仓库提交相对selected-route-map.template.json；机器绝对selected-route-map.json改为Git忽略的本地门产物；matrix只声明可移植要求，不预填pass；验证器解析§29.6、运行有界预检、绑定实际回执，并以同卷hard-link no-replace发布，碰撞或任一检查失败都不覆盖/不发布新map",
       "owner_approver": "X-GATE实现者 / 独立架构与安全复核",
       "tasks": "SH-TRACE-001、X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
-      "status_evidence": "实施中；计划/生成器已变化，故SH-TRACE-001成为唯一WIP，X-GATE-002等待追踪刷新且本地map必须缺席；EV总数保持34，待独立追踪复核后再恢复门工作"
+      "status_evidence": "实施中；追踪刷新已由EV-20260813-035关闭，当前EV总数35且X-GATE-002为唯一WIP；允许运行实际有界预检，但所有检查通过前本地map必须缺席，门完成两轮复核前不得解锁产品任务"
     }
   ]
 }
