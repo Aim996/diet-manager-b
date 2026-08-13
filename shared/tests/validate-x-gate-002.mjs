@@ -68,11 +68,7 @@ const expectedPrerequisiteRequirements = Object.freeze([
   { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
   { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
 ]);
-const expectedFormalArtifacts = Object.freeze([
-  { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2410, sha256: "C4AEF28FFC88C91D495AC0C9F2D756BA6B33A9994E9555067E05F08ED9BE7AC5" },
-  { path: "version-b-lite-plugin/dist/index.js", bytes: 173, sha256: "AE609D468FEAB0D62192F3991C2F9A81B2A0514CD3A753576B73118ADA78DBBE" },
-]);
-const expectedFormalBuildRequirement = Object.freeze({
+const expectedFormalBuildIdentity = Object.freeze({
   execution_count: 1,
   command: "node_modules/typescript/bin/tsc -p tsconfig.json",
   node_version: "v24.15.0",
@@ -83,7 +79,6 @@ const expectedFormalBuildRequirement = Object.freeze({
   source_candidate_commit: "b4c5010f969408ec6cdf564e3eaec65d28abe82b",
   artifact_commit: "93d1fabcc2c90f42cb2ea295515d9636721b2c08",
   task9_final_commit: "01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c",
-  artifacts: expectedFormalArtifacts,
 });
 const inputHashPaths = Object.freeze([
   "version-b-lite-plugin/src/contracts.ts",
@@ -149,6 +144,40 @@ function git(args, { allowFailure = false } = {}) {
     fail("X_GATE_GIT_FAILED", `${args.join(" ")}:${result.error?.message ?? result.stderr.trim()}`);
   }
   return result;
+}
+
+function expectedArtifactsFromCommit(commit) {
+  const paths = git(["ls-tree", "-r", "--name-only", commit, "--", "version-b-lite-plugin/dist"]).stdout
+    .split(/\r?\n/u).filter((value) => value.endsWith(".js")).sort();
+  return paths.map((artifactPath) => {
+    const bytes = Buffer.from(git(["show", `${commit}:${artifactPath}`]).stdout, "utf8");
+    return { path: artifactPath, bytes: bytes.length, sha256: sha256Bytes(bytes) };
+  });
+}
+
+function currentDistArtifactPaths() {
+  const paths = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = resolve(directory, entry.name);
+      if (entry.isSymbolicLink()) fail("X_GATE_FORMAL_BUILD_REPARSE", relative(projectRoot, absolute));
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile() && entry.name.endsWith(".js")) paths.push(relative(projectRoot, absolute).replaceAll("\\", "/"));
+    }
+  };
+  visit(resolve(routeRoot, "dist"));
+  return paths.sort();
+}
+
+function postBuildChangedPaths(commit, scope) {
+  return git(["diff", "--name-only", commit, "--", scope]).stdout.split(/\r?\n/u).filter(Boolean);
+}
+
+function validatePostBuildDrift(requirement, changedPaths = postBuildChangedPaths) {
+  const sourceDrift = changedPaths(requirement.source_candidate_commit, "version-b-lite-plugin/src");
+  if (sourceDrift.length !== 0) fail("X_GATE_FORMAL_BUILD_SOURCE_DRIFT", sourceDrift.join(","));
+  const distDrift = changedPaths(requirement.artifact_commit, "version-b-lite-plugin/dist");
+  if (distDrift.length !== 0) fail("X_GATE_FORMAL_BUILD_DIST_DRIFT", distDrift.join(","));
 }
 
 function normalizePlanPath(token) {
@@ -226,7 +255,9 @@ function validateMatrix(matrix, template) {
     exactKeys(check, ["check_id", "executor", "timeout_seconds"], "X_GATE_CHECK_REQUIREMENT_SHAPE");
     assert.equal(Number.isInteger(check.timeout_seconds) && check.timeout_seconds > 0 && check.timeout_seconds <= 120, true);
   }
-  assert.deepEqual(matrix.formal_build_provenance_requirement, expectedFormalBuildRequirement, "X_GATE_FORMAL_BUILD_REQUIREMENT");
+  const { artifacts, ...formalBuildIdentity } = matrix.formal_build_provenance_requirement;
+  assert.deepEqual(formalBuildIdentity, expectedFormalBuildIdentity, "X_GATE_FORMAL_BUILD_REQUIREMENT");
+  assert.deepEqual(artifacts, expectedArtifactsFromCommit(formalBuildIdentity.artifact_commit), "X_GATE_FORMAL_BUILD_ARTIFACT_MANIFEST");
   assert.deepEqual(matrix.authorized_next_on_bind, ["SEL-CORE-001"]);
   assert.deepEqual(matrix.forbidden_claims, template.forbidden_claims);
 }
@@ -262,6 +293,8 @@ function validateFormalBuildArtifacts(matrix) {
   git(["merge-base", "--is-ancestor", requirement.source_candidate_commit, requirement.artifact_commit]);
   git(["merge-base", "--is-ancestor", requirement.artifact_commit, requirement.task9_final_commit]);
   git(["merge-base", "--is-ancestor", requirement.task9_final_commit, "HEAD"]);
+  assert.deepEqual(requirement.artifacts.map((item) => item.path), currentDistArtifactPaths(), "X_GATE_FORMAL_BUILD_CURRENT_SET");
+  validatePostBuildDrift(requirement);
   const artifacts = requirement.artifacts.map((item) => {
     const path = resolve(projectRoot, item.path);
     const stat = statSync(path);
@@ -756,6 +789,22 @@ function identitySelfTests(map, template, matrix, trace) {
   return 18;
 }
 
+function postBuildDriftSelfTests(matrix) {
+  expectFailure(
+    () => validatePostBuildDrift(matrix.formal_build_provenance_requirement, (_commit, scope) => (
+      scope.endsWith("/src") ? ["version-b-lite-plugin/src/domain/service.ts"] : []
+    )),
+    "post_build_source_drift",
+  );
+  expectFailure(
+    () => validatePostBuildDrift(matrix.formal_build_provenance_requirement, (_commit, scope) => (
+      scope.endsWith("/dist") ? ["version-b-lite-plugin/dist/repository/fact-commit.js"] : []
+    )),
+    "post_build_dist_drift",
+  );
+  return 2;
+}
+
 function stateReparseSelfTest() {
   const target = resolve(sddRoot, `.xgate-state-reparse-${process.pid}`);
   const owned = resolve(sddRoot, `.xgate-state-owned-${process.pid}`);
@@ -849,6 +898,7 @@ async function main() {
   let prerequisiteMutations = 0;
   let identityMutations = 0;
   let stateReparseMutations = 0;
+  let postBuildDriftMutations = 0;
   if (args.has("--self-test")) {
     planMutations = planSelfTests(sources.planText, sources.template);
     const publish = publishSelfTests(map);
@@ -857,6 +907,7 @@ async function main() {
     commandFailures = commandFailureSelfTest();
     prerequisiteMutations = prerequisiteSelfTests(map, sources.template, sources.matrix, sources.trace);
     identityMutations = identitySelfTests(map, sources.template, sources.matrix, sources.trace);
+    postBuildDriftMutations = postBuildDriftSelfTests(sources.matrix);
     stateReparseMutations = stateReparseSelfTest();
     const mutated = clone(map);
     mutated.verification_receipt.checks[0].exit_code = 1;
@@ -864,7 +915,7 @@ async function main() {
     expectFailure(() => validateLocalMap(mutated, sources.template, sources.matrix, sources.trace), "receipt_failed_check");
   }
   const reportedDecision = args.has("--self-test") ? "return_to_b_slice" : map.decision;
-  process.stdout.write(`X_GATE_002|PASS|mode=${args.has("--preflight") ? "preflight_publish" : "validate"}|decision=${reportedDecision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, task) => sum + task.paths.length, 0)}|plan_mutations=${planMutations}|collisions=${collisions}|failed_publish=${failedPublish}|command_failures=${commandFailures}|prerequisite_mutations=${prerequisiteMutations}|identity_mutations=${identityMutations}|state_reparse_mutations=${stateReparseMutations}\n`);
+  process.stdout.write(`X_GATE_002|PASS|mode=${args.has("--preflight") ? "preflight_publish" : "validate"}|decision=${reportedDecision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, task) => sum + task.paths.length, 0)}|plan_mutations=${planMutations}|collisions=${collisions}|failed_publish=${failedPublish}|command_failures=${commandFailures}|prerequisite_mutations=${prerequisiteMutations}|identity_mutations=${identityMutations}|post_build_drift_mutations=${postBuildDriftMutations}|state_reparse_mutations=${stateReparseMutations}\n`);
 }
 
 try {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
@@ -34,7 +35,8 @@ test("freezes exact prerequisite and formal-build requirements", () => {
     { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
     { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
   ]);
-  assert.deepEqual(matrix.formal_build_provenance_requirement, {
+  const { artifacts, ...formalBuildIdentity } = matrix.formal_build_provenance_requirement;
+  assert.deepEqual(formalBuildIdentity, {
     execution_count: 1,
     command: "node_modules/typescript/bin/tsc -p tsconfig.json",
     node_version: "v24.15.0",
@@ -45,11 +47,20 @@ test("freezes exact prerequisite and formal-build requirements", () => {
     source_candidate_commit: "b4c5010f969408ec6cdf564e3eaec65d28abe82b",
     artifact_commit: "93d1fabcc2c90f42cb2ea295515d9636721b2c08",
     task9_final_commit: "01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c",
-    artifacts: [
-      { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2410, sha256: "C4AEF28FFC88C91D495AC0C9F2D756BA6B33A9994E9555067E05F08ED9BE7AC5" },
-      { path: "version-b-lite-plugin/dist/index.js", bytes: 173, sha256: "AE609D468FEAB0D62192F3991C2F9A81B2A0514CD3A753576B73118ADA78DBBE" },
-    ],
   });
+  const committedPaths = execFileSync("git", ["ls-tree", "-r", "--name-only", formalBuildIdentity.artifact_commit, "--", "version-b-lite-plugin/dist"], { cwd: root, encoding: "utf8" })
+    .split(/\r?\n/u).filter((value) => value.endsWith(".js")).sort();
+  assert.equal(artifacts.length, 44);
+  assert.deepEqual(artifacts.map((item) => item.path), committedPaths);
+  for (const artifact of artifacts) {
+    const committed = execFileSync("git", ["show", `${formalBuildIdentity.artifact_commit}:${artifact.path}`], { cwd: root, encoding: "buffer" });
+    const current = readFileSync(resolve(root, artifact.path));
+    assert.equal(artifact.bytes, committed.length, artifact.path);
+    assert.equal(artifact.sha256, createHash("sha256").update(committed).digest("hex").toUpperCase(), artifact.path);
+    assert.deepEqual(current, committed, artifact.path);
+  }
+  assert.equal(artifacts.some((item) => item.path === "version-b-lite-plugin/dist/domain/service.js"), true);
+  assert.equal(artifacts.some((item) => item.path === "version-b-lite-plugin/dist/repository/fact-commit.js"), true);
   assert.ok(matrix.required_checks.length >= 6);
   for (const check of matrix.required_checks) assert.equal(Object.hasOwn(check, "result"), false, check.check_id);
 });
@@ -69,5 +80,6 @@ test("validates a published local map when present and exercises semantic mutati
   assert.match(output, /command_failures=1/u);
   assert.match(output, /prerequisite_mutations=5/u);
   assert.match(output, /identity_mutations=18/u);
+  assert.match(output, /post_build_drift_mutations=2/u);
   assert.match(output, /state_reparse_mutations=1/u);
 });
