@@ -238,6 +238,14 @@ export type CoreClarificationResult =
     }>
   | Readonly<{
       disposition: "needs_clarification";
+      action: "record_meal" | "record_water";
+      reason_code: "unsupported_command";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
       action: "add_inventory";
       reason_code: "unsupported_command";
       question: string;
@@ -310,6 +318,20 @@ type CoreTypeMealIdentitySeed = CoreTypeAssert<CoreTypeAssignable<{
   readonly subject: CoreSubjectEvidence;
   readonly items: readonly CoreMealItem[];
 }, CoreMealCommandCandidate>>;
+
+type CoreTypeAcceptMealUnsupportedClarification = CoreTypeAssert<CoreTypeAssignable<{
+  readonly disposition: "needs_clarification";
+  readonly action: "record_meal";
+  readonly reason_code: "unsupported_command";
+  readonly question: "请拆分输入";
+}, CoreParseResult>>;
+
+type CoreTypeAcceptWaterUnsupportedClarification = CoreTypeAssert<CoreTypeAssignable<{
+  readonly disposition: "needs_clarification";
+  readonly action: "record_water";
+  readonly reason_code: "unsupported_command";
+  readonly question: "请确认是否已发生";
+}, CoreParseResult>>;
 
 type CoreTypeRejectIncompleteOccurredClarification = CoreTypeAssert<CoreTypeNot<CoreTypeAssignable<{
   disposition: "needs_clarification";

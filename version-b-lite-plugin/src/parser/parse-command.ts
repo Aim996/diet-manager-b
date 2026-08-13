@@ -16,7 +16,7 @@ import type {
 } from "./types.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_ADVICE = /(?:医疗\s*诊断|减重\s*建议)/u;
+const HEALTH_ADVICE_REQUEST = /(?:给我|请|帮我)[^。！？!?]*(?:医疗\s*诊断|减重\s*建议)/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
@@ -33,18 +33,43 @@ function detachedFrozen<T>(value: T): Readonly<T> {
   return Object.freeze(result) as Readonly<T>;
 }
 
-function shanghaiCalendarDate(timestamp: string, dayDelta: number): string {
+function shanghaiCalendarDate(timestamp: string, dayDelta: number): string | null {
   const epoch = new Date(timestamp).valueOf();
-  const local = new Date(epoch + SHANGHAI_OFFSET_MS + dayDelta * 86_400_000);
-  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}-${String(local.getUTCDate()).padStart(2, "0")}`;
+  if (!Number.isFinite(epoch)) return null;
+  const local = new Date(epoch + SHANGHAI_OFFSET_MS);
+  const calendarEpoch = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate(),
+  ) + dayDelta * 86_400_000;
+  const shifted = new Date(calendarEpoch);
+  const year = shifted.getUTCFullYear();
+  if (year < 1_000 || year > 9_999) return null;
+  return `${String(year).padStart(4, "0")}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 }
 
-function inventoryCandidate(input: Readonly<CoreParseInput>): CoreInventoryCommandCandidate {
+function dateAtShanghai1600(value: string | null): OffsetIsoTimestamp | null {
+  if (value === null) return null;
+  const timestamp = `${value}T16:00:00+08:00`;
+  const epoch = new Date(timestamp).valueOf();
+  if (!Number.isFinite(epoch)) return null;
+  return timestamp as OffsetIsoTimestamp;
+}
+
+function addShanghaiCalendarDays(
+  date: string | null,
+  dayDelta: number,
+): string | null {
+  if (date === null || !/^\d{4}-\d{2}-\d{2}$/u.test(date)) return null;
+  return shanghaiCalendarDate(`${date}T00:00:00+08:00`, dayDelta);
+}
+
+function inventoryCandidate(input: Readonly<CoreParseInput>): CoreInventoryCommandCandidate | null {
   const stockedDate = shanghaiCalendarDate(input.received_at, -1);
-  const expirationDate = shanghaiCalendarDate(
-    `${stockedDate}T16:00:00+08:00`,
-    7,
-  );
+  const expirationDate = addShanghaiCalendarDays(stockedDate, 7);
+  const stockedAt = dateAtShanghai1600(stockedDate);
+  const expirationAt = dateAtShanghai1600(expirationDate);
+  if (stockedAt === null || expirationAt === null) return null;
   return {
     action: "add_inventory",
     operation_id: input.operation_id,
@@ -56,18 +81,23 @@ function inventoryCandidate(input: Readonly<CoreParseInput>): CoreInventoryComma
       quantity: null,
       unit: null,
     },
-    stocked_at: `${stockedDate}T16:00:00+08:00` as OffsetIsoTimestamp,
-    received_at: `${stockedDate}T16:00:00+08:00` as OffsetIsoTimestamp,
+    stocked_at: stockedAt,
+    received_at: stockedAt,
     ingestion_at: null,
-    estimated_expires_at: `${expirationDate}T16:00:00+08:00` as OffsetIsoTimestamp,
+    estimated_expires_at: expirationAt,
     expiration_resolution_basis: "stocked_at",
     shelf_life_rule_version: "diet-manager/fresh-milk-shelf-life-v1",
   };
 }
 
 function ambiguityQuestion(input: Readonly<CoreParseInput>): string {
-  const previous = shanghaiCalendarDate(input.received_at, -1).split("-").map(Number);
-  const current = shanghaiCalendarDate(input.received_at, 0).split("-").map(Number);
+  const previousDate = shanghaiCalendarDate(input.received_at, -1);
+  const currentDate = shanghaiCalendarDate(input.received_at, 0);
+  if (previousDate === null || currentDate === null) {
+    return "请明确这顿夜宵的日期。";
+  }
+  const previous = previousDate.split("-").map(Number);
+  const current = currentDate.split("-").map(Number);
   return `这顿夜宵是指${previous[1]}月${previous[2]}日还是${current[1]}月${current[2]}日？`;
 }
 
@@ -124,6 +154,9 @@ function mealCandidate(
   });
   const liquid = classifyMealLiquid(items);
   const purchase = PURCHASED_YESTERDAY.exec(input.source_text);
+  const purchaseReferenceDate = purchase === null
+    ? null
+    : shanghaiCalendarDate(input.received_at, -1);
 
   const command: CoreMealCommandCandidate = {
     action: "record_meal",
@@ -164,11 +197,11 @@ function mealCandidate(
         !context.inventory_read
       ? {}
       : { context }),
-    ...(purchase === null
+    ...(purchase === null || purchaseReferenceDate === null
       ? {}
       : { purchase_evidence: {
           raw_text: purchase[1],
-          batch_reference_date: shanghaiCalendarDate(input.received_at, -1),
+          batch_reference_date: purchaseReferenceDate,
           affects_ingestion_date: false,
         } }),
     ...(liquid === null ? {} : { liquid_classification: liquid }),
@@ -180,7 +213,9 @@ function mealCandidate(
 export function parseCoreCommand(value: unknown): CoreParseResult {
   const input = cloneCoreParseInput(value);
 
-  if (HEALTH_ADVICE.test(input.source_text)) {
+  if (HEALTH_ADVICE_REQUEST.test(input.source_text) &&
+      proposeMealItems(input.source_text).length === 0 &&
+      matchExplicitPlainWater(input.source_text) === null) {
     return detachedFrozen({
       disposition: "ignored",
       action: "health_advice",
@@ -189,6 +224,14 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
 
   const completion = classifyCompletion(input.source_text);
+  if (completion.disposition === "needs_clarification") {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: completion.action,
+      reason_code: completion.reason_code,
+      question: completion.question,
+    });
+  }
   if (completion.disposition === "ignored") {
     if (completion.reason_code === "not_occurred") {
       return detachedFrozen({
@@ -208,9 +251,18 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
 
   if (PURCHASE_WITHOUT_EXPIRY.test(input.source_text)) {
+    const command = inventoryCandidate(input);
+    if (command === null) {
+      return detachedFrozen({
+        disposition: "needs_clarification",
+        action: "add_inventory",
+        reason_code: "unsupported_command",
+        question: "购买日期超出当前支持范围，请提供明确的入库日期。",
+      });
+    }
     return detachedFrozen({
       disposition: "candidate",
-      command: inventoryCandidate(input),
+      command,
     });
   }
 
@@ -227,6 +279,19 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
 
   const water = matchExplicitPlainWater(input.source_text);
   if (water !== null) {
+    const mealItems = proposeMealItems(input.source_text).filter((item) =>
+      !completion.excluded_items.some((excluded) =>
+        excluded.normalized_name === item.normalized_name
+      )
+    );
+    if (mealItems.length > 0) {
+      return detachedFrozen({
+        disposition: "needs_clarification",
+        action: "record_meal",
+        reason_code: "unsupported_command",
+        question: "请把白水和其他饮食分成两条消息记录。",
+      });
+    }
     const waterSubject = resolveSubject(input.source_text, [{
       normalized_name: "water",
       raw_text: input.source_text.includes("白水") ? "白水" : "水",

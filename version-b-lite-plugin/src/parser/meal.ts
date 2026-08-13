@@ -32,8 +32,55 @@ interface PositionedItem extends ProposedSubjectItem {
   readonly position: number;
 }
 
-function amount(
+interface MealClause {
+  readonly raw: string;
+  readonly start: number;
+}
+
+const EXPLICIT_NON_SELF_INGESTION = /^\s*(?:朋友|孩子|同事|家人|他们|他|她)\s*(?:吃|喝)/u;
+const COMPLETION_CLAUSE = /(?:吃|喝)(?:了|过)?/u;
+const SELF_SHARE_CLAUSE = /我\s*和\s*朋友\s*一人\s*一\s*瓶/u;
+const OBJECT_FRONTED_COMPLETION = /记不清\s*是\s*在\s*公司\s*还是\s*回家后\s*(?:吃|喝)的/u;
+const ALLOWED_PREVIOUS = /[吃喝了过的个片瓶碗块盘和与、，,。；;！？!?\s0-9lL]/u;
+const ALLOWED_NEXT = /[和与、，,。；;！？!?\s记重没不]/u;
+
+function splitMealClauses(sourceText: string): readonly MealClause[] {
+  const clauses: MealClause[] = [];
+  const delimiter = /[，,。；;！？!?\r\n]+/gu;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = delimiter.exec(sourceText)) !== null) {
+    const raw = sourceText.slice(start, match.index);
+    if (raw.trim().length > 0) clauses.push(Object.freeze({ raw, start }));
+    start = match.index + match[0].length;
+  }
+  const raw = sourceText.slice(start);
+  if (raw.trim().length > 0) clauses.push(Object.freeze({ raw, start }));
+  return Object.freeze(clauses);
+}
+
+function isCurrentUserIngestionClause(clause: MealClause): boolean {
+  if (EXPLICIT_NON_SELF_INGESTION.test(clause.raw)) return false;
+  if (/买/u.test(clause.raw) && !COMPLETION_CLAUSE.test(clause.raw)) return false;
+  return COMPLETION_CLAUSE.test(clause.raw) ||
+    SELF_SHARE_CLAUSE.test(clause.raw) ||
+    OBJECT_FRONTED_COMPLETION.test(clause.raw);
+}
+
+function hasLexemeBoundary(
   sourceText: string,
+  position: number,
+  rawText: string,
+): boolean {
+  const previous = position === 0 ? null : sourceText[position - 1];
+  const nextPosition = position + rawText.length;
+  const next = nextPosition >= sourceText.length ? null : sourceText[nextPosition];
+  return (previous === null || ALLOWED_PREVIOUS.test(previous)) &&
+    (next === null || ALLOWED_NEXT.test(next));
+}
+
+function amount(
+  clauseText: string,
   item: Lexeme,
 ): Readonly<ProposedAmountEvidence> {
   type AmountRule = readonly [RegExp, number, string];
@@ -49,14 +96,14 @@ function amount(
     chicken: Object.freeze([[/(一块)\s*鸡胸肉/u, 1, "piece"]] as const),
   });
   if (item.normalized_name === "noodle") {
-    const match = /(一碗)\s*面(?!包)/u.exec(sourceText);
+    const match = /(一碗)\s*面(?!包)/u.exec(clauseText);
     return match === null
       ? Object.freeze({ raw_text: null, quantity: null, unit: null, estimated: null })
       : Object.freeze({ raw_text: match[1], quantity: 1, unit: "bowl", estimated: false });
   }
   const itemRules = rules[item.normalized_name] ?? [];
   for (const [pattern, frozenQuantity, unit] of itemRules) {
-    const match = pattern.exec(sourceText);
+    const match = pattern.exec(clauseText);
     if (match === null) continue;
     const quantity = Number.isNaN(frozenQuantity) ? Number(match[1]) : frozenQuantity;
     if (!Number.isSafeInteger(quantity) || quantity <= 0) continue;
@@ -73,31 +120,38 @@ function amount(
 /** Extract only the explicit PRODUCT-0.1 food vocabulary, in source order. */
 export function proposeMealItems(sourceText: string): readonly Readonly<PositionedItem>[] {
   const found: PositionedItem[] = [];
-  for (const entry of LEXICON) {
-    const position = sourceText.indexOf(entry.raw_text);
-    if (position < 0) continue;
-    found.push(Object.freeze({
-      normalized_name: entry.normalized_name,
-      raw_text: entry.raw_text,
-      amount_evidence: amount(sourceText, entry),
-      kind: entry.kind,
-      position,
-    }));
-  }
-  const noodleMatch = /面(?!包)/u.exec(sourceText);
-  if (noodleMatch !== null) {
-    const noodle = Object.freeze<Lexeme>({
-      normalized_name: "noodle",
-      raw_text: noodleMatch[0],
-      kind: "food",
-    });
-    found.push(Object.freeze({
-      normalized_name: noodle.normalized_name,
-      raw_text: noodle.raw_text,
-      amount_evidence: amount(sourceText, noodle),
-      kind: noodle.kind,
-      position: noodleMatch.index,
-    }));
+  for (const clause of splitMealClauses(sourceText)) {
+    if (!isCurrentUserIngestionClause(clause)) continue;
+    for (const entry of LEXICON) {
+      const relativePosition = clause.raw.indexOf(entry.raw_text);
+      if (relativePosition < 0) continue;
+      const position = clause.start + relativePosition;
+      if (!hasLexemeBoundary(sourceText, position, entry.raw_text)) continue;
+      found.push(Object.freeze({
+        normalized_name: entry.normalized_name,
+        raw_text: entry.raw_text,
+        amount_evidence: amount(clause.raw, entry),
+        kind: entry.kind,
+        position,
+      }));
+    }
+    const noodleMatch = /(一碗\s*)面(?!包)/u.exec(clause.raw);
+    if (noodleMatch !== null) {
+      const rawTextPosition = noodleMatch.index + noodleMatch[1].length;
+      const position = clause.start + rawTextPosition;
+      const noodle = Object.freeze<Lexeme>({
+        normalized_name: "noodle",
+        raw_text: "面",
+        kind: "food",
+      });
+      found.push(Object.freeze({
+        normalized_name: noodle.normalized_name,
+        raw_text: noodle.raw_text,
+        amount_evidence: amount(clause.raw, noodle),
+        kind: noodle.kind,
+        position,
+      }));
+    }
   }
   found.sort((left, right) => left.position - right.position);
   return Object.freeze(found);

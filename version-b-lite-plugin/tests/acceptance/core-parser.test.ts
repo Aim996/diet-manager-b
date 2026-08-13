@@ -803,3 +803,196 @@ describe("selected core command composition", () => {
     expect(Object.hasOwn(result, "command")).toBe(false);
   });
 });
+
+describe("core parser quality boundaries", () => {
+  function variant(sourceText: string, receivedAt = "2026-08-11T08:30:00+08:00") {
+    return parseCoreCommand({
+      ...parseInput(selectedCase("CASE-MEAL-021")),
+      source_text: sourceText,
+      received_at: receivedAt,
+    });
+  }
+
+  it.each([
+    ["吃了一个苹果吗？", "record_meal"],
+    ["吃了一个苹果吗?", "record_meal"],
+    ["吃苹果了吗？", "record_meal"],
+    ["喝了500ml白水吗？", "record_water"],
+    ["喝了500ml白水吗?", "record_water"],
+    ["喝了牛奶吗？", "record_meal"],
+  ])("never treats a bounded question as a completed fact: %s", (sourceText, action) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action,
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it.each([
+    ["如果吃了一个苹果。", "record_meal"],
+    ["要是喝了500ml白水。", "record_water"],
+  ])("never treats a bounded conditional as a completed fact: %s", (sourceText, action) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action,
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it.each([
+    ["没吃苹果，吃了香蕉。", "banana", "apple"],
+    ["没吃香蕉，吃了一个苹果。", "apple", "banana"],
+  ])("scopes non-egg item negation: %s", (sourceText, kept, excluded) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_meal",
+        items: [{ normalized_name: kept }],
+        excluded_items: [{
+          normalized_name: excluded,
+          reason_code: "item_scoped_negation",
+        }],
+      },
+    });
+  });
+
+  it.each([
+    "给朋友买了两个鸡蛋，我吃了一个苹果。",
+    "朋友吃了两个鸡蛋，我吃了一个苹果。",
+    "我吃了一个苹果，朋友吃了两个鸡蛋。",
+  ])("binds proposed foods to the current-user ingestion clause: %s", (sourceText) => {
+    const result = variant(sourceText);
+    const command = requiredMeal(result);
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "apple",
+      quantity: 1,
+      unit: "piece",
+      estimated: false,
+    }]);
+  });
+
+  it("does not borrow an amount for the same food from a friend's clause", () => {
+    const command = requiredMeal(
+      variant("给朋友买了两个鸡蛋，我吃了鸡蛋。"),
+    );
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "egg",
+      quantity: null,
+      unit: null,
+      estimated: null,
+    }]);
+  });
+
+  it.each([
+    "吃了一个苹果派。",
+    "吃了鸡蛋糕。",
+    "吃了面包虫。",
+    "吃了香蕉船冰淇淋。",
+  ])("does not recognize a bounded lexeme prefix inside another food: %s", (sourceText) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+    });
+  });
+
+  it("does not recognize the water prefix in buffalo milk", () => {
+    const result = variant("喝了250ml水牛奶。");
+
+    expect(result.disposition).toBe("needs_clarification");
+    if (result.disposition === "candidate") {
+      expect(result.command.action).not.toBe("record_water");
+    }
+  });
+
+  it("fails closed instead of truncating a mixed plain-water and milk input", () => {
+    expect(variant("我喝了500ml白水和250ml牛奶。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it.each([
+    "这句话里只是在讨论医疗诊断这个词，我吃了一个苹果。",
+    "这不是医疗诊断，我吃了一个苹果。",
+    "我想听听你的建议，我吃了一个苹果。",
+    "给我做医疗诊断，我吃了一个苹果。",
+  ])("preserves an independent completed meal around health terminology: %s", (sourceText) => {
+    const command = requiredMeal(variant(sourceText));
+
+    expect(command.items).toMatchObject([{ normalized_name: "apple" }]);
+  });
+
+  it("does not treat mere discussion of advice as a health-advice request", () => {
+    const result = variant("我想知道减重建议里为什么会提到苹果。");
+
+    expect(result).not.toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+    });
+    expect(result.disposition).not.toBe("candidate");
+  });
+
+  it("still rejects the frozen pure health-advice request", () => {
+    expect(parseSelected("CASE-SCOPE-001")).toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
+  });
+
+  it("fails closed when yesterday would leave the supported calendar", () => {
+    expect(variant(
+      "昨天买的鲜牛奶没有标到期日。",
+      "1000-01-01T08:30:00+08:00",
+    )).toMatchObject({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it.each([
+    [
+      "2024-03-01T08:30:00+08:00",
+      "2024-02-29T16:00:00+08:00",
+      "2024-03-07T16:00:00+08:00",
+    ],
+    [
+      "2026-01-01T08:30:00+08:00",
+      "2025-12-31T16:00:00+08:00",
+      "2026-01-07T16:00:00+08:00",
+    ],
+  ])("derives valid purchase dates across calendar boundaries: %s", (
+    receivedAt,
+    stockedAt,
+    expiresAt,
+  ) => {
+    const command = requiredCandidate(variant(
+      "昨天买的鲜牛奶没有标到期日。",
+      receivedAt,
+    ));
+    if (command.action !== "add_inventory") {
+      throw new Error("CORE_PARSER_TEST_EXPECTED_INVENTORY");
+    }
+
+    expect(command).toMatchObject({
+      stocked_at: stockedAt,
+      received_at: stockedAt,
+      estimated_expires_at: expiresAt,
+    });
+    for (const timestamp of [
+      command.stocked_at,
+      command.received_at,
+      command.estimated_expires_at,
+    ]) {
+      expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/u);
+      expect(Number.isFinite(new Date(timestamp).valueOf())).toBe(true);
+    }
+  });
+});

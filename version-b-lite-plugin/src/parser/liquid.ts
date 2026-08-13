@@ -8,7 +8,7 @@ export interface PlainWaterMatch {
   readonly quantity_ml: number;
 }
 
-const EXPLICIT_PLAIN_WATER = /喝(?:了)?\s*([0-9]+)\s*ml\s*(白水|水)/u;
+const EXPLICIT_PLAIN_WATER = /喝(?:了)?\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与吗么])/u;
 
 /** Recognize only explicit drinking of plain water in the frozen core grammar. */
 export function matchExplicitPlainWater(sourceText: string): Readonly<PlainWaterMatch> | null {

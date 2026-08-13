@@ -5,7 +5,9 @@ export interface CompletionMatchedEvidence {
     | "completion.final-non-occurrence"
     | "completion.future-plan.tomorrow-prepare-eat"
     | "completion.adversative-completed"
-    | "completion.item-negation.egg";
+    | "completion.interrogative"
+    | "completion.conditional"
+    | `completion.item-negation.${string}`;
   readonly raw: string;
   readonly start: number;
   readonly end: number;
@@ -21,7 +23,7 @@ export interface CompletionEvidence {
 }
 
 export interface CompletionExcludedItem {
-  readonly normalized_name: "egg";
+  readonly normalized_name: string;
   readonly reason_code: "item_scoped_negation";
   readonly matched_span: string;
   readonly matched_evidence: CompletionMatchedEvidence;
@@ -29,6 +31,13 @@ export interface CompletionExcludedItem {
 }
 
 export type CompletionClassification =
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "record_meal" | "record_water";
+      reason_code: "unsupported_command";
+      question: string;
+      matched_evidence: CompletionMatchedEvidence;
+    }>
   | Readonly<{
       disposition: "ignored";
       action: "record_meal";
@@ -62,10 +71,92 @@ const ADVERSATIVE_COMPLETED_RULE = Object.freeze<CompletionRule>({
   pattern: /后来\s*还是\s*吃了/u,
 });
 
+const INTERROGATIVE_RULE = Object.freeze<CompletionRule>({
+  rule_id: "completion.interrogative",
+  pattern: /(?:吗|么)?\s*[？?]\s*$/u,
+});
+
+const CONDITIONAL_RULE = Object.freeze<CompletionRule>({
+  rule_id: "completion.conditional",
+  pattern: /^\s*(?:如果|假如|要是)(?=[^。！？!?]*(?:吃|喝))/u,
+});
+
+function clarificationAction(sourceText: string): "record_meal" | "record_water" {
+  return /喝(?:了)?[^。！？!?]*(?:白水|水)(?=$|[\s,，。；;！!？?、和与吗么])/u
+      .test(sourceText)
+    ? "record_water"
+    : "record_meal";
+}
+
+interface ItemNegationRule extends CompletionRule {
+  readonly normalized_name: string;
+}
+
 const ITEM_NEGATION_RULES = Object.freeze([
-  Object.freeze<CompletionRule>({
+  Object.freeze<ItemNegationRule>({
     rule_id: "completion.item-negation.egg",
-    pattern: /没\s*吃\s*鸡蛋/u,
+    normalized_name: "egg",
+    pattern: /没\s*吃\s*鸡蛋(?!糕)/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.apple",
+    normalized_name: "apple",
+    pattern: /没\s*吃\s*苹果(?!派)/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.banana",
+    normalized_name: "banana",
+    pattern: /没\s*吃\s*香蕉(?!船)/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.bread",
+    normalized_name: "bread",
+    pattern: /没\s*吃\s*面包(?!虫)/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.rice",
+    normalized_name: "rice",
+    pattern: /没\s*吃\s*米饭/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.fried_rice",
+    normalized_name: "fried_rice",
+    pattern: /没\s*吃\s*炒饭/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.noodle",
+    normalized_name: "noodle",
+    pattern: /没\s*吃\s*面(?!包)/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.chicken",
+    normalized_name: "chicken",
+    pattern: /没\s*吃\s*鸡胸肉/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.milk",
+    normalized_name: "milk",
+    pattern: /没\s*喝\s*牛奶/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.soup",
+    normalized_name: "soup",
+    pattern: /没\s*喝\s*汤/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.soy_milk",
+    normalized_name: "soy_milk",
+    pattern: /没\s*喝\s*豆浆/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.coffee",
+    normalized_name: "coffee",
+    pattern: /没\s*喝\s*咖啡/u,
+  }),
+  Object.freeze<ItemNegationRule>({
+    rule_id: "completion.item-negation.tea",
+    normalized_name: "tea",
+    pattern: /没\s*喝\s*茶/u,
   }),
 ]);
 
@@ -87,6 +178,28 @@ function matchEvidence(
 export function classifyCompletion(
   sourceText: string,
 ): CompletionClassification {
+  const interrogative = matchEvidence(sourceText, INTERROGATIVE_RULE);
+  if (interrogative !== null) {
+    return Object.freeze({
+      disposition: "needs_clarification",
+      action: clarificationAction(sourceText),
+      reason_code: "unsupported_command",
+      question: "这是在询问，还是要记录已经发生的饮食？",
+      matched_evidence: interrogative,
+    });
+  }
+
+  const conditional = matchEvidence(sourceText, CONDITIONAL_RULE);
+  if (conditional !== null) {
+    return Object.freeze({
+      disposition: "needs_clarification",
+      action: clarificationAction(sourceText),
+      reason_code: "unsupported_command",
+      question: "这是条件描述，还是要记录已经发生的饮食？",
+      matched_evidence: conditional,
+    });
+  }
+
   const finalNonOccurrence = matchEvidence(
     sourceText,
     FINAL_NON_OCCURRENCE_RULE,
@@ -125,7 +238,7 @@ export function classifyCompletion(
     const evidence = matchEvidence(sourceText, rule);
     if (evidence === null) return [];
     return [Object.freeze({
-      normalized_name: "egg" as const,
+      normalized_name: rule.normalized_name,
       reason_code: "item_scoped_negation" as const,
       matched_span: evidence.raw,
       matched_evidence: evidence,
