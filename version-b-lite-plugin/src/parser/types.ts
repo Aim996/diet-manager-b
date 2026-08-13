@@ -2,6 +2,11 @@ import type { DietManagerAction } from "../contracts.js";
 
 export type CoreScene = "home" | "outside" | "company" | "unknown";
 
+type OffsetIsoZone = "Z" | `${"+" | "-"}${number}:${number}`;
+export type OffsetIsoTimestamp =
+  | `${number}-${number}-${number}T${number}:${number}:${number}${OffsetIsoZone}`
+  | `${number}-${number}-${number}T${number}:${number}:${number}.${number}${OffsetIsoZone}`;
+
 export interface CoreContextItem {
   readonly normalized_name: string;
   readonly quantity: number | null;
@@ -12,8 +17,8 @@ export interface CoreContextEntry {
   readonly context_id: string;
   readonly conversation_id: string;
   readonly revision: number;
-  readonly generated_at: string;
-  readonly valid_until: string;
+  readonly generated_at: OffsetIsoTimestamp;
+  readonly valid_until: OffsetIsoTimestamp;
   readonly source_message_id: string;
   readonly rule_version: "diet-manager/context-v1";
   readonly scope: "meal" | "meal_date";
@@ -23,8 +28,8 @@ export interface CoreContextEntry {
 
 export interface OccurredTimeEvidence {
   readonly raw_text: string | null;
-  readonly resolved_start: string | null;
-  readonly resolved_end: string | null;
+  readonly resolved_start: OffsetIsoTimestamp | null;
+  readonly resolved_end: OffsetIsoTimestamp | null;
   readonly precision: "exact" | "date" | "meal_period" | "approximate" | "unknown";
   readonly timezone: "Asia/Shanghai";
   readonly resolution_basis:
@@ -32,7 +37,7 @@ export interface OccurredTimeEvidence {
     | "relative_to_received_at"
     | "default_received_at"
     | "needs_clarification";
-  readonly resolution_anchor: string;
+  readonly resolution_anchor: OffsetIsoTimestamp;
   readonly resolver_version: "diet-manager/time-parser-v1";
 }
 
@@ -140,7 +145,7 @@ export type CoreCommandCandidate =
 
 export interface CoreParseInput {
   readonly source_text: string;
-  readonly received_at: string;
+  readonly received_at: OffsetIsoTimestamp;
   readonly timezone: "Asia/Shanghai";
   readonly operation_id: string;
   readonly source_message_id: string;
@@ -159,20 +164,50 @@ export type CoreClarificationReason =
   | "unsupported_command"
   | "amount_ambiguous";
 
-export type CoreRecognizedAction = DietManagerAction | "health_advice";
+export type CoreRecognizedAction =
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory">
+  | "health_advice";
 
-export type CoreParseResult =
-  | Readonly<{ disposition: "candidate"; command: CoreCommandCandidate }>
+export type CoreIgnoredResult =
   | Readonly<{
       disposition: "ignored";
-      action: CoreRecognizedAction;
-      reason_code: CoreIgnoreReason;
+      action: "health_advice";
+      reason_code: "unsupported_health_advice";
+    }>
+  | Readonly<{
+      disposition: "ignored";
+      action: "record_meal";
+      reason_code: "non_self_subject" | "future_plan";
+    }>
+  | Readonly<{
+      disposition: "ignored";
+      action: "record_meal";
+      reason_code: "not_occurred";
       context_id?: string;
+    }>;
+
+export type CoreClarificationResult =
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "record_meal";
+      reason_code: "occurred_date_ambiguous";
+      question: string;
+      occurred_time: OccurredTimeEvidence;
     }>
   | Readonly<{
       disposition: "needs_clarification";
-      action: CoreRecognizedAction;
-      reason_code: CoreClarificationReason;
+      action: "record_meal" | "record_water";
+      reason_code: "amount_ambiguous";
       question: string;
-      occurred_time?: OccurredTimeEvidence;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "add_inventory";
+      reason_code: "unsupported_command";
+      question: string;
     }>;
+
+export type CoreParseResult =
+  | Readonly<{ disposition: "candidate"; command: CoreCommandCandidate }>
+  | CoreIgnoredResult
+  | CoreClarificationResult;

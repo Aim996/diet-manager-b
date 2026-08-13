@@ -142,6 +142,23 @@ const frozenParserResultExamples = [
   },
 ] as const satisfies readonly CoreParseResult[];
 
+// These compile-time assertions protect the action/reason/evidence discriminants.
+// @ts-expect-error health advice cannot carry a meal-subject ignore reason
+const contradictoryHealthResult: CoreParseResult = { disposition: "ignored", action: "health_advice", reason_code: "non_self_subject" };
+// @ts-expect-error item negation cannot carry prior-context identity
+const contradictoryMealResult: CoreParseResult = { disposition: "ignored", action: "record_meal", reason_code: "future_plan", context_id: "context-unrelated" };
+// @ts-expect-error ambiguous occurred date must preserve OccurredTime evidence
+const incompleteClarificationResult: CoreParseResult = { disposition: "needs_clarification", action: "record_meal", reason_code: "occurred_date_ambiguous", question: "哪一天？" };
+// @ts-expect-error occurrence evidence timestamps must use offset-ISO syntax
+const malformedOccurredAnchor: OccurredTimeEvidence = { ...ambiguousOccurredTime, resolution_anchor: "not-iso" };
+// @ts-expect-error resolved occurrence timestamps must use offset-ISO syntax
+const malformedResolvedStart: OccurredTimeEvidence = { ...ambiguousOccurredTime, resolved_start: "not-iso" };
+void contradictoryHealthResult;
+void contradictoryMealResult;
+void incompleteClarificationResult;
+void malformedOccurredAnchor;
+void malformedResolvedStart;
+
 describe("core parser ordinary-input authority", () => {
   it("represents the frozen parser-only outcomes without expanding public actions", () => {
     expect(frozenParserResultExamples.map((result) => result.disposition)).toEqual([
@@ -315,6 +332,52 @@ describe("core parser ordinary-input authority", () => {
     expectInvalid(input, "input.prior_context:array_keys");
   });
 
+  it("rejects an attacker-sized sparse array before length-sized work", () => {
+    const input = ordinaryInput();
+    const attackerSized = [] as unknown[];
+    attackerSized.length = 0xffff_ffff;
+    input.prior_context = attackerSized as ReturnType<typeof ordinaryInput>["prior_context"];
+    const startedAt = performance.now();
+
+    expectInvalid(input, "input.prior_context:array_length");
+    expect(performance.now() - startedAt).toBeLessThan(100);
+  });
+
+  it("does not consume optional descriptors injected through Object.prototype", () => {
+    const input = ordinaryInput();
+    const context = input.prior_context[0] as typeof input.prior_context[0] &
+      Record<string, unknown>;
+    Reflect.deleteProperty(context, "items");
+    const itemsBefore = Object.getOwnPropertyDescriptor(Object.prototype, "items");
+    const sceneBefore = Object.getOwnPropertyDescriptor(Object.prototype, "scene");
+
+    try {
+      Object.defineProperty(Object.prototype, "items", {
+        configurable: true,
+        value: { value: [], enumerable: true },
+      });
+      Object.defineProperty(Object.prototype, "scene", {
+        configurable: true,
+        value: { value: "company", enumerable: true },
+      });
+
+      const clonedContext = cloneCoreParseInput(input).prior_context[0];
+      expect(Object.hasOwn(clonedContext, "items")).toBe(false);
+      expect(Object.hasOwn(clonedContext, "scene")).toBe(false);
+    } finally {
+      if (itemsBefore === undefined) {
+        delete (Object.prototype as Record<string, unknown>).items;
+      } else {
+        Object.defineProperty(Object.prototype, "items", itemsBefore);
+      }
+      if (sceneBefore === undefined) {
+        delete (Object.prototype as Record<string, unknown>).scene;
+      } else {
+        Object.defineProperty(Object.prototype, "scene", sceneBefore);
+      }
+    }
+  });
+
   it("rejects custom prototypes", () => {
     const input = ordinaryInput();
     Object.setPrototypeOf(input, { inherited: true });
@@ -344,5 +407,30 @@ describe("core parser ordinary-input authority", () => {
     };
 
     expectInvalid(input, "input:keys");
+  });
+
+  it.each([
+    ["source_text", "", "input.source_text:length"],
+    ["source_text", " ".repeat(4_097), "input.source_text:length"],
+    ["operation_id", "", "input.operation_id:length"],
+    ["source_message_id", "x".repeat(257), "input.source_message_id:length"],
+    ["conversation_id", "   ", "input.conversation_id:length"],
+    ["received_at", "not-iso", "input.received_at:iso_timestamp"],
+  ])("rejects invalid bounded scalar %s", (key, value, reason) => {
+    const input = ordinaryInput() as ReturnType<typeof ordinaryInput> &
+      Record<string, unknown>;
+    input[key] = value;
+    expectInvalid(input, reason);
+  });
+
+  it.each([
+    ["context_id", "", "input.prior_context[0].context_id:length"],
+    ["context_id", "x".repeat(257), "input.prior_context[0].context_id:length"],
+    ["generated_at", "not-iso", "input.prior_context[0].generated_at:iso_timestamp"],
+    ["valid_until", "2026-02-30T08:30:00+08:00", "input.prior_context[0].valid_until:iso_timestamp"],
+  ])("rejects invalid bounded context scalar %s", (key, value, reason) => {
+    const input = ordinaryInput();
+    (input.prior_context[0] as Record<string, unknown>)[key] = value;
+    expectInvalid(input, reason);
   });
 });
