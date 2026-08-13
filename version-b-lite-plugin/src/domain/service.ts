@@ -5,6 +5,7 @@ import {
   createMealFactIdentity,
   type MealFactPreviewMaterial,
 } from "../authority/meal-fact-identity.js";
+import { createWaterFactIdentity, type WaterFactPreviewMaterial } from "../authority/water-fact-identity.js";
 import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
@@ -35,6 +36,9 @@ import {
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import {
   applyMealEffects,
+  applyWaterEffects,
+  assertStoredWaterFactMatchesExpected,
+  markWaterEffectsRetryable,
   markMealEffectsRetryable,
   applyPurchaseEffect,
   applyCorrectionEffects,
@@ -43,7 +47,9 @@ import {
   readAppliedMealResult,
   readAppliedCorrectionResult,
   preflightMealOperation,
+  preflightWaterOperation,
   prepareMealOperation,
+  prepareWaterOperation,
   preparePurchaseOperation,
   type MealOperationResult,
 } from "./effect-bundle.js";
@@ -62,6 +68,7 @@ import type {
   DomainExecutionResult,
   DomainQueryOperation,
   RecordMealOperation,
+  RecordWaterOperation,
   UndoRecordOperation,
 } from "./types.js";
 
@@ -94,6 +101,9 @@ type DietDomainFault =
   | "after_meal_first_item"
   | "after_meal_issue_write"
   | "after_meal_progress_contribution_prepared"
+  | "after_water_event"
+  | "after_water_outbox"
+  | "after_water_progress_contribution_prepared"
   | "after_correction_claim"
   | "after_correction_compensation"
   | "after_correction_nutrition_progress"
@@ -250,6 +260,29 @@ function validateOperation(value: unknown, field: string): void {
     } catch (error) {
       if (error instanceof MealFactAuthorityError) return invalid(error.reason);
       throw error;
+    }
+    return;
+  }
+  if (kind === "record_water") {
+    const candidate = record(value, [
+      "kind", "operation_id", "occurred_time", "source_text", "plain_water_ml_milli", "amount_evidence",
+    ], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    timestamp(candidate.occurred_time, `${field}.occurred_time`);
+    text(candidate.source_text, `${field}.source_text`);
+    if (
+      !Number.isSafeInteger(candidate.plain_water_ml_milli) ||
+      (candidate.plain_water_ml_milli as number) <= 0 ||
+      (candidate.plain_water_ml_milli as number) > 20_000_000
+    ) return invalid(`${field}.plain_water_ml_milli`);
+    const evidence = record(candidate.amount_evidence, ["raw_text", "quantity", "unit", "estimated"], `${field}.amount_evidence`);
+    text(evidence.raw_text, `${field}.amount_evidence.raw_text`);
+    if (!Number.isSafeInteger(evidence.quantity) || (evidence.quantity as number) <= 0 || (evidence.quantity as number) > 20_000) {
+      return invalid(`${field}.amount_evidence.quantity`);
+    }
+    if (evidence.unit !== "ml" || evidence.estimated !== false) return invalid(`${field}.amount_evidence`);
+    if ((evidence.quantity as number) * 1_000 !== candidate.plain_water_ml_milli) {
+      return invalid(`${field}.amount_evidence.quantity`);
     }
     return;
   }
@@ -501,8 +534,10 @@ function failureCode(error: unknown, fallback: string): string {
 function appendFactWithFailure(
   input: Parameters<typeof appendPreparedOperationFact>[0],
   sink: CreateDietDomainServiceInput["failureSink"],
+  fault?: "after_event" | "after_effects",
 ): ReturnType<typeof appendPreparedOperationFact> {
   return appendPreparedOperationFact(input, {
+    ...(fault === undefined ? {} : { fault }),
     failureSink: (entry) => emitFailure(sink, {
       stage: "FactCommit",
       error_code: entry.error_code,
@@ -568,6 +603,7 @@ function finalizeWithFailure(
 type WriteOperation =
   | AddInventoryOperation
   | RecordMealOperation
+  | RecordWaterOperation
   | CorrectRecordOperation
   | UndoRecordOperation;
 
@@ -591,6 +627,7 @@ function writeOperations(
   if (
     (envelope.command_type === "add_inventory" && operation.kind === "add_inventory") ||
     (envelope.command_type === "record_meal" && operation.kind === "record_meal") ||
+    (envelope.command_type === "record_water" && operation.kind === "record_water") ||
     (envelope.command_type === "correct_record" && operation.kind === "correct_record") ||
     (envelope.command_type === "undo_record" && operation.kind === "undo_record")
   ) return Object.freeze([operation]);
@@ -601,7 +638,25 @@ function mealFactPreviewMaterial(
   envelope: DomainEnvelopeInput,
   inputDigest: string,
 ): Readonly<{ authority_kind: "diet-manager/domain-preview/v1"; envelope: DomainEnvelopeInput }> |
-  MealFactPreviewMaterial {
+  MealFactPreviewMaterial | WaterFactPreviewMaterial {
+  const water = envelope.operations.find((operation): operation is RecordWaterOperation => operation.kind === "record_water");
+  if (water) {
+    return Object.freeze({
+      authority_kind: "diet-manager/domain-preview/v3",
+      input_digest: inputDigest,
+      meal_fact_identities: Object.freeze([]),
+      water_fact_identities: Object.freeze([createWaterFactIdentity({
+        sequence: 0, event_id: deriveDomainId("event", envelope.idempotency_key, 0), operation_id: water.operation_id,
+        schema_version: "domain/v2", event_type: "diet_water", fact_kind: "water",
+        source_message_id: envelope.source_message_id, conversation_id: envelope.conversation_id,
+        received_at: envelope.received_at, occurred_at_text: water.occurred_time, meal_id: null, meal_slot: null,
+        payload: {
+          amount_evidence: water.amount_evidence, authority_kind: "diet-manager/water-fact/v1", estimated: false,
+          plain_water_ml_milli: water.plain_water_ml_milli, source_text: water.source_text, timezone: "Asia/Shanghai",
+        },
+      })]),
+    });
+  }
   const meals = envelope.operations.flatMap((operation, sequence) =>
     operation.kind === "record_meal" ? [{ operation, sequence }] : []);
   const hasEvidence = meals.some(({ operation }) =>
@@ -661,6 +716,14 @@ function assertMealFactPreviewAuthority(
   if (expected.authority_kind === "diet-manager/domain-preview/v1") {
     if (authority.preview_authority_kind !== "diet-manager/server-preview/v1") {
       throw new Error("PREVIEW_AUTHORITY_INVALID:meal_fact_identity");
+    }
+    return;
+  }
+  if (expected.authority_kind === "diet-manager/domain-preview/v3") {
+    if (authority.preview_authority_kind !== "diet-manager/server-preview/v3" ||
+        authority.water_fact_preview_material === undefined ||
+        canonicalJson(authority.water_fact_preview_material) !== canonicalJson(expected)) {
+      throw new Error("PREVIEW_AUTHORITY_INVALID:water_fact_identity");
     }
     return;
   }
@@ -803,6 +866,9 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
     input.fault !== "after_meal_first_item" &&
     input.fault !== "after_meal_issue_write" &&
     input.fault !== "after_meal_progress_contribution_prepared" &&
+    input.fault !== "after_water_event" &&
+    input.fault !== "after_water_outbox" &&
+    input.fault !== "after_water_progress_contribution_prepared" &&
     input.fault !== "after_correction_claim" &&
     input.fault !== "after_correction_compensation" &&
     input.fault !== "after_correction_nutrition_progress" &&
@@ -910,12 +976,18 @@ export function createDietDomainService(
         options.database,
         envelope.envelope_id,
       );
+      const firstOperation = operations[0];
       const progressReservation = existingProgressReservation ??
         (authority.envelope_state === "received"
-          ? createMealProgressReservation(
-              options.database,
-              preflightWriteOperations(options.database, operations),
-            )
+          ? firstOperation.kind === "record_water"
+            ? createContributionProgressReservation(
+                options.database,
+                preflightWaterOperation(firstOperation),
+              )
+            : createMealProgressReservation(
+                options.database,
+                preflightWriteOperations(options.database, operations),
+              )
           : undefined);
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
       if (operations.length === 2) {
@@ -1304,6 +1376,114 @@ export function createDietDomainService(
           frozenAt: committedAt,
           payload: correctionExecution,
           mixedItems: Object.freeze([]),
+        }).payload as DomainExecutionResult;
+      }
+      if (operation.kind === "record_water") {
+        const preparedWater = prepareWaterOperation({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          dataRevision: execution.data_revision,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt,
+          sequence: 0,
+          operation,
+          ...(progressReservation === undefined ? {} : { progressReservation }),
+        });
+        const traceId = preparedWater.fact.traceId;
+        if (authority.envelope_state !== "received") {
+          assertStoredWaterFactMatchesExpected({
+            database: options.database, envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id, expectedFact: preparedWater.fact,
+          });
+        }
+        if (authority.envelope_state === "finalized") {
+          const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
+          return finalize({
+            database: options.database, secret: options.secret, token: execution.token,
+            inputDigest, subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+            dataRevision: execution.data_revision, traceId, resultStatus: stored.resultStatus,
+            receiptId: stored.receiptId, finalizedAt: stored.finalizedAt, frozenAt: stored.frozenAt,
+            payload: stored.payload, mixedItems: Object.freeze([]),
+          }).payload as DomainExecutionResult;
+        }
+        if (authority.envelope_state !== "received" && authority.envelope_state !== "effects_pending" && authority.envelope_state !== "effects_stable") {
+          throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        }
+        if (authority.envelope_state === "received" && options.fault === "before_fact_commit") {
+          emitFailure(options.failureSink, { stage: "FactCommit", error_code: "DIET_DOMAIN_EXECUTION_FAILED", trace_id: traceId, input_digest: inputDigest });
+          throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+        }
+        const storedWaterFact = options.database.prepare(
+          "SELECT event_id FROM event_records WHERE envelope_id = ? AND operation_id = ?",
+        ).get(envelope.envelope_id, operation.operation_id) as { event_id: string } | undefined;
+        if (storedWaterFact) {
+          assertStoredWaterFactMatchesExpected({
+            database: options.database, envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id, expectedFact: preparedWater.fact,
+          });
+        }
+        if (authority.envelope_state === "received" && !storedWaterFact) appendFactWithFailure(
+          preparedWater.fact, options.failureSink,
+          options.fault === "after_water_event" ? "after_event"
+            : options.fault === "after_water_outbox" ? "after_effects" : undefined,
+        );
+        let waterResult;
+        try {
+          waterResult = applyWaterEffects({
+            database: options.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+            operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: committedAt,
+            ...(options.fault === "after_water_progress_contribution_prepared"
+              ? { fault: "after_progress_contribution_prepared" as const } : {}),
+          });
+        } catch (error) {
+          const code = (error instanceof Error ? error.message : "WATER_EFFECT_FAILED").split(":", 1)[0];
+          if (authority.envelope_state === "received") {
+            markWaterEffectsRetryable({
+              database: options.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+              operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: committedAt,
+              inputDigest, errorCode: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "WATER_EFFECT_FAILED",
+            });
+          }
+          emitFailure(options.failureSink, { stage: "EffectBundle", error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "WATER_EFFECT_FAILED", trace_id: traceId, input_digest: inputDigest });
+          throw error;
+        }
+        if (authority.envelope_state !== "effects_stable") {
+          sealPreparedEnvelopeFacts({
+            database: options.database, secret: options.secret, token: execution.token, inputDigest,
+            subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+            dataRevision: execution.data_revision, traceId,
+            expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: committedAt,
+          });
+        }
+        const virtualWaterItem = Object.freeze({
+          item_order: 0, normalized_name: "plain water", unit: "ml", inventory_match: "skipped_outside" as const,
+          inventory_transaction_id: null, issue_codes: Object.freeze([]), observed_microunits: operation.plain_water_ml_milli,
+          nutrition_adoption_microunits: null, inventory_deduction_microunits: null,
+          estimated_fields: Object.freeze([]), nutrition_source_type: "unknown" as const, nutrition_profile_version: 0,
+          nutrients: waterResult.daily_progress.nutrients,
+        });
+        const receiptData = buildReceiptData({
+          status: "committed", date: waterResult.daily_progress.date, meal_slot: "water",
+          items: Object.freeze([virtualWaterItem]), quick_prompts: Object.freeze([]), daily_progress: waterResult.daily_progress,
+        });
+        const waterExecution: DomainExecutionResult = Object.freeze({
+          envelope_id: envelope.envelope_id, input_digest: inputDigest, status: "committed",
+          items: Object.freeze([waterResult]),
+          payload: Object.freeze({ authority_kind: "diet-manager/domain-execution/v1", daily_progress: waterResult.daily_progress,
+            daily_progress_by_date: waterResult.daily_progress_by_date, quick_prompts: Object.freeze([]), receipt_data: receiptData }),
+        });
+        return finalize({
+          database: options.database, secret: options.secret, token: execution.token, inputDigest,
+          subjectScope: envelope.subject_scope, commandType: envelope.command_type, dataRevision: execution.data_revision,
+          traceId, resultStatus: "committed", receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt: committedAt, frozenAt: committedAt, payload: waterExecution, mixedItems: Object.freeze([]),
         }).payload as DomainExecutionResult;
       }
       if (operation.kind === "record_meal") {

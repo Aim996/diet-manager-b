@@ -33,6 +33,7 @@ import type {
   NutritionSelection,
   NutritionVector,
   RecordMealOperation,
+  RecordWaterOperation,
   StructuredAmount,
   UndoRecordOperation,
 } from "./types.js";
@@ -119,6 +120,24 @@ export interface PreparedMeal {
   readonly fact: PreparedEnvelopeOperation;
   readonly event_id: string;
   readonly operation: RecordMealOperation;
+}
+
+export interface PrepareWaterInput extends Omit<PreparePurchaseInput, "operation"> {
+  readonly operation: RecordWaterOperation;
+}
+
+export interface PreparedWater {
+  readonly fact: PreparedEnvelopeOperation;
+}
+
+export interface WaterOperationResult {
+  readonly sequence: number;
+  readonly operation_id: string;
+  readonly status: "committed";
+  readonly error_code: null;
+  readonly fact_status: "committed";
+  readonly daily_progress: DailyProgressResult;
+  readonly daily_progress_by_date: readonly [DailyProgressResult];
 }
 
 interface EffectiveMealItemSnapshot {
@@ -741,6 +760,75 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
       ...(input.progressReservation === undefined
         ? {}
         : { progressReservation: input.progressReservation }),
+    }),
+  });
+}
+
+export function prepareWaterOperation(input: PrepareWaterInput): PreparedWater {
+  const { operation } = input;
+  if (operation.kind !== "record_water") return invalid("water_operation");
+  const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
+  const effectId = deriveDomainId("effect", input.idempotencyKey, 9);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, 9);
+  const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
+  const payload = Object.freeze({
+    amount_evidence: operation.amount_evidence,
+    authority_kind: "diet-manager/water-fact/v1",
+    estimated: false,
+    plain_water_ml_milli: operation.plain_water_ml_milli,
+    ...(input.progressReservation === undefined ? {} : { progress_reservation: input.progressReservation }),
+    source_text: operation.source_text,
+    timezone: "Asia/Shanghai",
+  });
+  return Object.freeze({
+    fact: Object.freeze({
+      database: input.database,
+      secret: Uint8Array.from(input.secret),
+      token: input.token,
+      inputDigest: input.inputDigest,
+      subjectScope: input.subjectScope,
+      commandType: input.commandType,
+      dataRevision: input.dataRevision,
+      traceId,
+      sequence: input.sequence,
+      operationId: operation.operation_id,
+      event: Object.freeze({
+        eventId,
+        operationId: operation.operation_id,
+        schemaVersion: "domain/v2",
+        eventType: "diet_water",
+        factKind: "water",
+        sourceMessageId: input.sourceMessageId,
+        conversationId: input.conversationId,
+        receivedAt: input.receivedAt,
+        committedAt: input.committedAt,
+        occurredAtText: operation.occurred_time,
+        mealId: null,
+        mealSlot: null,
+        payload,
+      }),
+      items: Object.freeze([]),
+      effects: Object.freeze([Object.freeze({
+        outboxId,
+        effectId,
+        effectKind: "daily_progress_contribution",
+        previousState: null,
+        reason: null,
+      })]),
+      ...(input.progressReservation === undefined ? {} : { progressReservation: input.progressReservation }),
+    }),
+  });
+}
+
+export function preflightWaterOperation(operation: RecordWaterOperation): DailyProgressResult {
+  return Object.freeze({
+    date: toNaturalDate(operation.occurred_time, "Asia/Shanghai"),
+    timezone: "Asia/Shanghai" as const,
+    coverage_status: "partial" as const,
+    nutrients: Object.freeze({
+      energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+      carbohydrate_mg: null, fiber_mg: null,
+      water_ml_milli: operation.plain_water_ml_milli,
     }),
   });
 }
@@ -1982,6 +2070,261 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
     input.database.exec("COMMIT");
     transactionOpen = false;
     return operationResult;
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }
+    }
+    throw error;
+  }
+}
+
+export interface ApplyWaterEffectsInput {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly operationSequence: number;
+  readonly idempotencyKey: string;
+  readonly now: string;
+  readonly fault?: "after_progress_contribution_prepared";
+}
+
+function assertPendingWaterAuthority(input: ApplyWaterEffectsInput): { readonly effectId: string } {
+  const checkpoint = input.database.prepare(
+    `SELECT effect_state, result_status, completed_at, payload_json FROM effect_bundle_commits
+     WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(input.envelopeId, input.operationId) as {
+    effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+  } | undefined;
+  if (!checkpoint || checkpoint.effect_state !== "pending" || checkpoint.result_status !== "facts_committed_effects_pending" || checkpoint.completed_at !== null) {
+    throw new Error("WATER_EFFECT_AUTHORITY_INVALID:checkpoint");
+  }
+  const bundle = parseCanonical(checkpoint.payload_json, "water_checkpoint");
+  exactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "water_checkpoint");
+  if (bundle.authority_kind !== "diet-manager/effect-bundle-checkpoint/v1" || bundle.operation_sequence !== input.operationSequence ||
+      bundle.data_revision !== computeRepositoryDataRevision(input.database) || !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+    throw new Error("WATER_EFFECT_AUTHORITY_INVALID:checkpoint");
+  }
+  const effectId = deriveDomainId("effect", input.idempotencyKey, 9);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, 9);
+  const expected = bundle.effects[0];
+  if (typeof expected !== "object" || expected === null || Array.isArray(expected)) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:checkpoint");
+  exactKeys(expected as Record<string, unknown>, ["effect_id", "state"], "water_checkpoint");
+  const outboxes = input.database.prepare(
+    `SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+  if (outboxes.length !== 1 || outboxes[0]?.outbox_id !== outboxId || outboxes[0].effect_id !== effectId ||
+      outboxes[0].effect_kind !== "daily_progress_contribution" ||
+      (outboxes[0].state !== "pending" && outboxes[0].state !== "retryable_failed") ||
+      (expected as Record<string, unknown>).effect_id !== effectId || (expected as Record<string, unknown>).state !== "pending") {
+    throw new Error("WATER_EFFECT_AUTHORITY_INVALID:outbox");
+  }
+  return Object.freeze({ effectId });
+}
+
+export function assertStoredWaterFactMatchesExpected(input: {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly expectedFact: PreparedEnvelopeOperation;
+}): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const row = input.database.prepare(
+      `SELECT event_id, operation_id, schema_version, event_type, fact_kind, source_message_id,
+       conversation_id, received_at, committed_at, occurred_at_text, meal_id, meal_slot, payload_json
+       FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as Record<string, unknown> | undefined;
+    const expected = input.expectedFact.event;
+    if (!row || Object.entries({
+      event_id: expected.eventId, operation_id: expected.operationId, schema_version: expected.schemaVersion,
+      event_type: expected.eventType, fact_kind: expected.factKind, source_message_id: expected.sourceMessageId,
+      conversation_id: expected.conversationId, received_at: expected.receivedAt, committed_at: expected.committedAt,
+      occurred_at_text: expected.occurredAtText, meal_id: null, meal_slot: null,
+    }).some(([key, value]) => row[key] !== value) || row.payload_json !== canonicalJson(expected.payload)) {
+      throw new Error("WATER_EFFECT_AUTHORITY_INVALID:stored_fact");
+    }
+    const items = input.database.prepare("SELECT COUNT(*) AS count FROM meal_items WHERE event_id = ?").get(expected.eventId) as { count: number };
+    if (items.count !== 0) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:stored_items");
+    input.database.exec("ROLLBACK");
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) { try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ } }
+    throw error;
+  }
+}
+
+function waterProgressFromStoredFact(
+  database: DatabaseSync,
+  envelopeId: string,
+  operationId: string,
+): DailyProgressResult {
+  const event = database.prepare(
+    `SELECT event_type, fact_kind, occurred_at_text, meal_id, meal_slot, payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(envelopeId, operationId) as {
+    event_type: string; fact_kind: string; occurred_at_text: string | null;
+    meal_id: string | null; meal_slot: string | null; payload_json: string;
+  } | undefined;
+  if (
+    !event || event.event_type !== "diet_water" || event.fact_kind !== "water" ||
+    event.occurred_at_text === null || event.meal_id !== null || event.meal_slot !== null
+  ) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:event");
+  const payload = parseCanonical(event.payload_json, "water_event");
+  exactKeys(payload, Object.hasOwn(payload, "progress_reservation")
+    ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+    : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"], "water_event");
+  if (
+    payload.authority_kind !== "diet-manager/water-fact/v1" || payload.estimated !== false ||
+    payload.timezone !== "Asia/Shanghai" || typeof payload.source_text !== "string" ||
+    !Number.isSafeInteger(payload.plain_water_ml_milli) || (payload.plain_water_ml_milli as number) <= 0
+  ) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:payload");
+  return Object.freeze({
+    date: toNaturalDate(event.occurred_at_text, "Asia/Shanghai"),
+    timezone: "Asia/Shanghai" as const,
+    coverage_status: "partial" as const,
+    nutrients: Object.freeze({
+      energy_kcal_milli: null,
+      protein_mg: null,
+      fat_mg: null,
+      carbohydrate_mg: null,
+      fiber_mg: null,
+      water_ml_milli: payload.plain_water_ml_milli as number,
+    }),
+  });
+}
+
+function waterResult(input: ApplyWaterEffectsInput, progress: DailyProgressResult): WaterOperationResult {
+  return Object.freeze({
+    sequence: input.operationSequence,
+    operation_id: input.operationId,
+    status: "committed" as const,
+    error_code: null,
+    fact_status: "committed" as const,
+    daily_progress: progress,
+    daily_progress_by_date: Object.freeze([progress]) as readonly [DailyProgressResult],
+  });
+}
+
+export function applyWaterEffects(input: ApplyWaterEffectsInput): WaterOperationResult {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const checkpoint = input.database.prepare(
+      `SELECT effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as {
+      effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+    } | undefined;
+    if (!checkpoint) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:checkpoint");
+    const progress = waterProgressFromStoredFact(input.database, input.envelopeId, input.operationId);
+    if (checkpoint.effect_state !== "pending") {
+      if (checkpoint.effect_state !== "succeeded" || checkpoint.result_status !== "applied" || checkpoint.completed_at === null) {
+        throw new Error("WATER_EFFECT_AUTHORITY_INVALID:checkpoint_state");
+      }
+      const bundle = parseCanonical(checkpoint.payload_json, "water_terminal");
+      exactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "water_terminal");
+      const effectId = deriveDomainId("effect", input.idempotencyKey, 9);
+      const outboxId = deriveDomainId("outbox", input.idempotencyKey, 9);
+      if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
+          bundle.data_revision !== computeRepositoryDataRevision(input.database) || bundle.operation_sequence !== input.operationSequence ||
+          !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+        throw new Error("WATER_EFFECT_AUTHORITY_INVALID:terminal_bundle");
+      }
+      const effect = bundle.effects[0] as Record<string, unknown>;
+      if (typeof effect !== "object" || effect === null || Array.isArray(effect)) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:terminal_bundle");
+      exactKeys(effect, ["contribution", "effect_id", "state"], "water_terminal");
+      const outboxes = input.database.prepare(
+        "SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+      ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+      if (outboxes.length !== 1 || outboxes[0]?.outbox_id !== outboxId || outboxes[0].effect_id !== effectId ||
+          outboxes[0].effect_kind !== "daily_progress_contribution" || outboxes[0].state !== "succeeded" ||
+          effect.effect_id !== effectId || effect.state !== "succeeded" || canonicalJson(effect.contribution) !== canonicalJson(progress)) {
+        throw new Error("WATER_EFFECT_AUTHORITY_INVALID:terminal_bundle");
+      }
+      input.database.exec("ROLLBACK");
+      transactionOpen = false;
+      return waterResult(input, progress);
+    }
+    const authority = assertPendingWaterAuthority(input);
+    const outbox = input.database.prepare(
+      "SELECT state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+    ).get(input.envelopeId, input.operationId) as { state: "pending" | "retryable_failed" };
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+       reason = NULL, updated_at = ? WHERE envelope_id = ? AND operation_id = ?
+       AND state = ?`,
+    ).run(input.now, input.envelopeId, input.operationId, outbox.state);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:claim");
+    if (input.fault === "after_progress_contribution_prepared") {
+      throw new Error("WATER_EFFECT_FAILED:after_progress_contribution_prepared");
+    }
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
+    ).run(input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:complete");
+    input.database.prepare(
+      `UPDATE effect_bundle_commits SET effect_state = 'succeeded', result_status = 'applied',
+       completed_at = ?, payload_json = ? WHERE envelope_id = ? AND operation_id = ?
+       AND effect_state = 'pending'`,
+    ).run(input.now, canonicalJson({
+      authority_kind: "diet-manager/effect-bundle/v1",
+      data_revision: computeRepositoryDataRevision(input.database),
+      effects: [{ contribution: progress, effect_id: authority.effectId, state: "succeeded" }],
+      operation_sequence: input.operationSequence,
+    }), input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:bundle");
+    input.database.exec("COMMIT");
+    transactionOpen = false;
+    return waterResult(input, progress);
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary error */ }
+    }
+    throw error;
+  }
+}
+
+export function markWaterEffectsRetryable(input: Omit<ApplyWaterEffectsInput, "fault"> & { readonly errorCode: string; readonly inputDigest: string }): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    assertPendingWaterAuthority(input);
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1, reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'pending'`,
+    ).run(input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_claim");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'retryable_failed', reason = ?, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
+    ).run(input.errorCode, input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_complete");
+    input.database.prepare(
+      `UPDATE command_envelopes SET state = 'facts_committed', result_status = 'facts_committed', committed_at = ?
+       WHERE envelope_id = ? AND state = 'received' AND result_status = 'preview_ready'`,
+    ).run(input.now, input.envelopeId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_envelope_facts");
+    input.database.prepare(
+      `UPDATE command_envelopes SET state = 'effects_pending', result_status = 'facts_committed_effects_pending'
+       WHERE envelope_id = ? AND state = 'facts_committed' AND result_status = 'facts_committed'`,
+    ).run(input.envelopeId);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_envelope_pending");
+    input.database.prepare(
+      `UPDATE idempotency_records SET state = 'effects_pending', updated_at = ?
+       WHERE idempotency_key = ? AND operation_id = ? AND input_digest = ?
+         AND state = 'preview_ready' AND terminal_result_json IS NULL`,
+    ).run(input.now, input.idempotencyKey, input.envelopeId, input.inputDigest);
+    if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_idempotency");
+    input.database.exec("COMMIT");
+    transactionOpen = false;
   } catch (error) {
     if (transactionOpen) {
       try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }

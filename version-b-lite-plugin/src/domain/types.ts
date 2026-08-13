@@ -127,6 +127,15 @@ export interface RecordMealOperation {
   readonly context?: Readonly<CoreContextEvidence>;
 }
 
+export interface RecordWaterOperation {
+  readonly kind: "record_water";
+  readonly operation_id: string;
+  readonly occurred_time: string;
+  readonly source_text: string;
+  readonly plain_water_ml_milli: number;
+  readonly amount_evidence: unknown;
+}
+
 export interface CorrectRecordOperation {
   readonly kind: "correct_record";
   readonly operation_id: string;
@@ -165,6 +174,7 @@ export interface QueryDailySummaryOperation {
 export type DomainWriteOperation =
   | AddInventoryOperation
   | RecordMealOperation
+  | RecordWaterOperation
   | CorrectRecordOperation
   | UndoRecordOperation;
 

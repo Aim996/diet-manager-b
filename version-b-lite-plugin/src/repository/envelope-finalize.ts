@@ -414,7 +414,7 @@ function freezeMealDailyProgress(
   envelopeId: string,
   idempotencyKey: string,
 ): FrozenInput {
-  if (input.commandType !== "record_meal") return input;
+  if (input.commandType !== "record_meal" && input.commandType !== "record_water") return input;
   if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload)) return input;
   const execution = input.payload as Record<string, unknown>;
   if (typeof execution.payload !== "object" || execution.payload === null || Array.isArray(execution.payload)) {

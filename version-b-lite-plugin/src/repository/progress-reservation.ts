@@ -410,6 +410,20 @@ export function reservationFromEventPayload(
     if (reservation.mode !== "contribution") return invalid("purchase_reservation_mode");
     return reservation;
   }
+  if (eventType === "diet_water" && authorityKind === "diet-manager/water-fact/v1") {
+    const hasReservation = keys.includes("progress_reservation");
+    const payload = exactRecord(
+      value,
+      hasReservation
+        ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+        : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"],
+      "water_fact",
+    );
+    if (!hasReservation) return undefined;
+    const reservation = parseProgressReservation(payload.progress_reservation);
+    if (reservation.mode !== "contribution") return invalid("water_reservation_mode");
+    return reservation;
+  }
   if (eventType === "diet_correction" && authorityKind === "diet-manager/correction-fact/v1") {
     const payload = exactRecord(value, CORRECTION_FACT_FIELDS, "correction_fact");
     const deltaValue = payload.nutrition_delta;
@@ -522,7 +536,7 @@ function unfinalizedProgressOwners(
     } | undefined;
     if (!row) return invalid("progress_owner");
     if (row.effect_kind === "daily_progress_contribution") {
-      if (row.event_type !== "diet_meal" || row.occurred_at_text === null) {
+      if ((row.event_type !== "diet_meal" && row.event_type !== "diet_water") || row.occurred_at_text === null) {
         return invalid("progress_owner");
       }
       owners.set(envelope_id, { envelope_id, date: naturalDate(row.occurred_at_text) });

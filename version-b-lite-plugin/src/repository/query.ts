@@ -5,6 +5,7 @@ import {
   createMealFactIdentity,
   mealFactIdentityEquals,
 } from "../authority/meal-fact-identity.js";
+import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/water-fact-identity.js";
 import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
@@ -62,6 +63,14 @@ export interface MealListItem {
     readonly normalized_name: string;
     readonly amount: Readonly<Record<string, unknown>>;
   }[];
+}
+
+export interface WaterListItem {
+  readonly occurred_at: string;
+  readonly source_text: string;
+  readonly plain_water_ml_milli: number;
+  readonly estimated: false;
+  readonly amount_evidence: unknown;
 }
 
 export interface DailyNutritionSummary {
@@ -525,6 +534,73 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
         location: eventPayload.location,
         items: Object.freeze(items),
       }) as MealListItem];
+    }));
+  });
+}
+
+/** Read immutable white-water facts without conflating them with meal projections. */
+export function listWaterEvents(input: DateRangeQuery): readonly WaterListItem[] {
+  const query = dateQuery(input);
+  return readOnly(query.database, () => {
+    const rows = query.database.prepare(
+      `SELECT e.envelope_id, e.event_id, e.operation_id, e.schema_version, e.event_type, e.fact_kind, e.source_message_id,
+       e.conversation_id, e.received_at, e.occurred_at_text, e.meal_id, e.meal_slot, e.payload_json,
+       c.input_digest, c.payload_json AS preview_payload_json, i.input_digest AS idempotency_input_digest
+       FROM event_records e JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+       JOIN idempotency_records i ON i.operation_id = c.envelope_id AND i.idempotency_key = c.idempotency_key
+       WHERE event_type = 'diet_water' AND fact_kind = 'water' AND lifecycle_status = 'active'
+         AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
+       ORDER BY e.occurred_at_text, e.event_id`,
+    ).all(query.start, query.end) as Array<{
+      envelope_id: string; event_id: string; operation_id: string; schema_version: "domain/v2"; event_type: "diet_water"; fact_kind: "water";
+      source_message_id: string; conversation_id: string; received_at: string; occurred_at_text: string;
+      meal_id: string | null; meal_slot: string | null; payload_json: string; input_digest: string;
+      preview_payload_json: string; idempotency_input_digest: string;
+    }>;
+    return Object.freeze(rows.map((row) => {
+      if (row.meal_id !== null || row.meal_slot !== null) return invalid("water_event_meal");
+      const payload = parseCanonicalRecord(row.payload_json, "water_event");
+      const hasReservation = Object.hasOwn(payload, "progress_reservation");
+      const expectedPayloadFields = hasReservation
+        ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+        : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"];
+      if (
+        Object.keys(payload).sort().join("\u0000") !== expectedPayloadFields.sort().join("\u0000") ||
+        payload.authority_kind !== "diet-manager/water-fact/v1" || payload.estimated !== false ||
+        payload.timezone !== "Asia/Shanghai" || typeof payload.source_text !== "string" ||
+        !Number.isSafeInteger(payload.plain_water_ml_milli) || (payload.plain_water_ml_milli as number) <= 0
+      ) return invalid("water_event_authority");
+      const evidence = payload.amount_evidence;
+      if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence) ||
+          Object.keys(evidence).sort().join("\u0000") !== ["estimated", "quantity", "raw_text", "unit"].join("\u0000") ||
+          typeof (evidence as Record<string, unknown>).raw_text !== "string" ||
+          !Number.isSafeInteger((evidence as Record<string, unknown>).quantity) ||
+          (evidence as Record<string, unknown>).unit !== "ml" || (evidence as Record<string, unknown>).estimated !== false ||
+          ((evidence as Record<string, unknown>).quantity as number) * 1_000 !== payload.plain_water_ml_milli) return invalid("water_event_evidence");
+      const preview = authenticateStoredPreviewAuthority(row.preview_payload_json, query.authoritySecret);
+      if (preview.preview_authority_kind !== "diet-manager/server-preview/v3" ||
+          preview.water_fact_preview_material === undefined || row.input_digest !== row.idempotency_input_digest ||
+          preview.binding.input_digest !== row.input_digest) return invalid("water_event_identity");
+      const identity = createWaterFactIdentity({
+        sequence: 0, event_id: row.event_id, operation_id: row.operation_id, schema_version: row.schema_version,
+        event_type: row.event_type, fact_kind: row.fact_kind, source_message_id: row.source_message_id,
+        conversation_id: row.conversation_id, received_at: row.received_at, occurred_at_text: row.occurred_at_text,
+        meal_id: row.meal_id, meal_slot: row.meal_slot, payload,
+      });
+      const expectedIdentities = preview.water_fact_preview_material.water_fact_identities;
+      if (expectedIdentities.length !== 1 || !waterFactIdentityEquals(identity, expectedIdentities[0]!)) return invalid("water_event_identity");
+      if (preview.water_fact_preview_material.meal_fact_identities.length !== 0) return invalid("water_event_identity");
+      const storedSet = query.database.prepare(
+        "SELECT event_id FROM event_records WHERE envelope_id = ? AND event_type = 'diet_water' ORDER BY event_id",
+      ).all(row.envelope_id) as Array<{ event_id: string }>;
+      if (storedSet.length !== 1 || storedSet[0]?.event_id !== expectedIdentities[0]!.event_id) return invalid("water_event_identity");
+      return Object.freeze({
+        occurred_at: row.occurred_at_text,
+        source_text: payload.source_text,
+        plain_water_ml_milli: payload.plain_water_ml_milli as number,
+        estimated: false as const,
+        amount_evidence: Object.freeze(JSON.parse(canonicalJson(payload.amount_evidence))),
+      });
     }));
   });
 }

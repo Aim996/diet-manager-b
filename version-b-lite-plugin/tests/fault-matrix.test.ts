@@ -1042,6 +1042,70 @@ afterEach(() => {
   for (const root of [...ownedRoots]) removeOwnedRoot(root);
 });
 
+describe("WaterEvent transaction faults", () => {
+  it.each([
+    ["after_water_event", "after_event"],
+    ["after_water_outbox", "after_effects"],
+  ] as const)("rolls back all water business rows at %s", (fault, expected) => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T05:00:01.000Z", fault: fault as never });
+      const failed = attempt(service, waterEnvelope(fault));
+      const preExecute = businessSnapshot(runtime.database);
+      expect(failed.run).toThrow(`FACT_COMMIT_FAILED:${expected}`);
+      for (const table of ["event_records", "meal_items", "effect_outbox", "effect_bundle_commits", "daily_progress_snapshots", "envelope_finalizations"]) {
+        expect(runtime.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+      }
+      assertExactBusinessSnapshot(preExecute, businessSnapshot(runtime.database));
+    } finally { runtime.close(); removeOwnedRoot(root); }
+  });
+
+  it("keeps the water fact but no contribution on effect failure, then retries once", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = waterEnvelope("effect-retry");
+      const failed = attempt(createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:01.000Z",
+        fault: "after_water_progress_contribution_prepared" as never,
+      }), envelope);
+      const preExecute = businessSnapshot(runtime.database);
+      expect(failed.run).toThrow("WATER_EFFECT_FAILED:after_progress_contribution_prepared");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 0 });
+      const factOnly = businessSnapshot(runtime.database);
+      const recovered = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T05:00:02.000Z" });
+      expect(recovered.execute(failed.input).status).toBe("committed");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect((factOnly.event_records as unknown[])).toHaveLength(1);
+    } finally { runtime.close(); removeOwnedRoot(root); }
+  });
+
+  it("retries finalization without duplicating WaterEvent or hydration contribution", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = waterEnvelope("finalizer-retry");
+      const failed = attempt(createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:01.000Z", fault: "after_finalization_row",
+      }), envelope);
+      const preExecute = businessSnapshot(runtime.database);
+      expect(failed.run).toThrow("ENVELOPE_FINALIZE_FAILED:after_finalization_row");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 0 });
+      const stableEffects = businessSnapshot(runtime.database);
+      const recovered = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T05:00:02.000Z" });
+      expect(recovered.execute(failed.input).status).toBe("committed");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM daily_progress_snapshots").get()).toEqual({ count: 1 });
+      expect((preExecute.event_records as unknown[])).toEqual([]);
+      expect((stableEffects.event_records as unknown[])).toHaveLength(1);
+    } finally { runtime.close(); removeOwnedRoot(root); }
+  });
+});
+
 function businessSnapshot(database: DatabaseSyncType): Record<string, unknown> {
   const tables = database.prepare(
     `SELECT name FROM sqlite_schema
@@ -1188,6 +1252,24 @@ function attempt(service: DietDomainService, envelope: DomainEnvelopeInput) {
     data_revision: preview.data_revision,
   } as const;
   return { input, preview, run: () => service.execute(input) };
+}
+
+function waterEnvelope(suffix: string): DomainEnvelopeInput {
+  return {
+    envelope_id: `envelope-water-fault-${suffix}`,
+    idempotency_key: `idem-water-fault-${suffix}`,
+    command_type: "record_water",
+    subject_scope: "user:self",
+    source_message_id: `message-water-fault-${suffix}`,
+    conversation_id: "conversation-water-fault",
+    received_at: "2026-08-12T04:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: [{
+      kind: "record_water", operation_id: `operation-water-fault-${suffix}`,
+      occurred_time: "2026-08-12T12:00:00.000Z", source_text: "喝了500ml白水。",
+      plain_water_ml_milli: 500_000, amount_evidence: { raw_text: "500ml", quantity: 500, unit: "ml", estimated: false },
+    }],
+  } as unknown as DomainEnvelopeInput;
 }
 
 function prepareMealFactBoundary(
