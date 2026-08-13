@@ -7,23 +7,60 @@ import {
   type ProposedSubjectItem,
 } from "../../src/parser/subject.js";
 
+interface CatalogParsingItem {
+  readonly order: number;
+  readonly kind: "food" | "nutritious_drink";
+  readonly normalized_name: string;
+  readonly quantity: number | null;
+  readonly unit: string | null;
+  readonly estimated: boolean | null;
+}
+
+interface CatalogExcludedItem {
+  readonly normalized_name: string;
+  readonly reason_code: "item_scoped_negation";
+}
+
+interface CatalogCompletionEvidence {
+  readonly initial_state: "reluctance";
+  readonly final_state: "completed";
+  readonly winning_span: string;
+}
+
+interface CatalogSubjectEvidence {
+  readonly kind: "self";
+  readonly resolution_basis:
+    | "omitted_subject_default"
+    | "explicit_self_share"
+    | "collective_self_participation";
+  readonly subject_entity_created?: false;
+  readonly excluded_non_self_share_count?: number;
+  readonly self_participated?: true;
+}
+
+interface CatalogGroupAmountEvidence {
+  readonly quantity: number;
+  readonly unit: string;
+  readonly assigned_to_self: false;
+}
+
+interface CatalogParsingOracle {
+  readonly disposition: "candidate" | "ignored";
+  readonly action?: "record_meal";
+  readonly reason_code?: "non_self_subject" | "future_plan" | "not_occurred";
+  readonly context_id?: string;
+  readonly items?: readonly CatalogParsingItem[];
+  readonly excluded_items?: readonly CatalogExcludedItem[];
+  readonly completion_evidence?: CatalogCompletionEvidence;
+  readonly subject?: CatalogSubjectEvidence;
+  readonly group_amount_evidence?: CatalogGroupAmountEvidence;
+}
+
 interface CatalogCase {
   readonly id: string;
   readonly source_text: string;
   readonly oracle: {
-    readonly parsing?: {
-      readonly items?: readonly {
-        readonly normalized_name: string;
-        readonly quantity: number | null;
-        readonly unit: string | null;
-        readonly estimated: boolean | null;
-      }[];
-      readonly group_amount_evidence?: {
-        readonly quantity: number;
-        readonly unit: string;
-        readonly assigned_to_self: false;
-      };
-    };
+    readonly parsing?: CatalogParsingOracle;
   };
 }
 
@@ -35,6 +72,82 @@ function catalogCase(id: string): CatalogCase {
   const entry = selectedCases.get(id);
   if (entry === undefined) throw new Error(`missing acceptance case: ${id}`);
   return entry;
+}
+
+function parsingOracle(id: string): CatalogParsingOracle {
+  const parsing = catalogCase(id).oracle.parsing;
+  if (parsing === undefined) throw new Error(`missing parsing oracle for ${id}`);
+  return parsing;
+}
+
+function candidateOracle(id: string): CatalogParsingOracle & {
+  readonly disposition: "candidate";
+} {
+  const parsing = parsingOracle(id);
+  if (parsing.disposition !== "candidate") {
+    throw new Error(`expected candidate oracle for ${id}`);
+  }
+  return parsing;
+}
+
+function adaptCatalogDisposition(
+  oracle: CatalogParsingOracle,
+  module: "completion" | "subject",
+): "proceed" | "resolved" | "ignored" {
+  if (oracle.disposition === "candidate") {
+    return module === "completion" ? "proceed" : "resolved";
+  }
+  return oracle.disposition;
+}
+
+function ignoredDecisionOracle(id: string): {
+  readonly disposition: "ignored";
+  readonly action: "record_meal";
+  readonly reason_code: "non_self_subject" | "future_plan" | "not_occurred";
+} {
+  const parsing = parsingOracle(id);
+  if (
+    parsing.disposition !== "ignored" ||
+    parsing.action !== "record_meal" ||
+    parsing.reason_code === undefined
+  ) {
+    throw new Error(`invalid ignored parsing oracle for ${id}`);
+  }
+  return {
+    disposition: parsing.disposition,
+    action: parsing.action,
+    reason_code: parsing.reason_code,
+  };
+}
+
+function requiredItems(id: string): readonly CatalogParsingItem[] {
+  const items = candidateOracle(id).items;
+  if (items === undefined) throw new Error(`missing item oracle for ${id}`);
+  return items;
+}
+
+function requiredSubject(id: string): CatalogSubjectEvidence {
+  const subject = candidateOracle(id).subject;
+  if (subject === undefined) throw new Error(`missing subject oracle for ${id}`);
+  return subject;
+}
+
+function subjectItemProjection(items: readonly ProposedSubjectItem[]) {
+  return items.map((item) => ({
+    normalized_name: item.normalized_name,
+    quantity: item.amount_evidence.quantity,
+    unit: item.amount_evidence.unit,
+    estimated: item.amount_evidence.estimated,
+  }));
+}
+
+function catalogItemProjection(items: readonly CatalogParsingItem[]) {
+  return items.map((item) => ({
+    normalized_name: item.normalized_name,
+    quantity: item.quantity,
+    unit: item.unit,
+    estimated: item.estimated,
+  }));
 }
 
 function proposedItems(
@@ -77,6 +190,10 @@ function proposedCollectiveItems(id: string): readonly ProposedSubjectItem[] {
   }];
 }
 
+function withoutFinalPunctuation(sourceText: string): string {
+  return sourceText.replace(/[。！!？?]+$/u, "");
+}
+
 function expectMatchedSpan(
   sourceText: string,
   evidence: {
@@ -101,20 +218,23 @@ function expectMatchedSpan(
 describe("bounded completion rules", () => {
   it("keeps the completed item while exposing the item-scoped negation in CASE-MEAL-009", () => {
     const sourceText = catalogCase("CASE-MEAL-009").source_text;
+    const oracle = candidateOracle("CASE-MEAL-009");
+    if (oracle.excluded_items === undefined || oracle.items === undefined) {
+      throw new Error("CASE-MEAL-009 requires items and excluded_items");
+    }
 
     const result = classifyCompletion(sourceText);
 
-    expect(result).toMatchObject({
-      disposition: "proceed",
-      completion_evidence: null,
-      excluded_items: [
-        {
-          normalized_name: "egg",
-          reason_code: "item_scoped_negation",
-        },
-      ],
-    });
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "completion"),
+    );
     if (result.disposition !== "proceed") throw new Error("expected proceed");
+    expect(result.completion_evidence).toBe(oracle.completion_evidence ?? null);
+    expect(result.excluded_items).toHaveLength(oracle.excluded_items.length);
+    expect(result.excluded_items[0]).toMatchObject(oracle.excluded_items[0]);
+    expect(oracle.items.map((item) => item.normalized_name)).not.toContain(
+      oracle.excluded_items[0].normalized_name,
+    );
     expectMatchedSpan(
       sourceText,
       result.excluded_items[0].matched_evidence,
@@ -125,25 +245,27 @@ describe("bounded completion rules", () => {
 
   it("lets the final completed fact beat prior reluctance in CASE-MEAL-010", () => {
     const sourceText = catalogCase("CASE-MEAL-010").source_text;
+    const oracle = candidateOracle("CASE-MEAL-010");
+    if (oracle.completion_evidence === undefined) {
+      throw new Error("CASE-MEAL-010 requires completion_evidence");
+    }
 
     const result = classifyCompletion(sourceText);
 
-    expect(result).toMatchObject({
-      disposition: "proceed",
-      excluded_items: [],
-      completion_evidence: {
-        initial_state: "reluctance",
-        final_state: "completed",
-        winning_span: "后来还是吃了",
-        rule_version: "diet-manager/completion-v1",
-      },
-    });
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "completion"),
+    );
     if (
       result.disposition !== "proceed" ||
       result.completion_evidence === null
     ) {
       throw new Error("expected completion evidence");
     }
+    expect(result.completion_evidence).toMatchObject(oracle.completion_evidence);
+    expect(result.excluded_items).toMatchObject(oracle.excluded_items ?? []);
+    expect(result.completion_evidence.rule_version).toBe(
+      "diet-manager/completion-v1",
+    );
     expectMatchedSpan(
       sourceText,
       result.completion_evidence.matched_evidence,
@@ -154,14 +276,11 @@ describe("bounded completion rules", () => {
 
   it("ignores the future plan in CASE-MEAL-015 before item parsing", () => {
     const sourceText = catalogCase("CASE-MEAL-015").source_text;
+    const oracle = ignoredDecisionOracle("CASE-MEAL-015");
 
     const result = classifyCompletion(sourceText);
 
-    expect(result).toMatchObject({
-      disposition: "ignored",
-      action: "record_meal",
-      reason_code: "future_plan",
-    });
+    expect(result).toMatchObject(oracle);
     if (result.disposition !== "ignored") throw new Error("expected ignored");
     expectMatchedSpan(
       sourceText,
@@ -173,14 +292,11 @@ describe("bounded completion rules", () => {
 
   it("gives the final explicit non-occurrence priority in CASE-MEAL-016", () => {
     const sourceText = catalogCase("CASE-MEAL-016").source_text;
+    const oracle = ignoredDecisionOracle("CASE-MEAL-016");
 
     const result = classifyCompletion(sourceText);
 
-    expect(result).toMatchObject({
-      disposition: "ignored",
-      action: "record_meal",
-      reason_code: "not_occurred",
-    });
+    expect(result).toMatchObject(oracle);
     if (result.disposition !== "ignored") throw new Error("expected ignored");
     expectMatchedSpan(
       sourceText,
@@ -201,22 +317,74 @@ describe("bounded completion rules", () => {
     expect(sourceText.slice(evidence.start, evidence.end)).toBe(evidence.raw);
     expect(evidence.raw).toContain("  ");
   });
+
+  it("keeps final non-occurrence ahead of future, completed, and item-negation rules", () => {
+    const sourceText = [
+      catalogCase("CASE-MEAL-015").source_text,
+      catalogCase("CASE-MEAL-010").source_text,
+      catalogCase("CASE-MEAL-009").source_text,
+      catalogCase("CASE-MEAL-016").source_text,
+    ].map(withoutFinalPunctuation).join("，");
+
+    const result = classifyCompletion(sourceText);
+
+    expect(result).toMatchObject({
+      disposition: "ignored",
+      reason_code: "not_occurred",
+      matched_evidence: { rule_id: "completion.final-non-occurrence" },
+    });
+  });
+
+  it("keeps a future plan ahead of later subject resolution", () => {
+    const sourceText = [
+      catalogCase("CASE-MEAL-015").source_text,
+      catalogCase("CASE-MEAL-011").source_text,
+    ].map(withoutFinalPunctuation).join("，");
+
+    const completion = classifyCompletion(sourceText);
+    const subject = resolveSubject(sourceText, []);
+
+    expect(completion).toMatchObject({
+      disposition: "ignored",
+      reason_code: "future_plan",
+    });
+    expect(subject).toMatchObject({
+      disposition: "ignored",
+      reason_code: "non_self_subject",
+    });
+  });
+
+  it("retains both completed and item-negation evidence when those later rules overlap", () => {
+    const sourceText = [
+      catalogCase("CASE-MEAL-010").source_text,
+      catalogCase("CASE-MEAL-009").source_text,
+    ].map(withoutFinalPunctuation).join("，");
+
+    const result = classifyCompletion(sourceText);
+
+    expect(result).toMatchObject({
+      disposition: "proceed",
+      completion_evidence: {
+        matched_evidence: { rule_id: "completion.adversative-completed" },
+      },
+      excluded_items: [{
+        matched_evidence: { rule_id: "completion.item-negation.egg" },
+      }],
+    });
+  });
 });
 
 describe("bounded current-user subject rules", () => {
   it("ignores the explicit non-self subject in CASE-MEAL-011", () => {
     const sourceText = catalogCase("CASE-MEAL-011").source_text;
+    const oracle = ignoredDecisionOracle("CASE-MEAL-011");
 
     const result = resolveSubject(
       sourceText,
       [],
     );
 
-    expect(result).toMatchObject({
-      disposition: "ignored",
-      action: "record_meal",
-      reason_code: "non_self_subject",
-    });
+    expect(result).toMatchObject(oracle);
     if (result.disposition !== "ignored") throw new Error("expected ignored");
     expectMatchedSpan(
       sourceText,
@@ -228,110 +396,75 @@ describe("bounded current-user subject rules", () => {
 
   it("defaults the omitted subject to self without creating an entity in CASE-MEAL-017", () => {
     const sourceText = catalogCase("CASE-MEAL-017").source_text;
+    const oracle = candidateOracle("CASE-MEAL-017");
 
     const result = resolveSubject(
       sourceText,
       proposedItems("CASE-MEAL-017", ["鸡蛋"]),
     );
 
-    expect(result).toMatchObject({
-      disposition: "resolved",
-      subject: {
-        kind: "self",
-        resolution_basis: "omitted_subject_default",
-        subject_entity_created: false,
-        matched_span: null,
-        matched_evidence: null,
-        rule_version: "diet-manager/subject-v1",
-      },
-      items: [
-        {
-          normalized_name: "egg",
-          amount_evidence: {
-            quantity: 2,
-            unit: "piece",
-            estimated: false,
-          },
-        },
-      ],
-    });
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "subject"),
+    );
+    if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.subject).toMatchObject(requiredSubject("CASE-MEAL-017"));
+    expect(subjectItemProjection(result.items)).toEqual(
+      catalogItemProjection(requiredItems("CASE-MEAL-017")),
+    );
+    expect(result.subject.matched_evidence).toBeNull();
+    expect(result.subject.rule_version).toBe("diet-manager/subject-v1");
   });
 
   it("retains only the known self bottle and excludes the friend share in CASE-MEAL-018", () => {
     const sourceText = catalogCase("CASE-MEAL-018").source_text;
+    const oracle = candidateOracle("CASE-MEAL-018");
 
     const result = resolveSubject(
       sourceText,
       proposedItems("CASE-MEAL-018", ["牛奶"]),
     );
 
-    expect(result).toMatchObject({
-      disposition: "resolved",
-      subject: {
-        kind: "self",
-        resolution_basis: "explicit_self_share",
-        subject_entity_created: false,
-        excluded_non_self_share_count: 1,
-        matched_span: "我和朋友",
-        rule_version: "diet-manager/subject-v1",
-      },
-      items: [
-        {
-          normalized_name: "milk",
-          amount_evidence: {
-            quantity: 1,
-            unit: "bottle",
-            estimated: false,
-          },
-        },
-      ],
-    });
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "subject"),
+    );
     if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.subject).toMatchObject(requiredSubject("CASE-MEAL-018"));
+    expect(subjectItemProjection(result.items)).toEqual(
+      catalogItemProjection(requiredItems("CASE-MEAL-018")),
+    );
+    expect(result.subject.rule_version).toBe("diet-manager/subject-v1");
     expectMatchedSpan(
       sourceText,
       result.subject.matched_evidence!,
       "subject.explicit-self-share.friend",
       "diet-manager/subject-v1",
     );
-    expect(result.items[0].amount_evidence.quantity).not.toBe(2);
   });
 
   it("keeps self participation but never assigns the group total in CASE-MEAL-019", () => {
     const sourceText = catalogCase("CASE-MEAL-019").source_text;
+    const oracle = candidateOracle("CASE-MEAL-019");
+    if (oracle.group_amount_evidence === undefined) {
+      throw new Error("CASE-MEAL-019 requires group_amount_evidence");
+    }
 
     const result = resolveSubject(
       sourceText,
       proposedCollectiveItems("CASE-MEAL-019"),
     );
 
-    expect(result).toMatchObject({
-      disposition: "resolved",
-      subject: {
-        kind: "self",
-        resolution_basis: "collective_self_participation",
-        subject_entity_created: false,
-        self_participated: true,
-        matched_span: "我们",
-        rule_version: "diet-manager/subject-v1",
-      },
-      items: [
-        {
-          normalized_name: "fried_rice",
-          amount_evidence: {
-            raw_text: null,
-            quantity: null,
-            unit: null,
-            estimated: null,
-          },
-        },
-      ],
-      group_amount_evidence: {
-        quantity: 2,
-        unit: "plate",
-        assigned_to_self: false,
-      },
-    });
+    expect(result.disposition).toBe(
+      adaptCatalogDisposition(oracle, "subject"),
+    );
     if (result.disposition !== "resolved") throw new Error("expected resolved");
+    expect(result.subject).toMatchObject(requiredSubject("CASE-MEAL-019"));
+    expect(subjectItemProjection(result.items)).toEqual(
+      catalogItemProjection(requiredItems("CASE-MEAL-019")),
+    );
+    expect(result.group_amount_evidence).toMatchObject(
+      oracle.group_amount_evidence,
+    );
+    expect(result.subject.rule_version).toBe("diet-manager/subject-v1");
     expectMatchedSpan(
       sourceText,
       result.subject.matched_evidence!,
@@ -344,6 +477,24 @@ describe("bounded current-user subject rules", () => {
       "subject.group-amount.two-plates",
       "diet-manager/subject-v1",
     );
-    expect(result.items[0].amount_evidence).not.toMatchObject({ quantity: 2 });
+    expect(result.items[0].amount_evidence.quantity).not.toBe(
+      oracle.group_amount_evidence.quantity,
+    );
+  });
+
+  it("keeps explicit non-self ahead of self-share and collective rules", () => {
+    const sourceText = [
+      catalogCase("CASE-MEAL-011").source_text,
+      catalogCase("CASE-MEAL-018").source_text,
+      catalogCase("CASE-MEAL-019").source_text,
+    ].map(withoutFinalPunctuation).join("，");
+
+    const result = resolveSubject(sourceText, []);
+
+    expect(result).toMatchObject({
+      disposition: "ignored",
+      reason_code: "non_self_subject",
+      matched_evidence: { rule_id: "subject.explicit-non-self.child" },
+    });
   });
 });
