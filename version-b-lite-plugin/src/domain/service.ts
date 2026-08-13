@@ -217,6 +217,19 @@ function validateStructuredAmount(value: unknown, field: string): void {
     "inventory_deduction_microunits", "template_reference_microunits", "evidence",
   ], field);
   text(amount.unit, `${field}.unit`);
+  if (amount.observed_microunits === null) {
+    if (amount.nutrition_adoption_microunits !== null) {
+      return invalid(`${field}.nutrition_adoption_microunits`);
+    }
+    if (amount.inventory_deduction_microunits !== null) {
+      return invalid(`${field}.inventory_deduction_microunits`);
+    }
+    if (amount.template_reference_microunits !== null) {
+      return invalid(`${field}.template_reference_microunits`);
+    }
+    if (amount.evidence !== "unknown") return invalid(`${field}.evidence`);
+    return;
+  }
   safeNonnegativeInteger(amount.observed_microunits, `${field}.observed_microunits`);
   nullableSafeNonnegativeInteger(amount.nutrition_adoption_microunits, `${field}.nutrition_adoption_microunits`);
   nullableSafeNonnegativeInteger(amount.inventory_deduction_microunits, `${field}.inventory_deduction_microunits`);
@@ -304,6 +317,9 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
     safeNonnegativeInteger(candidate.item_order, `${field}.item_order`);
     validateStructuredAmount(candidate.replacement_amount, `${field}.replacement_amount`);
+    if ((candidate.replacement_amount as Record<string, unknown>).observed_microunits === null) {
+      return invalid(`${field}.replacement_amount.observed_microunits`);
+    }
     return;
   }
   if (kind === "undo_record") {

@@ -85,7 +85,8 @@ export interface MealItemExecutionResult {
   readonly inventory_match: InventoryMatchDecision["status"];
   readonly inventory_transaction_id: string | null;
   readonly issue_codes: readonly string[];
-  readonly observed_microunits: number;
+  readonly observed_microunits: number | null;
+  readonly amount_evidence?: "unknown";
   readonly nutrition_adoption_microunits: number | null;
   readonly inventory_deduction_microunits: number | null;
   readonly estimated_fields: readonly string[];
@@ -256,7 +257,7 @@ function readEffectiveMealState(
       item_order: item.item_order,
       item_type: item.item_type,
       normalized_name: item.normalized_name,
-      amount: payload.amount as StructuredAmount,
+      amount: storedStructuredAmount(payload.amount, "effective_meal_amount"),
       nutrition_sources: payload.nutrition_sources,
     };
   });
@@ -910,6 +911,66 @@ function exactKeys(value: Record<string, unknown>, fields: readonly string[], la
   if (Object.keys(value).sort().join("\u0000") !== [...fields].sort().join("\u0000")) {
     throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
   }
+}
+
+function storedNullableMicrounits(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  }
+  return value as number;
+}
+
+function storedStructuredAmount(value: unknown, label: string): StructuredAmount {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  }
+  const amount = value as Record<string, unknown>;
+  exactKeys(amount, [
+    "evidence",
+    "inventory_deduction_microunits",
+    "nutrition_adoption_microunits",
+    "observed_microunits",
+    "template_reference_microunits",
+    "unit",
+  ], label);
+  if (
+    typeof amount.unit !== "string" || amount.unit.length === 0 ||
+    amount.unit.length > 256 || /[\u0000-\u001F\u007F]/.test(amount.unit)
+  ) throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  const observed = storedNullableMicrounits(
+    amount.observed_microunits,
+    `${label}_observed`,
+  );
+  const adoption = storedNullableMicrounits(
+    amount.nutrition_adoption_microunits,
+    `${label}_adoption`,
+  );
+  const deduction = storedNullableMicrounits(
+    amount.inventory_deduction_microunits,
+    `${label}_deduction`,
+  );
+  const template = storedNullableMicrounits(
+    amount.template_reference_microunits,
+    `${label}_template`,
+  );
+  if (observed === null) {
+    if (
+      adoption !== null || deduction !== null || template !== null ||
+      amount.evidence !== "unknown"
+    ) throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  } else if (
+    amount.evidence !== "explicit" &&
+    amount.evidence !== "estimated_upper_bound"
+  ) throw new Error(`MEAL_EFFECT_AUTHORITY_INVALID:${label}`);
+  return Object.freeze({
+    unit: amount.unit,
+    observed_microunits: observed,
+    nutrition_adoption_microunits: adoption,
+    inventory_deduction_microunits: deduction,
+    template_reference_microunits: template,
+    evidence: amount.evidence,
+  }) as StructuredAmount;
 }
 
 function changed(database: DatabaseSync): number {
@@ -1705,7 +1766,7 @@ function readAppliedMealResultInTransaction(
         Array.isArray(itemPayload.amount)) {
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
     }
-    const amount = itemPayload.amount as Record<string, unknown>;
+    const amount = storedStructuredAmount(itemPayload.amount, "terminal_item_amount");
     const snapshots = input.database.prepare(
       `SELECT source_type, profile_version, payload_json FROM nutrition_snapshots
        WHERE intake_item_id = ? ORDER BY snapshot_id`,
@@ -1771,9 +1832,12 @@ function readAppliedMealResultInTransaction(
       inventory_match: inventoryMatch,
       inventory_transaction_id: transactionId,
       issue_codes: issueCodes,
-      observed_microunits: Number(amount.observed_microunits),
-      nutrition_adoption_microunits: adoption === null ? null : Number(adoption),
-      inventory_deduction_microunits: deduction === null ? null : Number(deduction),
+      observed_microunits: amount.observed_microunits,
+      ...(amount.observed_microunits === null
+        ? { amount_evidence: "unknown" as const }
+        : {}),
+      nutrition_adoption_microunits: adoption,
+      inventory_deduction_microunits: deduction,
       estimated_fields: Object.freeze(amount.evidence === "estimated_upper_bound"
         ? ["nutrition_adoption_microunits"] : []),
       nutrition_source_type: snapshot.source_type,
@@ -1949,20 +2013,19 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       if (payload.authority_kind !== "diet-manager/meal-item/v1" || typeof payload.amount !== "object" || payload.amount === null) {
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:item_payload");
       }
-      const amount = payload.amount as Record<string, unknown>;
+      const amount = storedStructuredAmount(payload.amount, "item_amount");
       const candidates = input.location === "outside" ? [] : inventoryCandidates(input.database, item.normalized_name);
       const adoptionValue = amount.nutrition_adoption_microunits;
       const deductionValue = amount.inventory_deduction_microunits;
-      const adoptedMicrounits = adoptionValue === null ? null : Number(adoptionValue);
-      const deductionMicrounits = deductionValue === null ? null : Number(deductionValue);
+      const adoptedMicrounits = adoptionValue;
+      const deductionMicrounits = deductionValue;
       const decision = resolveInventoryMatch({
         location: input.location,
-        requested_unit: String(amount.unit),
-        observed_microunits: Number(amount.observed_microunits),
+        requested_unit: amount.unit,
+        observed_microunits: amount.observed_microunits,
         nutrition_adoption_microunits: adoptedMicrounits,
         inventory_deduction_microunits: deductionMicrounits,
-        template_reference_microunits: amount.template_reference_microunits === null
-          ? null : Number(amount.template_reference_microunits),
+        template_reference_microunits: amount.template_reference_microunits,
         candidates,
       });
       const selection = selectMealNutrition(payload, decision);
@@ -2005,11 +2068,14 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       results.push(Object.freeze({
         item_order: item.item_order,
         normalized_name: item.normalized_name,
-        unit: String(amount.unit),
+        unit: amount.unit,
         inventory_match: decision.status,
         inventory_transaction_id: transactionId,
         issue_codes: Object.freeze(decision.issue_code ? [decision.issue_code] : []),
-        observed_microunits: Number(amount.observed_microunits),
+        observed_microunits: amount.observed_microunits,
+        ...(amount.observed_microunits === null
+          ? { amount_evidence: "unknown" as const }
+          : {}),
         nutrition_adoption_microunits: adoptedMicrounits,
         inventory_deduction_microunits: deductionMicrounits,
         estimated_fields: Object.freeze(amount.evidence === "estimated_upper_bound"

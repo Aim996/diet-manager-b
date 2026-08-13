@@ -24,10 +24,15 @@ export type NutritionBasisKind =
 
 export interface StructuredAmount {
   readonly unit: string;
-  readonly observed_microunits: number;
+  readonly observed_microunits: number | null;
   readonly nutrition_adoption_microunits: number | null;
   readonly inventory_deduction_microunits: number | null;
   readonly template_reference_microunits: number | null;
+  readonly evidence: "explicit" | "estimated_upper_bound" | "unknown";
+}
+
+export interface KnownStructuredAmount extends StructuredAmount {
+  readonly observed_microunits: number;
   readonly evidence: "explicit" | "estimated_upper_bound";
 }
 
@@ -41,7 +46,7 @@ export interface InventoryCandidate {
 export interface InventoryMatchInput {
   readonly location: "home" | "outside";
   readonly requested_unit: string;
-  readonly observed_microunits: number;
+  readonly observed_microunits: number | null;
   readonly nutrition_adoption_microunits: number | null;
   readonly inventory_deduction_microunits: number | null;
   readonly template_reference_microunits: number | null;
@@ -103,7 +108,7 @@ export interface AddInventoryOperation {
   readonly operation_id: string;
   readonly product: ProductInput;
   readonly batch_id: string;
-  readonly amount: StructuredAmount;
+  readonly amount: KnownStructuredAmount;
   readonly nutrition_sources: readonly NutritionSourceCandidate[];
 }
 
@@ -142,7 +147,7 @@ export interface CorrectRecordOperation {
   readonly target_event_id: string;
   readonly base_revision: number;
   readonly item_order: number;
-  readonly replacement_amount: StructuredAmount;
+  readonly replacement_amount: KnownStructuredAmount;
 }
 
 export interface UndoRecordOperation {

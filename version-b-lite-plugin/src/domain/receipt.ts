@@ -63,9 +63,9 @@ export interface ReceiptItemBlock {
   readonly item_order: number;
   readonly name: string;
   readonly amount: Readonly<{
-    observed_microunits: number;
+    observed_microunits: number | null;
     unit: string;
-    evidence: "explicit" | "estimated";
+    evidence: "explicit" | "estimated" | "unknown";
   }>;
   readonly estimated_fields: readonly string[];
   readonly inventory_effect: Readonly<{
@@ -255,8 +255,14 @@ export function buildReceiptData(input: BuildReceiptDataInput): ReceiptData {
   for (let index = 0; index < input.items.length; index += 1) {
     const item = input.items[index];
     if (item.item_order !== index) return invalid("item_order");
-    if (!Number.isSafeInteger(item.observed_microunits) || item.observed_microunits < 0) {
+    if (
+      item.observed_microunits !== null &&
+      (!Number.isSafeInteger(item.observed_microunits) || item.observed_microunits < 0)
+    ) {
       return invalid("observed_microunits");
+    }
+    if ((item.observed_microunits === null) !== (item.amount_evidence === "unknown")) {
+      return invalid("amount_evidence");
     }
     const estimatedFields = Object.freeze([...item.estimated_fields]);
     blocks.push(Object.freeze({
@@ -266,7 +272,9 @@ export function buildReceiptData(input: BuildReceiptDataInput): ReceiptData {
       amount: Object.freeze({
         observed_microunits: item.observed_microunits,
         unit: safeText(item.unit, "unit", 32),
-        evidence: estimatedFields.includes("observed_microunits")
+        evidence: item.amount_evidence === "unknown"
+          ? "unknown" as const
+          : estimatedFields.includes("observed_microunits")
           ? "estimated" as const
           : "explicit" as const,
       }),
