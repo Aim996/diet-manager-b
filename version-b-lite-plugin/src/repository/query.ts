@@ -591,9 +591,14 @@ export function listWaterEvents(input: DateRangeQuery): readonly WaterListItem[]
       if (expectedIdentities.length !== 1 || !waterFactIdentityEquals(identity, expectedIdentities[0]!)) return invalid("water_event_identity");
       if (preview.water_fact_preview_material.meal_fact_identities.length !== 0) return invalid("water_event_identity");
       const storedSet = query.database.prepare(
-        "SELECT event_id FROM event_records WHERE envelope_id = ? AND event_type = 'diet_water' ORDER BY event_id",
-      ).all(row.envelope_id) as Array<{ event_id: string }>;
-      if (storedSet.length !== 1 || storedSet[0]?.event_id !== expectedIdentities[0]!.event_id) return invalid("water_event_identity");
+        "SELECT event_id, event_type, fact_kind FROM event_records WHERE envelope_id = ? ORDER BY event_id",
+      ).all(row.envelope_id) as Array<{ event_id: string; event_type: string; fact_kind: string }>;
+      if (
+        storedSet.length !== 1 ||
+        storedSet[0]?.event_id !== expectedIdentities[0]!.event_id ||
+        storedSet[0]?.event_type !== "diet_water" ||
+        storedSet[0]?.fact_kind !== "water"
+      ) return invalid("water_event_identity");
       return Object.freeze({
         occurred_at: row.occurred_at_text,
         source_text: payload.source_text,

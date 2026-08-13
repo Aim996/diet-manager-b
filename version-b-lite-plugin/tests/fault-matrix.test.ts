@@ -1104,6 +1104,52 @@ describe("WaterEvent transaction faults", () => {
       expect((stableEffects.event_records as unknown[])).toHaveLength(1);
     } finally { runtime.close(); removeOwnedRoot(root); }
   });
+
+  it("retries effects-stable water after an unrelated fact changes repository revision", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = waterEnvelope("stable-after-unrelated-fact");
+      const failed = attempt(createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T05:00:01.000Z",
+        fault: "after_finalization_row",
+      }), envelope);
+      expect(failed.run).toThrow("ENVELOPE_FINALIZE_FAILED:after_finalization_row");
+      const stableRevision = computeRepositoryDataRevision(runtime.database);
+
+      const unrelated = waterEnvelope("unrelated-next-day");
+      (unrelated.operations[0] as { occurred_time: string }).occurred_time = "2026-08-13T12:00:00.000Z";
+      const unrelatedService = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T05:00:02.000Z",
+      });
+      expect(attempt(unrelatedService, unrelated).run().status).toBe("committed");
+      expect(computeRepositoryDataRevision(runtime.database)).not.toBe(stableRevision);
+
+      const recovered = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T05:00:03.000Z",
+      });
+      expect(recovered.execute(failed.input).status).toBe("committed");
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ? AND event_type = 'diet_water'",
+      ).get(envelope.envelope_id)).toEqual({ count: 1 });
+      expect(runtime.database.prepare(
+        `SELECT COUNT(*) AS count FROM effect_outbox
+         WHERE envelope_id = ? AND effect_kind = 'daily_progress_contribution' AND state = 'succeeded'`,
+      ).get(envelope.envelope_id)).toEqual({ count: 1 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM daily_progress_snapshots WHERE idempotency_result_id = ?",
+      ).get(envelope.idempotency_key)).toEqual({ count: 1 });
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
 });
 
 function businessSnapshot(database: DatabaseSyncType): Record<string, unknown> {

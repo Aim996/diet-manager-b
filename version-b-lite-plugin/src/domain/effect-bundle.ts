@@ -2231,7 +2231,8 @@ export function applyWaterEffects(input: ApplyWaterEffectsInput): WaterOperation
       const effectId = deriveDomainId("effect", input.idempotencyKey, 9);
       const outboxId = deriveDomainId("outbox", input.idempotencyKey, 9);
       if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
-          bundle.data_revision !== computeRepositoryDataRevision(input.database) || bundle.operation_sequence !== input.operationSequence ||
+          typeof bundle.data_revision !== "string" || !/^repository-v1:[A-F0-9]{64}$/.test(bundle.data_revision) ||
+          bundle.operation_sequence !== input.operationSequence ||
           !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
         throw new Error("WATER_EFFECT_AUTHORITY_INVALID:terminal_bundle");
       }
@@ -2254,6 +2255,7 @@ export function applyWaterEffects(input: ApplyWaterEffectsInput): WaterOperation
     const outbox = input.database.prepare(
       "SELECT state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
     ).get(input.envelopeId, input.operationId) as { state: "pending" | "retryable_failed" };
+    assertEffectTransition(outbox.state, "processing");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
        reason = NULL, updated_at = ? WHERE envelope_id = ? AND operation_id = ?
@@ -2263,6 +2265,7 @@ export function applyWaterEffects(input: ApplyWaterEffectsInput): WaterOperation
     if (input.fault === "after_progress_contribution_prepared") {
       throw new Error("WATER_EFFECT_FAILED:after_progress_contribution_prepared");
     }
+    assertEffectTransition("processing", "succeeded");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
        WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
@@ -2297,21 +2300,25 @@ export function markWaterEffectsRetryable(input: Omit<ApplyWaterEffectsInput, "f
     transactionOpen = true;
     assertCurrentMigrationAuthority(input.database);
     assertPendingWaterAuthority(input);
+    assertEffectTransition("pending", "processing");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1, reason = NULL, updated_at = ?
        WHERE envelope_id = ? AND operation_id = ? AND state = 'pending'`,
     ).run(input.now, input.envelopeId, input.operationId);
     if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_claim");
+    assertEffectTransition("processing", "retryable_failed");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'retryable_failed', reason = ?, updated_at = ?
        WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
     ).run(input.errorCode, input.now, input.envelopeId, input.operationId);
     if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_complete");
+    assertEnvelopeTransition("received", "facts_committed");
     input.database.prepare(
       `UPDATE command_envelopes SET state = 'facts_committed', result_status = 'facts_committed', committed_at = ?
        WHERE envelope_id = ? AND state = 'received' AND result_status = 'preview_ready'`,
     ).run(input.now, input.envelopeId);
     if (changed(input.database) !== 1) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:retry_envelope_facts");
+    assertEnvelopeTransition("facts_committed", "effects_pending");
     input.database.prepare(
       `UPDATE command_envelopes SET state = 'effects_pending', result_status = 'facts_committed_effects_pending'
        WHERE envelope_id = ? AND state = 'facts_committed' AND result_status = 'facts_committed'`,

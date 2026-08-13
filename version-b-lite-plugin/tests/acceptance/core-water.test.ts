@@ -319,6 +319,53 @@ describe("CASE-WATER-001", () => {
     }
   });
 
+  it("rejects an undeclared same-envelope meal event outside the requested date without writes", () => {
+    const root = newRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-12T04:00:01.000Z",
+      });
+      const envelope = waterEnvelope("query-complete-event-set");
+      const preview = service.preview(envelope);
+      service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      runtime.database.prepare(
+        `INSERT INTO event_records(
+          event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
+          source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
+          result_status, lifecycle_status, meal_id, meal_slot, payload_json
+        )
+        SELECT ?, envelope_id, ?, schema_version, 'diet_meal', 'meal', source_message_id,
+          conversation_id, received_at, committed_at, ?, result_status, lifecycle_status, ?, 'lunch', ?
+        FROM event_records WHERE envelope_id = ? AND event_type = 'diet_water'`,
+      ).run(
+        "event-water-query-extra-meal",
+        "operation-water-query-extra-meal",
+        "2026-08-13T12:00:00.000Z",
+        "meal-water-query-extra-meal",
+        canonicalJson({ authority_kind: "diet-manager/meal-fact/v1", location: "outside", timezone: "Asia/Shanghai" }),
+        envelope.envelope_id,
+      );
+      const before = businessSnapshot(runtime.database);
+      expect(() => listWaterEvents({
+        database: runtime.database,
+        authoritySecret: secret,
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toThrow("INVENTORY_PROJECTION_INVALID:water_event_identity");
+      expect(businessSnapshot(runtime.database)).toEqual(before);
+    } finally {
+      runtime.database.close();
+    }
+  });
+
   it("rejects a water contribution overflow before FactCommit without creating fact rows", () => {
     const root = newRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });
