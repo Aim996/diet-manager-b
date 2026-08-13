@@ -154,6 +154,92 @@ case_assertion_paths:
     - /oracle/parsing/items
     - /oracle/parsing/liquid_classification
     - /oracle/fact_commit/meal_event
+setup_fixture_bindings:
+  CASE-MEAL-001:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-021:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-017:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-009:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-WATER-001:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-SCOPE-001:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: null
+    query_view_fixture: query-current-day-meals-v1
+  CASE-MEAL-002:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-PURCHASE-004:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: null
+    query_view_fixture: null
+    domain_scenario_fixture: core-purchase-no-expiration-v1
+  CASE-RECEIPT-002:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-010:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-011:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: null
+    query_view_fixture: null
+  CASE-MEAL-012:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-013:
+    environment_fixture: env-zh-cn-20260811-0100
+    goals_fixture: null
+    query_view_fixture: null
+  CASE-MEAL-014:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-015:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: null
+    query_view_fixture: null
+  CASE-MEAL-016:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: null
+    query_view_fixture: null
+  CASE-MEAL-018:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-019:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-MEAL-020:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-WATER-003:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
+  CASE-WATER-004:
+    environment_fixture: env-zh-cn-20260811
+    goals_fixture: goals-six-metric-v1
+    query_view_fixture: null
 full_case_set: none
 ```
 
