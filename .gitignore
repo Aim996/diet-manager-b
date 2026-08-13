@@ -34,6 +34,10 @@ temp/
 docs/evidence/raw/
 docs/evidence/*.json
 
+# Machine-local X-GATE binding and same-directory publish scratch
+/shared/selected-route-map.json
+/shared/.selected-route-map.*
+
 # Protected leases: intentionally excluded from Git and publication
 /shared/contracts/data-model.md
 /shared/schemas/domain.schema.json

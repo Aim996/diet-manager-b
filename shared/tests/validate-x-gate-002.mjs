@@ -1,27 +1,40 @@
+#!/usr/bin/env node
+
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   existsSync,
+  fstatSync,
+  fsyncSync,
+  linkSync,
   lstatSync,
-  renameSync,
+  mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const thisFile = fileURLToPath(import.meta.url);
+const projectRoot = realpathSync.native(resolve(dirname(thisFile), "..", ".."));
 const routeRoot = resolve(projectRoot, "version-b-lite-plugin");
-const mapPath = resolve(projectRoot, "shared", "selected-route-map.json");
-const matrixPath = resolve(projectRoot, "docs", "work-items", "X-GATE-002-matrix.json");
 const planPath = resolve(projectRoot, "总功能开发计划0.4.md");
+const templatePath = resolve(projectRoot, "shared", "selected-route-map.template.json");
+const localMapPath = resolve(projectRoot, "shared", "selected-route-map.json");
+const matrixPath = resolve(projectRoot, "docs", "work-items", "X-GATE-002-matrix.json");
 const tracePath = resolve(projectRoot, "shared", "traceability", "tasks.json");
 const manifestPath = resolve(routeRoot, "openclaw.plugin.json");
 const skillPath = resolve(routeRoot, "skills", "diet-manager-b", "SKILL.md");
 const distEntryPath = resolve(routeRoot, "dist", "index.js");
+const sddRoot = resolve(projectRoot, ".superpowers", "sdd", "2026-08-13-product-0.1-usable-skill");
+const openClawStateRoot = resolve(sddRoot, "xgate-openclaw-state");
 
 const expectedContract = Object.freeze({
   path: "shared/business-contract.md",
@@ -30,92 +43,31 @@ const expectedContract = Object.freeze({
   sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
   last_change_commit: "a6559f9728c46fbbddc30d5e187d824ad83493ff",
 });
-const expectedTaskTemplates = Object.freeze([
-  ["SEL-CORE-001", ["version-b-lite-plugin/src/domain/core-service.ts", "version-b-lite-plugin/tests/acceptance/core.test.ts"]],
-  ["SEL-PANTRY-001", ["version-b-lite-plugin/src/domain/inventory-service.ts", "version-b-lite-plugin/src/storage/inventory-repository.ts"]],
-  ["SEL-NUTR-001", ["version-b-lite-plugin/src/nutrition/nutrition-service.ts", "version-b-lite-plugin/src/nutrition/source-client.ts"]],
-  ["SEL-FACTEFFECT-001", ["version-b-lite-plugin/src/orchestration/fact-effect-finalize.ts", "version-b-lite-plugin/src/projections/progress-contribution.ts"]],
-  ["SEL-ISSUE-001", ["version-b-lite-plugin/src/issues/issue-service.ts", "version-b-lite-plugin/src/issues/prompt-options.ts"]],
-  ["SEL-CORR-001", ["version-b-lite-plugin/src/corrections/correction-service.ts", "version-b-lite-plugin/tests/acceptance/correction.test.ts"]],
-  ["SEL-PROGRESS-001", ["version-b-lite-plugin/src/projections/progress-projector.ts", "version-b-lite-plugin/tests/acceptance/progress.test.ts"]],
-  ["SEL-QUERY-001", ["version-b-lite-plugin/src/queries/report-service.ts", "version-b-lite-plugin/tests/acceptance/query.test.ts"]],
-  ["SEL-RECEIPT-001", ["version-b-lite-plugin/src/receipt/renderer.ts", "version-b-lite-plugin/tests/golden/receipts.test.ts"]],
-  ["SEL-RELIABILITY-001", ["version-b-lite-plugin/tests/reliability/fault-matrix.test.ts", "shared/tests/validate-zero-diff.ps1"]],
-  ["SEL-INSTALL-001", ["scripts/install.ps1", "docs/install-support-matrix.md"]],
-  ["SEL-MIGRATE-001", ["version-b-lite-plugin/src/storage/migrate.ts", "version-b-lite-plugin/tests/migration/migration.test.ts"]],
-  ["SEL-BACKUP-001", ["scripts/backup.ps1", "scripts/restore.ps1", "scripts/uninstall.ps1"]],
-  ["SEL-EXPORT-BASE-001", ["version-b-lite-plugin/src/export/baseline-export.ts", "version-b-lite-plugin/tests/export/baseline.test.ts"]],
-  ["SEL-RELEASE-001", ["release/0.1/candidate-manifest.json", "scripts/release-0.1.ps1"]],
-  ["SEL-TEMPLATE-001", ["version-b-lite-plugin/src/templates/personal-dish-service.ts", "version-b-lite-plugin/tests/acceptance/template.test.ts"]],
-  ["SEL-REVIEW-001", ["version-b-lite-plugin/src/review/review-service.ts", "version-b-lite-plugin/tests/acceptance/review.test.ts"]],
-  ["SEL-LIFE-001", ["version-b-lite-plugin/src/lifecycle/lifecycle-service.ts", "version-b-lite-plugin/tests/acceptance/lifecycle.test.ts"]],
-  ["SEL-EXPORT-001", ["version-b-lite-plugin/src/export/rich-export.ts", "version-b-lite-plugin/tests/export/rich.test.ts"]],
-  ["SEL-UPGRADE-002", ["version-b-lite-plugin/src/storage/upgrade-0.2.ts", "version-b-lite-plugin/tests/migration/upgrade-0.2.test.ts"]],
-  ["SEL-RELEASE-002", ["release/0.2/candidate-manifest.json", "scripts/release-0.2.ps1"]],
+const evidencePaths = Object.freeze({
+  "EV-20260812-031": "docs/evidence/EV-20260812-031-b-slice-001.md",
+  "EV-20260812-032": "docs/evidence/EV-20260812-032-b-fault-001.md",
+  "EV-20260813-034": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
+});
+const requiredCheckIds = Object.freeze([
+  "focused_foundation_contract_root_skill",
+  "typescript_no_emit",
+  "source_dist_parity",
+  "openclaw_plugin_build_check",
+  "openclaw_plugin_validate",
+  "x_gate_001_regression",
+  "trace_validate",
+  "trace_self_test",
 ]);
-const expectedPrerequisites = Object.freeze([
-  {
-    task_id: "X-GATE-001",
-    result_key: "decision",
-    result: "pass_b_safety",
-    commit_key: "closure_commit",
-    commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b",
-    evidence_id: null,
-  },
-  {
-    task_id: "B-SLICE-001",
-    result_key: "result",
-    result: "PASS",
-    commit_key: "candidate_commit",
-    commit: "c8e6bcef39d0f98452432c3331095d963b9b9778",
-    evidence_id: "EV-20260812-031",
-  },
-  {
-    task_id: "B-FAULT-001",
-    result_key: "result",
-    result: "DONE_WITH_CONCERNS",
-    commit_key: "candidate_commit",
-    commit: "552feee374fe3463f296bd4a110af11747a7ee29",
-    evidence_id: "EV-20260812-032",
-  },
-  {
-    task_id: "SH-TRACE-001",
-    result_key: "result",
-    result: "PASS",
-    commit_key: "closure_commit",
-    commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8",
-    evidence_id: "EV-20260813-034",
-  },
-]);
-const expectedExistingInputs = Object.freeze([
-  projectRoot,
-  routeRoot,
-  planPath,
-  resolve(projectRoot, expectedContract.path),
-  resolve(projectRoot, "shared", "tests", "validate-traceability.mjs"),
-  tracePath,
-  resolve(projectRoot, "docs", "work-items", "X-GATE-001-matrix.json"),
-  resolve(projectRoot, "docs", "evidence", "EV-20260812-031-b-slice-001.md"),
-  resolve(projectRoot, "docs", "evidence", "EV-20260812-032-b-fault-001.md"),
-  resolve(projectRoot, "docs", "evidence", "EV-20260813-034-sh-trace-001-doc-0.4.md"),
-  resolve(routeRoot, "src", "contracts.ts"),
-  resolve(routeRoot, "src", "index.ts"),
-  manifestPath,
-  skillPath,
-  resolve(projectRoot, "shared", "tests", "validate-x-gate-002.mjs"),
-  matrixPath,
-]);
+
+class GateError extends Error {
+  constructor(code, detail = "") {
+    super(`${code}${detail ? `:${detail}` : ""}`);
+    this.code = code;
+  }
+}
 
 function fail(code, detail = "") {
-  throw new Error(`${code}${detail ? `:${detail}` : ""}`);
-}
-
-function sha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex").toUpperCase();
-}
-
-function exactKeys(value, keys, code) {
-  assert.deepEqual(Object.keys(value).sort(), [...keys].sort(), code);
+  throw new GateError(code, detail);
 }
 
 function clone(value) {
@@ -126,26 +78,21 @@ function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function atomicWriteNew(path, value) {
-  if (existsSync(path)) fail("X_GATE_OUTPUT_ALREADY_EXISTS", path);
-  const temporary = `${path}.tmp-${process.pid}`;
-  try {
-    writeFileSync(temporary, stableJson(value), { encoding: "utf8", flag: "wx" });
-    if (readFileSync(temporary, "utf8") !== stableJson(value)) fail("X_GATE_ATOMIC_WRITE_VERIFY", path);
-    renameSync(temporary, path);
-  } finally {
-    if (existsSync(temporary)) rmSync(temporary, { force: true });
-  }
+function sha256Bytes(value) {
+  return createHash("sha256").update(value).digest("hex").toUpperCase();
+}
+
+function sha256(path) {
+  return sha256Bytes(readFileSync(path));
+}
+
+function exactKeys(value, expected, code) {
+  assert.deepEqual(Object.keys(value).sort(), [...expected].sort(), code);
 }
 
 function isWithin(root, path) {
   const child = relative(root, path);
-  return child === "" || (!child.startsWith("..\\") && child !== ".." && !isAbsolute(child));
-}
-
-function assertCanonicalAbsolute(path, root, code) {
-  if (typeof path !== "string" || !isAbsolute(path) || resolve(path) !== path) fail(code, "not_canonical_absolute");
-  if (!isWithin(root, path)) fail(code, "outside_root");
+  return child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child));
 }
 
 function assertOrdinaryExisting(path) {
@@ -156,33 +103,116 @@ function assertOrdinaryExisting(path) {
   if (realpathSync.native(path) !== path) fail("X_GATE_INPUT_NONCANONICAL_REALPATH", path);
 }
 
-function git(...args) {
-  return execFileSync("git", args, { cwd: projectRoot, encoding: "utf8", windowsHide: true }).trim();
+function git(args, { allowFailure = false } = {}) {
+  const result = spawnSync("git", args, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 30_000,
+  });
+  if (!allowFailure && (result.error || result.status !== 0)) {
+    fail("X_GATE_GIT_FAILED", `${args.join(" ")}:${result.error?.message ?? result.stderr.trim()}`);
+  }
+  return result;
 }
 
-function validateTraceIdentity(traceIdentity, trace) {
-  exactKeys(traceIdentity, ["plan_path", "plan_sha256", "generator_sha256", "requirements", "cases", "tasks", "governance", "evidence"], "X_GATE_TRACE_IDENTITY_SHAPE");
-  assert.equal(traceIdentity.plan_path, "总功能开发计划0.4.md", "X_GATE_TRACE_PLAN_PATH");
-  assert.equal(traceIdentity.plan_sha256, sha256(planPath), "X_GATE_TRACE_PLAN_STALE");
-  assert.equal(traceIdentity.plan_sha256, trace.generated_from.plan.sha256, "X_GATE_TRACE_MAP_PLAN_DRIFT");
-  assert.equal(traceIdentity.generator_sha256, trace.generated_from.generator.sha256, "X_GATE_TRACE_GENERATOR_DRIFT");
-  assert.deepEqual(
-    [traceIdentity.requirements, traceIdentity.cases, traceIdentity.tasks, traceIdentity.governance, traceIdentity.evidence],
-    [74, 153, 63, 69, 34],
-    "X_GATE_TRACE_COUNTS",
-  );
+function normalizePlanPath(token) {
+  let value;
+  if (token.startsWith("<selected_route_root>/")) {
+    value = `version-b-lite-plugin/${token.slice("<selected_route_root>/".length)}`;
+  } else if (token.startsWith("<project_root>/")) {
+    value = token.slice("<project_root>/".length);
+  } else {
+    fail("X_GATE_PLAN_PATH_TOKEN", token);
+  }
+  if (value.includes("\\") || isAbsolute(value) || value.split("/").includes("..")) {
+    fail("X_GATE_PLAN_PATH_INVALID", value);
+  }
+  return value;
 }
 
-function validateRuntimeIdentity(runtime, manifest, skill) {
-  assert.deepEqual(runtime.contract, { id: expectedContract.id, version: expectedContract.version, sha256: expectedContract.sha256 }, "X_GATE_RUNTIME_CONTRACT");
-  assert.deepEqual(runtime.parameters?.["x-diet-manager-contract"], runtime.contract, "X_GATE_TOOL_SCHEMA_CONTRACT");
-  assert.deepEqual(runtime.configSchema?.["x-diet-manager-contract"], runtime.contract, "X_GATE_CONFIG_SCHEMA_CONTRACT");
-  assert.deepEqual(manifest.configSchema, runtime.configSchema, "X_GATE_MANIFEST_RUNTIME_CONFIG_DRIFT");
-  assert.deepEqual(Object.keys(manifest.configSchema.properties ?? {}), ["official_data_root"], "X_GATE_CONFIG_KEYS");
-  assert.deepEqual(manifest.configSchema.required, ["official_data_root"], "X_GATE_CONFIG_REQUIRED");
-  assert.equal(manifest.configSchema.additionalProperties, false, "X_GATE_CONFIG_ADDITIONAL_PROPERTIES");
-  assert.equal(manifest.configSchema.properties.official_data_root.type, "string", "X_GATE_CONFIG_ROOT_TYPE");
-  assert.equal(manifest.configSchema.properties.official_data_root["x-diet-manager-root-semantics"], "backend_owned_existing_absolute_runtime_root", "X_GATE_CONFIG_ROOT_SEMANTICS");
+export function parsePlanTaskPaths(planText) {
+  const header = "### 29.6 B路线M5—M9交付物路径模板";
+  const start = planText.indexOf(header);
+  if (start < 0) fail("X_GATE_PLAN_SECTION_MISSING");
+  const remainder = planText.slice(start + header.length);
+  const next = remainder.search(/^### /mu);
+  const section = next < 0 ? remainder : remainder.slice(0, next);
+  const rows = [];
+  const pattern = /^\| `([^`]+)` \| (.+) \|$/gmu;
+  for (const match of section.matchAll(pattern)) {
+    if (!match[1].startsWith("SEL-")) continue;
+    const tokens = [...match[2].matchAll(/`(<(?:selected_route_root|project_root)>\/[^`]+)`/gu)].map((item) => item[1]);
+    if (tokens.length === 0) fail("X_GATE_PLAN_TASK_PATH_EMPTY", match[1]);
+    rows.push({ task_id: match[1], paths: tokens.map(normalizePlanPath) });
+  }
+  if (rows.length === 0) fail("X_GATE_PLAN_TABLE_EMPTY");
+  if (new Set(rows.map((row) => row.task_id)).size !== rows.length) fail("X_GATE_PLAN_TASK_DUPLICATE");
+  return rows;
+}
+
+function validateTemplate(template, planText) {
+  exactKeys(template, ["schema_version", "gate_id", "selected_route", "project_root", "selected_route_root", "contract", "config", "task_paths", "forbidden_claims"], "X_GATE_TEMPLATE_SHAPE");
+  assert.equal(template.schema_version, "diet-manager/selected-route-map-template/v1");
+  assert.equal(template.gate_id, "X-GATE-002");
+  assert.equal(template.selected_route, "B");
+  assert.equal(template.project_root, ".");
+  assert.equal(template.selected_route_root, "version-b-lite-plugin");
+  assert.deepEqual(template.contract, expectedContract);
+  assert.deepEqual(template.config, {
+    key: "official_data_root",
+    type: "string",
+    required: true,
+    semantics: "backend_owned_existing_absolute_runtime_root",
+    gate_time_open_or_create: false,
+  });
+  assert.deepEqual(template.task_paths, parsePlanTaskPaths(planText), "X_GATE_TEMPLATE_PLAN_DRIFT");
+  for (const task of template.task_paths) {
+    for (const path of task.paths) {
+      if (isAbsolute(path) || path.includes("\\") || path.split("/").includes("..")) fail("X_GATE_TEMPLATE_PATH_NONPORTABLE", path);
+    }
+  }
+  assert.deepEqual(template.forbidden_claims, ["product_ready", "installable", "release", "G3"]);
+}
+
+function validateMatrix(matrix, template) {
+  exactKeys(matrix, ["schema_version", "gate_id", "route", "scope", "decision_vocabulary", "portable_template", "local_map", "contract", "config_key", "prerequisite_requirements", "required_checks", "formal_build_provenance_requirement", "authorized_next_on_bind", "forbidden_claims"], "X_GATE_MATRIX_SHAPE");
+  assert.equal(matrix.schema_version, "diet-manager/x-gate-002-matrix/v2");
+  assert.equal(matrix.gate_id, "X-GATE-002");
+  assert.equal(matrix.route, "B");
+  assert.deepEqual(matrix.decision_vocabulary, ["bind_b_ready", "return_to_b_slice"]);
+  assert.deepEqual(matrix.portable_template, { path: "shared/selected-route-map.template.json", root_semantics: "repository_relative" });
+  assert.deepEqual(matrix.local_map, { path: "shared/selected-route-map.json", tracked: false, contains_machine_absolute_paths: true, publish: "same_volume_atomic_hard_link_no_replace" });
+  assert.deepEqual(matrix.contract, expectedContract);
+  assert.equal(matrix.config_key, "official_data_root");
+  assert.deepEqual(matrix.required_checks.map((check) => check.check_id), requiredCheckIds);
+  for (const check of matrix.required_checks) {
+    exactKeys(check, ["check_id", "executor", "timeout_seconds"], "X_GATE_CHECK_REQUIREMENT_SHAPE");
+    assert.equal(Number.isInteger(check.timeout_seconds) && check.timeout_seconds > 0 && check.timeout_seconds <= 120, true);
+  }
+  assert.equal(matrix.formal_build_provenance_requirement.execution_count, 1);
+  assert.equal(matrix.formal_build_provenance_requirement.reexecution_forbidden_in_review_fix, true);
+  assert.equal(matrix.formal_build_provenance_requirement.candidate_commit, "bdbc5e229af24bc78002e63951b0f9fbde51207f");
+  assert.deepEqual(matrix.authorized_next_on_bind, ["SEL-CORE-001"]);
+  assert.deepEqual(matrix.forbidden_claims, template.forbidden_claims);
+}
+
+function validateGitPolicy() {
+  assert.equal(git(["ls-files", "--error-unmatch", "shared/selected-route-map.template.json"]).stdout.trim(), "shared/selected-route-map.template.json");
+  assert.notEqual(git(["ls-files", "--error-unmatch", "shared/selected-route-map.json"], { allowFailure: true }).status, 0, "local map is tracked");
+  assert.equal(git(["check-ignore", "-q", "shared/selected-route-map.json"], { allowFailure: true }).status, 0, "local map is not ignored");
+}
+
+function validateRuntimeIdentity(runtimeModule, pluginMetadata, manifest, skill) {
+  const runtimeContract = { id: expectedContract.id, version: expectedContract.version, sha256: expectedContract.sha256 };
+  assert.deepEqual(runtimeModule.dietManagerContract, runtimeContract, "X_GATE_RUNTIME_CONTRACT");
+  assert.deepEqual(runtimeModule.dietManagerParameters?.["x-diet-manager-contract"], runtimeContract, "X_GATE_TOOL_CONTRACT");
+  assert.deepEqual(pluginMetadata?.configSchema?.["x-diet-manager-contract"], runtimeContract, "X_GATE_CONFIG_CONTRACT");
+  assert.deepEqual(manifest.configSchema, pluginMetadata?.configSchema, "X_GATE_MANIFEST_RUNTIME_DRIFT");
+  assert.deepEqual(Object.keys(manifest.configSchema.properties ?? {}), ["official_data_root"]);
+  assert.deepEqual(manifest.configSchema.required, ["official_data_root"]);
+  assert.equal(manifest.configSchema.additionalProperties, false);
+  assert.equal(manifest.configSchema.properties.official_data_root["x-diet-manager-root-semantics"], "backend_owned_existing_absolute_runtime_root");
   for (const token of [
     `contract_id=${expectedContract.id}`,
     `contract_version=${expectedContract.version}`,
@@ -190,289 +220,418 @@ function validateRuntimeIdentity(runtime, manifest, skill) {
     "只有工具返回 `committed=true` 才能告诉用户“已记录”",
     "技术日志可以说明失败原因，但不属于饮食记录",
     "`official_data_root` 只由后端配置和管理",
-  ]) {
-    if (!skill.includes(token)) fail("X_GATE_SKILL_BINDING", token);
-  }
+  ]) assert.equal(skill.includes(token), true, `X_GATE_SKILL_BINDING:${token}`);
 }
 
-function validatePrerequisites(prerequisites, { checkRepository }) {
-  assert.equal(prerequisites.length, expectedPrerequisites.length, "X_GATE_PREREQUISITE_COUNT");
-  prerequisites.forEach((item, index) => {
-    exactKeys(item, ["task_id", "result", "commit", "evidence_id", "evidence_path", "evidence_sha256"], "X_GATE_PREREQUISITE_SHAPE");
-    const expected = expectedPrerequisites[index];
-    assert.equal(item.task_id, expected.task_id, "X_GATE_PREREQUISITE_ORDER");
-    assert.equal(item.result, expected.result, `X_GATE_PREREQUISITE_RESULT:${item.task_id}`);
-    assert.equal(item.commit, expected.commit, `X_GATE_PREREQUISITE_COMMIT:${item.task_id}`);
-    assert.equal(item.evidence_id, expected.evidence_id, `X_GATE_PREREQUISITE_EV:${item.task_id}`);
-    if (expected.evidence_id === null) {
-      assert.equal(item.evidence_path, null, "X_GATE_PREREQUISITE_EV_PATH");
-      assert.equal(item.evidence_sha256, null, "X_GATE_PREREQUISITE_EV_SHA");
-    } else {
-      assert.equal(typeof item.evidence_path, "string", "X_GATE_PREREQUISITE_EV_PATH");
-      assert.match(item.evidence_sha256, /^[A-F0-9]{64}$/u, "X_GATE_PREREQUISITE_EV_SHA");
-      if (checkRepository) assert.equal(sha256(resolve(projectRoot, item.evidence_path)), item.evidence_sha256, `X_GATE_PREREQUISITE_EV_STALE:${item.task_id}`);
-    }
-    if (checkRepository) execFileSync("git", ["merge-base", "--is-ancestor", item.commit, "HEAD"], { cwd: projectRoot, windowsHide: true, stdio: "ignore" });
+function validateFormalBuildArtifacts(matrix) {
+  const requirement = matrix.formal_build_provenance_requirement;
+  const artifacts = requirement.artifacts.map((item) => {
+    const path = resolve(projectRoot, item.path);
+    const stat = statSync(path);
+    assert.equal(stat.size, item.bytes, `X_GATE_FORMAL_BUILD_SIZE:${item.path}`);
+    assert.equal(sha256(path), item.sha256, `X_GATE_FORMAL_BUILD_SHA:${item.path}`);
+    const committed = git(["show", `${requirement.candidate_commit}:${item.path}`]).stdout;
+    assert.equal(sha256Bytes(Buffer.from(committed, "utf8")), item.sha256, `X_GATE_FORMAL_BUILD_COMMIT_DRIFT:${item.path}`);
+    return { ...item, mtime_utc: stat.mtime.toISOString() };
   });
-}
-
-function validateMap(map, sources, { checkRepository = true } = {}) {
-  exactKeys(map, ["schema_version", "gate_id", "decision", "selected_route", "project_root", "selected_route_root", "contract", "config", "prerequisites", "trace_identity", "planned_path_semantics", "task_paths", "forbidden_claims"], "X_GATE_MAP_TOP_LEVEL_SHAPE");
-  assert.equal(map.schema_version, "diet-manager/selected-route-map/v1");
-  assert.equal(map.gate_id, "X-GATE-002");
-  assert.equal(map.decision, "bind_b_ready");
-  assert.equal(map.selected_route, "B");
-  assert.equal(map.project_root, projectRoot);
-  assert.equal(map.selected_route_root, routeRoot);
-  assert.deepEqual(map.contract, expectedContract, "X_GATE_CONTRACT");
-  assert.deepEqual(map.config, {
-    key: "official_data_root",
-    type: "string",
-    required: true,
-    semantics: "backend_owned_existing_absolute_runtime_root",
-    gate_time_open_or_create: false,
-  }, "X_GATE_CONFIG");
-  validatePrerequisites(map.prerequisites, { checkRepository });
-  validateTraceIdentity(map.trace_identity, sources.trace);
-  assert.deepEqual(map.planned_path_semantics, {
-    future_deliverables_may_be_absent: true,
-    future_deliverables_are_not_probed_at_gate_time: true,
-    current_inputs_must_exist_as_ordinary_non_reparse_objects: expectedExistingInputs,
-  }, "X_GATE_PATH_SEMANTICS");
-
-  assert.equal(map.task_paths.length, expectedTaskTemplates.length, "X_GATE_TASK_PATH_COUNT");
-  map.task_paths.forEach((item, index) => {
-    exactKeys(item, ["task_id", "paths"], "X_GATE_TASK_PATH_SHAPE");
-    const [taskId, templates] = expectedTaskTemplates[index];
-    assert.equal(item.task_id, taskId, "X_GATE_TASK_PATH_ORDER");
-    assert.deepEqual(item.paths, templates.map((path) => resolve(projectRoot, path)), `X_GATE_TASK_PATHS:${taskId}`);
-    for (const path of item.paths) assertCanonicalAbsolute(path, projectRoot, "X_GATE_PLANNED_PATH_INVALID");
-  });
-  assert.equal(new Set(map.task_paths.map((item) => item.task_id)).size, expectedTaskTemplates.length, "X_GATE_TASK_PATH_DUPLICATE");
-  assert.deepEqual(map.forbidden_claims, ["product_ready", "installable", "release", "G3"], "X_GATE_FORBIDDEN_CLAIMS");
-  validateRuntimeIdentity(sources.runtime, sources.manifest, sources.skill);
-  if (checkRepository) for (const path of expectedExistingInputs) assertOrdinaryExisting(path);
-}
-
-function validateMatrix(matrix, map, { checkRepository = true } = {}) {
-  exactKeys(matrix, ["schema_version", "gate_id", "route", "scope", "contract", "config_key", "prerequisites", "checks", "decision", "selected_route_map", "authorized_next", "forbidden_claims"], "X_GATE_MATRIX_TOP_LEVEL_SHAPE");
-  assert.equal(matrix.schema_version, "diet-manager/x-gate-002-matrix/v1");
-  assert.equal(matrix.gate_id, "X-GATE-002");
-  assert.equal(matrix.route, "B");
-  assert.equal(matrix.scope, "g2_b_ready_contract_root_path_binding_only");
-  assert.deepEqual(matrix.contract, expectedContract);
-  assert.equal(matrix.config_key, "official_data_root");
-  validatePrerequisites(matrix.prerequisites, { checkRepository });
-  assert.deepEqual(matrix.checks, [
-    { check_id: "focused_foundation_contract_root_skill", result: "pass" },
-    { check_id: "typescript_no_emit", result: "pass" },
-    { check_id: "typescript_formal_build_once", result: "pass" },
-    { check_id: "source_dist_parity", result: "pass" },
-    { check_id: "openclaw_plugin_build_check_validate", result: "pass" },
-    { check_id: "x_gate_001_regression", result: "pass" },
-    { check_id: "trace_normal_self_test", result: "pass" },
-  ], "X_GATE_MATRIX_CHECKS");
-  assert.equal(matrix.decision, "bind_b_ready");
-  assert.deepEqual(matrix.selected_route_map, {
-    path: "shared/selected-route-map.json",
-    sha256: sha256(mapPath),
-  }, "X_GATE_MATRIX_MAP_IDENTITY");
-  assert.deepEqual(matrix.authorized_next, ["SEL-CORE-001"]);
-  assert.deepEqual(matrix.forbidden_claims, map.forbidden_claims);
-}
-
-function buildMap(sources) {
   return {
-    schema_version: "diet-manager/selected-route-map/v1",
+    mode: "recovered_exactly_once",
+    execution_count: 1,
+    command: requirement.command,
+    candidate_commit: requirement.candidate_commit,
+    reexecuted_during_review_fix: false,
+    artifacts,
+  };
+}
+
+function commandReceipt(checkId, executable, args, cwd, timeoutSeconds, env = process.env) {
+  const started = new Date();
+  const startedNs = process.hrtime.bigint();
+  const result = spawnSync(executable, args, {
+    cwd,
+    env,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: timeoutSeconds * 1000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const ended = new Date();
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  const receipt = {
+    check_id: checkId,
+    executor: executable,
+    args,
+    cwd_relative: relative(projectRoot, cwd).replaceAll("\\", "/") || ".",
+    timeout_seconds: timeoutSeconds,
+    started_at_utc: started.toISOString(),
+    ended_at_utc: ended.toISOString(),
+    duration_ms: Number((process.hrtime.bigint() - startedNs) / 1_000_000n),
+    exit_code: result.status,
+    signal: result.signal,
+    stdout_sha256: sha256Bytes(stdout),
+    stderr_sha256: sha256Bytes(stderr),
+    stdout_last_line: stdout.trim().split(/\r?\n/u).at(-1) ?? "",
+  };
+  if (result.error || result.status !== 0) fail("X_GATE_PREFLIGHT_FAILED", `${checkId}:${result.error?.message ?? stderr.trim()}`);
+  return receipt;
+}
+
+function internalReceipt(checkId, details) {
+  const now = new Date().toISOString();
+  return {
+    check_id: checkId,
+    executor: "validator_internal",
+    args: [],
+    cwd_relative: ".",
+    timeout_seconds: 5,
+    started_at_utc: now,
+    ended_at_utc: now,
+    duration_ms: 0,
+    exit_code: 0,
+    signal: null,
+    stdout_sha256: sha256Bytes(stableJson(details)),
+    stderr_sha256: sha256Bytes(""),
+    stdout_last_line: "SOURCE_DIST_PARITY|PASS",
+  };
+}
+
+function safeRemoveStateRoot() {
+  if (!isWithin(projectRoot, openClawStateRoot)) fail("X_GATE_STATE_ROOT_OUTSIDE");
+  if (existsSync(openClawStateRoot)) {
+    const item = lstatSync(openClawStateRoot);
+    if (item.isSymbolicLink()) fail("X_GATE_STATE_ROOT_REPARSE");
+    rmSync(openClawStateRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
+  if (existsSync(openClawStateRoot)) fail("X_GATE_STATE_CLEANUP_FAILED");
+}
+
+function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
+  if (process.version !== "v24.15.0") fail("X_GATE_NODE_VERSION", process.version);
+  const checks = [];
+  const node = process.execPath;
+  const checkById = Object.fromEntries(matrix.required_checks.map((check) => [check.check_id, check]));
+  checks.push(commandReceipt(
+    "focused_foundation_contract_root_skill",
+    node,
+    ["node_modules/vitest/vitest.mjs", "run", "tests/foundation.test.ts", "--maxWorkers=1", "--minWorkers=1", "--no-file-parallelism"],
+    routeRoot,
+    checkById.focused_foundation_contract_root_skill.timeout_seconds,
+  ));
+  checks.push(commandReceipt(
+    "typescript_no_emit",
+    node,
+    ["node_modules/typescript/bin/tsc", "-p", "tsconfig.json", "--noEmit"],
+    routeRoot,
+    checkById.typescript_no_emit.timeout_seconds,
+  ));
+  validateRuntimeIdentity(runtimeModule, pluginMetadata, manifest, skill);
+  checks.push(internalReceipt("source_dist_parity", {
+    contract: runtimeModule.dietManagerContract,
+    dist_contracts_sha256: sha256(resolve(routeRoot, "dist", "contracts.js")),
+    dist_index_sha256: sha256(resolve(routeRoot, "dist", "index.js")),
+  }));
+
+  safeRemoveStateRoot();
+  mkdirSync(openClawStateRoot, { recursive: true });
+  const openClawEnv = {
+    ...process.env,
+    OPENCLAW_STATE_DIR: openClawStateRoot,
+    OPENCLAW_CONFIG_PATH: resolve(openClawStateRoot, "openclaw.json"),
+    JITI_FS_CACHE: "false",
+  };
+  try {
+    checks.push(commandReceipt(
+      "openclaw_plugin_build_check",
+      node,
+      ["node_modules/openclaw/openclaw.mjs", "plugins", "build", "--check", "--root", ".", "--entry", "./dist/index.js"],
+      routeRoot,
+      checkById.openclaw_plugin_build_check.timeout_seconds,
+      openClawEnv,
+    ));
+    checks.push(commandReceipt(
+      "openclaw_plugin_validate",
+      node,
+      ["node_modules/openclaw/openclaw.mjs", "plugins", "validate", "--root", ".", "--entry", "./dist/index.js"],
+      routeRoot,
+      checkById.openclaw_plugin_validate.timeout_seconds,
+      openClawEnv,
+    ));
+  } finally {
+    safeRemoveStateRoot();
+  }
+  checks.push(commandReceipt("x_gate_001_regression", node, ["shared/tests/validate-x-gate-001.mjs", "--self-test"], projectRoot, checkById.x_gate_001_regression.timeout_seconds));
+  checks.push(commandReceipt("trace_validate", node, ["shared/tests/validate-traceability.mjs"], projectRoot, checkById.trace_validate.timeout_seconds));
+  checks.push(commandReceipt("trace_self_test", node, ["shared/tests/validate-traceability.mjs", "--self-test"], projectRoot, checkById.trace_self_test.timeout_seconds));
+  assert.deepEqual(checks.map((check) => check.check_id), requiredCheckIds);
+  return checks;
+}
+
+function buildPrerequisiteReceipt(matrix) {
+  return matrix.prerequisite_requirements.map((item) => {
+    git(["merge-base", "--is-ancestor", item.commit, "HEAD"]);
+    const evidencePath = item.evidence_id === null ? null : evidencePaths[item.evidence_id];
+    if (item.evidence_id !== null && !evidencePath) fail("X_GATE_EVIDENCE_PATH_UNKNOWN", item.evidence_id);
+    return {
+      task_id: item.task_id,
+      result: item.required_result,
+      commit: item.commit,
+      evidence_id: item.evidence_id,
+      evidence_path: evidencePath,
+      evidence_sha256: evidencePath === null ? null : sha256(resolve(projectRoot, evidencePath)),
+    };
+  });
+}
+
+function buildTraceIdentity(trace) {
+  assert.equal(trace.generated_from.plan.sha256, sha256(planPath), "X_GATE_TRACE_PLAN_STALE");
+  return {
+    plan_path: "总功能开发计划0.4.md",
+    plan_sha256: trace.generated_from.plan.sha256,
+    generator_sha256: trace.generated_from.generator.sha256,
+    requirements: 74,
+    cases: 153,
+    tasks: 63,
+    governance: 70,
+    evidence: 34,
+  };
+}
+
+function makeReceipt(template, matrix, trace, checks) {
+  const body = {
+    schema_version: "diet-manager/x-gate-002-verification-receipt/v1",
+    generated_at_utc: new Date().toISOString(),
+    base_commit: git(["rev-parse", "HEAD"]).stdout.trim(),
+    validator_sha256: sha256(thisFile),
+    template_sha256: sha256(templatePath),
+    matrix_sha256: sha256(matrixPath),
+    plan_sha256: sha256(planPath),
+    trace_tasks_sha256: sha256(tracePath),
+    formal_build: validateFormalBuildArtifacts(matrix),
+    checks,
+  };
+  return { ...body, receipt_sha256: sha256Bytes(stableJson(body)) };
+}
+
+function buildLocalMap(template, matrix, trace, receipt) {
+  return {
+    schema_version: "diet-manager/selected-route-map/v2",
     gate_id: "X-GATE-002",
     decision: "bind_b_ready",
     selected_route: "B",
     project_root: projectRoot,
     selected_route_root: routeRoot,
-    contract: expectedContract,
-    config: {
-      key: "official_data_root",
-      type: "string",
-      required: true,
-      semantics: "backend_owned_existing_absolute_runtime_root",
-      gate_time_open_or_create: false,
-    },
-    prerequisites: [
-      {
-        task_id: "X-GATE-001",
-        result: "pass_b_safety",
-        commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b",
-        evidence_id: null,
-        evidence_path: null,
-        evidence_sha256: null,
-      },
-      {
-        task_id: "B-SLICE-001",
-        result: "PASS",
-        commit: "c8e6bcef39d0f98452432c3331095d963b9b9778",
-        evidence_id: "EV-20260812-031",
-        evidence_path: "docs/evidence/EV-20260812-031-b-slice-001.md",
-        evidence_sha256: sha256(resolve(projectRoot, "docs/evidence/EV-20260812-031-b-slice-001.md")),
-      },
-      {
-        task_id: "B-FAULT-001",
-        result: "DONE_WITH_CONCERNS",
-        commit: "552feee374fe3463f296bd4a110af11747a7ee29",
-        evidence_id: "EV-20260812-032",
-        evidence_path: "docs/evidence/EV-20260812-032-b-fault-001.md",
-        evidence_sha256: sha256(resolve(projectRoot, "docs/evidence/EV-20260812-032-b-fault-001.md")),
-      },
-      {
-        task_id: "SH-TRACE-001",
-        result: "PASS",
-        commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8",
-        evidence_id: "EV-20260813-034",
-        evidence_path: "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
-        evidence_sha256: sha256(resolve(projectRoot, "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md")),
-      },
-    ],
-    trace_identity: {
-      plan_path: "总功能开发计划0.4.md",
-      plan_sha256: sources.trace.generated_from.plan.sha256,
-      generator_sha256: sources.trace.generated_from.generator.sha256,
-      requirements: 74,
-      cases: 153,
-      tasks: 63,
-      governance: 69,
-      evidence: 34,
-    },
+    portable_template: { path: "shared/selected-route-map.template.json", sha256: sha256(templatePath) },
+    contract: clone(template.contract),
+    config: clone(template.config),
+    prerequisites: buildPrerequisiteReceipt(matrix),
+    trace_identity: buildTraceIdentity(trace),
     planned_path_semantics: {
       future_deliverables_may_be_absent: true,
       future_deliverables_are_not_probed_at_gate_time: true,
-      current_inputs_must_exist_as_ordinary_non_reparse_objects: expectedExistingInputs,
+      local_map_is_ignored_and_not_release_bytes: true,
     },
-    task_paths: expectedTaskTemplates.map(([task_id, paths]) => ({
-      task_id,
-      paths: paths.map((path) => resolve(projectRoot, path)),
-    })),
-    forbidden_claims: ["product_ready", "installable", "release", "G3"],
+    task_paths: template.task_paths.map((task) => ({ task_id: task.task_id, paths: task.paths.map((path) => resolve(projectRoot, path.replaceAll("/", sep))) })),
+    verification_receipt: receipt,
+    authorized_next_after_gate_closure: clone(matrix.authorized_next_on_bind),
+    forbidden_claims: clone(template.forbidden_claims),
   };
 }
 
-function buildMatrix(map) {
-  return {
-    schema_version: "diet-manager/x-gate-002-matrix/v1",
-    gate_id: "X-GATE-002",
-    route: "B",
-    scope: "g2_b_ready_contract_root_path_binding_only",
-    contract: expectedContract,
-    config_key: "official_data_root",
-    prerequisites: clone(map.prerequisites),
-    checks: [
-      { check_id: "focused_foundation_contract_root_skill", result: "pass" },
-      { check_id: "typescript_no_emit", result: "pass" },
-      { check_id: "typescript_formal_build_once", result: "pass" },
-      { check_id: "source_dist_parity", result: "pass" },
-      { check_id: "openclaw_plugin_build_check_validate", result: "pass" },
-      { check_id: "x_gate_001_regression", result: "pass" },
-      { check_id: "trace_normal_self_test", result: "pass" },
-    ],
-    decision: "bind_b_ready",
-    selected_route_map: {
-      path: "shared/selected-route-map.json",
-      sha256: sha256(mapPath),
-    },
-    authorized_next: ["SEL-CORE-001"],
-    forbidden_claims: clone(map.forbidden_claims),
-  };
+function validateReceipt(receipt, matrix) {
+  const { receipt_sha256, ...body } = receipt;
+  assert.equal(receipt_sha256, sha256Bytes(stableJson(body)), "X_GATE_RECEIPT_SHA");
+  assert.equal(receipt.schema_version, "diet-manager/x-gate-002-verification-receipt/v1");
+  assert.equal(receipt.validator_sha256, sha256(thisFile));
+  assert.equal(receipt.template_sha256, sha256(templatePath));
+  assert.equal(receipt.matrix_sha256, sha256(matrixPath));
+  assert.equal(receipt.plan_sha256, sha256(planPath));
+  assert.equal(receipt.trace_tasks_sha256, sha256(tracePath));
+  assert.equal(receipt.formal_build.execution_count, 1);
+  assert.equal(receipt.formal_build.reexecuted_during_review_fix, false);
+  validateFormalBuildArtifacts(matrix);
+  assert.deepEqual(receipt.checks.map((check) => check.check_id), requiredCheckIds);
+  for (const check of receipt.checks) assert.equal(check.exit_code, 0, `X_GATE_RECEIPT_CHECK_FAILED:${check.check_id}`);
 }
 
-function expectMutationFailure(bundle, mutate, label) {
-  const candidate = clone(bundle);
-  mutate(candidate);
-  let rejected = false;
-  try {
-    validateMap(candidate.map, candidate.sources, { checkRepository: false });
-    validateMatrix(candidate.matrix, candidate.map, { checkRepository: false });
-  } catch {
-    rejected = true;
+function validateLocalMap(map, template, matrix, trace) {
+  assert.equal(map.schema_version, "diet-manager/selected-route-map/v2");
+  assert.equal(map.gate_id, "X-GATE-002");
+  assert.equal(map.decision, "bind_b_ready");
+  assert.equal(map.selected_route, "B");
+  assert.equal(map.project_root, projectRoot);
+  assert.equal(map.selected_route_root, routeRoot);
+  assert.deepEqual(map.portable_template, { path: "shared/selected-route-map.template.json", sha256: sha256(templatePath) });
+  assert.deepEqual(map.contract, template.contract);
+  assert.deepEqual(map.config, template.config);
+  assert.deepEqual(map.trace_identity, buildTraceIdentity(trace));
+  assert.deepEqual(map.task_paths, template.task_paths.map((task) => ({ task_id: task.task_id, paths: task.paths.map((path) => resolve(projectRoot, path.replaceAll("/", sep))) })));
+  for (const task of map.task_paths) for (const path of task.paths) {
+    if (!isAbsolute(path) || resolve(path) !== path || !isWithin(projectRoot, path)) fail("X_GATE_LOCAL_PATH_INVALID", path);
   }
+  assert.deepEqual(map.forbidden_claims, template.forbidden_claims);
+  validateReceipt(map.verification_receipt, matrix);
+}
+
+export function atomicPublishNew(path, value) {
+  const parent = dirname(path);
+  const temporary = resolve(parent, `.selected-route-map.publish-${process.pid}-${Date.now()}.json`);
+  if (dirname(temporary) !== parent) fail("X_GATE_PUBLISH_CROSS_VOLUME");
+  let fd;
+  let linked = false;
+  let ownedLink = false;
+  let sourceIdentity;
+  try {
+    fd = openSync(temporary, "wx");
+    writeFileSync(fd, stableJson(value), "utf8");
+    fsyncSync(fd);
+    sourceIdentity = fstatSync(fd);
+    linkSync(temporary, path);
+    linked = true;
+    const publishedIdentity = lstatSync(path);
+    if (!publishedIdentity.isFile() || publishedIdentity.isSymbolicLink()) fail("X_GATE_PUBLISH_NOT_ORDINARY");
+    if (publishedIdentity.dev !== sourceIdentity.dev || publishedIdentity.ino !== sourceIdentity.ino) {
+      fail("X_GATE_PUBLISH_IDENTITY_CHANGED");
+    }
+    ownedLink = true;
+    if (readFileSync(path, "utf8") !== stableJson(value)) fail("X_GATE_PUBLISH_VERIFY");
+    const verifiedIdentity = lstatSync(path);
+    if (verifiedIdentity.dev !== sourceIdentity.dev || verifiedIdentity.ino !== sourceIdentity.ino) {
+      ownedLink = false;
+      fail("X_GATE_PUBLISH_IDENTITY_CHANGED");
+    }
+  } catch (error) {
+    if (linked && ownedLink && existsSync(path)) {
+      const current = lstatSync(path);
+      if (current.dev === sourceIdentity.dev && current.ino === sourceIdentity.ino) unlinkSync(path);
+    }
+    if (error?.code === "EEXIST") fail("X_GATE_OUTPUT_ALREADY_EXISTS", path);
+    throw error;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+}
+
+function publishAfterPassingChecks(path, map) {
+  if (map.verification_receipt.checks.some((check) => check.exit_code !== 0)) fail("X_GATE_PUBLISH_CHECK_FAILED");
+  atomicPublishNew(path, map);
+}
+
+function expectFailure(fn, label) {
+  let rejected = false;
+  try { fn(); } catch { rejected = true; }
   assert.equal(rejected, true, `X_GATE_MUTATION_NOT_REJECTED:${label}`);
 }
 
-const runtimeModule = await import(`${pathToFileURL(distEntryPath).href}?xgate=${Date.now()}`);
-const pluginMetadata = runtimeModule.default?.[Symbol.for("openclaw.plugin-sdk.tool-plugin.metadata")];
-const sources = {
-  trace: JSON.parse(readFileSync(tracePath, "utf8")),
-  manifest: JSON.parse(readFileSync(manifestPath, "utf8")),
-  skill: readFileSync(skillPath, "utf8"),
-  runtime: {
-    contract: runtimeModule.dietManagerContract,
-    parameters: runtimeModule.dietManagerParameters,
-    configSchema: pluginMetadata?.configSchema,
-  },
-};
-const writeMode = process.argv.includes("--write");
-if (writeMode) {
-  if (existsSync(mapPath) || existsSync(matrixPath)) fail("X_GATE_OUTPUT_ALREADY_EXISTS");
-  validateRuntimeIdentity(sources.runtime, sources.manifest, sources.skill);
-  validateTraceIdentity({
-    plan_path: "总功能开发计划0.4.md",
-    plan_sha256: sources.trace.generated_from.plan.sha256,
-    generator_sha256: sources.trace.generated_from.generator.sha256,
-    requirements: 74,
-    cases: 153,
-    tasks: 63,
-    governance: 69,
-    evidence: 34,
-  }, sources.trace);
-  for (const path of expectedExistingInputs.filter((value) => value !== matrixPath)) assertOrdinaryExisting(path);
-  const created = [];
+function planSelfTests(planText, template) {
+  const first = template.task_paths[0];
+  const firstPlanTokens = first.paths.map((path) => path.startsWith("version-b-lite-plugin/") ? `<selected_route_root>/${path.slice("version-b-lite-plugin/".length)}` : `<project_root>/${path}`);
+  const firstRow = `| \`${first.task_id}\` | ${firstPlanTokens.map((path) => `\`${path}\``).join("；")} |`;
+  const reorderedRows = planText.split("\n");
+  const firstIndex = reorderedRows.findIndex((line) => line.startsWith(`| \`${template.task_paths[0].task_id}\` |`));
+  const secondIndex = reorderedRows.findIndex((line) => line.startsWith(`| \`${template.task_paths[1].task_id}\` |`));
+  [reorderedRows[firstIndex], reorderedRows[secondIndex]] = [reorderedRows[secondIndex], reorderedRows[firstIndex]];
+  const variants = [
+    planText.replace(firstRow, `| \`${first.task_id}\` | \`${firstPlanTokens[0]}\` |`),
+    planText.replace(firstRow, firstRow.replace(" |", "；`<project_root>/extra.txt` |")),
+    planText.replace(firstRow, `| \`${first.task_id}\` | ${[...firstPlanTokens].reverse().map((path) => `\`${path}\``).join("；")} |`),
+    reorderedRows.join("\n"),
+  ];
+  for (const [index, mutation] of variants.entries()) {
+    expectFailure(() => validateTemplate(template, mutation), `plan_${index}`);
+  }
+  return variants.length;
+}
+
+function publishSelfTests(map) {
+  const collision = resolve(dirname(localMapPath), `.selected-route-map.collision-${process.pid}.json`);
+  const failed = resolve(dirname(localMapPath), `.selected-route-map.failed-${process.pid}.json`);
   try {
-    const generatedMap = buildMap(sources);
-    validateMap(generatedMap, sources, { checkRepository: false });
-    atomicWriteNew(mapPath, generatedMap);
-    created.push(mapPath);
-    const generatedMatrix = buildMatrix(generatedMap);
-    validateMatrix(generatedMatrix, generatedMap, { checkRepository: false });
-    atomicWriteNew(matrixPath, generatedMatrix);
-    created.push(matrixPath);
-  } catch (error) {
-    for (const path of created.reverse()) if (existsSync(path)) rmSync(path, { force: true });
+    writeFileSync(collision, "sentinel", { encoding: "utf8", flag: "wx" });
+    expectFailure(() => atomicPublishNew(collision, map), "publish_collision");
+    assert.equal(readFileSync(collision, "utf8"), "sentinel");
+    const bad = clone(map);
+    bad.verification_receipt.checks[0].exit_code = 1;
+    expectFailure(() => publishAfterPassingChecks(failed, bad), "failed_check_publish");
+    assert.equal(existsSync(failed), false);
+  } finally {
+    if (existsSync(collision)) unlinkSync(collision);
+    if (existsSync(failed)) unlinkSync(failed);
+  }
+  return { collisions: 1, failed_publish: 1 };
+}
+
+function commandFailureSelfTest() {
+  expectFailure(
+    () => commandReceipt("expected_nonzero", process.execPath, ["-e", "process.exit(7)"], projectRoot, 5),
+    "preflight_command_nonzero",
+  );
+  return 1;
+}
+
+async function loadSources() {
+  const [template, matrix, trace, manifest, skill, planText] = [
+    JSON.parse(readFileSync(templatePath, "utf8")),
+    JSON.parse(readFileSync(matrixPath, "utf8")),
+    JSON.parse(readFileSync(tracePath, "utf8")),
+    JSON.parse(readFileSync(manifestPath, "utf8")),
+    readFileSync(skillPath, "utf8"),
+    readFileSync(planPath, "utf8"),
+  ];
+  const runtimeModule = await import(`${pathToFileURL(distEntryPath).href}?xgate=${Date.now()}`);
+  const pluginMetadata = runtimeModule.default?.[Symbol.for("openclaw.plugin-sdk.tool-plugin.metadata")];
+  return { template, matrix, trace, manifest, skill, planText, runtimeModule, pluginMetadata };
+}
+
+async function main() {
+  const args = new Set(process.argv.slice(2));
+  for (const arg of args) if (!["--self-test", "--preflight", "--publish"].includes(arg)) fail("X_GATE_ARGUMENT_INVALID", arg);
+  if (args.has("--publish") !== args.has("--preflight")) fail("X_GATE_PREFLIGHT_PUBLISH_PAIR_REQUIRED");
+  const sources = await loadSources();
+  validateTemplate(sources.template, sources.planText);
+  validateMatrix(sources.matrix, sources.template);
+  validateGitPolicy();
+  validateRuntimeIdentity(sources.runtimeModule, sources.pluginMetadata, sources.manifest, sources.skill);
+  const existingInputs = [projectRoot, routeRoot, planPath, templatePath, matrixPath, thisFile, tracePath, manifestPath, skillPath, distEntryPath, resolve(routeRoot, "dist", "contracts.js"), resolve(projectRoot, expectedContract.path), ...Object.values(evidencePaths).map((path) => resolve(projectRoot, path))];
+  for (const path of existingInputs) assertOrdinaryExisting(path);
+
+  if (args.has("--preflight")) {
+    if (existsSync(localMapPath)) fail("X_GATE_OUTPUT_ALREADY_EXISTS", localMapPath);
+    const checks = runPreflight(sources.matrix, sources.runtimeModule, sources.pluginMetadata, sources.manifest, sources.skill);
+    const receipt = makeReceipt(sources.template, sources.matrix, sources.trace, checks);
+    const map = buildLocalMap(sources.template, sources.matrix, sources.trace, receipt);
+    validateLocalMap(map, sources.template, sources.matrix, sources.trace);
+    publishAfterPassingChecks(localMapPath, map);
+  }
+  if (!existsSync(localMapPath)) fail("X_GATE_LOCAL_MAP_ABSENT");
+  const map = JSON.parse(readFileSync(localMapPath, "utf8"));
+  validateLocalMap(map, sources.template, sources.matrix, sources.trace);
+
+  let planMutations = 0;
+  let collisions = 0;
+  let failedPublish = 0;
+  let commandFailures = 0;
+  if (args.has("--self-test")) {
+    planMutations = planSelfTests(sources.planText, sources.template);
+    const publish = publishSelfTests(map);
+    collisions = publish.collisions;
+    failedPublish = publish.failed_publish;
+    commandFailures = commandFailureSelfTest();
+    const mutated = clone(map);
+    mutated.verification_receipt.checks[0].exit_code = 1;
+    expectFailure(() => validateLocalMap(mutated, sources.template, sources.matrix, sources.trace), "receipt_failed_check");
+  }
+  process.stdout.write(`X_GATE_002|PASS|mode=${args.has("--preflight") ? "preflight_publish" : "validate"}|decision=${map.decision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, task) => sum + task.paths.length, 0)}|plan_mutations=${planMutations}|collisions=${collisions}|failed_publish=${failedPublish}|command_failures=${commandFailures}\n`);
+}
+
+try {
+  await main();
+} catch (error) {
+  if (error instanceof GateError || error instanceof assert.AssertionError) {
+    process.stderr.write(`X_GATE_002|FAIL|${error.message}\n`);
+    process.exitCode = 1;
+  } else {
     throw error;
   }
 }
-if (!existsSync(mapPath)) fail("X_GATE_SELECTED_ROUTE_MAP_ABSENT");
-if (!existsSync(matrixPath)) fail("X_GATE_MATRIX_ABSENT");
-const map = JSON.parse(readFileSync(mapPath, "utf8"));
-const matrix = JSON.parse(readFileSync(matrixPath, "utf8"));
-validateMap(map, sources);
-validateMatrix(matrix, map);
-
-let mutations = 0;
-if (process.argv.includes("--self-test")) {
-  const bundle = { map, matrix, sources };
-  const variants = [
-    ["missing_task", (value) => value.map.task_paths.pop()],
-    ["extra_task", (value) => value.map.task_paths.push(clone(value.map.task_paths[0]))],
-    ["reordered_task", (value) => value.map.task_paths.reverse()],
-    ["changed_route", (value) => { value.map.selected_route = "A"; }],
-    ["changed_root", (value) => { value.map.selected_route_root = value.map.project_root; }],
-    ["changed_config", (value) => { value.map.config.key = "data_root"; }],
-    ["changed_contract", (value) => { value.map.contract.version = 3; }],
-    ["changed_candidate", (value) => { value.map.prerequisites[1].commit = "0".repeat(40); }],
-    ["changed_ev", (value) => { value.map.prerequisites[2].evidence_id = "EV-FAKE"; }],
-    ["changed_decision", (value) => { value.map.decision = "return_to_b_slice"; }],
-    ["relative_path", (value) => { value.map.task_paths[0].paths[0] = "relative.ts"; }],
-    ["escaped_path", (value) => { value.map.task_paths[0].paths[0] = resolve(value.map.project_root, "..", "escaped.ts"); }],
-    ["outside_root", (value) => { value.map.project_root = resolve(value.map.project_root, "version-b-lite-plugin"); }],
-    ["missing_current_input", (value) => { value.map.planned_path_semantics.current_inputs_must_exist_as_ordinary_non_reparse_objects[0] = resolve(projectRoot, "missing-input"); }],
-    ["skill_contract_drift", (value) => { value.sources.skill = value.sources.skill.replace(expectedContract.id, "diet-manager/contract-v1"); }],
-    ["runtime_contract_drift", (value) => { value.sources.runtime.contract.version = 1; }],
-    ["schema_contract_drift", (value) => { value.sources.runtime.parameters["x-diet-manager-contract"].sha256 = "0".repeat(64); }],
-    ["manifest_contract_drift", (value) => { value.sources.manifest.configSchema["x-diet-manager-contract"].version = 1; }],
-    ["stale_trace", (value) => { value.map.trace_identity.plan_sha256 = "0".repeat(64); }],
-    ["premature_claim", (value) => { value.map.forbidden_claims.pop(); }],
-  ];
-  for (const [label, mutate] of variants) {
-    expectMutationFailure(bundle, mutate, label);
-    mutations += 1;
-  }
-}
-
-console.log(`X_GATE_002|PASS|mode=${writeMode ? "write" : "validate"}|decision=${map.decision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, item) => sum + item.paths.length, 0)}|mutations=${mutations}`);

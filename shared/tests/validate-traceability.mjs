@@ -28,8 +28,8 @@ const EXPECTED_COUNTS = Object.freeze({
   questions: 7,
   risks: 20,
   debts: 7,
-  changes: 6,
-  governance: 69,
+  changes: 7,
+  governance: 70,
   evidence: 34,
   catalogCases: 27,
 });
@@ -787,7 +787,7 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 69, evidence: 34 });
+  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 70, evidence: 34 });
   assert.deepEqual(baseline.mirrors.tasks.counts.status, {
     '未开始': 26,
     '已完成': 28,

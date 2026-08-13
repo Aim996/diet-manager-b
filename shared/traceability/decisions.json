@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 320962,
-      "sha256": "ADA422998E3A95AF0994B34F9C273E14680B4C343D9F3FF5A548412FEAADF8A2"
+      "length": 322758,
+      "sha256": "9C06D5C3B8B791D970E50F3487A37A7FFD412852CAF122498EF6AFA0B6079DFA"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,7 +14,7 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 41907,
-      "sha256": "EF2E811F11FEEB258A60F59E135EAA914950CDA357D6D8BFE363E3682A35B604"
+      "sha256": "A9DADBC6242C7337F791A4E1910562E0350A2C4DABEB29B8576E5B17C09D9022"
     }
   },
   "counts": {
@@ -22,7 +22,7 @@
     "Q": 7,
     "RISK": 20,
     "DEBT": 7,
-    "CHG": 6
+    "CHG": 7
   },
   "entries": [
     {
@@ -994,6 +994,18 @@
       "owner_approver": "计划负责人 / 用户直接批准",
       "tasks": "DOC-004-001、DOC-004-002、SH-TRACE-001、SEL-NUTR-001、SEL-RESEARCH-001、SEL-NUTR-WATCH-001",
       "status_evidence": "已验证；EV-20260813-033记录文档结构检查、批准留档和现行入口切换，EV-20260813-034记录DOC-0.4追踪镜像重生成和独立复核；未产生产品功能EV"
+    },
+    {
+      "id": "CHG-20260813-002",
+      "kind": "CHG",
+      "reference_ids": [
+        "X-GATE-002"
+      ],
+      "source_change": "X-GATE-002开源可移植性与发布原子性复审；L2门产物兼容修复",
+      "impact": "仓库提交相对selected-route-map.template.json；机器绝对selected-route-map.json改为Git忽略的本地门产物；matrix只声明可移植要求，不预填pass；验证器解析§29.6、运行有界预检、绑定实际回执，并以同卷hard-link no-replace发布，碰撞或任一检查失败都不覆盖/不发布新map",
+      "owner_approver": "X-GATE实现者 / 独立架构与安全复核",
+      "tasks": "X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
+      "status_evidence": "实施中；只修候选门架构并重生成现行追踪镜像，保持X-GATE-002唯一WIP、EV总数34和产品任务未开始；待两轮独立复核与关闭EV后转已验证"
     }
   ]
 }

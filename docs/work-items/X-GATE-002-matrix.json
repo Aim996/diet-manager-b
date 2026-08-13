@@ -1,8 +1,19 @@
 {
-  "schema_version": "diet-manager/x-gate-002-matrix/v1",
+  "schema_version": "diet-manager/x-gate-002-matrix/v2",
   "gate_id": "X-GATE-002",
   "route": "B",
   "scope": "g2_b_ready_contract_root_path_binding_only",
+  "decision_vocabulary": ["bind_b_ready", "return_to_b_slice"],
+  "portable_template": {
+    "path": "shared/selected-route-map.template.json",
+    "root_semantics": "repository_relative"
+  },
+  "local_map": {
+    "path": "shared/selected-route-map.json",
+    "tracked": false,
+    "contains_machine_absolute_paths": true,
+    "publish": "same_volume_atomic_hard_link_no_replace"
+  },
   "contract": {
     "path": "shared/business-contract.md",
     "id": "diet-manager/contract-v2",
@@ -11,82 +22,32 @@
     "last_change_commit": "a6559f9728c46fbbddc30d5e187d824ad83493ff"
   },
   "config_key": "official_data_root",
-  "prerequisites": [
-    {
-      "task_id": "X-GATE-001",
-      "result": "pass_b_safety",
-      "commit": "40f7b608f72935becd7628dd89ef4cf7f515c05b",
-      "evidence_id": null,
-      "evidence_path": null,
-      "evidence_sha256": null
-    },
-    {
-      "task_id": "B-SLICE-001",
-      "result": "PASS",
-      "commit": "c8e6bcef39d0f98452432c3331095d963b9b9778",
-      "evidence_id": "EV-20260812-031",
-      "evidence_path": "docs/evidence/EV-20260812-031-b-slice-001.md",
-      "evidence_sha256": "846A3D057A00E9A980EFD4720B7BFD589BABB2D1CE07F09FF705D6DEBECC35C1"
-    },
-    {
-      "task_id": "B-FAULT-001",
-      "result": "DONE_WITH_CONCERNS",
-      "commit": "552feee374fe3463f296bd4a110af11747a7ee29",
-      "evidence_id": "EV-20260812-032",
-      "evidence_path": "docs/evidence/EV-20260812-032-b-fault-001.md",
-      "evidence_sha256": "B7EFF9C7CCB6F566E2BA1AF553667C9986BB653511B8A7883DF65D322A9216A9"
-    },
-    {
-      "task_id": "SH-TRACE-001",
-      "result": "PASS",
-      "commit": "846dbbc718197b3fc59787124a2ac3b18d1b55f8",
-      "evidence_id": "EV-20260813-034",
-      "evidence_path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
-      "evidence_sha256": "C146431BE6A961C6EBB232EFBCA8659EEB6137B19DDEF2C19281D943C00D5DE3"
-    }
+  "prerequisite_requirements": [
+    { "task_id": "X-GATE-001", "required_result": "pass_b_safety", "commit": "40f7b608f72935becd7628dd89ef4cf7f515c05b", "evidence_id": null },
+    { "task_id": "B-SLICE-001", "required_result": "PASS", "commit": "c8e6bcef39d0f98452432c3331095d963b9b9778", "evidence_id": "EV-20260812-031" },
+    { "task_id": "B-FAULT-001", "required_result": "DONE_WITH_CONCERNS", "commit": "552feee374fe3463f296bd4a110af11747a7ee29", "evidence_id": "EV-20260812-032" },
+    { "task_id": "SH-TRACE-001", "required_result": "PASS", "commit": "846dbbc718197b3fc59787124a2ac3b18d1b55f8", "evidence_id": "EV-20260813-034" }
   ],
-  "checks": [
-    {
-      "check_id": "focused_foundation_contract_root_skill",
-      "result": "pass"
-    },
-    {
-      "check_id": "typescript_no_emit",
-      "result": "pass"
-    },
-    {
-      "check_id": "typescript_formal_build_once",
-      "result": "pass"
-    },
-    {
-      "check_id": "source_dist_parity",
-      "result": "pass"
-    },
-    {
-      "check_id": "openclaw_plugin_build_check_validate",
-      "result": "pass"
-    },
-    {
-      "check_id": "x_gate_001_regression",
-      "result": "pass"
-    },
-    {
-      "check_id": "trace_normal_self_test",
-      "result": "pass"
-    }
+  "required_checks": [
+    { "check_id": "focused_foundation_contract_root_skill", "executor": "pinned_node_vitest", "timeout_seconds": 120 },
+    { "check_id": "typescript_no_emit", "executor": "pinned_node_tsc_no_emit", "timeout_seconds": 120 },
+    { "check_id": "source_dist_parity", "executor": "validator_internal_hash_and_runtime", "timeout_seconds": 5 },
+    { "check_id": "openclaw_plugin_build_check", "executor": "pinned_node_openclaw_isolated", "timeout_seconds": 90 },
+    { "check_id": "openclaw_plugin_validate", "executor": "pinned_node_openclaw_isolated", "timeout_seconds": 90 },
+    { "check_id": "x_gate_001_regression", "executor": "pinned_node_validator", "timeout_seconds": 60 },
+    { "check_id": "trace_validate", "executor": "pinned_node_validator", "timeout_seconds": 60 },
+    { "check_id": "trace_self_test", "executor": "pinned_node_validator", "timeout_seconds": 60 }
   ],
-  "decision": "bind_b_ready",
-  "selected_route_map": {
-    "path": "shared/selected-route-map.json",
-    "sha256": "7900D3C870C7D5D745F0CD7A2DBD8BEE0C17955083480C171CB565B5106C9E67"
+  "formal_build_provenance_requirement": {
+    "execution_count": 1,
+    "command": "npm run build",
+    "reexecution_forbidden_in_review_fix": true,
+    "candidate_commit": "bdbc5e229af24bc78002e63951b0f9fbde51207f",
+    "artifacts": [
+      { "path": "version-b-lite-plugin/dist/contracts.js", "bytes": 2444, "sha256": "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
+      { "path": "version-b-lite-plugin/dist/index.js", "bytes": 2393, "sha256": "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" }
+    ]
   },
-  "authorized_next": [
-    "SEL-CORE-001"
-  ],
-  "forbidden_claims": [
-    "product_ready",
-    "installable",
-    "release",
-    "G3"
-  ]
+  "authorized_next_on_bind": ["SEL-CORE-001"],
+  "forbidden_claims": ["product_ready", "installable", "release", "G3"]
 }

@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 320962,
-      "sha256": "ADA422998E3A95AF0994B34F9C273E14680B4C343D9F3FF5A548412FEAADF8A2"
+      "length": 322758,
+      "sha256": "9C06D5C3B8B791D970E50F3487A37A7FFD412852CAF122498EF6AFA0B6079DFA"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -14,7 +14,7 @@
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 41907,
-      "sha256": "EF2E811F11FEEB258A60F59E135EAA914950CDA357D6D8BFE363E3682A35B604"
+      "sha256": "A9DADBC6242C7337F791A4E1910562E0350A2C4DABEB29B8576E5B17C09D9022"
     }
   },
   "counts": {
@@ -7997,13 +7997,13 @@
         "B-FAULT-001"
       ],
       "dependency_evidence_ids": [],
-      "deliverables": "B-only就绪报告、shared/selected-route-map.json及§29.6逐任务绝对路径清单",
-      "verification": "B纵切/故障完整Oracle、路径/命令/root/contract hash完整；不评分；E-GATE",
+      "deliverables": "B-only就绪报告、仓库相对shared/selected-route-map.template.json、忽略的本机shared/selected-route-map.json及机器预检回执",
+      "verification": "解析§29.6；B纵切/故障完整Oracle、路径/命令/root/contract hash、实际预检回执、原子no-replace和碰撞回归完整；不评分；E-GATE",
       "roots": "ROOT-SHARED",
       "actual_evidence_ids": [],
       "owner_reviewer": "门主持人/至少两名复核",
       "status": "进行中",
-      "next_reopen": "唯一WIP；CONTRACT-v2已冻结为diet-manager/contract-v2、v2、SHA-256 632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E；本门精确工作是绑定selected_route_root、official_data_root配置键和§29.6每个M5—M9任务的绝对交付路径，然后根据当前B证据选择bind_b_ready或return_to_b_slice；输入变化重开",
+      "next_reopen": "唯一WIP；冻结CONTRACT-v2、official_data_root、相对模板、本机绝对路径和预检回执必须一致；候选本地map不得进入Git/release，也不授权产品；两轮独立复核与关闭EV前保持进行中，任一输入变化重开",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,
