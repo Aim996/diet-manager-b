@@ -18,7 +18,11 @@ export interface MealContextResolutionInput {
 }
 
 const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/u;
-const EXPLICIT_CORRECTION_PATTERN = /^\s*(?:更正(?:一下)?|纠正(?:一下)?|不对|改成|改为)/u;
+const EXPLICIT_CORRECTION_PATTERNS = Object.freeze([
+  /^\s*(?:更正|纠正)(?:一下)?(?=$|[\s，。；：！？、,:;.!?])/u,
+  /^\s*不对(?=$|[\s，。；：！？、,:;.!?])/u,
+  /^\s*(?:改成|改为)/u,
+]);
 const INVENTORY_DISAMBIGUATION_PATTERN = /(?:公司[^。！？!?]*(?:还是|或者|或)[^。！？!?]*回家|回家[^。！？!?]*(?:还是|或者|或)[^。！？!?]*公司)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 
@@ -107,6 +111,10 @@ function targetOccurrenceEpoch(input: MealContextResolutionInput, receivedEpoch:
     : timestampEpoch(resolvedStart) ?? receivedEpoch;
 }
 
+function isExplicitCorrection(sourceText: string): boolean {
+  return EXPLICIT_CORRECTION_PATTERNS.some((pattern) => pattern.test(sourceText));
+}
+
 /** Resolve short-lived context without creating persistent chat state. */
 export function resolveMealContext(
   input: MealContextResolutionInput,
@@ -114,7 +122,7 @@ export function resolveMealContext(
   const receivedEpoch = timestampEpoch(input.received_at);
   if (receivedEpoch === null) throw new Error("CORE_CONTEXT_INVALID:received_at");
   const inventoryRead = INVENTORY_DISAMBIGUATION_PATTERN.test(input.source_text);
-  const corrected = EXPLICIT_CORRECTION_PATTERN.test(input.source_text);
+  const corrected = isExplicitCorrection(input.source_text);
 
   const latestRevisionBySource = new Map<string, number>();
   for (const entry of input.prior_context) {

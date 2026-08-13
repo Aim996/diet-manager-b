@@ -333,6 +333,45 @@ describe("bounded meal context resolution", () => {
     expect(result.scene).toBe("unknown");
   });
 
+  it("fails closed when two conflicting entries share the highest revision", () => {
+    const entry = catalogCase("CASE-MEAL-020");
+    const base = validContextFromCatalog();
+    const latestHome = {
+      ...base,
+      context_id: "context-meal-020-highest-home",
+      revision: 2,
+      scene: "home" as const,
+    };
+    const latestCompany = {
+      ...base,
+      context_id: "context-meal-020-highest-company",
+      revision: 2,
+      scene: "company" as const,
+    };
+
+    const result = resolveMealContext(contextInput(entry, [latestHome, latestCompany]));
+
+    expect(result.accepted_context).toBeNull();
+    expect(result.scene).toBe("unknown");
+  });
+
+  it.each([
+    "更正稿里的苹果吃了",
+    "纠正率不高的识别标签",
+    "不对称切开的苹果吃了",
+  ])("does not invalidate valid context for a correction-keyword lexical prefix: %s", (sourceText) => {
+    const entry = catalogCase("CASE-MEAL-020");
+    const valid = validContextFromCatalog();
+
+    const result = resolveMealContext(contextInput(entry, [valid], { source_text: sourceText }));
+
+    expect(result.accepted_context).toMatchObject({
+      context_id: valid.context_id,
+      scene: "company",
+    });
+    expect(result.scene).toBe("company");
+  });
+
   it("rejects future, expired, cross-date, wrong-rule, and explicitly corrected context", () => {
     const entry = catalogCase("CASE-MEAL-020");
     const valid = validContextFromCatalog();
@@ -354,7 +393,10 @@ describe("bounded meal context resolution", () => {
     for (const sourceText of [
       `更正：${entry.source_text}`,
       `更正一下，${entry.source_text}`,
+      `纠正：${entry.source_text}`,
+      `纠正一下，${entry.source_text}`,
       `不对，${entry.source_text}`,
+      `改成${entry.source_text}`,
       `改为${entry.source_text}`,
       `不对:${entry.source_text}`,
       `改为：${entry.source_text}`,
