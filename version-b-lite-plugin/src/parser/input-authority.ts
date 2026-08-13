@@ -133,6 +133,7 @@ function offsetIsoTimestamp(value: unknown, path: string): OffsetIsoTimestamp {
   const offsetHour = match[7] === "Z" ? 0 : Number(match[9]);
   const offsetMinute = match[7] === "Z" ? 0 : Number(match[10]);
   if (
+    year < 1_000 ||
     month < 1 ||
     month > 12 ||
     day < 1 ||

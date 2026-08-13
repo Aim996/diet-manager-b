@@ -483,6 +483,16 @@ describe("core parser ordinary-input authority", () => {
   });
 
   it.each([
+    "0000-01-01T08:30:00+08:00",
+    "0999-12-31T08:30:00+08:00",
+  ])("rejects received time before the supported year boundary: %s", (receivedAt) => {
+    const input = ordinaryInput();
+    input.received_at = receivedAt;
+
+    expectInvalid(input, "input.received_at:iso_timestamp");
+  });
+
+  it.each([
     "2026-08-11T08:30:00.1+08:00",
     "2026-08-11T08:30:00.12+08:00",
     "2026-08-11T08:30:00.123+08:00",
@@ -491,6 +501,13 @@ describe("core parser ordinary-input authority", () => {
     input.received_at = receivedAt;
 
     expect(cloneCoreParseInput(input).received_at).toBe(receivedAt);
+  });
+
+  it("accepts the supported lower year boundary", () => {
+    const input = ordinaryInput();
+    input.received_at = "1000-01-01T08:30:00.123+08:00";
+
+    expect(cloneCoreParseInput(input).received_at).toBe(input.received_at);
   });
 
   it.each([
@@ -512,5 +529,26 @@ describe("core parser ordinary-input authority", () => {
     (input.prior_context[0] as Record<string, unknown>)[key] = value;
 
     expectInvalid(input, `input.prior_context[0].${key}:iso_timestamp`);
+  });
+
+  it.each([
+    ["generated_at", "0000-01-01T08:20:00+08:00"],
+    ["valid_until", "0999-12-31T08:40:00+08:00"],
+  ])("rejects context time before the supported year boundary: %s", (key, value) => {
+    const input = ordinaryInput();
+    (input.prior_context[0] as Record<string, unknown>)[key] = value;
+
+    expectInvalid(input, `input.prior_context[0].${key}:iso_timestamp`);
+  });
+
+  it("accepts year 1000 for context timestamps", () => {
+    const input = ordinaryInput();
+    input.prior_context[0].generated_at = "1000-01-01T08:20:00+08:00";
+    input.prior_context[0].valid_until = "1000-01-01T08:40:00+08:00";
+
+    expect(cloneCoreParseInput(input).prior_context[0]).toMatchObject({
+      generated_at: input.prior_context[0].generated_at,
+      valid_until: input.prior_context[0].valid_until,
+    });
   });
 });

@@ -253,6 +253,71 @@ describe("core occurred-time resolution", () => {
     });
   });
 
+  it.each([
+    "0999-12-31T08:00:00+08:00",
+    "2026-02-30T08:00:00+08:00",
+    "2025-02-29T08:00:00+08:00",
+    "2026-13-01T08:00:00+08:00",
+    "2026-08-11T25:00:00+08:00",
+    "2026-08-11T08:60:00+08:00",
+    "2026-08-11T08:00:60+08:00",
+    "2026-08-11T08:00:00+14:01",
+    "2026-08-11T08:00:00+15:00",
+  ] as const)("clarifies an invalid explicit ISO-shaped source time: %s", (explicit) => {
+    expect(resolveOccurredTime(
+      `吃了一个苹果。${explicit}`,
+      "2026-08-11T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: explicit,
+      resolved_start: null,
+      resolved_end: null,
+      precision: "unknown",
+      resolution_basis: "needs_clarification",
+    });
+  });
+
+  it("resolves a valid leap-day explicit ISO source time", () => {
+    const explicit = "2024-02-29T08:00:00+08:00";
+
+    expect(resolveOccurredTime(
+      `吃了一个苹果。${explicit}`,
+      "2026-08-11T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: explicit,
+      resolved_start: explicit,
+      resolved_end: "2024-02-29T08:01:00+08:00",
+      precision: "exact",
+      resolution_basis: "explicit",
+    });
+  });
+
+  it("handles year 1000 at both time and context resolver boundaries", () => {
+    const receivedAt = "1000-01-01T08:30:00+08:00" as const;
+    expect(resolveOccurredTime("吃了一个苹果。", receivedAt)).toMatchObject({
+      resolved_start: receivedAt,
+      resolved_end: "1000-01-01T08:31:00+08:00",
+      resolution_basis: "default_received_at",
+    });
+
+    const base = validContextFromCatalog();
+    const result = resolveMealContext({
+      source_text: "吃了一个苹果。",
+      received_at: receivedAt,
+      conversation_id: "conversation-core-v1",
+      source_message_id: "message-current-year-1000",
+      prior_context: [{
+        ...base,
+        generated_at: "1000-01-01T08:20:00+08:00",
+        valid_until: "1000-01-01T08:40:00+08:00",
+        source_message_id: "message-prior-year-1000",
+      }],
+    });
+    expect(result.accepted_context).toMatchObject({
+      source_message_id: "message-prior-year-1000",
+      scene: "company",
+    });
+  });
+
   it("does not turn purchase or shelf-life evidence into an ingestion date", () => {
     const meal = catalogCase("CASE-MEAL-002");
     const purchase = catalogCase("CASE-PURCHASE-004");
