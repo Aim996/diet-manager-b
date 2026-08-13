@@ -53,7 +53,12 @@ $script:ExpectedGoldenAliases = @(
 $script:ExpectedGoldenCaseCatalogIds = @(
     'CASE-MEAL-001',
     'CASE-MEAL-021',
+    'CASE-MEAL-017',
+    'CASE-MEAL-009',
     'CASE-WATER-001',
+    'CASE-SCOPE-001',
+    'CASE-MEAL-002',
+    'CASE-PURCHASE-004',
     'CASE-RECEIPT-001',
     'CASE-QUERY-001',
     'CASE-PURCHASE-001',
@@ -72,6 +77,18 @@ $script:ExpectedGoldenCaseCatalogIds = @(
     'CASE-OPS-010',
     'CASE-EXPORT-004',
     'CASE-RECEIPT-002',
+    'CASE-MEAL-010',
+    'CASE-MEAL-011',
+    'CASE-MEAL-012',
+    'CASE-MEAL-013',
+    'CASE-MEAL-014',
+    'CASE-MEAL-015',
+    'CASE-MEAL-016',
+    'CASE-MEAL-018',
+    'CASE-MEAL-019',
+    'CASE-MEAL-020',
+    'CASE-WATER-003',
+    'CASE-WATER-004',
     'CASE-RECEIPT-004',
     'CASE-RECEIPT-005',
     'CASE-RECEIPT-006',
@@ -79,8 +96,6 @@ $script:ExpectedGoldenCaseCatalogIds = @(
     'CASE-STORAGE-006',
     'CASE-STORAGE-001'
 )
-
-$script:ExpectedGoldenOwnedCatalogCount = 26
 
 $script:PreviousGoldenCaseHashes = [ordered]@{
     'CASE-MEAL-001' = '167089A439136DA84BE755D6B4021774488749FD6B79F85DFE3AABCED1967BB2'
@@ -95,7 +110,9 @@ $script:PreviousGoldenCaseHashes = [ordered]@{
     'CASE-CORR-001' = '83E1978A1802CE34C60142DFE825D12FD9567291C38918BA1ECB862523A50A9D'
     'CASE-MIXED-001' = '5B33697E93ECA5907F0563AEED9FC16BCF259586BD6503C83067B3F55C079FB7'
     'CASE-EFFECT-001' = '18F6648B7B2DE2EBAE1264EF07E35DEF742C2940DB35E12CC27A52F3B953F1CE'
-    'CASE-EFFECT-003' = '5F8ECF809129C12AF76F61B7FD77F2AAE4E85A2C753B713D133EA59938AFB81D'
+    # CHG-20260812-001 changed this case after the older golden plan froze its
+    # original hash; this is the actual unchanged HEAD value entering SEL-CORE.
+    'CASE-EFFECT-003' = '3AC29EE74377BACA71315C7E994033B543147ED6C3DDE58AE53BDB41FE952A60'
     'CASE-STORAGE-007' = '702816E2245FCAAF43F293A4E09D773C0870FF2D086B74471F11345F2085414D'
     'CASE-PRIV-001' = '58A1D131CBE6F13E6002ABE2ACAD07CEB1973E35800E6F05EDA90CB9FAC9E4C6'
     'CASE-FOUNDATION-002' = '4D00E84EA1962BFEF3AC38EBBEA3E0779213BEB0E1DEF57AA68B878B5A5FD3E3'
@@ -275,7 +292,7 @@ function Assert-GoldenCaseCatalogCandidate {
 
     Assert-GoldenExactProperties $CaseSet @('case_set_id', 'version', 'contract', 'fixture_catalog', 'package_invariants', 'cases') 'GOLDEN_CASE_SET_SHAPE_INVALID'
     Assert-GoldenTrue ([string]$CaseSet.case_set_id -ceq 'diet-manager/core-acceptance-cases-v1') 'GOLDEN_CASE_SET_ID_INVALID'
-    Assert-GoldenTrue ([string]$CaseSet.version -ceq '1.4.0') 'GOLDEN_CASE_SET_VERSION_INVALID'
+    Assert-GoldenTrue ([string]$CaseSet.version -ceq '1.5.0') 'GOLDEN_CASE_SET_VERSION_INVALID'
     Assert-GoldenTrue ($CaseSet.cases -is [Array]) 'GOLDEN_CASE_SET_CASES_INVALID'
 
     $cases = @($CaseSet.cases)
@@ -284,13 +301,18 @@ function Assert-GoldenCaseCatalogCandidate {
 
     for ($index = 0; $index -lt $script:PreviousGoldenCaseHashes.Count; $index++) {
         $caseId = [string]@($script:PreviousGoldenCaseHashes.Keys)[$index]
-        Assert-GoldenTrue ([string]$cases[$index].id -ceq $caseId) ('GOLDEN_PREVIOUS_CASE_ORDER:{0}' -f $index)
-        $actualHash = Get-GoldenJsonValueSha256 $cases[$index]
+        $previousCase = @($cases | Where-Object { [string]$_.id -ceq $caseId })
+        Assert-GoldenTrue ($previousCase.Count -eq 1) ('GOLDEN_PREVIOUS_CASE_ID:{0}' -f $caseId)
+        $actualHash = Get-GoldenJsonValueSha256 $previousCase[0]
         Assert-GoldenTrue ($actualHash -ceq [string]$script:PreviousGoldenCaseHashes[$caseId]) ('GOLDEN_PREVIOUS_CASE_CHANGED:{0}' -f $caseId)
     }
 
-    for ($index = 20; $index -lt $script:ExpectedGoldenOwnedCatalogCount; $index++) {
-        $case = $cases[$index]
+    $goldenOwnedSuffix = @(
+        'CASE-RECEIPT-002', 'CASE-RECEIPT-004', 'CASE-RECEIPT-005', 'CASE-RECEIPT-006',
+        'CASE-PROGRESS-006', 'CASE-STORAGE-006'
+    )
+    foreach ($goldenOwnedCaseId in $goldenOwnedSuffix) {
+        $case = @($cases | Where-Object { [string]$_.id -ceq $goldenOwnedCaseId })[0]
         $caseId = [string]$case.id
         Assert-GoldenExactProperties $case $script:GoldenCaseProperties ('GOLDEN_APPENDED_CASE_SHAPE:{0}' -f $caseId)
         Assert-GoldenTrue ([string]$case.stage -ceq 'PRODUCT-0.1') ('GOLDEN_APPENDED_CASE_STAGE:{0}' -f $caseId)

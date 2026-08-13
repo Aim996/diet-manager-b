@@ -161,7 +161,7 @@ function Test-CaseSetCandidate {
 
     Assert-CaseSetRoot $CaseSet
     Assert-CaseEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "CORE_CASE_SET_ID_INVALID"
-    Assert-CaseEqual "1.4.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
+    Assert-CaseEqual "1.5.0" ([string]$CaseSet.version) "CORE_CASE_SET_VERSION_INVALID"
     Assert-ExactProperties $CaseSet.contract @("contract_id", "contract_version") "CORE_CASE_CONTRACT_INVALID"
     Assert-CaseEqual "diet-manager/contract-v2" ([string]$CaseSet.contract.contract_id) "CORE_CASE_CONTRACT_ID_INVALID"
     Assert-CaseEqual 2 ([int]$CaseSet.contract.contract_version) "CORE_CASE_CONTRACT_VERSION_INVALID"
@@ -191,11 +191,15 @@ function Test-CaseSetCandidate {
 
     Assert-CaseTrue ($CaseSet.cases -is [System.Array]) "CORE_CASE_SET_SHAPE_INVALID:cases"
     $expectedIds = @(
-        "CASE-MEAL-001", "CASE-MEAL-021", "CASE-WATER-001", "CASE-RECEIPT-001", "CASE-QUERY-001",
+        "CASE-MEAL-001", "CASE-MEAL-021", "CASE-MEAL-017", "CASE-MEAL-009", "CASE-WATER-001",
+        "CASE-SCOPE-001", "CASE-MEAL-002", "CASE-PURCHASE-004", "CASE-RECEIPT-001", "CASE-QUERY-001",
         "CASE-PURCHASE-001", "CASE-INVENTORY-003", "CASE-NUTR-001", "CASE-ISSUE-001", "CASE-CORR-001",
         "CASE-MIXED-001", "CASE-EFFECT-001", "CASE-EFFECT-003", "CASE-STORAGE-007",
         "CASE-PRIV-001", "CASE-FOUNDATION-002", "CASE-OPS-001", "CASE-OPS-003", "CASE-OPS-010", "CASE-EXPORT-004",
-        "CASE-RECEIPT-002", "CASE-RECEIPT-004", "CASE-RECEIPT-005", "CASE-RECEIPT-006", "CASE-PROGRESS-006", "CASE-STORAGE-006", "CASE-STORAGE-001"
+        "CASE-RECEIPT-002", "CASE-MEAL-010", "CASE-MEAL-011", "CASE-MEAL-012", "CASE-MEAL-013",
+        "CASE-MEAL-014", "CASE-MEAL-015", "CASE-MEAL-016", "CASE-MEAL-018", "CASE-MEAL-019",
+        "CASE-MEAL-020", "CASE-WATER-003", "CASE-WATER-004", "CASE-RECEIPT-004", "CASE-RECEIPT-005",
+        "CASE-RECEIPT-006", "CASE-PROGRESS-006", "CASE-STORAGE-006", "CASE-STORAGE-001"
     )
     $actualIds = @($CaseSet.cases | ForEach-Object { [string]$_.id })
     Assert-ExactStringArray $expectedIds $actualIds "CORE_CASE_IDS_INVALID"
@@ -290,8 +294,8 @@ function Test-CaseSetCandidate {
 
     Assert-ExactProperties $Fixtures @("fixture_catalog_id", "version", "environments", "goals", "query_views", "domain_scenarios", "ops_security_scenarios") "CORE_CASE_FIXTURE_SHAPE_INVALID:root"
     Assert-CaseEqual "diet-manager/core-fixtures-v1" ([string]$Fixtures.fixture_catalog_id) "CORE_CASE_FIXTURE_ID_INVALID"
-    Assert-CaseEqual "1.2.0" ([string]$Fixtures.version) "CORE_CASE_FIXTURE_VERSION_INVALID"
-    Assert-CaseEqual 1 @($Fixtures.environments).Count "CORE_CASE_ENVIRONMENT_COUNT_INVALID"
+    Assert-CaseEqual "1.3.0" ([string]$Fixtures.version) "CORE_CASE_FIXTURE_VERSION_INVALID"
+    Assert-CaseEqual 2 @($Fixtures.environments).Count "CORE_CASE_ENVIRONMENT_COUNT_INVALID"
     Assert-CaseEqual 1 @($Fixtures.goals).Count "CORE_CASE_GOALS_COUNT_INVALID"
     Assert-CaseEqual 1 @($Fixtures.query_views).Count "CORE_CASE_QUERY_VIEW_COUNT_INVALID"
 
@@ -302,6 +306,14 @@ function Test-CaseSetCandidate {
     Assert-CaseEqual "Asia/Shanghai" ([string]$environment.timezone) "CORE_CASE_TIMEZONE_INVALID"
     Assert-CaseEqual "zh-CN" ([string]$environment.locale) "CORE_CASE_LOCALE_INVALID"
     Assert-CaseEqual "monday" ([string]$environment.week_start) "CORE_CASE_WEEK_START_INVALID"
+
+    $ambiguousEnvironment = @($Fixtures.environments)[1]
+    Assert-ExactProperties $ambiguousEnvironment @("fixture_id", "clock", "timezone", "locale", "week_start") "CORE_CASE_AMBIGUOUS_ENVIRONMENT_SHAPE_INVALID"
+    Assert-CaseEqual "env-zh-cn-20260811-0100" ([string]$ambiguousEnvironment.fixture_id) "CORE_CASE_AMBIGUOUS_ENVIRONMENT_ID_INVALID"
+    Assert-CaseEqual "2026-08-11T01:00:00+08:00" ([string]$ambiguousEnvironment.clock) "CORE_CASE_AMBIGUOUS_CLOCK_INVALID"
+    Assert-CaseEqual "Asia/Shanghai" ([string]$ambiguousEnvironment.timezone) "CORE_CASE_AMBIGUOUS_TIMEZONE_INVALID"
+    Assert-CaseEqual "zh-CN" ([string]$ambiguousEnvironment.locale) "CORE_CASE_AMBIGUOUS_LOCALE_INVALID"
+    Assert-CaseEqual "monday" ([string]$ambiguousEnvironment.week_start) "CORE_CASE_AMBIGUOUS_WEEK_START_INVALID"
 
     $goals = @($Fixtures.goals)[0]
     Assert-ExactProperties $goals @("fixture_id", "version", "timezone", "metrics") "CORE_CASE_GOALS_SHAPE_INVALID"
@@ -436,4 +448,4 @@ Invoke-CaseMutation "MUT-CASE-FAILED-FACT-ALLOWS-MEAL" {
     )
 } "CORE_CASE_FAILED_FACT_ARTIFACTS_INVALID" $caseSet $fixtures
 
-"CORE_ACCEPTANCE_CASES|PASS|version=1.4.0|cases=5|fixtures=3|mutations=8"
+"CORE_ACCEPTANCE_CASES|PASS|version=1.5.0|cases=5|fixtures=4|mutations=8"

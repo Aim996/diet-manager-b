@@ -65,15 +65,15 @@ test("freezes the shared harness manifest", () => {
   assert.deepEqual(manifest.case_catalog, {
     path: "shared/acceptance-cases/cases.json",
     case_set_id: "diet-manager/core-acceptance-cases-v1",
-    version: "1.4.0",
-    case_count: 27,
-    sha256: "AFEEBE1EF0E8E91BB9C8F23C92349AEA65C2E7E749A700252FFE96D402ABCE41",
+    version: "1.5.0",
+    case_count: 44,
+    sha256: "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64",
   });
   assert.deepEqual(manifest.fixture_catalog, {
     path: "shared/acceptance-cases/fixtures/core-v1.json",
     fixture_catalog_id: "diet-manager/core-fixtures-v1",
-    version: "1.2.0",
-    sha256: "E4069D2EB2FCE22B191657BDE91CDFF737597891F3CA0535AA22C5BA6FE16C60",
+    version: "1.3.0",
+    sha256: "346FAED1EF37E9ABAF4FDDDE6F841C15F9802C0CEB04BB384F5A95F1714CA881",
   });
   assert.deepEqual(manifest.b_slice_input_catalog, {
     path: "shared/acceptance-cases/b-slice-inputs.json",
@@ -324,12 +324,12 @@ test("default runner is deterministic, backend-pending, and Oracle-free", async 
   assert.deepEqual(first, second);
   assert.equal(first.protocol_status, "passed");
   assert.equal(first.product_status, "backend_pending");
-  assert.equal(first.catalog.case_count, 27);
+  assert.equal(first.catalog.case_count, 44);
   assert.deepEqual(first.summary, {
-    case_count: 27,
-    a_degraded: 27,
+    case_count: 44,
+    a_degraded: 44,
     a_business_writes: 0,
-    b_backend_pending: 27,
+    b_backend_pending: 44,
     b_executed: 0,
     b_compared: 0,
     b_matched: 0,
@@ -355,7 +355,7 @@ test("runner resolves setup but never delivers Oracle authority to B", async () 
       observation: { deliberately: "wrong" },
     };
   });
-  assert.equal(received.length, 27);
+  assert.equal(received.length, 44);
   assert.deepEqual(Object.keys(received[0]).sort(), [
     "case_id",
     "contract_hashes",
@@ -373,8 +373,8 @@ test("runner resolves setup but never delivers Oracle authority to B", async () 
     "query_view",
   ]);
   assert.equal(report.product_status, "acceptance_failed");
-  assert.equal(report.summary.b_executed, 27);
-  assert.equal(report.summary.b_mismatched, 27);
+  assert.equal(report.summary.b_executed, 44);
+  assert.equal(report.summary.b_mismatched, 44);
 });
 
 test("runner can compare exact observations without exposing them in report", async () => {
@@ -389,8 +389,8 @@ test("runner can compare exact observations without exposing them in report", as
     observation: expected.get(input.case_id) as never,
   }));
   assert.equal(report.product_status, "acceptance_passed");
-  assert.equal(report.summary.b_compared, 27);
-  assert.equal(report.summary.b_matched, 27);
+  assert.equal(report.summary.b_compared, 44);
+  assert.equal(report.summary.b_matched, 44);
   assert.equal(report.summary.b_mismatched, 0);
   const text = formatHarnessReport(report);
   assert.equal(text.includes("returned_exact_original_result"), false);

@@ -18,7 +18,12 @@ if ([string]::IsNullOrWhiteSpace($FixturesPath)) {
 $ExpectedCumulativeCaseIds = @(
     "CASE-MEAL-001",
     "CASE-MEAL-021",
+    "CASE-MEAL-017",
+    "CASE-MEAL-009",
     "CASE-WATER-001",
+    "CASE-SCOPE-001",
+    "CASE-MEAL-002",
+    "CASE-PURCHASE-004",
     "CASE-RECEIPT-001",
     "CASE-QUERY-001",
     "CASE-PURCHASE-001",
@@ -37,6 +42,18 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-OPS-010",
     "CASE-EXPORT-004",
     "CASE-RECEIPT-002",
+    "CASE-MEAL-010",
+    "CASE-MEAL-011",
+    "CASE-MEAL-012",
+    "CASE-MEAL-013",
+    "CASE-MEAL-014",
+    "CASE-MEAL-015",
+    "CASE-MEAL-016",
+    "CASE-MEAL-018",
+    "CASE-MEAL-019",
+    "CASE-MEAL-020",
+    "CASE-WATER-003",
+    "CASE-WATER-004",
     "CASE-RECEIPT-004",
     "CASE-RECEIPT-005",
     "CASE-RECEIPT-006",
@@ -67,7 +84,8 @@ $ExpectedDomainScenarioIds = @(
     "domain-mixed-purchase-drink-v1",
     "domain-effect-nutrition-failure-v1",
     "domain-finalizer-failure-concurrent-v1",
-    "domain-idempotency-conflict-v1"
+    "domain-idempotency-conflict-v1",
+    "core-purchase-no-expiration-v1"
 )
 
 function Assert-DomainTrue {
@@ -405,7 +423,7 @@ function Test-DomainCaseCandidate {
         "cases"
     ) "DOMAIN_CASE_SET_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "DOMAIN_CASE_SET_ID_INVALID"
-    Assert-DomainEqual "1.4.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
+    Assert-DomainEqual "1.5.0" ([string]$CaseSet.version) "DOMAIN_CASE_SET_VERSION_INVALID"
     Assert-DomainExactProperties $CaseSet.package_invariants @(
         "adapters_may_rewrite_oracle", "technical_log", "technical_log_counts_as_record",
         "fact_commit_failure_business_write_count", "fact_commit_failure_forbidden_artifacts"
@@ -435,7 +453,7 @@ function Test-DomainCaseCandidate {
         "ops_security_scenarios"
     ) "DOMAIN_CASE_FIXTURE_SHAPE_INVALID:root"
     Assert-DomainEqual "diet-manager/core-fixtures-v1" ([string]$Fixtures.fixture_catalog_id) "DOMAIN_CASE_FIXTURE_ID_INVALID"
-    Assert-DomainEqual "1.2.0" ([string]$Fixtures.version) "DOMAIN_CASE_FIXTURE_VERSION_INVALID"
+    Assert-DomainEqual "1.3.0" ([string]$Fixtures.version) "DOMAIN_CASE_FIXTURE_VERSION_INVALID"
     $scenarioIds = @($Fixtures.domain_scenarios | ForEach-Object { [string]$_.fixture_id })
     Assert-DomainExactStringArray $ExpectedDomainScenarioIds $scenarioIds "DOMAIN_CASE_SCENARIO_IDS_INVALID"
     Assert-DomainScenarioFixtures $Fixtures
@@ -536,4 +554,4 @@ Invoke-DomainMutation "MUT-DOMAIN-ALLOW-FAILED-FACT-BUSINESS-WRITE" {
     $casesCandidate.package_invariants.fact_commit_failure_business_write_count = 1
 } "DOMAIN_CASE_FAILED_FACT_WRITE_INVALID" $caseSet $fixtures
 
-"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.4.0|cases=10|scenarios=9|mutations=12"
+"DOMAIN_ACCEPTANCE_CASES|PASS|version=1.5.0|cases=10|scenarios=10|mutations=12"

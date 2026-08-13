@@ -20,7 +20,12 @@ if ([string]::IsNullOrWhiteSpace($FixturesPath)) {
 $ExpectedCumulativeCaseIds = @(
     "CASE-MEAL-001",
     "CASE-MEAL-021",
+    "CASE-MEAL-017",
+    "CASE-MEAL-009",
     "CASE-WATER-001",
+    "CASE-SCOPE-001",
+    "CASE-MEAL-002",
+    "CASE-PURCHASE-004",
     "CASE-RECEIPT-001",
     "CASE-QUERY-001",
     "CASE-PURCHASE-001",
@@ -39,6 +44,18 @@ $ExpectedCumulativeCaseIds = @(
     "CASE-OPS-010",
     "CASE-EXPORT-004",
     "CASE-RECEIPT-002",
+    "CASE-MEAL-010",
+    "CASE-MEAL-011",
+    "CASE-MEAL-012",
+    "CASE-MEAL-013",
+    "CASE-MEAL-014",
+    "CASE-MEAL-015",
+    "CASE-MEAL-016",
+    "CASE-MEAL-018",
+    "CASE-MEAL-019",
+    "CASE-MEAL-020",
+    "CASE-WATER-003",
+    "CASE-WATER-004",
     "CASE-RECEIPT-004",
     "CASE-RECEIPT-005",
     "CASE-RECEIPT-006",
@@ -684,7 +701,7 @@ function Test-OpsSecurityCasesCandidate {
         "case_set_id", "version", "contract", "fixture_catalog", "package_invariants", "cases"
     ) "OPS_SECURITY_CASE_SET_SHAPE_INVALID:root"
     Assert-OpsEqual "diet-manager/core-acceptance-cases-v1" ([string]$CaseSet.case_set_id) "OPS_SECURITY_CASE_SET_ID_INVALID"
-    Assert-OpsEqual "1.4.0" ([string]$CaseSet.version) "OPS_SECURITY_CASE_SET_VERSION_INVALID"
+    Assert-OpsEqual "1.5.0" ([string]$CaseSet.version) "OPS_SECURITY_CASE_SET_VERSION_INVALID"
     Assert-OpsExactProperties $CaseSet.contract @("contract_id", "contract_version") "OPS_SECURITY_CONTRACT_SHAPE_INVALID"
     Assert-OpsEqual "diet-manager/contract-v2" ([string]$CaseSet.contract.contract_id) "OPS_SECURITY_CONTRACT_ID_INVALID"
     Assert-OpsEqual 2 ([int]$CaseSet.contract.contract_version) "OPS_SECURITY_CONTRACT_VERSION_INVALID"
@@ -723,7 +740,7 @@ function Test-OpsSecurityFixtureCandidate {
         "domain_scenarios", "ops_security_scenarios"
     ) "OPS_SECURITY_FIXTURE_SHAPE_INVALID:root"
     Assert-OpsEqual "diet-manager/core-fixtures-v1" ([string]$Fixtures.fixture_catalog_id) "OPS_SECURITY_FIXTURE_ID_INVALID"
-    Assert-OpsEqual "1.2.0" ([string]$Fixtures.version) "OPS_SECURITY_FIXTURE_VERSION_INVALID"
+    Assert-OpsEqual "1.3.0" ([string]$Fixtures.version) "OPS_SECURITY_FIXTURE_VERSION_INVALID"
     Assert-OpsTrue ($Fixtures.ops_security_scenarios -is [System.Array]) "OPS_SECURITY_SCENARIOS_SHAPE_INVALID"
     $scenarioIds = @($Fixtures.ops_security_scenarios | ForEach-Object { [string]$_.fixture_id })
     Assert-OpsExactStringArray $ExpectedOpsScenarioIds $scenarioIds "OPS_SECURITY_SCENARIO_IDS_INVALID"
@@ -846,5 +863,5 @@ if (-not $LibraryOnly) {
 
         $mutationCount = 12
     }
-    "OPS_SECURITY_ACCEPTANCE_CASES|PASS|version=1.4.0|cases=6|scenarios=6|mutations={0}" -f $mutationCount
+    "OPS_SECURITY_ACCEPTANCE_CASES|PASS|version=1.5.0|cases=6|scenarios=6|mutations={0}" -f $mutationCount
 }
