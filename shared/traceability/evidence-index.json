@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322648,
-      "sha256": "F184BAB6E57688686337E24096043FCB6A0EA0830BBE03A1F3AC25251919BD89"
+      "length": 322763,
+      "sha256": "CF03DC09396DEC3F4AA28746A3D4A84931593FE3260C23DC46F5946A8DFAFEF8"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42128,
-      "sha256": "F999B4BD25C4D65293C396D9C2B88BD7BA4DEDD9EBFFA2FA7D5D915A1B14BEBB"
+      "length": 42136,
+      "sha256": "DBBB1B2E162258A989ADBDFEA65F67915A9B3A8C0C3894E4893CE683FF4EB53A"
     }
   },
   "counts": {
-    "evidence": 34,
-    "files_present": 32,
+    "evidence": 35,
+    "files_present": 33,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -612,6 +612,23 @@
         "path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
         "length": 8502,
         "sha256": "C146431BE6A961C6EBB232EFBCA8659EEB6137B19DDEF2C19281D943C00D5DE3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260813-035",
+      "scope": "SH-TRACE-001 DOC-0.4重开后的机器追踪刷新",
+      "result": "候选96cba14646e2cee46ed45fe3711eb061f59b6c0e上74 REQ、153 CASE、63 TASK、70 governance和34历史EV确定性重生成；15个mutation、四镜像字节新鲜、独立复核P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭本轮追踪重开并把EV总数推进至35；只解锁X-GATE-002有界预检，不授权map结果、SEL-*、安装或发布",
+      "reference_ids": [
+        "SH-TRACE-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-035-sh-trace-001-refresh.md",
+        "length": 3023,
+        "sha256": "22117816EF5579BE89E92692D1BB19E130F7F78CB787B0D09F190AB06461E910"
       },
       "file_status": "present",
       "referenced_by_task_ids": [

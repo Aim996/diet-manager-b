@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322648,
-      "sha256": "F184BAB6E57688686337E24096043FCB6A0EA0830BBE03A1F3AC25251919BD89"
+      "length": 322763,
+      "sha256": "CF03DC09396DEC3F4AA28746A3D4A84931593FE3260C23DC46F5946A8DFAFEF8"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 42128,
-      "sha256": "F999B4BD25C4D65293C396D9C2B88BD7BA4DEDD9EBFFA2FA7D5D915A1B14BEBB"
+      "length": 42136,
+      "sha256": "DBBB1B2E162258A989ADBDFEA65F67915A9B3A8C0C3894E4893CE683FF4EB53A"
     }
   },
   "counts": {
@@ -662,14 +662,13 @@
       "reference_ids": [
         "SH-TRACE-001",
         "CHG-20260813-002",
-        "X-GATE-002",
-        "EV-20260813-034"
+        "EV-20260813-035"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
-      "status_owner": "reopened / 治理负责人",
+      "status_owner": "closed / 治理负责人",
       "task": "SH-TRACE-001",
-      "mitigation": "CHG-20260813-002改变计划/生成器后立即重开；须重生成四镜像并重新独立复核，完成前阻塞X-GATE-002",
-      "evidence": "EV-20260813-034只证明重开前的74 REQ/153 CASE/63 TASK/70 governance/34 EV历史闭环；本轮不创建新EV、不宣称追踪再次关闭"
+      "mitigation": "CHG-20260813-002改变计划/生成器后立即重开；四镜像已确定性重生成并重新独立复核",
+      "evidence": "EV-20260813-035证明74 REQ/153 CASE/63 TASK/70 governance/35 EV当前闭环；后续计划、生成器或案例变化再次重开"
     },
     {
       "id": "RISK-011",

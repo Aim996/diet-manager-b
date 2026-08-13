@@ -50,6 +50,7 @@ const evidencePaths = Object.freeze({
   "EV-20260812-031": "docs/evidence/EV-20260812-031-b-slice-001.md",
   "EV-20260812-032": "docs/evidence/EV-20260812-032-b-fault-001.md",
   "EV-20260813-034": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
+  "EV-20260813-035": "docs/evidence/EV-20260813-035-sh-trace-001-refresh.md",
 });
 const requiredCheckIds = Object.freeze([
   "focused_foundation_contract_root_skill",
@@ -65,7 +66,7 @@ const expectedPrerequisiteRequirements = Object.freeze([
   { task_id: "X-GATE-001", required_result: "pass_b_safety", commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b", evidence_id: "EV-20260812-030" },
   { task_id: "B-SLICE-001", required_result: "PASS", commit: "c8e6bcef39d0f98452432c3331095d963b9b9778", evidence_id: "EV-20260812-031" },
   { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
-  { task_id: "SH-TRACE-001", required_result: "PASS", commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8", evidence_id: "EV-20260813-034" },
+  { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
 ]);
 const expectedFormalArtifacts = Object.freeze([
   { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
@@ -473,7 +474,7 @@ function buildTraceIdentity(trace) {
     cases: 153,
     tasks: 63,
     governance: 70,
-    evidence: 34,
+    evidence: 35,
   };
 }
 

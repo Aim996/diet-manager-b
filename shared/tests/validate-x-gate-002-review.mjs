@@ -33,7 +33,7 @@ test("freezes exact prerequisite and formal-build requirements", () => {
     { task_id: "X-GATE-001", required_result: "pass_b_safety", commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b", evidence_id: "EV-20260812-030" },
     { task_id: "B-SLICE-001", required_result: "PASS", commit: "c8e6bcef39d0f98452432c3331095d963b9b9778", evidence_id: "EV-20260812-031" },
     { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
-    { task_id: "SH-TRACE-001", required_result: "PASS", commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8", evidence_id: "EV-20260813-034" },
+    { task_id: "SH-TRACE-001", required_result: "PASS", commit: "96cba14646e2cee46ed45fe3711eb061f59b6c0e", evidence_id: "EV-20260813-035" },
   ]);
   assert.deepEqual(matrix.formal_build_provenance_requirement.artifacts, [
     { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
@@ -43,11 +43,10 @@ test("freezes exact prerequisite and formal-build requirements", () => {
   for (const check of matrix.required_checks) assert.equal(Object.hasOwn(check, "result"), false, check.check_id);
 });
 
-test("blocks X-GATE while trace refresh is pending and exercises semantic mutations", () => {
+test("requires a locally published map after trace refresh and exercises semantic mutations", () => {
   const pending = spawnSync(node, [validatorPath], { cwd: root, encoding: "utf8", timeout: 120_000 });
   assert.equal(pending.status, 1);
-  assert.match(pending.stderr, /X_GATE_TRACE_PREREQUISITE_PENDING/u);
-  assert.match(pending.stderr, /decision=return_to_b_slice/u);
+  assert.match(pending.stderr, /X_GATE_LOCAL_MAP_ABSENT/u);
   const output = execFileSync(node, [validatorPath, "--self-test"], { cwd: root, encoding: "utf8", timeout: 120_000 });
   assert.match(output, /collisions=1/u);
   assert.match(output, /plan_mutations=4/u);
