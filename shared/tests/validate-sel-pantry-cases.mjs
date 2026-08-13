@@ -97,6 +97,16 @@ function forbiddenLayer(token) {
   return mapping[token];
 }
 
+function fixtureOracleKey(value) {
+  if (value === null || typeof value !== 'object') return null;
+  for (const [key, child] of Object.entries(value)) {
+    if (/^(?:expected|assert|oracle|result|outcome|require)/i.test(key)) return key;
+    const nested = fixtureOracleKey(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function validate(catalog = readJson(CATALOG_PATH), fixtures = readJson(FIXTURES_PATH), expected = EXPECTED) {
   const byId = new Map(catalog.cases.map((entry) => [entry.id, entry]));
   if (expected.length < EXPECTED.length) fail('SEL_PANTRY_EXPECTED_ID_MISSING');
@@ -119,6 +129,9 @@ function validate(catalog = readJson(CATALOG_PATH), fixtures = readJson(FIXTURES
     if (entry.source_text !== SOURCE_TEXT[entry.id]) fail(`SEL_PANTRY_SOURCE_DRIFT:${entry.id}`);
     if (!entry.forbidden.length) fail(`SEL_PANTRY_FORBIDDEN_EMPTY:${entry.id}`);
     if (!knownFixtures.has(entry.setup.environment_fixture) || !knownFixtures.has(entry.setup.domain_scenario_fixture)) fail(`SEL_PANTRY_FIXTURE_UNKNOWN:${entry.id}`);
+    const fixture = fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === entry.setup.domain_scenario_fixture);
+    const oracleKey = fixtureOracleKey(fixture);
+    if (oracleKey) fail(`SEL_PANTRY_FIXTURE_ORACLE_KEY:${fixture.fixture_id}:${oracleKey}`);
     for (const pointer of paths.get(entry.id) ?? []) if (!pointerExists(entry, pointer)) fail(`SEL_PANTRY_ASSERTION_MISSING:${entry.id}:${pointer}`);
     for (const token of entry.forbidden) if (!FORBIDDEN_LAYERS.includes(forbiddenLayer(token))) fail(`SEL_PANTRY_FORBIDDEN_UNKNOWN:${entry.id}:${token}`);
   }
@@ -159,7 +172,8 @@ function selfTest() {
   assertMutation('changed source text', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').source_text = 'changed'; }, 'SEL_PANTRY_SOURCE_DRIFT:CASE-PURCHASE-003');
   assertMutation('unknown-to-zero Oracle', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-002').oracle.quantity_equation.total = 0; }, 'SEL_PANTRY_UNKNOWN_ZERO');
   assertMutation('catalog version drift', ({ catalog }) => { catalog.version = '1.5.0'; }, 'SEL_PANTRY_CATALOG_VERSION_DRIFT');
-  console.log('SEL_PANTRY_CASES|SELF_TEST|PASS|mutations=13');
+  assertMutation('fixture Oracle key', ({ fixtures }) => { fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === 'domain-purchase-multi-product-v1').expected_product_order = ['milk', 'egg', 'apple']; }, 'SEL_PANTRY_FIXTURE_ORACLE_KEY:domain-purchase-multi-product-v1:expected_product_order');
+  console.log('SEL_PANTRY_CASES|SELF_TEST|PASS|mutations=14');
 }
 
 try {

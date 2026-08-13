@@ -35,7 +35,7 @@
     "path": "shared/acceptance-cases/fixtures/core-v1.json",
     "fixture_catalog_id": "diet-manager/core-fixtures-v1",
     "version": "1.4.0",
-    "sha256": "E7828D446AEAFB6B68BD04DB5E7F12E1A2924ADA1B7BFAEEAEF1B660EEC3CE65"
+    "sha256": "A916DB2750BE1668EB9CAC89B69837690E985FFF25AD21416FF0FBC2D2C20F4E"
   },
   "b_slice_input_catalog": {
     "path": "shared/acceptance-cases/b-slice-inputs.json",

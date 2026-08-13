@@ -358,8 +358,7 @@
       "fixture_id": "domain-purchase-multi-product-v1",
       "scenario_type": "purchase_multi_product",
       "received_at": "2026-08-11T08:30:00+08:00",
-      "existing_products": [{"product_id": "fixture-product-milk-whole-250"}, {"product_id": "fixture-product-eggs"}, {"product_id": "fixture-product-apple"}],
-      "expected_product_order": ["milk", "egg", "apple"]
+      "existing_products": [{"product_id": "fixture-product-milk-whole-250"}, {"product_id": "fixture-product-eggs"}, {"product_id": "fixture-product-apple"}]
     },
     {
       "fixture_id": "domain-purchase-identity-ambiguous-v1",
