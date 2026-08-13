@@ -1,4 +1,5 @@
 import { canonicalJson } from "../authority/canonical-json.js";
+import { validateAndFreezeMealFactPayload, validateAndFreezeOccurredTimeEvidence, } from "../authority/meal-fact.js";
 const NUTRIENT_FIELDS = [
     "carbohydrate_mg",
     "energy_kcal_milli",
@@ -311,13 +312,14 @@ export function reservationFromEventPayload(value, eventType) {
     }
     const authorityKind = authorityDescriptor.value;
     if (eventType === "diet_meal" && authorityKind === "diet-manager/meal-fact/v1") {
-        const hasReservation = keys.includes("progress_reservation");
-        const payload = exactRecord(value, hasReservation
-            ? ["authority_kind", "location", "progress_reservation", "timezone"]
-            : ["authority_kind", "location", "timezone"], "meal_fact");
-        if ((payload.location !== "home" && payload.location !== "outside") ||
-            payload.timezone !== "Asia/Shanghai")
+        let payload;
+        try {
+            payload = validateAndFreezeMealFactPayload(value);
+        }
+        catch {
             return invalid("meal_fact");
+        }
+        const hasReservation = Object.hasOwn(payload, "progress_reservation");
         if (!hasReservation)
             return undefined;
         const reservation = parseProgressReservation(payload.progress_reservation);
@@ -335,6 +337,27 @@ export function reservationFromEventPayload(value, eventType) {
         const reservation = parseProgressReservation(payload.progress_reservation);
         if (reservation.mode !== "contribution")
             return invalid("purchase_reservation_mode");
+        return reservation;
+    }
+    if (eventType === "diet_water" && authorityKind === "diet-manager/water-fact/v1") {
+        const hasReservation = keys.includes("progress_reservation");
+        const payload = exactRecord(value, hasReservation
+            ? ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+            : ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "source_text", "timezone"], "water_fact");
+        try {
+            validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+                path: "water_fact.occurred_time",
+                requireExact: true,
+            });
+        }
+        catch {
+            return invalid("water_fact");
+        }
+        if (!hasReservation)
+            return undefined;
+        const reservation = parseProgressReservation(payload.progress_reservation);
+        if (reservation.mode !== "contribution")
+            return invalid("water_reservation_mode");
         return reservation;
     }
     if (eventType === "diet_correction" && authorityKind === "diet-manager/correction-fact/v1") {
@@ -365,7 +388,7 @@ export function reservationFromEventPayload(value, eventType) {
         return invalid("fact_authority");
     return undefined;
 }
-function parseEventPayload(payloadJson, eventType) {
+function parseEventPayload(payloadJson, eventType, occurredAtText) {
     let payload;
     try {
         payload = JSON.parse(payloadJson);
@@ -375,17 +398,32 @@ function parseEventPayload(payloadJson, eventType) {
     }
     if (canonicalJson(payload) !== payloadJson)
         return invalid("fact_canonical");
+    if (eventType === "diet_water") {
+        if (occurredAtText === null || typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+            return invalid("water_fact");
+        }
+        try {
+            validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+                occurredAt: occurredAtText,
+                path: "water_fact.occurred_time",
+                requireExact: true,
+            });
+        }
+        catch {
+            return invalid("water_fact");
+        }
+    }
     return reservationFromEventPayload(payload, eventType);
 }
 function activeReservations(database) {
-    const rows = database.prepare(`SELECT e.envelope_id, e.event_type, e.payload_json
+    const rows = database.prepare(`SELECT e.envelope_id, e.event_type, e.occurred_at_text, e.payload_json
      FROM event_records e
      JOIN command_envelopes c ON c.envelope_id = e.envelope_id
      WHERE c.state <> 'finalized'
      ORDER BY e.envelope_id, e.committed_at, e.event_id`).all();
     const reservations = [];
     for (const row of rows) {
-        const reservation = parseEventPayload(row.payload_json, row.event_type);
+        const reservation = parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text);
         if (reservation)
             reservations.push({ envelope_id: row.envelope_id, reservation });
     }
@@ -426,7 +464,7 @@ function unfinalizedProgressOwners(database) {
         if (!row)
             return invalid("progress_owner");
         if (row.effect_kind === "daily_progress_contribution") {
-            if (row.event_type !== "diet_meal" || row.occurred_at_text === null) {
+            if ((row.event_type !== "diet_meal" && row.event_type !== "diet_water") || row.occurred_at_text === null) {
                 return invalid("progress_owner");
             }
             owners.set(envelope_id, { envelope_id, date: naturalDate(row.occurred_at_text) });
@@ -474,10 +512,10 @@ export function assertProgressReservationFactCommitAuthority(database, envelopeI
     assertCurrentProjection(database, reservation);
 }
 export function readEnvelopeProgressReservation(database, envelopeId) {
-    const rows = database.prepare(`SELECT event_type, payload_json FROM event_records
+    const rows = database.prepare(`SELECT event_type, occurred_at_text, payload_json FROM event_records
      WHERE envelope_id = ? ORDER BY committed_at, event_id`).all(envelopeId);
     const reservations = rows
-        .map((row) => parseEventPayload(row.payload_json, row.event_type))
+        .map((row) => parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text))
         .filter((candidate) => candidate !== undefined);
     if (reservations.length > 1)
         return invalid("reservation_count");

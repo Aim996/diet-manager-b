@@ -17,9 +17,25 @@ function decision(value) {
 }
 export function resolveInventoryMatch(input) {
     const unit = nonemptyText(input.requested_unit, "requested_unit");
-    nonnegativeInteger(input.observed_microunits, "observed_microunits");
+    if (input.observed_microunits !== null) {
+        nonnegativeInteger(input.observed_microunits, "observed_microunits");
+    }
     if (input.inventory_deduction_microunits !== null) {
         nonnegativeInteger(input.inventory_deduction_microunits, "inventory_deduction_microunits");
+    }
+    if (input.observed_microunits === null) {
+        if (input.nutrition_adoption_microunits !== null ||
+            input.inventory_deduction_microunits !== null ||
+            input.template_reference_microunits !== null)
+            return invalid("observed_microunits");
+        return decision({
+            status: "skipped_amount_unknown",
+            batch_id: null,
+            product_id: null,
+            deduction_microunits: 0,
+            unit,
+            issue_code: "inventory_amount_unknown",
+        });
     }
     if (input.location === "outside") {
         return decision({

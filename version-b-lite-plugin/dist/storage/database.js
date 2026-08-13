@@ -13,7 +13,7 @@ export const DIET_DATABASE_MAPPING_SHA256 = MIGRATION_V1_MAPPING_SHA256;
 function fail(code) {
     throw new Error(code);
 }
-function assertPrivateRuntimeRoot(value) {
+export function assertPrivateRuntimeRoot(value) {
     if (typeof value !== "string" || value.length === 0 || !isAbsolute(value)) {
         return fail("STORAGE_PATH_INVALID:absolute_root");
     }
@@ -38,7 +38,7 @@ function assertPrivateRuntimeRoot(value) {
     else if (physical !== root) {
         return fail("STORAGE_PATH_INVALID:root_identity");
     }
-    return root;
+    return physical;
 }
 function assertOrdinaryDatabaseLeaf(databasePath) {
     let stat;

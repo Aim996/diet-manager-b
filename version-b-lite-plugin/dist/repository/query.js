@@ -1,8 +1,12 @@
 import { canonicalJson } from "../authority/canonical-json.js";
+import { createMealFactIdentity, mealFactIdentityEquals, } from "../authority/meal-fact-identity.js";
+import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/water-fact-identity.js";
+import { validateAndFreezeMealFactPayload, validateAndFreezeOccurredTimeEvidence, } from "../authority/meal-fact.js";
+import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 const QUERY_FIELDS = ["batchId", "database"];
 const LIST_QUERY_FIELDS = ["database"];
-const DATE_QUERY_FIELDS = ["database", "date", "timezone"];
+const DATE_QUERY_FIELDS = ["authoritySecret", "database", "date", "timezone"];
 const PROJECTION_PAYLOAD_FIELDS = [
     "authority_kind",
     "batch_id",
@@ -124,6 +128,10 @@ function dateQuery(input) {
     if (typeof fields.database.value !== "object" || fields.database.value === null) {
         return invalid("database");
     }
+    if (!(fields.authoritySecret.value instanceof Uint8Array) ||
+        fields.authoritySecret.value.byteLength < 32 ||
+        fields.authoritySecret.value.byteLength > 1024)
+        return invalid("authority_secret");
     if (typeof fields.date.value !== "string" ||
         !/^\d{4}-\d{2}-\d{2}$/.test(fields.date.value) ||
         fields.timezone.value !== "Asia/Shanghai") {
@@ -141,6 +149,7 @@ function dateQuery(input) {
     if (start.slice(0, 10) === end.slice(0, 10))
         return invalid("date_range");
     return {
+        authoritySecret: Uint8Array.from(fields.authoritySecret.value),
         database: fields.database.value,
         date: fields.date.value,
         timezone: "Asia/Shanghai",
@@ -187,16 +196,94 @@ function parseCanonicalRecord(value, label) {
 export function listMealProjection(input) {
     const query = dateQuery(input);
     return readOnly(query.database, () => {
-        const rows = query.database.prepare(`SELECT event_id, occurred_at_text, meal_slot, payload_json
-       FROM event_records
-       WHERE event_type = 'diet_meal' AND lifecycle_status = 'active'
-         AND occurred_at_text >= ? AND occurred_at_text < ?
-       ORDER BY occurred_at_text, event_id`).all(query.start, query.end);
+        const rows = query.database.prepare(`SELECT e.event_id, e.envelope_id, e.operation_id, e.schema_version, e.event_type,
+              e.fact_kind, e.source_message_id, e.conversation_id, e.received_at,
+              e.occurred_at_text, e.meal_id, e.meal_slot, e.payload_json,
+              c.input_digest, i.input_digest AS idempotency_input_digest,
+              c.payload_json AS preview_payload_json
+       FROM event_records e
+       JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+       JOIN idempotency_records i
+         ON i.operation_id = c.envelope_id AND i.idempotency_key = c.idempotency_key
+       WHERE e.event_type = 'diet_meal' AND e.lifecycle_status = 'active'
+         AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
+       ORDER BY e.occurred_at_text, e.event_id`).all(query.start, query.end);
         return Object.freeze(rows.flatMap((row) => {
-            const eventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
-            if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
-                (eventPayload.location !== "home" && eventPayload.location !== "outside"))
+            const parsedEventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
+            let eventPayload;
+            try {
+                eventPayload = validateAndFreezeMealFactPayload(parsedEventPayload, {
+                    occurredAt: row.occurred_at_text,
+                    path: "meal_event",
+                });
+            }
+            catch {
                 return invalid("meal_event_authority");
+            }
+            const itemRows = query.database.prepare(`SELECT item_id, item_order, item_type, normalized_name, payload_json
+         FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(row.event_id);
+            try {
+                const previewAuthority = authenticateStoredPreviewAuthority(row.preview_payload_json, query.authoritySecret);
+                if (row.input_digest !== row.idempotency_input_digest) {
+                    return invalid("meal_event_identity");
+                }
+                const binding = previewAuthority.binding;
+                if (binding.preview_id !== row.envelope_id ||
+                    binding.input_digest !== row.input_digest)
+                    return invalid("meal_event_identity");
+                if (previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2") {
+                    const material = previewAuthority.meal_fact_preview_material;
+                    if (material === undefined || material.input_digest !== row.input_digest) {
+                        return invalid("meal_event_identity");
+                    }
+                    const storedMealIds = query.database.prepare(`SELECT event_id FROM event_records
+             WHERE envelope_id = ? AND event_type = 'diet_meal'
+             ORDER BY event_id`).all(row.envelope_id);
+                    const expectedMealIds = material.meal_fact_identities
+                        .map((identity) => identity.event_id)
+                        .sort();
+                    if (storedMealIds.length !== expectedMealIds.length ||
+                        storedMealIds.some((stored, index) => stored.event_id !== expectedMealIds[index]))
+                        return invalid("meal_event_identity");
+                    const expected = material.meal_fact_identities.find((identity) => identity.event_id === row.event_id && identity.operation_id === row.operation_id);
+                    if (!expected)
+                        return invalid("meal_event_identity");
+                    const actual = createMealFactIdentity({
+                        sequence: expected.sequence,
+                        event_id: row.event_id,
+                        operation_id: row.operation_id,
+                        schema_version: row.schema_version,
+                        event_type: row.event_type,
+                        fact_kind: row.fact_kind,
+                        source_message_id: row.source_message_id,
+                        conversation_id: row.conversation_id,
+                        received_at: row.received_at,
+                        occurred_at_text: row.occurred_at_text,
+                        meal_id: row.meal_id,
+                        meal_slot: row.meal_slot,
+                        payload: eventPayload,
+                        items: itemRows.map((item) => ({
+                            item_id: item.item_id,
+                            item_order: item.item_order,
+                            item_type: item.item_type,
+                            normalized_name: item.normalized_name,
+                            payload: parseCanonicalRecord(item.payload_json, "meal_item"),
+                        })),
+                    });
+                    if (!mealFactIdentityEquals(actual, expected))
+                        return invalid("meal_event_identity");
+                }
+                else {
+                    if (["source_text", "occurred_time", "subject", "context"].some((field) => Object.hasOwn(eventPayload, field)))
+                        return invalid("meal_event_identity");
+                }
+            }
+            catch (error) {
+                if (error instanceof Error &&
+                    error.message.startsWith("INVENTORY_PROJECTION_INVALID:"))
+                    throw error;
+                return invalid("meal_event_identity");
+            }
             const latestCorrection = query.database.prepare(`SELECT c.base_revision, c.payload_json
          FROM correction_events c
          JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
@@ -243,8 +330,6 @@ export function listMealProjection(input) {
                         items: Object.freeze(items),
                     })];
             }
-            const itemRows = query.database.prepare(`SELECT item_order, item_type, normalized_name, payload_json
-         FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(row.event_id);
             const items = itemRows.map((item, index) => {
                 if (item.item_order !== index)
                     return invalid("meal_item_order");
@@ -266,6 +351,82 @@ export function listMealProjection(input) {
                     location: eventPayload.location,
                     items: Object.freeze(items),
                 })];
+        }));
+    });
+}
+/** Read immutable white-water facts without conflating them with meal projections. */
+export function listWaterEvents(input) {
+    const query = dateQuery(input);
+    return readOnly(query.database, () => {
+        const rows = query.database.prepare(`SELECT e.envelope_id, e.event_id, e.operation_id, e.schema_version, e.event_type, e.fact_kind, e.source_message_id,
+       e.conversation_id, e.received_at, e.occurred_at_text, e.meal_id, e.meal_slot, e.payload_json,
+       c.input_digest, c.payload_json AS preview_payload_json, i.input_digest AS idempotency_input_digest
+       FROM event_records e JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+       JOIN idempotency_records i ON i.operation_id = c.envelope_id AND i.idempotency_key = c.idempotency_key
+       WHERE event_type = 'diet_water' AND fact_kind = 'water' AND lifecycle_status = 'active'
+         AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
+       ORDER BY e.occurred_at_text, e.event_id`).all(query.start, query.end);
+        return Object.freeze(rows.map((row) => {
+            if (row.meal_id !== null || row.meal_slot !== null)
+                return invalid("water_event_meal");
+            const payload = parseCanonicalRecord(row.payload_json, "water_event");
+            const hasReservation = Object.hasOwn(payload, "progress_reservation");
+            const expectedPayloadFields = hasReservation
+                ? ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+                : ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "source_text", "timezone"];
+            if (Object.keys(payload).sort().join("\u0000") !== expectedPayloadFields.sort().join("\u0000") ||
+                payload.authority_kind !== "diet-manager/water-fact/v1" || payload.estimated !== false ||
+                payload.timezone !== "Asia/Shanghai" || typeof payload.source_text !== "string" ||
+                !Number.isSafeInteger(payload.plain_water_ml_milli) || payload.plain_water_ml_milli <= 0)
+                return invalid("water_event_authority");
+            try {
+                validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+                    occurredAt: row.occurred_at_text,
+                    path: "water_event.occurred_time",
+                    requireExact: true,
+                });
+            }
+            catch {
+                return invalid("water_event_authority");
+            }
+            const evidence = payload.amount_evidence;
+            if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence) ||
+                Object.keys(evidence).sort().join("\u0000") !== ["estimated", "quantity", "raw_text", "unit"].join("\u0000") ||
+                typeof evidence.raw_text !== "string" ||
+                !Number.isSafeInteger(evidence.quantity) ||
+                evidence.unit !== "ml" || evidence.estimated !== false ||
+                evidence.quantity * 1_000 !== payload.plain_water_ml_milli)
+                return invalid("water_event_evidence");
+            const preview = authenticateStoredPreviewAuthority(row.preview_payload_json, query.authoritySecret);
+            if (preview.preview_authority_kind !== "diet-manager/server-preview/v3" ||
+                preview.water_fact_preview_material === undefined || row.input_digest !== row.idempotency_input_digest ||
+                preview.binding.preview_id !== row.envelope_id ||
+                preview.binding.input_digest !== row.input_digest)
+                return invalid("water_event_identity");
+            const identity = createWaterFactIdentity({
+                sequence: 0, event_id: row.event_id, operation_id: row.operation_id, schema_version: row.schema_version,
+                event_type: row.event_type, fact_kind: row.fact_kind, source_message_id: row.source_message_id,
+                conversation_id: row.conversation_id, received_at: row.received_at, occurred_at_text: row.occurred_at_text,
+                meal_id: row.meal_id, meal_slot: row.meal_slot, payload,
+            });
+            const expectedIdentities = preview.water_fact_preview_material.water_fact_identities;
+            if (expectedIdentities.length !== 1 || !waterFactIdentityEquals(identity, expectedIdentities[0]))
+                return invalid("water_event_identity");
+            if (preview.water_fact_preview_material.meal_fact_identities.length !== 0)
+                return invalid("water_event_identity");
+            const storedSet = query.database.prepare("SELECT event_id, event_type, fact_kind FROM event_records WHERE envelope_id = ? ORDER BY event_id").all(row.envelope_id);
+            if (storedSet.length !== 1 ||
+                storedSet[0]?.event_id !== expectedIdentities[0].event_id ||
+                storedSet[0]?.event_type !== "diet_water" ||
+                storedSet[0]?.fact_kind !== "water")
+                return invalid("water_event_identity");
+            return Object.freeze({
+                occurred_at: row.occurred_at_text,
+                source_text: payload.source_text,
+                plain_water_ml_milli: payload.plain_water_ml_milli,
+                estimated: false,
+                amount_evidence: Object.freeze(JSON.parse(canonicalJson(payload.amount_evidence))),
+            });
         }));
     });
 }

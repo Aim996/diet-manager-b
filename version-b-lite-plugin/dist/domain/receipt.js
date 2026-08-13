@@ -143,8 +143,12 @@ export function buildReceiptData(input) {
         const item = input.items[index];
         if (item.item_order !== index)
             return invalid("item_order");
-        if (!Number.isSafeInteger(item.observed_microunits) || item.observed_microunits < 0) {
+        if (item.observed_microunits !== null &&
+            (!Number.isSafeInteger(item.observed_microunits) || item.observed_microunits < 0)) {
             return invalid("observed_microunits");
+        }
+        if ((item.observed_microunits === null) !== (item.amount_evidence === "unknown")) {
+            return invalid("amount_evidence");
         }
         const estimatedFields = Object.freeze([...item.estimated_fields]);
         blocks.push(Object.freeze({
@@ -154,9 +158,11 @@ export function buildReceiptData(input) {
             amount: Object.freeze({
                 observed_microunits: item.observed_microunits,
                 unit: safeText(item.unit, "unit", 32),
-                evidence: estimatedFields.includes("observed_microunits")
-                    ? "estimated"
-                    : "explicit",
+                evidence: item.amount_evidence === "unknown"
+                    ? "unknown"
+                    : estimatedFields.includes("observed_microunits")
+                        ? "estimated"
+                        : "explicit",
             }),
             estimated_fields: estimatedFields,
             inventory_effect: Object.freeze({ status: item.inventory_match }),

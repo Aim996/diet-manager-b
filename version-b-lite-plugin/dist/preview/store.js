@@ -1,5 +1,8 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { dietManagerActions, } from "../contracts.js";
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import { parseMealFactPreviewMaterial, } from "../authority/meal-fact-identity.js";
+import { parseWaterFactPreviewMaterial, } from "../authority/water-fact-identity.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { freezePreviewBinding, issuePreviewToken, verifyPreviewToken, } from "./token.js";
 const CREATE_FIELDS = [
@@ -107,20 +110,40 @@ function isoTimestamp(value) {
 }
 function freezeCreateInput(value) {
     const fields = exactDataProperties(value, CREATE_FIELDS);
+    const inputDigest = digest(fields.inputDigest.value);
     const previewMaterial = fields.previewMaterial.value;
     const previewHash = canonicalSha256(previewMaterial);
+    let previewMaterialV2;
+    let previewMaterialV3;
+    if (typeof previewMaterial === "object" && previewMaterial !== null &&
+        !Array.isArray(previewMaterial) &&
+        previewMaterial.authority_kind ===
+            "diet-manager/domain-preview/v2") {
+        previewMaterialV2 = parseMealFactPreviewMaterial(previewMaterial);
+        if (previewMaterialV2.input_digest !== inputDigest) {
+            return requestInvalid("preview_material_input_digest");
+        }
+    }
+    if (typeof previewMaterial === "object" && previewMaterial !== null && !Array.isArray(previewMaterial) &&
+        previewMaterial.authority_kind === "diet-manager/domain-preview/v3") {
+        previewMaterialV3 = parseWaterFactPreviewMaterial(previewMaterial);
+        if (previewMaterialV3.input_digest !== inputDigest)
+            return requestInvalid("preview_material_input_digest");
+    }
     return Object.freeze({
         database: database(fields.database.value),
         secret: secret(fields.secret.value),
         previewId: visibleAscii(fields.previewId.value, "preview_id", 128),
         idempotencyKey: visibleAscii(fields.idempotencyKey.value, "idempotency_key"),
-        inputDigest: digest(fields.inputDigest.value),
+        inputDigest,
         subjectScope: visibleAscii(fields.subjectScope.value, "subject_scope"),
         commandType: command(fields.commandType.value),
         dataRevision: visibleAscii(fields.dataRevision.value, "data_revision"),
         sourceMessageId: visibleAscii(fields.sourceMessageId.value, "source_message_id"),
         conversationId: visibleAscii(fields.conversationId.value, "conversation_id"),
         previewHash,
+        ...(previewMaterialV2 === undefined ? {} : { previewMaterialV2 }),
+        ...(previewMaterialV3 === undefined ? {} : { previewMaterialV3 }),
         now: isoTimestamp(fields.now.value),
     });
 }
@@ -151,13 +174,47 @@ function freezeReuseInput(value) {
         previewHash: canonicalSha256(fields.previewMaterial.value),
     });
 }
-function authorityPayload(binding) {
-    return canonicalJson({
-        authority_kind: "diet-manager/server-preview/v1",
-        binding,
-    });
+function authorityPayload(binding, authoritySecret, material, materialV3) {
+    if (materialV3 !== undefined)
+        return canonicalJson({
+            authority_kind: "diet-manager/server-preview/v3", binding, input_digest: materialV3.input_digest,
+            meal_fact_identities: materialV3.meal_fact_identities, water_fact_identities: materialV3.water_fact_identities,
+            fact_identity_mac: waterFactIdentityMac(binding, materialV3, authoritySecret),
+        });
+    return material === undefined
+        ? canonicalJson({
+            authority_kind: "diet-manager/server-preview/v1",
+            binding,
+        })
+        : canonicalJson({
+            authority_kind: "diet-manager/server-preview/v2",
+            binding,
+            input_digest: material.input_digest,
+            meal_fact_identities: material.meal_fact_identities,
+            meal_fact_identity_mac: mealFactIdentityMac(binding, material, authoritySecret),
+        });
 }
-function storedBinding(payloadJson) {
+function waterFactIdentityMac(binding, material, authoritySecret) {
+    return createHmac("sha256", secret(authoritySecret))
+        .update("diet-manager/fact-preview-authority/v3\n", "ascii")
+        .update(canonicalJson({ authority_kind: "diet-manager/server-preview/v3", binding,
+        input_digest: material.input_digest, meal_fact_identities: material.meal_fact_identities,
+        water_fact_identities: material.water_fact_identities }), "utf8")
+        .digest("hex").toUpperCase();
+}
+function mealFactIdentityMac(binding, material, authoritySecret) {
+    return createHmac("sha256", secret(authoritySecret))
+        .update("diet-manager/meal-fact-preview-authority/v1\n", "ascii")
+        .update(canonicalJson({
+        authority_kind: "diet-manager/server-preview/v2",
+        binding,
+        input_digest: material.input_digest,
+        meal_fact_identities: material.meal_fact_identities,
+    }), "utf8")
+        .digest("hex")
+        .toUpperCase();
+}
+function storedPreviewAuthority(payloadJson, authoritySecret) {
     let parsed;
     try {
         parsed = JSON.parse(payloadJson);
@@ -170,20 +227,70 @@ function storedBinding(payloadJson) {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         return authorityInvalid("binding");
     }
-    const keys = Object.keys(parsed).sort();
-    if (keys.join("\u0000") !== "authority_kind\u0000binding") {
-        return authorityInvalid("binding");
-    }
     const candidate = parsed;
-    if (candidate.authority_kind !== "diet-manager/server-preview/v1") {
+    const keys = Object.keys(candidate).sort().join("\u0000");
+    const v1 = candidate.authority_kind === "diet-manager/server-preview/v1" &&
+        keys === "authority_kind\u0000binding";
+    const v2 = candidate.authority_kind === "diet-manager/server-preview/v2" &&
+        keys ===
+            "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities\u0000meal_fact_identity_mac";
+    const v3 = candidate.authority_kind === "diet-manager/server-preview/v3" && keys ===
+        "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000water_fact_identities";
+    if (!v1 && !v2 && !v3) {
         return authorityInvalid("binding");
     }
     try {
-        return freezePreviewBinding(candidate.binding);
+        const binding = freezePreviewBinding(candidate.binding);
+        if (v3) {
+            const material = parseWaterFactPreviewMaterial({ authority_kind: "diet-manager/domain-preview/v3",
+                input_digest: candidate.input_digest, meal_fact_identities: candidate.meal_fact_identities,
+                water_fact_identities: candidate.water_fact_identities });
+            if (binding.input_digest !== material.input_digest || binding.preview_hash !== canonicalSha256(material) ||
+                typeof candidate.fact_identity_mac !== "string" || !/^[A-F0-9]{64}$/.test(candidate.fact_identity_mac))
+                return authorityInvalid("fact_identity_mac");
+            const supplied = Buffer.from(candidate.fact_identity_mac, "hex");
+            const expected = Buffer.from(waterFactIdentityMac(binding, material, authoritySecret), "hex");
+            if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected))
+                return authorityInvalid("fact_identity_mac");
+            return Object.freeze({ binding, preview_authority_kind: "diet-manager/server-preview/v3", water_fact_preview_material: material });
+        }
+        if (v2) {
+            const material = parseMealFactPreviewMaterial({
+                authority_kind: "diet-manager/domain-preview/v2",
+                input_digest: candidate.input_digest,
+                meal_fact_identities: candidate.meal_fact_identities,
+            });
+            if (binding.input_digest !== material.input_digest ||
+                binding.preview_hash !== canonicalSha256(material))
+                return authorityInvalid("binding");
+            if (typeof candidate.meal_fact_identity_mac !== "string" ||
+                !/^[A-F0-9]{64}$/.test(candidate.meal_fact_identity_mac))
+                return authorityInvalid("meal_fact_identity_mac");
+            const suppliedMac = Buffer.from(candidate.meal_fact_identity_mac, "hex");
+            const expectedMac = Buffer.from(mealFactIdentityMac(binding, material, authoritySecret), "hex");
+            if (suppliedMac.length !== expectedMac.length ||
+                !timingSafeEqual(suppliedMac, expectedMac))
+                return authorityInvalid("meal_fact_identity_mac");
+            return Object.freeze({
+                binding,
+                preview_authority_kind: "diet-manager/server-preview/v2",
+                meal_fact_preview_material: material,
+            });
+        }
+        return Object.freeze({
+            binding,
+            preview_authority_kind: "diet-manager/server-preview/v1",
+        });
     }
     catch {
         return authorityInvalid("binding");
     }
+}
+export function authenticateStoredPreviewAuthority(payloadJson, authoritySecret) {
+    return storedPreviewAuthority(payloadJson, secret(authoritySecret));
+}
+function storedBinding(payloadJson, authoritySecret) {
+    return storedPreviewAuthority(payloadJson, authoritySecret).binding;
 }
 function findAuthorityByIdempotencyKey(database, idempotencyKey) {
     return database
@@ -263,10 +370,38 @@ function isTerminalAuthorityCandidate(row) {
         typeof row.terminal_result_json === "string" &&
         row.terminal_result_json.length > 0);
 }
+function reuseFinalizedPreview(row, input) {
+    if (!isTerminalAuthorityCandidate(row))
+        return undefined;
+    const authority = assertRepositoryAuthorityRow(row, input.secret);
+    if (authority.envelope_state !== "finalized")
+        return authorityInvalid("state");
+    if (row.envelope_id !== input.previewId) {
+        throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
+    }
+    if (authority.idempotency_key !== input.idempotencyKey) {
+        throw new Error("IDEMPOTENCY_CONFLICT:idempotency_key");
+    }
+    if (row.source_message_id !== input.sourceMessageId) {
+        throw new Error("IDEMPOTENCY_CONFLICT:source_message_id");
+    }
+    if (row.conversation_id !== input.conversationId) {
+        throw new Error("IDEMPOTENCY_CONFLICT:conversation_id");
+    }
+    assertPreviewIdentityConflicts(row, authority.binding, input.inputDigest, input.subjectScope, input.commandType);
+    if (authority.binding.preview_hash !== input.previewHash) {
+        throw new Error("PREVIEW_CONFLICT:preview_hash");
+    }
+    return Object.freeze({
+        binding: authority.binding,
+        token: issuePreviewToken(authority.binding, input.secret),
+        reused: true,
+    });
+}
 function bindingEquals(left, right) {
     return canonicalJson(left) === canonicalJson(right);
 }
-function assertRepositoryAuthorityRow(row, expectedBinding) {
+function assertRepositoryAuthorityRow(row, authoritySecret, expectedBinding) {
     if (!row || !row.envelope_id || !row.idempotency_key) {
         return authorityInvalid("missing");
     }
@@ -303,7 +438,8 @@ function assertRepositoryAuthorityRow(row, expectedBinding) {
     if (!previewReady && !factsCommitted && !effectsStable && !finalized) {
         return authorityInvalid("state");
     }
-    const binding = storedBinding(row.payload_json);
+    const previewAuthority = storedPreviewAuthority(row.payload_json, authoritySecret);
+    const binding = previewAuthority.binding;
     if (binding.preview_id !== row.envelope_id ||
         binding.input_digest !== row.envelope_input_digest ||
         (expectedBinding !== undefined && !bindingEquals(binding, expectedBinding))) {
@@ -312,6 +448,13 @@ function assertRepositoryAuthorityRow(row, expectedBinding) {
     return {
         binding,
         idempotency_key: row.idempotency_key,
+        preview_authority_kind: previewAuthority.preview_authority_kind,
+        ...(previewAuthority.meal_fact_preview_material === undefined
+            ? {}
+            : { meal_fact_preview_material: previewAuthority.meal_fact_preview_material }),
+        ...(previewAuthority.water_fact_preview_material === undefined
+            ? {}
+            : { water_fact_preview_material: previewAuthority.water_fact_preview_material }),
         envelope_state: previewReady
             ? "received"
             : finalized
@@ -334,14 +477,11 @@ export function reuseServerPreview(input) {
     const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
     if (!existing)
         return undefined;
-    if (isTerminalAuthorityCandidate(existing)) {
-        const terminal = assertRepositoryAuthorityRow(existing);
-        if (terminal.envelope_state !== "finalized")
-            return authorityInvalid("state");
-        assertPreviewIdentityConflicts(existing, terminal.binding, frozen.inputDigest, frozen.subjectScope, frozen.commandType);
-    }
+    const finalized = reuseFinalizedPreview(existing, frozen);
+    if (finalized !== undefined)
+        return finalized;
     const row = assertPreviewReadyRow(existing);
-    const binding = storedBinding(row.payload_json);
+    const binding = storedBinding(row.payload_json, frozen.secret);
     if (row.envelope_id !== frozen.previewId)
         throw new Error("IDEMPOTENCY_CONFLICT:preview_id");
     if (row.idempotency_input_digest !== frozen.inputDigest) {
@@ -392,14 +532,14 @@ export function createServerPreview(input, fault) {
         assertCurrentMigrationAuthority(frozen.database);
         const existing = findAuthorityByIdempotencyKey(frozen.database, frozen.idempotencyKey);
         if (existing) {
-            if (isTerminalAuthorityCandidate(existing)) {
-                const terminal = assertRepositoryAuthorityRow(existing);
-                if (terminal.envelope_state !== "finalized")
-                    return authorityInvalid("state");
-                assertPreviewIdentityConflicts(existing, terminal.binding, frozen.inputDigest, frozen.subjectScope, frozen.commandType);
+            const finalized = reuseFinalizedPreview(existing, frozen);
+            if (finalized !== undefined) {
+                frozen.database.exec("ROLLBACK");
+                transactionOpen = false;
+                return finalized;
             }
             const row = assertPreviewReadyRow(existing);
-            const originalBinding = storedBinding(row.payload_json);
+            const originalBinding = storedBinding(row.payload_json, frozen.secret);
             if (row.idempotency_input_digest !== frozen.inputDigest) {
                 throw new Error("IDEMPOTENCY_CONFLICT:input_digest");
             }
@@ -431,7 +571,7 @@ export function createServerPreview(input, fault) {
           envelope_id, idempotency_key, input_digest, source_message_id,
           conversation_id, state, result_status, received_at, committed_at, payload_json
         ) VALUES (?, ?, ?, ?, ?, 'received', 'preview_ready', ?, NULL, ?)`)
-            .run(candidateBinding.preview_id, frozen.idempotencyKey, frozen.inputDigest, frozen.sourceMessageId, frozen.conversationId, frozen.now, authorityPayload(candidateBinding));
+            .run(candidateBinding.preview_id, frozen.idempotencyKey, frozen.inputDigest, frozen.sourceMessageId, frozen.conversationId, frozen.now, authorityPayload(candidateBinding, frozen.secret, frozen.previewMaterialV2, frozen.previewMaterialV3));
         if (fault === "after_envelope") {
             throw new Error("PREVIEW_STORE_FAILED:after_envelope");
         }
@@ -478,7 +618,7 @@ export function authorizeServerPreview(input) {
         throw new Error("PREVIEW_STALE:data_revision");
     }
     const row = assertPreviewReadyRow(findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id));
-    const authoritativeBinding = storedBinding(row.payload_json);
+    const authoritativeBinding = storedBinding(row.payload_json, frozen.secret);
     if (!bindingEquals(authoritativeBinding, tokenBinding)) {
         return authorityInvalid("binding");
     }
@@ -509,10 +649,17 @@ export function authorizeRepositoryPreview(input) {
         throw new Error("PREVIEW_STALE:data_revision");
     }
     const row = findAuthorityByPreviewId(frozen.database, tokenBinding.preview_id);
-    const authority = assertRepositoryAuthorityRow(row, tokenBinding);
+    const authority = assertRepositoryAuthorityRow(row, frozen.secret, tokenBinding);
     return Object.freeze({
         binding: authority.binding,
         idempotency_key: authority.idempotency_key,
+        preview_authority_kind: authority.preview_authority_kind,
+        ...(authority.meal_fact_preview_material === undefined
+            ? {}
+            : { meal_fact_preview_material: authority.meal_fact_preview_material }),
+        ...(authority.water_fact_preview_material === undefined
+            ? {}
+            : { water_fact_preview_material: authority.water_fact_preview_material }),
         envelope_state: authority.envelope_state,
         result_status: authority.result_status,
     });

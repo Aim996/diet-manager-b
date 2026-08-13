@@ -242,7 +242,7 @@ function nextProgressGeneratedAt(database, date, timezone, baseTimestamp, previo
     return authorityInvalid("daily_progress_timestamp");
 }
 function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
-    if (input.commandType !== "record_meal")
+    if (input.commandType !== "record_meal" && input.commandType !== "record_water")
         return input;
     if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload))
         return input;

@@ -1,5 +1,5 @@
 import { listMealProjection, listInventoryProjection, summarizeDailyProgress, } from "../repository/query.js";
-export function queryDomainReadModel(database, operation) {
+export function queryDomainReadModel(database, authoritySecret, operation) {
     if (operation.kind === "query_inventory") {
         return Object.freeze({
             kind: "inventory",
@@ -12,6 +12,7 @@ export function queryDomainReadModel(database, operation) {
             date: operation.date,
             timezone: operation.timezone,
             meals: listMealProjection({
+                authoritySecret,
                 database,
                 date: operation.date,
                 timezone: operation.timezone,
@@ -19,6 +20,7 @@ export function queryDomainReadModel(database, operation) {
         });
     }
     const summary = summarizeDailyProgress({
+        authoritySecret,
         database,
         date: operation.date,
         timezone: operation.timezone,

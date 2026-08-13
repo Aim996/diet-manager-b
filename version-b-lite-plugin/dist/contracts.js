@@ -14,7 +14,6 @@ export const dietManagerActions = [
     "undo_record",
 ];
 export const dietManagerStatuses = [
-    "foundation_not_implemented",
     "committed",
     "committed_with_issues",
     "needs_clarification",
