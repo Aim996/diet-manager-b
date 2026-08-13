@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322758,
-      "sha256": "9C06D5C3B8B791D970E50F3487A37A7FFD412852CAF122498EF6AFA0B6079DFA"
+      "length": 322577,
+      "sha256": "0AFD1FA60E4A6563FFDF714176DB25CB882E3DCB9B3B6482A24A586FFFC54F83"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41907,
-      "sha256": "A9DADBC6242C7337F791A4E1910562E0350A2C4DABEB29B8576E5B17C09D9022"
+      "length": 42128,
+      "sha256": "F999B4BD25C4D65293C396D9C2B88BD7BA4DEDD9EBFFA2FA7D5D915A1B14BEBB"
     }
   },
   "counts": {
@@ -601,13 +601,12 @@
     },
     {
       "id": "EV-20260813-034",
-      "scope": "SH-TRACE-001 DOC-0.4机器追踪闭合",
-      "result": "74 REQ、153 CASE、63 TASK、69 governance和34 EV由DOC-0.4确定性生成；G1/G2=13/17、累计发布集=124/152，15个mutation、镜像字节/身份一致和独立复核P0/P1/P2=0、Ready=YES",
-      "limitation": "关闭SH-TRACE-001与RISK-010，将X-GATE-002转为唯一WIP；不创建selected-route-map、不修改产品/manifest、不证明安装或发布",
+      "scope": "SH-TRACE-001 DOC-0.4机器追踪闭合（重开前历史）",
+      "result": "74 REQ、153 CASE、63 TASK、70 governance和34 EV为当前登记口径；G1/G2=13/17、累计发布集=124/152，15个mutation、镜像字节/身份一致和独立复核P0/P1/P2=0、Ready=YES",
+      "limitation": "该EV只关闭其原候选；CHG-20260813-002改变计划/生成器后已重开SH-TRACE-001，不得用旧EV授权X-GATE、安装或发布",
       "reference_ids": [
         "SH-TRACE-001",
-        "RISK-010",
-        "X-GATE-002"
+        "CHG-20260813-002"
       ],
       "file": {
         "path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",

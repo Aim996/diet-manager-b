@@ -13,9 +13,11 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -44,6 +46,7 @@ const expectedContract = Object.freeze({
   last_change_commit: "a6559f9728c46fbbddc30d5e187d824ad83493ff",
 });
 const evidencePaths = Object.freeze({
+  "EV-20260812-030": "docs/evidence/EV-20260812-030-x-gate-001.md",
   "EV-20260812-031": "docs/evidence/EV-20260812-031-b-slice-001.md",
   "EV-20260812-032": "docs/evidence/EV-20260812-032-b-fault-001.md",
   "EV-20260813-034": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
@@ -57,6 +60,24 @@ const requiredCheckIds = Object.freeze([
   "x_gate_001_regression",
   "trace_validate",
   "trace_self_test",
+]);
+const expectedPrerequisiteRequirements = Object.freeze([
+  { task_id: "X-GATE-001", required_result: "pass_b_safety", commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b", evidence_id: "EV-20260812-030" },
+  { task_id: "B-SLICE-001", required_result: "PASS", commit: "c8e6bcef39d0f98452432c3331095d963b9b9778", evidence_id: "EV-20260812-031" },
+  { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
+  { task_id: "SH-TRACE-001", required_result: "PASS", commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8", evidence_id: "EV-20260813-034" },
+]);
+const expectedFormalArtifacts = Object.freeze([
+  { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
+  { path: "version-b-lite-plugin/dist/index.js", bytes: 2393, sha256: "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" },
+]);
+const inputHashPaths = Object.freeze([
+  "version-b-lite-plugin/src/contracts.ts",
+  "version-b-lite-plugin/src/index.ts",
+  "version-b-lite-plugin/openclaw.plugin.json",
+  "version-b-lite-plugin/skills/diet-manager-b/SKILL.md",
+  "version-b-lite-plugin/dist/contracts.js",
+  "version-b-lite-plugin/dist/index.js",
 ]);
 
 class GateError extends Error {
@@ -185,6 +206,7 @@ function validateMatrix(matrix, template) {
   assert.deepEqual(matrix.local_map, { path: "shared/selected-route-map.json", tracked: false, contains_machine_absolute_paths: true, publish: "same_volume_atomic_hard_link_no_replace" });
   assert.deepEqual(matrix.contract, expectedContract);
   assert.equal(matrix.config_key, "official_data_root");
+  assert.deepEqual(matrix.prerequisite_requirements, expectedPrerequisiteRequirements, "X_GATE_PREREQUISITE_REQUIREMENTS");
   assert.deepEqual(matrix.required_checks.map((check) => check.check_id), requiredCheckIds);
   for (const check of matrix.required_checks) {
     exactKeys(check, ["check_id", "executor", "timeout_seconds"], "X_GATE_CHECK_REQUIREMENT_SHAPE");
@@ -193,6 +215,7 @@ function validateMatrix(matrix, template) {
   assert.equal(matrix.formal_build_provenance_requirement.execution_count, 1);
   assert.equal(matrix.formal_build_provenance_requirement.reexecution_forbidden_in_review_fix, true);
   assert.equal(matrix.formal_build_provenance_requirement.candidate_commit, "bdbc5e229af24bc78002e63951b0f9fbde51207f");
+  assert.deepEqual(matrix.formal_build_provenance_requirement.artifacts, expectedFormalArtifacts, "X_GATE_FORMAL_ARTIFACT_REQUIREMENTS");
   assert.deepEqual(matrix.authorized_next_on_bind, ["SEL-CORE-001"]);
   assert.deepEqual(matrix.forbidden_claims, template.forbidden_claims);
 }
@@ -244,7 +267,7 @@ function validateFormalBuildArtifacts(matrix) {
   };
 }
 
-function commandReceipt(checkId, executable, args, cwd, timeoutSeconds, env = process.env) {
+function commandReceipt(checkId, executorIdentity, executable, args, cwd, timeoutSeconds, env = process.env) {
   const started = new Date();
   const startedNs = process.hrtime.bigint();
   const result = spawnSync(executable, args, {
@@ -260,7 +283,7 @@ function commandReceipt(checkId, executable, args, cwd, timeoutSeconds, env = pr
   const stderr = result.stderr ?? "";
   const receipt = {
     check_id: checkId,
-    executor: executable,
+    executor: executorIdentity,
     args,
     cwd_relative: relative(projectRoot, cwd).replaceAll("\\", "/") || ".",
     timeout_seconds: timeoutSeconds,
@@ -281,7 +304,7 @@ function internalReceipt(checkId, details) {
   const now = new Date().toISOString();
   return {
     check_id: checkId,
-    executor: "validator_internal",
+    executor: "validator_internal_hash_and_runtime",
     args: [],
     cwd_relative: ".",
     timeout_seconds: 5,
@@ -296,14 +319,57 @@ function internalReceipt(checkId, details) {
   };
 }
 
-function safeRemoveStateRoot() {
-  if (!isWithin(projectRoot, openClawStateRoot)) fail("X_GATE_STATE_ROOT_OUTSIDE");
-  if (existsSync(openClawStateRoot)) {
-    const item = lstatSync(openClawStateRoot);
-    if (item.isSymbolicLink()) fail("X_GATE_STATE_ROOT_REPARSE");
-    rmSync(openClawStateRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+function expectedCommandShapes(matrix) {
+  const checkById = Object.fromEntries(matrix.required_checks.map((check) => [check.check_id, check]));
+  return {
+    focused_foundation_contract_root_skill: { args: ["node_modules/vitest/vitest.mjs", "run", "tests/foundation.test.ts", "--maxWorkers=1", "--minWorkers=1", "--no-file-parallelism"], cwd_relative: "version-b-lite-plugin" },
+    typescript_no_emit: { args: ["node_modules/typescript/bin/tsc", "-p", "tsconfig.json", "--noEmit"], cwd_relative: "version-b-lite-plugin" },
+    source_dist_parity: { args: [], cwd_relative: "." },
+    openclaw_plugin_build_check: { args: ["node_modules/openclaw/openclaw.mjs", "plugins", "build", "--check", "--root", ".", "--entry", "./dist/index.js"], cwd_relative: "version-b-lite-plugin" },
+    openclaw_plugin_validate: { args: ["node_modules/openclaw/openclaw.mjs", "plugins", "validate", "--root", ".", "--entry", "./dist/index.js"], cwd_relative: "version-b-lite-plugin" },
+    x_gate_001_regression: { args: ["shared/tests/validate-x-gate-001.mjs", "--self-test"], cwd_relative: "." },
+    trace_validate: { args: ["shared/tests/validate-traceability.mjs"], cwd_relative: "." },
+    trace_self_test: { args: ["shared/tests/validate-traceability.mjs", "--self-test"], cwd_relative: "." },
+  };
+}
+
+function assertNonReparseChain(from, to) {
+  const canonicalFrom = realpathSync.native(from);
+  if (canonicalFrom !== from || !isWithin(canonicalFrom, to)) fail("X_GATE_STATE_ROOT_OUTSIDE");
+  const remainder = relative(canonicalFrom, to).split(sep).filter(Boolean);
+  let current = canonicalFrom;
+  for (const component of remainder) {
+    current = resolve(current, component);
+    if (!existsSync(current)) break;
+    const item = lstatSync(current);
+    if (item.isSymbolicLink()) fail("X_GATE_STATE_CHAIN_REPARSE", current);
+    if (!item.isDirectory()) fail("X_GATE_STATE_CHAIN_NOT_DIRECTORY", current);
+    if (realpathSync.native(current) !== current) fail("X_GATE_STATE_CHAIN_NONCANONICAL", current);
   }
-  if (existsSync(openClawStateRoot)) fail("X_GATE_STATE_CLEANUP_FAILED");
+}
+
+export function safeRemoveStateRoot(target = openClawStateRoot) {
+  assertNonReparseChain(projectRoot, sddRoot);
+  assertNonReparseChain(sddRoot, target);
+  if (existsSync(target)) {
+    assertNonReparseChain(sddRoot, target);
+    const pending = [target];
+    while (pending.length > 0) {
+      const current = pending.pop();
+      const item = lstatSync(current);
+      if (item.isSymbolicLink()) fail("X_GATE_STATE_TREE_REPARSE", current);
+      if (!item.isDirectory()) fail("X_GATE_STATE_TREE_NOT_DIRECTORY", current);
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const child = resolve(current, entry.name);
+        const childItem = lstatSync(child);
+        if (childItem.isSymbolicLink()) fail("X_GATE_STATE_TREE_REPARSE", child);
+        if (childItem.isDirectory()) pending.push(child);
+        else if (!childItem.isFile()) fail("X_GATE_STATE_TREE_NOT_ORDINARY", child);
+      }
+    }
+    rmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
+  if (existsSync(target)) fail("X_GATE_STATE_CLEANUP_FAILED");
 }
 
 function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
@@ -313,6 +379,7 @@ function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
   const checkById = Object.fromEntries(matrix.required_checks.map((check) => [check.check_id, check]));
   checks.push(commandReceipt(
     "focused_foundation_contract_root_skill",
+    checkById.focused_foundation_contract_root_skill.executor,
     node,
     ["node_modules/vitest/vitest.mjs", "run", "tests/foundation.test.ts", "--maxWorkers=1", "--minWorkers=1", "--no-file-parallelism"],
     routeRoot,
@@ -320,6 +387,7 @@ function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
   ));
   checks.push(commandReceipt(
     "typescript_no_emit",
+    checkById.typescript_no_emit.executor,
     node,
     ["node_modules/typescript/bin/tsc", "-p", "tsconfig.json", "--noEmit"],
     routeRoot,
@@ -343,6 +411,7 @@ function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
   try {
     checks.push(commandReceipt(
       "openclaw_plugin_build_check",
+      checkById.openclaw_plugin_build_check.executor,
       node,
       ["node_modules/openclaw/openclaw.mjs", "plugins", "build", "--check", "--root", ".", "--entry", "./dist/index.js"],
       routeRoot,
@@ -351,6 +420,7 @@ function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
     ));
     checks.push(commandReceipt(
       "openclaw_plugin_validate",
+      checkById.openclaw_plugin_validate.executor,
       node,
       ["node_modules/openclaw/openclaw.mjs", "plugins", "validate", "--root", ".", "--entry", "./dist/index.js"],
       routeRoot,
@@ -360,27 +430,37 @@ function runPreflight(matrix, runtimeModule, pluginMetadata, manifest, skill) {
   } finally {
     safeRemoveStateRoot();
   }
-  checks.push(commandReceipt("x_gate_001_regression", node, ["shared/tests/validate-x-gate-001.mjs", "--self-test"], projectRoot, checkById.x_gate_001_regression.timeout_seconds));
-  checks.push(commandReceipt("trace_validate", node, ["shared/tests/validate-traceability.mjs"], projectRoot, checkById.trace_validate.timeout_seconds));
-  checks.push(commandReceipt("trace_self_test", node, ["shared/tests/validate-traceability.mjs", "--self-test"], projectRoot, checkById.trace_self_test.timeout_seconds));
+  checks.push(commandReceipt("x_gate_001_regression", checkById.x_gate_001_regression.executor, node, ["shared/tests/validate-x-gate-001.mjs", "--self-test"], projectRoot, checkById.x_gate_001_regression.timeout_seconds));
+  checks.push(commandReceipt("trace_validate", checkById.trace_validate.executor, node, ["shared/tests/validate-traceability.mjs"], projectRoot, checkById.trace_validate.timeout_seconds));
+  checks.push(commandReceipt("trace_self_test", checkById.trace_self_test.executor, node, ["shared/tests/validate-traceability.mjs", "--self-test"], projectRoot, checkById.trace_self_test.timeout_seconds));
   assert.deepEqual(checks.map((check) => check.check_id), requiredCheckIds);
   return checks;
 }
 
-function buildPrerequisiteReceipt(matrix) {
+function buildPrerequisiteReceipt(matrix, trace) {
   return matrix.prerequisite_requirements.map((item) => {
     git(["merge-base", "--is-ancestor", item.commit, "HEAD"]);
-    const evidencePath = item.evidence_id === null ? null : evidencePaths[item.evidence_id];
-    if (item.evidence_id !== null && !evidencePath) fail("X_GATE_EVIDENCE_PATH_UNKNOWN", item.evidence_id);
+    const traceTask = trace.tasks.find((task) => task.id === item.task_id);
+    if (!traceTask) fail("X_GATE_PREREQUISITE_TASK_MISSING", item.task_id);
+    assert.deepEqual(traceTask.actual_evidence_ids, [item.evidence_id], `X_GATE_PREREQUISITE_EV:${item.task_id}`);
+    const evidencePath = evidencePaths[item.evidence_id];
+    if (!evidencePath) fail("X_GATE_EVIDENCE_PATH_UNKNOWN", item.evidence_id);
+    const evidenceText = readFileSync(resolve(projectRoot, evidencePath), "utf8");
+    assert.equal(evidenceText.includes(item.required_result), true, `X_GATE_PREREQUISITE_RESULT:${item.task_id}`);
     return {
       task_id: item.task_id,
       result: item.required_result,
       commit: item.commit,
       evidence_id: item.evidence_id,
       evidence_path: evidencePath,
-      evidence_sha256: evidencePath === null ? null : sha256(resolve(projectRoot, evidencePath)),
+      evidence_sha256: sha256(resolve(projectRoot, evidencePath)),
     };
   });
+}
+
+function validatePrerequisites(prerequisites, matrix, trace) {
+  const fresh = buildPrerequisiteReceipt(matrix, trace);
+  assert.deepEqual(prerequisites, fresh, "X_GATE_LOCAL_PREREQUISITE_DRIFT");
 }
 
 function buildTraceIdentity(trace) {
@@ -397,6 +477,13 @@ function buildTraceIdentity(trace) {
   };
 }
 
+function assertTracePrerequisiteReady(trace) {
+  const traceTask = trace.tasks.find((task) => task.id === "SH-TRACE-001");
+  if (traceTask?.status !== "已完成") {
+    fail("X_GATE_TRACE_PREREQUISITE_PENDING", "decision=return_to_b_slice");
+  }
+}
+
 function makeReceipt(template, matrix, trace, checks) {
   const body = {
     schema_version: "diet-manager/x-gate-002-verification-receipt/v1",
@@ -407,6 +494,7 @@ function makeReceipt(template, matrix, trace, checks) {
     matrix_sha256: sha256(matrixPath),
     plan_sha256: sha256(planPath),
     trace_tasks_sha256: sha256(tracePath),
+    input_hashes: Object.fromEntries(inputHashPaths.map((path) => [path, sha256(resolve(projectRoot, path))])),
     formal_build: validateFormalBuildArtifacts(matrix),
     checks,
   };
@@ -424,7 +512,7 @@ function buildLocalMap(template, matrix, trace, receipt) {
     portable_template: { path: "shared/selected-route-map.template.json", sha256: sha256(templatePath) },
     contract: clone(template.contract),
     config: clone(template.config),
-    prerequisites: buildPrerequisiteReceipt(matrix),
+    prerequisites: buildPrerequisiteReceipt(matrix, trace),
     trace_identity: buildTraceIdentity(trace),
     planned_path_semantics: {
       future_deliverables_may_be_absent: true,
@@ -442,16 +530,28 @@ function validateReceipt(receipt, matrix) {
   const { receipt_sha256, ...body } = receipt;
   assert.equal(receipt_sha256, sha256Bytes(stableJson(body)), "X_GATE_RECEIPT_SHA");
   assert.equal(receipt.schema_version, "diet-manager/x-gate-002-verification-receipt/v1");
+  assert.equal(receipt.base_commit, git(["rev-parse", "HEAD"]).stdout.trim(), "X_GATE_RECEIPT_BASE_HEAD");
   assert.equal(receipt.validator_sha256, sha256(thisFile));
   assert.equal(receipt.template_sha256, sha256(templatePath));
   assert.equal(receipt.matrix_sha256, sha256(matrixPath));
   assert.equal(receipt.plan_sha256, sha256(planPath));
   assert.equal(receipt.trace_tasks_sha256, sha256(tracePath));
+  assert.deepEqual(receipt.input_hashes, Object.fromEntries(inputHashPaths.map((path) => [path, sha256(resolve(projectRoot, path))])), "X_GATE_RECEIPT_INPUT_HASHES");
   assert.equal(receipt.formal_build.execution_count, 1);
   assert.equal(receipt.formal_build.reexecuted_during_review_fix, false);
   validateFormalBuildArtifacts(matrix);
   assert.deepEqual(receipt.checks.map((check) => check.check_id), requiredCheckIds);
-  for (const check of receipt.checks) assert.equal(check.exit_code, 0, `X_GATE_RECEIPT_CHECK_FAILED:${check.check_id}`);
+  const requirements = Object.fromEntries(matrix.required_checks.map((check) => [check.check_id, check]));
+  const expectedCommands = expectedCommandShapes(matrix);
+  for (const check of receipt.checks) {
+    const requirement = requirements[check.check_id];
+    assert.equal(check.executor, requirement.executor, `X_GATE_RECEIPT_EXECUTOR:${check.check_id}`);
+    assert.equal(check.timeout_seconds, requirement.timeout_seconds, `X_GATE_RECEIPT_TIMEOUT:${check.check_id}`);
+    assert.deepEqual({ args: check.args, cwd_relative: check.cwd_relative }, expectedCommands[check.check_id], `X_GATE_RECEIPT_COMMAND:${check.check_id}`);
+    assert.match(check.stdout_sha256, /^[A-F0-9]{64}$/u);
+    assert.match(check.stderr_sha256, /^[A-F0-9]{64}$/u);
+    assert.equal(check.exit_code, 0, `X_GATE_RECEIPT_CHECK_FAILED:${check.check_id}`);
+  }
 }
 
 function validateLocalMap(map, template, matrix, trace) {
@@ -464,6 +564,7 @@ function validateLocalMap(map, template, matrix, trace) {
   assert.deepEqual(map.portable_template, { path: "shared/selected-route-map.template.json", sha256: sha256(templatePath) });
   assert.deepEqual(map.contract, template.contract);
   assert.deepEqual(map.config, template.config);
+  validatePrerequisites(map.prerequisites, matrix, trace);
   assert.deepEqual(map.trace_identity, buildTraceIdentity(trace));
   assert.deepEqual(map.task_paths, template.task_paths.map((task) => ({ task_id: task.task_id, paths: task.paths.map((path) => resolve(projectRoot, path.replaceAll("/", sep))) })));
   for (const task of map.task_paths) for (const path of task.paths) {
@@ -524,6 +625,12 @@ function expectFailure(fn, label) {
   assert.equal(rejected, true, `X_GATE_MUTATION_NOT_REJECTED:${label}`);
 }
 
+function resealReceipt(map) {
+  const { receipt_sha256: _old, ...body } = map.verification_receipt;
+  map.verification_receipt = { ...body, receipt_sha256: sha256Bytes(stableJson(body)) };
+  return map;
+}
+
 function planSelfTests(planText, template) {
   const first = template.task_paths[0];
   const firstPlanTokens = first.paths.map((path) => path.startsWith("version-b-lite-plugin/") ? `<selected_route_root>/${path.slice("version-b-lite-plugin/".length)}` : `<project_root>/${path}`);
@@ -534,7 +641,7 @@ function planSelfTests(planText, template) {
   [reorderedRows[firstIndex], reorderedRows[secondIndex]] = [reorderedRows[secondIndex], reorderedRows[firstIndex]];
   const variants = [
     planText.replace(firstRow, `| \`${first.task_id}\` | \`${firstPlanTokens[0]}\` |`),
-    planText.replace(firstRow, firstRow.replace(" |", "；`<project_root>/extra.txt` |")),
+    planText.replace(firstRow, firstRow.replace(/ \|$/u, "；`<project_root>/extra.txt` |")),
     planText.replace(firstRow, `| \`${first.task_id}\` | ${[...firstPlanTokens].reverse().map((path) => `\`${path}\``).join("；")} |`),
     reorderedRows.join("\n"),
   ];
@@ -553,6 +660,7 @@ function publishSelfTests(map) {
     assert.equal(readFileSync(collision, "utf8"), "sentinel");
     const bad = clone(map);
     bad.verification_receipt.checks[0].exit_code = 1;
+    resealReceipt(bad);
     expectFailure(() => publishAfterPassingChecks(failed, bad), "failed_check_publish");
     assert.equal(existsSync(failed), false);
   } finally {
@@ -562,12 +670,98 @@ function publishSelfTests(map) {
   return { collisions: 1, failed_publish: 1 };
 }
 
+function prerequisiteSelfTests(map, template, matrix, trace) {
+  const variants = [
+    (value) => value.prerequisite_requirements.pop(),
+    (value) => { value.prerequisite_requirements[0].required_result = "wrong"; },
+    (value) => { value.prerequisite_requirements[0].commit = "0000000000000000000000000000000000000000"; },
+    (value) => { value.prerequisite_requirements[0].evidence_id = "EV-20260812-031"; },
+  ];
+  for (const [index, mutate] of variants.entries()) {
+    const changed = clone(matrix);
+    mutate(changed);
+    expectFailure(() => validateMatrix(changed, template), `prerequisite_requirement_${index}`);
+  }
+  const local = clone(map);
+  local.prerequisites[0].result = "wrong";
+  expectFailure(() => validateLocalMap(local, template, matrix, trace), "local_prerequisite_tamper");
+  return 5;
+}
+
+function identitySelfTests(map, template, matrix, trace) {
+  const mapMutations = [
+    (value) => { value.contract.version = 999; },
+    (value) => { value.selected_route = "A"; },
+    (value) => { value.selected_route_root = resolve(projectRoot, "version-a-jsonl"); },
+    (value) => { value.config.key = "other_root"; },
+    (value) => { value.trace_identity.plan_sha256 = "0".repeat(64); },
+    (value) => { value.forbidden_claims = ["product_ready"]; },
+  ];
+  for (const [index, mutate] of mapMutations.entries()) {
+    const changed = clone(map);
+    mutate(changed);
+    expectFailure(() => validateLocalMap(changed, template, matrix, trace), `map_identity_${index}`);
+  }
+  const artifactMatrix = clone(matrix);
+  artifactMatrix.formal_build_provenance_requirement.artifacts[0].sha256 = "0".repeat(64);
+  expectFailure(() => validateMatrix(artifactMatrix, template), "formal_artifact_exact");
+  const receiptMutations = [
+    (value) => { value.verification_receipt.base_commit = "0".repeat(40); },
+    (value) => { value.verification_receipt.input_hashes["version-b-lite-plugin/src/contracts.ts"] = "0".repeat(64); },
+    (value) => { value.verification_receipt.checks[0].executor = "wrong_executor"; },
+    (value) => { value.verification_receipt.checks[0].args = ["wrong-command"]; },
+  ];
+  for (const [index, mutate] of receiptMutations.entries()) {
+    const changed = clone(map);
+    mutate(changed);
+    resealReceipt(changed);
+    expectFailure(() => validateLocalMap(changed, template, matrix, trace), `receipt_identity_${index}`);
+  }
+  return 11;
+}
+
+function stateReparseSelfTest() {
+  const target = resolve(sddRoot, `.xgate-state-reparse-${process.pid}`);
+  const owned = resolve(sddRoot, `.xgate-state-owned-${process.pid}`);
+  try {
+    mkdirSync(owned, { recursive: false });
+    symlinkSync(owned, target, "junction");
+    expectFailure(() => safeRemoveStateRoot(target), "state_root_reparse");
+    assert.equal(existsSync(owned), true, "reparse rejection removed owned target");
+  } finally {
+    if (existsSync(target)) unlinkSync(target);
+    if (existsSync(owned)) rmSync(owned, { recursive: true, force: true });
+  }
+  return 1;
+}
+
 function commandFailureSelfTest() {
   expectFailure(
-    () => commandReceipt("expected_nonzero", process.execPath, ["-e", "process.exit(7)"], projectRoot, 5),
+    () => commandReceipt("expected_nonzero", "pinned_node_validator", process.execPath, ["-e", "process.exit(7)"], projectRoot, 5),
     "preflight_command_nonzero",
   );
   return 1;
+}
+
+function makeSelfTestMap(template, matrix, trace) {
+  const shapes = expectedCommandShapes(matrix);
+  const now = new Date().toISOString();
+  const checks = matrix.required_checks.map((requirement) => ({
+    check_id: requirement.check_id,
+    executor: requirement.executor,
+    args: shapes[requirement.check_id].args,
+    cwd_relative: shapes[requirement.check_id].cwd_relative,
+    timeout_seconds: requirement.timeout_seconds,
+    started_at_utc: now,
+    ended_at_utc: now,
+    duration_ms: 0,
+    exit_code: 0,
+    signal: null,
+    stdout_sha256: sha256Bytes(`self-test:${requirement.check_id}`),
+    stderr_sha256: sha256Bytes(""),
+    stdout_last_line: "SELF_TEST_FIXTURE|PASS",
+  }));
+  return buildLocalMap(template, matrix, trace, makeReceipt(template, matrix, trace, checks));
 }
 
 async function loadSources() {
@@ -596,6 +790,8 @@ async function main() {
   const existingInputs = [projectRoot, routeRoot, planPath, templatePath, matrixPath, thisFile, tracePath, manifestPath, skillPath, distEntryPath, resolve(routeRoot, "dist", "contracts.js"), resolve(projectRoot, expectedContract.path), ...Object.values(evidencePaths).map((path) => resolve(projectRoot, path))];
   for (const path of existingInputs) assertOrdinaryExisting(path);
 
+  if (!args.has("--self-test")) assertTracePrerequisiteReady(sources.trace);
+
   if (args.has("--preflight")) {
     if (existsSync(localMapPath)) fail("X_GATE_OUTPUT_ALREADY_EXISTS", localMapPath);
     const checks = runPreflight(sources.matrix, sources.runtimeModule, sources.pluginMetadata, sources.manifest, sources.skill);
@@ -604,25 +800,35 @@ async function main() {
     validateLocalMap(map, sources.template, sources.matrix, sources.trace);
     publishAfterPassingChecks(localMapPath, map);
   }
-  if (!existsSync(localMapPath)) fail("X_GATE_LOCAL_MAP_ABSENT");
-  const map = JSON.parse(readFileSync(localMapPath, "utf8"));
+  if (!args.has("--self-test") && !existsSync(localMapPath)) fail("X_GATE_LOCAL_MAP_ABSENT");
+  const map = args.has("--self-test")
+    ? makeSelfTestMap(sources.template, sources.matrix, sources.trace)
+    : JSON.parse(readFileSync(localMapPath, "utf8"));
   validateLocalMap(map, sources.template, sources.matrix, sources.trace);
 
   let planMutations = 0;
   let collisions = 0;
   let failedPublish = 0;
   let commandFailures = 0;
+  let prerequisiteMutations = 0;
+  let identityMutations = 0;
+  let stateReparseMutations = 0;
   if (args.has("--self-test")) {
     planMutations = planSelfTests(sources.planText, sources.template);
     const publish = publishSelfTests(map);
     collisions = publish.collisions;
     failedPublish = publish.failed_publish;
     commandFailures = commandFailureSelfTest();
+    prerequisiteMutations = prerequisiteSelfTests(map, sources.template, sources.matrix, sources.trace);
+    identityMutations = identitySelfTests(map, sources.template, sources.matrix, sources.trace);
+    stateReparseMutations = stateReparseSelfTest();
     const mutated = clone(map);
     mutated.verification_receipt.checks[0].exit_code = 1;
+    resealReceipt(mutated);
     expectFailure(() => validateLocalMap(mutated, sources.template, sources.matrix, sources.trace), "receipt_failed_check");
   }
-  process.stdout.write(`X_GATE_002|PASS|mode=${args.has("--preflight") ? "preflight_publish" : "validate"}|decision=${map.decision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, task) => sum + task.paths.length, 0)}|plan_mutations=${planMutations}|collisions=${collisions}|failed_publish=${failedPublish}|command_failures=${commandFailures}\n`);
+  const reportedDecision = args.has("--self-test") ? "return_to_b_slice" : map.decision;
+  process.stdout.write(`X_GATE_002|PASS|mode=${args.has("--preflight") ? "preflight_publish" : "validate"}|decision=${reportedDecision}|tasks=${map.task_paths.length}|paths=${map.task_paths.reduce((sum, task) => sum + task.paths.length, 0)}|plan_mutations=${planMutations}|collisions=${collisions}|failed_publish=${failedPublish}|command_failures=${commandFailures}|prerequisite_mutations=${prerequisiteMutations}|identity_mutations=${identityMutations}|state_reparse_mutations=${stateReparseMutations}\n`);
 }
 
 try {

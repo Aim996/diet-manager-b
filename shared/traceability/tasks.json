@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322758,
-      "sha256": "9C06D5C3B8B791D970E50F3487A37A7FFD412852CAF122498EF6AFA0B6079DFA"
+      "length": 322577,
+      "sha256": "0AFD1FA60E4A6563FFDF714176DB25CB882E3DCB9B3B6482A24A586FFFC54F83"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,17 +13,17 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41907,
-      "sha256": "A9DADBC6242C7337F791A4E1910562E0350A2C4DABEB29B8576E5B17C09D9022"
+      "length": 42128,
+      "sha256": "F999B4BD25C4D65293C396D9C2B88BD7BA4DEDD9EBFFA2FA7D5D915A1B14BEBB"
     }
   },
   "counts": {
     "tasks": 63,
     "status": {
-      "未开始": 26,
-      "已完成": 28,
-      "已取消": 8,
-      "进行中": 1
+      "未开始": 27,
+      "已完成": 27,
+      "进行中": 1,
+      "已取消": 8
     },
     "case_producer_rows": 153,
     "full_case_responsibility_assignments": 5,
@@ -2861,7 +2861,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -3009,7 +3009,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4471,7 +4471,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -4503,7 +4503,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5738,7 +5738,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -5862,7 +5862,7 @@
         },
         {
           "task_id": "X-GATE-002",
-          "task_status": "进行中",
+          "task_status": "未开始",
           "assertion_state": "brief_pending",
           "assertion_paths": []
         },
@@ -7176,9 +7176,9 @@
       "actual_evidence_ids": [
         "EV-20260813-034"
       ],
-      "owner_reviewer": "Codex /root / Codex task /root/trace04_review",
-      "status": "已完成",
-      "next_reopen": "DOC-0.4四镜像、74/153/63/69/34计数、124/152发布选择器/发布集、15个mutation与独立复核P0/P1/P2=0、Ready=YES；计划/校验器/案例目录或证据改变即重开",
+      "owner_reviewer": "Codex /root / 待分配独立追踪复核",
+      "status": "进行中",
+      "next_reopen": "CHG-20260813-002改变计划与生成器后按规则重开；当前基线74/153/63/70/34及124/152发布选择器，须确定性重生成四镜像并取得新独立复核；本轮不新增EV、不宣称再次关闭",
       "brief_path": "docs/work-items/SH-TRACE-001-brief.md",
       "case_assertion_paths": {},
       "full_case_set": "none",
@@ -8002,8 +8002,8 @@
       "roots": "ROOT-SHARED",
       "actual_evidence_ids": [],
       "owner_reviewer": "门主持人/至少两名复核",
-      "status": "进行中",
-      "next_reopen": "唯一WIP；冻结CONTRACT-v2、official_data_root、相对模板、本机绝对路径和预检回执必须一致；候选本地map不得进入Git/release，也不授权产品；两轮独立复核与关闭EV前保持进行中，任一输入变化重开",
+      "status": "未开始",
+      "next_reopen": "blocked_waiting_trace_refresh；SH-TRACE-001完成本轮镜像刷新和独立复核前固定返回return_to_b_slice并保持本地map缺席；之后才可恢复门预检",
       "brief_path": null,
       "case_assertion_paths": {},
       "full_case_set": null,

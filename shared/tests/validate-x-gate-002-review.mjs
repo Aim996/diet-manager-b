@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,16 +23,36 @@ test("ships a portable template while keeping the absolute map local", () => {
   assert.equal(execFileSync("git", ["ls-files", "--error-unmatch", "shared/selected-route-map.template.json"], { cwd: root, encoding: "utf8" }).trim(), "shared/selected-route-map.template.json");
   assert.throws(() => execFileSync("git", ["ls-files", "--error-unmatch", "shared/selected-route-map.json"], { cwd: root, stdio: "pipe" }));
   assert.match(execFileSync("git", ["check-ignore", "-v", "shared/selected-route-map.json"], { cwd: root, encoding: "utf8" }), /selected-route-map\.json/u);
-  assert.equal(existsSync(localMapPath), true, "local gate map absent");
+  assert.equal(existsSync(localMapPath), false, "blocked gate must not retain a local map");
 });
 
-test("keeps matrix checks as portable requirements and exercises publish/plan mutations", () => {
+test("freezes exact prerequisite and formal-build requirements", () => {
   const matrix = JSON.parse(readFileSync(matrixPath, "utf8"));
   assert.equal(matrix.schema_version, "diet-manager/x-gate-002-matrix/v2");
+  assert.deepEqual(matrix.prerequisite_requirements, [
+    { task_id: "X-GATE-001", required_result: "pass_b_safety", commit: "40f7b608f72935becd7628dd89ef4cf7f515c05b", evidence_id: "EV-20260812-030" },
+    { task_id: "B-SLICE-001", required_result: "PASS", commit: "c8e6bcef39d0f98452432c3331095d963b9b9778", evidence_id: "EV-20260812-031" },
+    { task_id: "B-FAULT-001", required_result: "DONE_WITH_CONCERNS", commit: "552feee374fe3463f296bd4a110af11747a7ee29", evidence_id: "EV-20260812-032" },
+    { task_id: "SH-TRACE-001", required_result: "PASS", commit: "846dbbc718197b3fc59787124a2ac3b18d1b55f8", evidence_id: "EV-20260813-034" },
+  ]);
+  assert.deepEqual(matrix.formal_build_provenance_requirement.artifacts, [
+    { path: "version-b-lite-plugin/dist/contracts.js", bytes: 2444, sha256: "3B9556B02718E1C2E50254A05CDD0A0DB7946F2F75A3A1806DD60117F24A9885" },
+    { path: "version-b-lite-plugin/dist/index.js", bytes: 2393, sha256: "6417517B994C827A3F1467C0EF51BC4801A4E001ACA2FD23F600D1CF2D08F988" },
+  ]);
   assert.ok(matrix.required_checks.length >= 6);
   for (const check of matrix.required_checks) assert.equal(Object.hasOwn(check, "result"), false, check.check_id);
+});
+
+test("blocks X-GATE while trace refresh is pending and exercises semantic mutations", () => {
+  const pending = spawnSync(node, [validatorPath], { cwd: root, encoding: "utf8", timeout: 120_000 });
+  assert.equal(pending.status, 1);
+  assert.match(pending.stderr, /X_GATE_TRACE_PREREQUISITE_PENDING/u);
+  assert.match(pending.stderr, /decision=return_to_b_slice/u);
   const output = execFileSync(node, [validatorPath, "--self-test"], { cwd: root, encoding: "utf8", timeout: 120_000 });
   assert.match(output, /collisions=1/u);
   assert.match(output, /plan_mutations=4/u);
   assert.match(output, /command_failures=1/u);
+  assert.match(output, /prerequisite_mutations=5/u);
+  assert.match(output, /identity_mutations=11/u);
+  assert.match(output, /state_reparse_mutations=1/u);
 });

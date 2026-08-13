@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 322758,
-      "sha256": "9C06D5C3B8B791D970E50F3487A37A7FFD412852CAF122498EF6AFA0B6079DFA"
+      "length": 322577,
+      "sha256": "0AFD1FA60E4A6563FFDF714176DB25CB882E3DCB9B3B6482A24A586FFFC54F83"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,8 +13,8 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 41907,
-      "sha256": "A9DADBC6242C7337F791A4E1910562E0350A2C4DABEB29B8576E5B17C09D9022"
+      "length": 42128,
+      "sha256": "F999B4BD25C4D65293C396D9C2B88BD7BA4DEDD9EBFFA2FA7D5D915A1B14BEBB"
     }
   },
   "counts": {
@@ -661,14 +661,15 @@
       "kind": "RISK",
       "reference_ids": [
         "SH-TRACE-001",
-        "EV-20260813-034",
-        "EV-20260812-026"
+        "CHG-20260813-002",
+        "X-GATE-002",
+        "EV-20260813-034"
       ],
       "risk": "状态复制或案例变后未重验；高/M2/G3",
-      "status_owner": "closed / 治理负责人",
+      "status_owner": "reopened / 治理负责人",
       "task": "SH-TRACE-001",
-      "mitigation": "DOC-0.4四镜像已按当前计划/校验器/案例目录确定性重生成，状态/证据一致并通过独立复核；输入再变立即重开",
-      "evidence": "EV-20260813-034：74 REQ/153 CASE/63 TASK/69 governance/34 EV、124/152发布集、15个mutation、四镜像字节一致与独立复核Ready=YES；EV-20260812-026仅为0.3历史"
+      "mitigation": "CHG-20260813-002改变计划/生成器后立即重开；须重生成四镜像并重新独立复核，完成前阻塞X-GATE-002",
+      "evidence": "EV-20260813-034只证明重开前的74 REQ/153 CASE/63 TASK/70 governance/34 EV历史闭环；本轮不创建新EV、不宣称追踪再次关闭"
     },
     {
       "id": "RISK-011",
@@ -999,13 +1000,14 @@
       "id": "CHG-20260813-002",
       "kind": "CHG",
       "reference_ids": [
-        "X-GATE-002"
+        "X-GATE-002",
+        "SH-TRACE-001"
       ],
       "source_change": "X-GATE-002开源可移植性与发布原子性复审；L2门产物兼容修复",
       "impact": "仓库提交相对selected-route-map.template.json；机器绝对selected-route-map.json改为Git忽略的本地门产物；matrix只声明可移植要求，不预填pass；验证器解析§29.6、运行有界预检、绑定实际回执，并以同卷hard-link no-replace发布，碰撞或任一检查失败都不覆盖/不发布新map",
       "owner_approver": "X-GATE实现者 / 独立架构与安全复核",
-      "tasks": "X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
-      "status_evidence": "实施中；只修候选门架构并重生成现行追踪镜像，保持X-GATE-002唯一WIP、EV总数34和产品任务未开始；待两轮独立复核与关闭EV后转已验证"
+      "tasks": "SH-TRACE-001、X-GATE-002、§26.2/26.5、§29.6、shared/tests/validate-x-gate-002.mjs、docs/work-items/X-GATE-002-matrix.json",
+      "status_evidence": "实施中；计划/生成器已变化，故SH-TRACE-001成为唯一WIP，X-GATE-002等待追踪刷新且本地map必须缺席；EV总数保持34，待独立追踪复核后再恢复门工作"
     }
   ]
 }
