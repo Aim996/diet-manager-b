@@ -150,44 +150,27 @@ function catalogItemProjection(items: readonly CatalogParsingItem[]) {
   }));
 }
 
-function proposedItems(
-  id: string,
-  rawTexts: readonly string[],
-): readonly ProposedSubjectItem[] {
-  const entry = catalogCase(id);
-  const items = entry.oracle.parsing?.items;
-  if (items === undefined || items.length !== rawTexts.length) {
-    throw new Error(`invalid item oracle for ${id}`);
-  }
-  return items.map((item, index) => ({
-    normalized_name: item.normalized_name,
-    raw_text: rawTexts[index],
-    amount_evidence: {
-      raw_text: item.quantity === null ? null : rawTexts[index],
-      quantity: item.quantity,
-      unit: item.unit,
-      estimated: item.estimated,
-    },
-  }));
-}
+const TEST_ONLY_RAW_ITEM_LEXICON = Object.freeze([
+  Object.freeze({ raw_text: "鸡蛋", normalized_name: "egg" }),
+  Object.freeze({ raw_text: "牛奶", normalized_name: "milk" }),
+  Object.freeze({ raw_text: "炒饭", normalized_name: "fried_rice" }),
+]);
 
-function proposedCollectiveItems(id: string): readonly ProposedSubjectItem[] {
-  const entry = catalogCase(id);
-  const items = entry.oracle.parsing?.items;
-  const groupAmount = entry.oracle.parsing?.group_amount_evidence;
-  if (items?.length !== 1 || groupAmount === undefined) {
-    throw new Error(`invalid collective oracle for ${id}`);
-  }
-  return [{
-    normalized_name: items[0].normalized_name,
-    raw_text: items[0].normalized_name,
-    amount_evidence: {
-      raw_text: `${groupAmount.quantity}:${groupAmount.unit}`,
-      quantity: groupAmount.quantity,
-      unit: groupAmount.unit,
-      estimated: false,
-    },
-  }];
+// This supplies only source-derived raw candidates to the subject stage. It
+// intentionally carries no output-Oracle amount or subject/share decision.
+function lexicalSeed(sourceText: string): readonly ProposedSubjectItem[] {
+  return TEST_ONLY_RAW_ITEM_LEXICON
+    .filter((entry) => sourceText.includes(entry.raw_text))
+    .map((entry) => ({
+      normalized_name: entry.normalized_name,
+      raw_text: entry.raw_text,
+      amount_evidence: {
+        raw_text: null,
+        quantity: null,
+        unit: null,
+        estimated: null,
+      },
+    }));
 }
 
 function withoutFinalPunctuation(sourceText: string): string {
@@ -327,31 +310,33 @@ describe("bounded completion rules", () => {
     ].map(withoutFinalPunctuation).join("，");
 
     const result = classifyCompletion(sourceText);
+    const oracle = ignoredDecisionOracle("CASE-MEAL-016");
 
     expect(result).toMatchObject({
-      disposition: "ignored",
-      reason_code: "not_occurred",
+      ...oracle,
       matched_evidence: { rule_id: "completion.final-non-occurrence" },
     });
   });
 
-  it("keeps a future plan ahead of later subject resolution", () => {
+  it("keeps a future plan ahead of adversative completion and item negation", () => {
     const sourceText = [
       catalogCase("CASE-MEAL-015").source_text,
-      catalogCase("CASE-MEAL-011").source_text,
+      catalogCase("CASE-MEAL-010").source_text,
+      catalogCase("CASE-MEAL-009").source_text,
     ].map(withoutFinalPunctuation).join("，");
 
-    const completion = classifyCompletion(sourceText);
-    const subject = resolveSubject(sourceText, []);
+    const result = classifyCompletion(sourceText);
+    const oracle = ignoredDecisionOracle("CASE-MEAL-015");
 
-    expect(completion).toMatchObject({
-      disposition: "ignored",
-      reason_code: "future_plan",
+    expect(result).toMatchObject({
+      ...oracle,
+      matched_evidence: {
+        rule_id: "completion.future-plan.tomorrow-prepare-eat",
+      },
     });
-    expect(subject).toMatchObject({
-      disposition: "ignored",
-      reason_code: "non_self_subject",
-    });
+    expect(Object.hasOwn(result, "items")).toBe(false);
+    expect(Object.hasOwn(result, "completion_evidence")).toBe(false);
+    expect(Object.hasOwn(result, "excluded_items")).toBe(false);
   });
 
   it("retains both completed and item-negation evidence when those later rules overlap", () => {
@@ -361,13 +346,23 @@ describe("bounded completion rules", () => {
     ].map(withoutFinalPunctuation).join("，");
 
     const result = classifyCompletion(sourceText);
+    const completedOracle = candidateOracle("CASE-MEAL-010");
+    const negationOracle = candidateOracle("CASE-MEAL-009");
+    if (
+      completedOracle.completion_evidence === undefined ||
+      negationOracle.excluded_items === undefined
+    ) {
+      throw new Error("overlap requires completion and exclusion Oracles");
+    }
 
     expect(result).toMatchObject({
-      disposition: "proceed",
+      disposition: adaptCatalogDisposition(completedOracle, "completion"),
       completion_evidence: {
+        ...completedOracle.completion_evidence,
         matched_evidence: { rule_id: "completion.adversative-completed" },
       },
       excluded_items: [{
+        ...negationOracle.excluded_items[0],
         matched_evidence: { rule_id: "completion.item-negation.egg" },
       }],
     });
@@ -400,7 +395,7 @@ describe("bounded current-user subject rules", () => {
 
     const result = resolveSubject(
       sourceText,
-      proposedItems("CASE-MEAL-017", ["鸡蛋"]),
+      lexicalSeed(sourceText),
     );
 
     expect(result.disposition).toBe(
@@ -421,7 +416,7 @@ describe("bounded current-user subject rules", () => {
 
     const result = resolveSubject(
       sourceText,
-      proposedItems("CASE-MEAL-018", ["牛奶"]),
+      lexicalSeed(sourceText),
     );
 
     expect(result.disposition).toBe(
@@ -450,7 +445,7 @@ describe("bounded current-user subject rules", () => {
 
     const result = resolveSubject(
       sourceText,
-      proposedCollectiveItems("CASE-MEAL-019"),
+      lexicalSeed(sourceText),
     );
 
     expect(result.disposition).toBe(
@@ -490,10 +485,10 @@ describe("bounded current-user subject rules", () => {
     ].map(withoutFinalPunctuation).join("，");
 
     const result = resolveSubject(sourceText, []);
+    const oracle = ignoredDecisionOracle("CASE-MEAL-011");
 
     expect(result).toMatchObject({
-      disposition: "ignored",
-      reason_code: "non_self_subject",
+      ...oracle,
       matched_evidence: { rule_id: "subject.explicit-non-self.child" },
     });
   });

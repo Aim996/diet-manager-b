@@ -116,10 +116,64 @@ function cloneItem(item: ProposedSubjectItem): Readonly<ProposedSubjectItem> {
   });
 }
 
-function cloneItems(
+interface FrozenItemAmountRule {
+  readonly normalized_name: string;
+  readonly pattern: RegExp;
+  readonly quantity: number;
+  readonly unit: string;
+}
+
+const OMITTED_SUBJECT_ITEM_AMOUNTS = Object.freeze([
+  Object.freeze<FrozenItemAmountRule>({
+    normalized_name: "egg",
+    pattern: /两\s*个(?=\s*鸡蛋)/u,
+    quantity: 2,
+    unit: "piece",
+  }),
+]);
+
+const EXPLICIT_SELF_SHARE_ITEM_AMOUNTS = Object.freeze([
+  Object.freeze<FrozenItemAmountRule>({
+    normalized_name: "milk",
+    pattern: /一\s*瓶(?=\s*牛奶)/u,
+    quantity: 1,
+    unit: "bottle",
+  }),
+]);
+
+function resolveFrozenItemAmount(
+  sourceText: string,
+  item: ProposedSubjectItem,
+  rules: readonly FrozenItemAmountRule[],
+): Readonly<ProposedSubjectItem> {
+  for (const rule of rules) {
+    if (rule.normalized_name !== item.normalized_name) continue;
+    const match = rule.pattern.exec(sourceText);
+    if (match === null) continue;
+    return Object.freeze({
+      normalized_name: item.normalized_name,
+      raw_text: item.raw_text,
+      amount_evidence: Object.freeze({
+        raw_text: match[0],
+        quantity: rule.quantity,
+        unit: rule.unit,
+        estimated: false,
+      }),
+    });
+  }
+  return cloneItem(item);
+}
+
+function resolveFrozenItemAmounts(
+  sourceText: string,
   proposedItems: readonly ProposedSubjectItem[],
+  rules: readonly FrozenItemAmountRule[],
 ): readonly Readonly<ProposedSubjectItem>[] {
-  return Object.freeze(proposedItems.map(cloneItem));
+  return Object.freeze(
+    proposedItems.map((item) =>
+      resolveFrozenItemAmount(sourceText, item, rules)
+    ),
+  );
 }
 
 export function resolveSubject(
@@ -149,7 +203,11 @@ export function resolveSubject(
         matched_evidence: selfShare,
         rule_version: SUBJECT_RULE_VERSION,
       }),
-      items: cloneItems(proposedItems),
+      items: resolveFrozenItemAmounts(
+        sourceText,
+        proposedItems,
+        EXPLICIT_SELF_SHARE_ITEM_AMOUNTS,
+      ),
     });
   }
 
@@ -203,6 +261,10 @@ export function resolveSubject(
       matched_evidence: null,
       rule_version: SUBJECT_RULE_VERSION,
     }),
-    items: cloneItems(proposedItems),
+    items: resolveFrozenItemAmounts(
+      sourceText,
+      proposedItems,
+      OMITTED_SUBJECT_ITEM_AMOUNTS,
+    ),
   });
 }
