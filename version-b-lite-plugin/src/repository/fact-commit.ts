@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
+import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import {
   dietManagerActions,
   type DietManagerAction,
@@ -489,7 +490,10 @@ function freezeEvent(value: unknown): FrozenFactEvent {
     factKind: ascii(fields.factKind.value, "fact_kind", 128),
     sourceMessageId: ascii(fields.sourceMessageId.value, "source_message_id"),
     conversationId: ascii(fields.conversationId.value, "conversation_id"),
-    receivedAt: timestamp(fields.receivedAt.value, "received_at"),
+    receivedAt: assertOffsetIsoTimestamp(
+      fields.receivedAt.value,
+      () => requestInvalid("received_at"),
+    ),
     committedAt: timestamp(fields.committedAt.value, "committed_at"),
     occurredAtText: nullableText(fields.occurredAtText.value, "occurred_at_text", 128),
     mealId,

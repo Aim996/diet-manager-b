@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { isProxy } from "node:util/types";
 
 import { canonicalJson } from "../authority/canonical-json.js";
+import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import {
   createMealFactIdentity,
   type MealFactPreviewMaterial,
@@ -142,6 +143,10 @@ function timestamp(value: unknown, field: string): string {
     return invalid(field);
   }
   return value;
+}
+
+function receivedTimestamp(value: unknown, field: string): string {
+  return assertOffsetIsoTimestamp(value, () => invalid(field));
 }
 
 function record(value: unknown, keys: readonly string[], field: string): Record<string, unknown> {
@@ -452,7 +457,7 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
   text(envelope.subject_scope, "envelope.subject_scope");
   text(envelope.source_message_id, "envelope.source_message_id");
   text(envelope.conversation_id, "envelope.conversation_id");
-  timestamp(envelope.received_at, "envelope.received_at");
+  receivedTimestamp(envelope.received_at, "envelope.received_at");
   enumValue(envelope.timezone, ["Asia/Shanghai"], "envelope.timezone");
   if (!Array.isArray(envelope.operations) || envelope.operations.length === 0) return invalid("envelope.operations");
   const operations = envelope.operations;
@@ -856,7 +861,7 @@ function storedEnvelopeTime(database: DatabaseSync, envelopeId: string): string 
     .prepare("SELECT received_at FROM command_envelopes WHERE envelope_id = ?")
     .get(envelopeId) as { received_at: string } | undefined;
   if (!row) return invalid("envelope_missing");
-  return timestamp(row.received_at, "stored_received_at");
+  return receivedTimestamp(row.received_at, "stored_received_at");
 }
 
 function frozenExecutionResult(

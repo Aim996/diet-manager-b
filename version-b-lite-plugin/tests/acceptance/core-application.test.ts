@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -42,6 +43,47 @@ import {
 
 const nodeSecret = Buffer.from("SEL-CORE-001 Task 8 nullable amount", "utf8");
 const APPLICATION_SECRET_FILENAME = ".diet-manager-b.authority-secret";
+
+const POWERSHELL_EXE = `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+const ACL_AUDIT_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+$acl = Get-Acl -LiteralPath $env:DIET_SECRET_PATH
+$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+  [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString(); rights = [int]$_.FileSystemRights; inherited = $_.IsInherited }
+})
+[pscustomobject]@{ owner = $owner; current = $current; protected = $acl.AreAccessRulesProtected; rules = $rules } | ConvertTo-Json -Compress -Depth 4
+`;
+const ACL_SET_EXACT_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = New-Object System.Security.AccessControl.FileSecurity
+$acl.SetOwner($current)
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($value in @($current.Value, 'S-1-5-18', 'S-1-5-32-544')) {
+  $sid = New-Object System.Security.Principal.SecurityIdentifier($value)
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, [System.Security.AccessControl.AccessControlType]::Allow)
+  [void]$acl.AddAccessRule($rule)
+}
+Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
+`;
+
+function powershell(script: string, path: string): string {
+  const result = spawnSync(POWERSHELL_EXE, ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8", windowsHide: true,
+    env: { ...process.env, DIET_SECRET_PATH: path },
+  });
+  if (result.status !== 0) throw new Error(`PowerShell failed ${result.status}: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+function auditAcl(path: string): {
+  owner: string; current: string; protected: boolean;
+  rules: Array<{ sid: string; type: string; rights: number; inherited: boolean }>;
+} {
+  return JSON.parse(powershell(ACL_AUDIT_SCRIPT, path));
+}
 
 
 function ordinaryClone<T>(value: T): T {
@@ -756,6 +798,84 @@ describe("SEL-CORE Task 8 unknown-operation boundaries", () => {
 });
 
 describe("SEL-CORE Task 8 runtime root and secret authority", () => {
+  it("proves the fixed PowerShell and .NET exact secret ACL contract is feasible", () => {
+    if (process.platform !== "win32") return;
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-acl-${randomUUID()}-`));
+    try {
+      const path = join(root, "probe");
+      writeFileSync(path, Buffer.alloc(32), { flag: "wx", mode: 0o600 });
+      powershell(ACL_SET_EXACT_SCRIPT, path);
+      const audit = auditAcl(path);
+      expect(audit.owner).toBe(audit.current);
+      expect(audit.protected).toBe(true);
+      expect(audit.rules.map((rule) => ({ ...rule })).sort((a, b) => a.sid.localeCompare(b.sid)))
+        .toEqual([audit.current, "S-1-5-18", "S-1-5-32-544"].sort().map((sid) => ({
+          sid, type: "Allow", rights: 2_032_127, inherited: false,
+        })));
+    } finally {
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("creates a final secret with the exact protected Windows ACL", () => {
+    if (process.platform !== "win32") return;
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-acl-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      expect(handleCoreRequest(runtime,
+        applicationRequest("CASE-MEAL-021", "record_meal")).committed).toBe(true);
+      const audit = auditAcl(join(root, APPLICATION_SECRET_FILENAME));
+      expect(audit.owner).toBe(audit.current);
+      expect(audit.protected).toBe(true);
+      expect(audit.rules.map(({ sid, type, rights, inherited }) => ({ sid, type, rights, inherited }))
+        .sort((a, b) => a.sid.localeCompare(b.sid))).toEqual(
+          [audit.current, "S-1-5-18", "S-1-5-32-544"].sort().map((sid) => ({
+            sid, type: "Allow", rights: 2_032_127, inherited: false,
+          })),
+        );
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("rejects an existing Windows secret granting Everyone read before database use", () => {
+    if (process.platform !== "win32") return;
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-acl-${randomUUID()}-`));
+    try {
+      const path = join(root, APPLICATION_SECRET_FILENAME);
+      writeFileSync(path, Buffer.alloc(32), { flag: "wx", mode: 0o600 });
+      powershell(String.raw`
+$ErrorActionPreference = 'Stop'
+$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = New-Object System.Security.AccessControl.FileSecurity
+$acl.SetOwner($current)
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($spec in @(@($current.Value, 'FullControl'), @('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-1-0', 'Read'))) {
+  $sid = New-Object System.Security.Principal.SecurityIdentifier($spec[0])
+  $rights = [System.Security.AccessControl.FileSystemRights]::$($spec[1])
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $rights, [System.Security.AccessControl.AccessControlType]::Allow)
+  [void]$acl.AddAccessRule($rule)
+}
+Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
+`, path);
+      const runtime = createCoreRuntime({ officialDataRoot: root,
+        now: () => "2026-08-11T00:30:01.000Z" });
+      try {
+        expect(handleCoreRequest(runtime,
+          applicationRequest("CASE-MEAL-021", "record_meal"))).toMatchObject({
+            status: "failed", committed: false, error_code: "CORE_RUNTIME_SECRET_INVALID",
+          });
+        expect(existsSync(join(root, DIET_DATABASE_FILENAME))).toBe(false);
+      } finally {
+        runtime.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
   it.each([
     ["v1", () => purchaseEnvelope("finalized-preview-v1")],
     ["v2", () => catalogMealEnvelope("CASE-MEAL-021")],
@@ -1113,6 +1233,31 @@ describe("SEL-CORE Task 8 runtime root and secret authority", () => {
     }
   });
 
+  it("rejects ancestor identity drift before lazy session initialization", () => {
+    const grandparent = mkdtempSync(join(tmpdir(), `diet-manager-task8-ancestor-${randomUUID()}-`));
+    const parent = join(grandparent, "parent");
+    const root = join(parent, "runtime");
+    const displacedParent = join(grandparent, "parent-displaced");
+    mkdirSync(parent);
+    mkdirSync(root);
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      renameSync(parent, displacedParent);
+      symlinkSync(displacedParent, parent, process.platform === "win32" ? "junction" : "dir");
+
+      const request = applicationRequest("CASE-MEAL-021", "record_meal");
+      expect(handleCoreRequest(runtime, request)).toEqual({
+        action: "record_meal", status: "failed", committed: false,
+        operation_id: request.operation_id, error_code: "STORAGE_PATH_INVALID",
+      });
+      expect(readdirSync(join(displacedParent, "runtime"))).toEqual([]);
+    } finally {
+      runtime.close();
+      rmSync(grandparent, { recursive: true, force: false });
+    }
+  });
+
   it("caches one runtime by the exact physical root identity", () => {
     if (process.platform !== "win32") return;
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-runtime-${randomUUID()}-`));
@@ -1203,6 +1348,48 @@ describe("SEL-CORE Task 8 runtime root and secret authority", () => {
 });
 
 describe("SEL-CORE Task 8 truthful public application outcomes", () => {
+  it("preserves parser-authoritative offset received_at bytes and conflicts on changed representation", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-offset-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      const request = {
+        ...applicationRequest("CASE-MEAL-021", "record_meal"),
+        received_at: "2026-08-11T08:30:00.1+08:00",
+      };
+      const first = handleCoreRequest(runtime, request);
+      expect(first.committed).toBe(true);
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        expect(inspection.database.prepare(
+          "SELECT received_at FROM event_records",
+        ).get()).toEqual({ received_at: request.received_at });
+      } finally {
+        inspection.close();
+      }
+      const before = storedBusinessSnapshot(root);
+      expect(handleCoreRequest(runtime, request)).toEqual(first);
+      expect(handleCoreRequest(runtime, {
+        ...request,
+        received_at: "2026-08-11T08:30:00.100+08:00",
+      })).toMatchObject({ status: "failed", committed: false,
+        error_code: "idempotency_conflict" });
+      expect(storedBusinessSnapshot(root)).toBe(before);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("does not expose a raw database, service, token or revision session by deep import", async () => {
+    const runtimeModule = await import("../../src/application/runtime.js") as Record<string, unknown>;
+    expect(Object.hasOwn(runtimeModule, "acquireCoreRuntimeSession")).toBe(false);
+    expect(Object.keys(runtimeModule).sort()).toEqual([
+      "CORE_RUNTIME_SECRET_FILENAME",
+      "createCoreRuntime",
+    ]);
+  });
+
   it.each([
     ["CASE-MEAL-021", "record_meal"],
     ["CASE-MEAL-019", "record_meal"],
@@ -1230,7 +1417,7 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
           operation_id: request.operation_id,
           event_type: action === "record_water" ? "diet_water" : "diet_meal",
           fact_kind: action === "record_water" ? "water" : "meal",
-          received_at: new Date(request.received_at).toISOString(),
+          received_at: request.received_at,
         }]);
         const envelope = inspection.database.prepare(
           "SELECT envelope_id, idempotency_key, source_message_id, conversation_id FROM command_envelopes",
@@ -1252,6 +1439,45 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
       expect(publicBytes).not.toContain(request.source_text);
       expect(publicBytes).not.toContain("data_revision");
       expect(publicBytes).not.toContain("token");
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("persists the full production meal mapping from exact parser output", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-map-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      const request = applicationRequest("CASE-MEAL-001", "record_meal");
+      expect(handleCoreRequest(runtime, request).committed).toBe(true);
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const event = inspection.database.prepare(
+          "SELECT meal_slot, payload_json FROM event_records",
+        ).get() as { meal_slot: string; payload_json: string };
+        const payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+        expect(event.meal_slot).toBe("早餐");
+        expect(payload).toMatchObject({
+          authority_kind: "diet-manager/meal-fact/v1",
+          location: "home",
+          source_text: request.source_text,
+          timezone: "Asia/Shanghai",
+        });
+        expect(inspection.database.prepare(
+          "SELECT item_order, item_type, normalized_name, payload_json FROM meal_items ORDER BY item_order",
+        ).all()).toEqual([
+          expect.objectContaining({ item_order: 0, item_type: "food", normalized_name: "egg",
+            payload_json: expect.stringContaining('"observed_microunits":2000000') }),
+          expect.objectContaining({ item_order: 1, item_type: "food", normalized_name: "bread",
+            payload_json: expect.stringContaining('"unit":"slice"') }),
+          expect.objectContaining({ item_order: 2, item_type: "nutrition_drink", normalized_name: "milk",
+            payload_json: expect.stringContaining('"observed_microunits":250000000') }),
+        ]);
+      } finally {
+        inspection.close();
+      }
     } finally {
       runtime.close();
       rmSync(root, { recursive: true, force: false });
