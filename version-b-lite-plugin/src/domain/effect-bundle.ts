@@ -634,6 +634,18 @@ function mealEffectId(
   return deriveDomainId("effect", idempotencyKey, itemOrder * 10 + effectOrder);
 }
 
+function detachedMealEvidence(
+  operation: RecordMealOperation,
+): Readonly<Record<string, unknown>> {
+  const evidence: Record<string, unknown> = {};
+  if (Object.hasOwn(operation, "source_text")) evidence.source_text = operation.source_text;
+  for (const field of ["occurred_time", "subject", "context"] as const) {
+    if (!Object.hasOwn(operation, field)) continue;
+    evidence[field] = freezeJson(JSON.parse(canonicalJson(operation[field])) as unknown);
+  }
+  return Object.freeze(evidence);
+}
+
 export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
   const { operation } = input;
   const effectIdentityKey = input.effectIdentityKey ?? input.idempotencyKey;
@@ -706,6 +718,7 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
         payload: Object.freeze({
           authority_kind: "diet-manager/meal-fact/v1",
           location: operation.location,
+          ...detachedMealEvidence(operation),
           ...(input.progressReservation === undefined
             ? {}
             : { progress_reservation: input.progressReservation }),

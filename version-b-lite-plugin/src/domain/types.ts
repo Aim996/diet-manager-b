@@ -1,4 +1,9 @@
 import type { DietManagerAction } from "../contracts.js";
+import type {
+  CoreContextEvidence,
+  CoreSubjectEvidence,
+  OccurredTimeEvidence,
+} from "../parser/types.js";
 
 export interface NutritionVector {
   readonly energy_kcal_milli: number | null;
@@ -116,6 +121,10 @@ export interface RecordMealOperation {
   readonly meal_slot: string;
   readonly location: "home" | "outside";
   readonly items: readonly MealItemInput[];
+  readonly source_text?: string;
+  readonly occurred_time?: Readonly<OccurredTimeEvidence>;
+  readonly subject?: Readonly<CoreSubjectEvidence>;
+  readonly context?: Readonly<CoreContextEvidence>;
 }
 
 export interface CorrectRecordOperation {

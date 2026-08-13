@@ -384,11 +384,17 @@ export function reservationFromEventPayload(
   const authorityKind = authorityDescriptor.value;
   if (eventType === "diet_meal" && authorityKind === "diet-manager/meal-fact/v1") {
     const hasReservation = keys.includes("progress_reservation");
+    const evidenceFields = ["source_text", "occurred_time", "subject", "context"]
+      .filter((field) => keys.includes(field));
     const payload = exactRecord(
       value,
-      hasReservation
-        ? ["authority_kind", "location", "progress_reservation", "timezone"]
-        : ["authority_kind", "location", "timezone"],
+      [
+        "authority_kind",
+        "location",
+        ...evidenceFields,
+        ...(hasReservation ? ["progress_reservation"] : []),
+        "timezone",
+      ],
       "meal_fact",
     );
     if (

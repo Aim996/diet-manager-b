@@ -709,6 +709,93 @@ function previewAndExecute(service: DietDomainService, envelope: DomainEnvelopeI
   });
 }
 
+describe("SEL-CORE-001 meal evidence vertical slice", () => {
+  it("commits optional occurrence, subject, context, and source evidence with the meal event", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-11T00:30:01.000Z",
+      });
+      const base = mealEnvelope({
+        suffix: "core-evidence-vertical",
+        location: "outside",
+        items: [mealItem({
+          name: "apple",
+          unit: "piece",
+          observed: 1_000_000,
+          adopted: null,
+          deducted: null,
+          sources: [],
+        })],
+      });
+      const meal = base.operations[0];
+      if (meal?.kind !== "record_meal") throw new Error("test meal operation missing");
+      const envelope = {
+        ...base,
+        received_at: "2026-08-11T00:30:00.000Z",
+        operations: [{
+          ...meal,
+          occurred_at: "2026-08-11T00:30:00.000Z",
+          source_text: "吃了一个苹果。",
+          occurred_time: {
+            raw_text: null,
+            resolved_start: "2026-08-11T08:30:00+08:00",
+            resolved_end: "2026-08-11T08:31:00+08:00",
+            precision: "exact",
+            timezone: "Asia/Shanghai",
+            resolution_basis: "default_received_at",
+            resolution_anchor: "2026-08-11T08:30:00+08:00",
+            resolver_version: "diet-manager/time-parser-v1",
+          },
+          subject: {
+            kind: "self",
+            resolution_basis: "omitted_subject_default",
+            subject_entity_created: false,
+            matched_span: null,
+            rule_version: "diet-manager/subject-v1",
+          },
+          context: {
+            scene: "unknown",
+            expired_context_ids: [],
+            inventory_read: false,
+            accepted_context: null,
+            rule_version: "diet-manager/context-v1",
+          },
+        }],
+      } as unknown as DomainEnvelopeInput;
+
+      expect(previewAndExecute(service, envelope).status).toBe("committed");
+      const payloadJson = (runtime.database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string }).payload_json;
+      expect(JSON.parse(payloadJson)).toMatchObject({
+        authority_kind: "diet-manager/meal-fact/v1",
+        source_text: "吃了一个苹果。",
+        occurred_time: {
+          resolved_start: "2026-08-11T08:30:00+08:00",
+          resolver_version: "diet-manager/time-parser-v1",
+        },
+        subject: {
+          kind: "self",
+          resolution_basis: "omitted_subject_default",
+          rule_version: "diet-manager/subject-v1",
+        },
+        context: {
+          scene: "unknown",
+          rule_version: "diet-manager/context-v1",
+        },
+      });
+      expect(canonicalJson(JSON.parse(payloadJson))).toBe(payloadJson);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+});
+
 describe("B-SLICE-001 structured receipt and quick prompt builders", () => {
   const progress = Object.freeze({
     date: "2026-08-12",
