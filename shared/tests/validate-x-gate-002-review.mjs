@@ -52,6 +52,6 @@ test("requires a locally published map after trace refresh and exercises semanti
   assert.match(output, /plan_mutations=4/u);
   assert.match(output, /command_failures=1/u);
   assert.match(output, /prerequisite_mutations=5/u);
-  assert.match(output, /identity_mutations=11/u);
+  assert.match(output, /identity_mutations=13/u);
   assert.match(output, /state_reparse_mutations=1/u);
 });

@@ -213,10 +213,13 @@ function validateMatrix(matrix, template) {
     exactKeys(check, ["check_id", "executor", "timeout_seconds"], "X_GATE_CHECK_REQUIREMENT_SHAPE");
     assert.equal(Number.isInteger(check.timeout_seconds) && check.timeout_seconds > 0 && check.timeout_seconds <= 120, true);
   }
-  assert.equal(matrix.formal_build_provenance_requirement.execution_count, 1);
-  assert.equal(matrix.formal_build_provenance_requirement.reexecution_forbidden_in_review_fix, true);
-  assert.equal(matrix.formal_build_provenance_requirement.candidate_commit, "bdbc5e229af24bc78002e63951b0f9fbde51207f");
-  assert.deepEqual(matrix.formal_build_provenance_requirement.artifacts, expectedFormalArtifacts, "X_GATE_FORMAL_ARTIFACT_REQUIREMENTS");
+  assert.deepEqual(matrix.formal_build_provenance_requirement, {
+    execution_count: 1,
+    command: "npm run build",
+    reexecution_forbidden_in_review_fix: true,
+    candidate_commit: "bdbc5e229af24bc78002e63951b0f9fbde51207f",
+    artifacts: expectedFormalArtifacts,
+  }, "X_GATE_FORMAL_BUILD_REQUIREMENT");
   assert.deepEqual(matrix.authorized_next_on_bind, ["SEL-CORE-001"]);
   assert.deepEqual(matrix.forbidden_claims, template.forbidden_claims);
 }
@@ -538,9 +541,7 @@ function validateReceipt(receipt, matrix) {
   assert.equal(receipt.plan_sha256, sha256(planPath));
   assert.equal(receipt.trace_tasks_sha256, sha256(tracePath));
   assert.deepEqual(receipt.input_hashes, Object.fromEntries(inputHashPaths.map((path) => [path, sha256(resolve(projectRoot, path))])), "X_GATE_RECEIPT_INPUT_HASHES");
-  assert.equal(receipt.formal_build.execution_count, 1);
-  assert.equal(receipt.formal_build.reexecuted_during_review_fix, false);
-  validateFormalBuildArtifacts(matrix);
+  assert.deepEqual(receipt.formal_build, validateFormalBuildArtifacts(matrix), "X_GATE_RECEIPT_FORMAL_BUILD");
   assert.deepEqual(receipt.checks.map((check) => check.check_id), requiredCheckIds);
   const requirements = Object.fromEntries(matrix.required_checks.map((check) => [check.check_id, check]));
   const expectedCommands = expectedCommandShapes(matrix);
@@ -706,11 +707,15 @@ function identitySelfTests(map, template, matrix, trace) {
   const artifactMatrix = clone(matrix);
   artifactMatrix.formal_build_provenance_requirement.artifacts[0].sha256 = "0".repeat(64);
   expectFailure(() => validateMatrix(artifactMatrix, template), "formal_artifact_exact");
+  const commandMatrix = clone(matrix);
+  commandMatrix.formal_build_provenance_requirement.command = "npm run build:other";
+  expectFailure(() => validateMatrix(commandMatrix, template), "formal_build_command_exact");
   const receiptMutations = [
     (value) => { value.verification_receipt.base_commit = "0".repeat(40); },
     (value) => { value.verification_receipt.input_hashes["version-b-lite-plugin/src/contracts.ts"] = "0".repeat(64); },
     (value) => { value.verification_receipt.checks[0].executor = "wrong_executor"; },
     (value) => { value.verification_receipt.checks[0].args = ["wrong-command"]; },
+    (value) => { value.verification_receipt.formal_build.candidate_commit = "0".repeat(40); },
   ];
   for (const [index, mutate] of receiptMutations.entries()) {
     const changed = clone(map);
@@ -718,7 +723,7 @@ function identitySelfTests(map, template, matrix, trace) {
     resealReceipt(changed);
     expectFailure(() => validateLocalMap(changed, template, matrix, trace), `receipt_identity_${index}`);
   }
-  return 11;
+  return 13;
 }
 
 function stateReparseSelfTest() {
