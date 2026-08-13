@@ -248,6 +248,34 @@ describe("CASE-WATER-001", () => {
     } finally { runtime.database.close(); }
   });
 
+  it("rejects a validly re-signed water query authority bound to another preview id without writes", () => {
+    const root = newRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T04:00:01.000Z" });
+      const envelope = waterEnvelope("query-preview-id-binding");
+      const preview = service.preview(envelope);
+      service.execute({ envelope, token: preview.token, input_digest: preview.input_digest, data_revision: preview.data_revision });
+      const row = runtime.database.prepare("SELECT payload_json FROM command_envelopes WHERE envelope_id = ?")
+        .get(envelope.envelope_id) as { payload_json: string };
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+      (payload.binding as Record<string, unknown>).preview_id = "envelope-water-valid-different-preview";
+      resignWaterAuthority(payload);
+      runtime.database.prepare("UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?")
+        .run(canonicalJson(payload), envelope.envelope_id);
+      const before = businessSnapshot(runtime.database);
+      expect(() => listWaterEvents({
+        database: runtime.database,
+        authoritySecret: secret,
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      })).toThrow("INVENTORY_PROJECTION_INVALID:water_event_identity");
+      expect(businessSnapshot(runtime.database)).toEqual(before);
+    } finally {
+      runtime.database.close();
+    }
+  });
+
   it("persists one explicit frozen WaterEvent and contributes hydration exactly once", () => {
     const root = newRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });

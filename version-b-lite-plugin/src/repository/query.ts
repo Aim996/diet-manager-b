@@ -580,6 +580,7 @@ export function listWaterEvents(input: DateRangeQuery): readonly WaterListItem[]
       const preview = authenticateStoredPreviewAuthority(row.preview_payload_json, query.authoritySecret);
       if (preview.preview_authority_kind !== "diet-manager/server-preview/v3" ||
           preview.water_fact_preview_material === undefined || row.input_digest !== row.idempotency_input_digest ||
+          preview.binding.preview_id !== row.envelope_id ||
           preview.binding.input_digest !== row.input_digest) return invalid("water_event_identity");
       const identity = createWaterFactIdentity({
         sequence: 0, event_id: row.event_id, operation_id: row.operation_id, schema_version: row.schema_version,
