@@ -1,5 +1,6 @@
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 import { Type } from "typebox";
+import { dietManagerContract, } from "./contracts.js";
 const actionSchema = Type.Union([
     Type.Literal("record_meal"),
     Type.Literal("record_water"),
@@ -23,8 +24,19 @@ export const dietManagerParameters = Type.Object({
     source_text: Type.Optional(Type.String()),
     occurred_at_text: Type.Optional(Type.String()),
     items: Type.Optional(Type.Array(itemSchema)),
-}, { additionalProperties: false });
-const foundationConfigSchema = Type.Object({}, { additionalProperties: false });
+}, {
+    additionalProperties: false,
+    "x-diet-manager-contract": dietManagerContract,
+});
+const foundationConfigSchema = Type.Object({
+    official_data_root: Type.String({
+        description: "Absolute existing runtime root owned by the Diet Manager backend; gate validation does not open or create it.",
+        "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root",
+    }),
+}, {
+    additionalProperties: false,
+    "x-diet-manager-contract": dietManagerContract,
+});
 export async function handleFoundationAction(request) {
     return {
         action: request.action,
@@ -47,4 +59,4 @@ export default defineToolPlugin({
         }),
     ],
 });
-export { assertDietManagerOutcome, dietManagerStatuses } from "./contracts.js";
+export { assertDietManagerOutcome, dietManagerContract, dietManagerStatuses, } from "./contracts.js";

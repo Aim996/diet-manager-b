@@ -13,7 +13,13 @@ const testsDirectory = dirname(fileURLToPath(import.meta.url));
 const projectDirectory = resolve(testsDirectory, "..");
 const manifestPath = resolve(projectDirectory, "openclaw.plugin.json");
 const packagePath = resolve(projectDirectory, "package.json");
+const skillPath = resolve(projectDirectory, "skills", "diet-manager-b", "SKILL.md");
 const dataDirectory = resolve(projectDirectory, "data");
+const expectedContract = {
+  id: "diet-manager/contract-v2",
+  version: 2,
+  sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+} as const;
 const expectedActions = [
   "record_meal",
   "record_water",
@@ -71,6 +77,43 @@ describe("diet manager B 基底", () => {
       occurred_at_text: { type: "string" },
       items: { type: "array" },
     });
+  });
+
+  test("binds the frozen contract and sole official data-root key across runtime schemas and manifest", () => {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, any>;
+    const metadata = getToolPluginMetadata(pluginEntry);
+    const runtimeContract = Reflect.get(foundation, "dietManagerContract");
+
+    expect(runtimeContract).toEqual(expectedContract);
+    expect(metadata?.configSchema).toEqual(manifest.configSchema);
+    expect(Object.keys(metadata?.configSchema.properties ?? {})).toEqual([
+      "official_data_root",
+    ]);
+    expect(metadata?.configSchema).toMatchObject({
+      required: ["official_data_root"],
+      additionalProperties: false,
+      "x-diet-manager-contract": expectedContract,
+      properties: {
+        official_data_root: {
+          type: "string",
+          "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root",
+        },
+      },
+    });
+    expect(dietManagerParameters).toMatchObject({
+      "x-diet-manager-contract": expectedContract,
+    });
+  });
+
+  test("publishes the frozen contract identity in the Skill without weakening write authority", () => {
+    const skill = readFileSync(skillPath, "utf8");
+
+    expect(skill).toContain(`contract_id=${expectedContract.id}`);
+    expect(skill).toContain(`contract_version=${expectedContract.version}`);
+    expect(skill).toContain(`contract_sha256=${expectedContract.sha256}`);
+    expect(skill).toContain("只有工具返回 `committed=true` 才能告诉用户“已记录”");
+    expect(skill).toContain("技术日志可以说明失败原因，但不属于饮食记录");
+    expect(skill).toContain("`official_data_root` 只由后端配置和管理");
   });
 
   test("declares OpenClaw extension packaging and the required dependencies", () => {

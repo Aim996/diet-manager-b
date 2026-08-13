@@ -11,6 +11,10 @@ description: Use when a user reports completed food, water, or inventory activit
 
 不要用记忆文件、便签、聊天历史、表格或其他存储代替饮食记录。只有工具返回 `committed=true` 才能告诉用户“已记录”。技术日志可以说明失败原因，但不属于饮食记录。
 
+只接受冻结契约 `contract_id=diet-manager/contract-v2`、`contract_version=2`、`contract_sha256=632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E`。契约身份与工具 Schema 或运行时不一致时，把结果视为未确认成功，不要猜测或补写。
+
+`official_data_root` 只由后端配置和管理。Skill 不创建、打开或替换该根，也不把便签、记忆文件或其他路径当作回退业务库。
+
 ## 动作选择
 
 | 用户意图 | 动作 |

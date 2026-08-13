@@ -1,3 +1,8 @@
+export const dietManagerContract = Object.freeze({
+    id: "diet-manager/contract-v2",
+    version: 2,
+    sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+});
 export const dietManagerActions = [
     "record_meal",
     "record_water",

@@ -1,0 +1,92 @@
+{
+  "schema_version": "diet-manager/x-gate-002-matrix/v1",
+  "gate_id": "X-GATE-002",
+  "route": "B",
+  "scope": "g2_b_ready_contract_root_path_binding_only",
+  "contract": {
+    "path": "shared/business-contract.md",
+    "id": "diet-manager/contract-v2",
+    "version": 2,
+    "sha256": "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+    "last_change_commit": "a6559f9728c46fbbddc30d5e187d824ad83493ff"
+  },
+  "config_key": "official_data_root",
+  "prerequisites": [
+    {
+      "task_id": "X-GATE-001",
+      "result": "pass_b_safety",
+      "commit": "40f7b608f72935becd7628dd89ef4cf7f515c05b",
+      "evidence_id": null,
+      "evidence_path": null,
+      "evidence_sha256": null
+    },
+    {
+      "task_id": "B-SLICE-001",
+      "result": "PASS",
+      "commit": "c8e6bcef39d0f98452432c3331095d963b9b9778",
+      "evidence_id": "EV-20260812-031",
+      "evidence_path": "docs/evidence/EV-20260812-031-b-slice-001.md",
+      "evidence_sha256": "846A3D057A00E9A980EFD4720B7BFD589BABB2D1CE07F09FF705D6DEBECC35C1"
+    },
+    {
+      "task_id": "B-FAULT-001",
+      "result": "DONE_WITH_CONCERNS",
+      "commit": "552feee374fe3463f296bd4a110af11747a7ee29",
+      "evidence_id": "EV-20260812-032",
+      "evidence_path": "docs/evidence/EV-20260812-032-b-fault-001.md",
+      "evidence_sha256": "B7EFF9C7CCB6F566E2BA1AF553667C9986BB653511B8A7883DF65D322A9216A9"
+    },
+    {
+      "task_id": "SH-TRACE-001",
+      "result": "PASS",
+      "commit": "846dbbc718197b3fc59787124a2ac3b18d1b55f8",
+      "evidence_id": "EV-20260813-034",
+      "evidence_path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
+      "evidence_sha256": "C146431BE6A961C6EBB232EFBCA8659EEB6137B19DDEF2C19281D943C00D5DE3"
+    }
+  ],
+  "checks": [
+    {
+      "check_id": "focused_foundation_contract_root_skill",
+      "result": "pass"
+    },
+    {
+      "check_id": "typescript_no_emit",
+      "result": "pass"
+    },
+    {
+      "check_id": "typescript_formal_build_once",
+      "result": "pass"
+    },
+    {
+      "check_id": "source_dist_parity",
+      "result": "pass"
+    },
+    {
+      "check_id": "openclaw_plugin_build_check_validate",
+      "result": "pass"
+    },
+    {
+      "check_id": "x_gate_001_regression",
+      "result": "pass"
+    },
+    {
+      "check_id": "trace_normal_self_test",
+      "result": "pass"
+    }
+  ],
+  "decision": "bind_b_ready",
+  "selected_route_map": {
+    "path": "shared/selected-route-map.json",
+    "sha256": "7900D3C870C7D5D745F0CD7A2DBD8BEE0C17955083480C171CB565B5106C9E67"
+  },
+  "authorized_next": [
+    "SEL-CORE-001"
+  ],
+  "forbidden_claims": [
+    "product_ready",
+    "installable",
+    "release",
+    "G3"
+  ]
+}

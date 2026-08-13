@@ -5,8 +5,22 @@
   "version": "0.1.0",
   "configSchema": {
     "type": "object",
-    "properties": {},
-    "additionalProperties": false
+    "required": [
+      "official_data_root"
+    ],
+    "properties": {
+      "official_data_root": {
+        "type": "string",
+        "description": "Absolute existing runtime root owned by the Diet Manager backend; gate validation does not open or create it.",
+        "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root"
+      }
+    },
+    "additionalProperties": false,
+    "x-diet-manager-contract": {
+      "id": "diet-manager/contract-v2",
+      "version": 2,
+      "sha256": "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E"
+    }
   },
   "activation": {
     "onStartup": true
