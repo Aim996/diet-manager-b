@@ -1,3 +1,5 @@
+import type { IngestionPredicateFrame } from "./predicate-frame.js";
+
 export const SUBJECT_RULE_VERSION = "diet-manager/subject-v1" as const;
 
 export interface ProposedAmountEvidence {
@@ -28,7 +30,7 @@ export interface SubjectMatchedEvidence {
   readonly rule_version: typeof SUBJECT_RULE_VERSION;
 }
 
-interface ResolvedSubjectEvidence {
+export interface ResolvedSubjectEvidence {
   readonly kind: "self";
   readonly resolution_basis:
     | "omitted_subject_default"
@@ -42,6 +44,15 @@ interface ResolvedSubjectEvidence {
   readonly matched_evidence: SubjectMatchedEvidence | null;
   readonly rule_version: typeof SUBJECT_RULE_VERSION;
 }
+
+export type PredicateFrameSubjectResolution =
+  | Readonly<{
+      disposition: "resolved";
+      subject: Readonly<ResolvedSubjectEvidence>;
+    }>
+  | Readonly<{
+      disposition: "unresolved";
+    }>;
 
 interface SubjectGroupAmountEvidence {
   readonly quantity: 2;
@@ -69,6 +80,104 @@ export type SubjectResolution =
 interface SubjectRule {
   readonly rule_id: SubjectMatchedEvidence["rule_id"];
   readonly pattern: RegExp;
+}
+
+const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|在公司)\s*)*$/u;
+const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|没(?:有)?)?$/u;
+const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
+
+function frozenFrameRecord<T extends object>(entries: T): Readonly<T> {
+  return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
+}
+
+function frameMatchedEvidence(
+  frame: IngestionPredicateFrame,
+  ruleId: SubjectMatchedEvidence["rule_id"],
+  raw: string,
+  relativeStart: number,
+): SubjectMatchedEvidence {
+  return frozenFrameRecord({
+    rule_id: ruleId,
+    raw,
+    start: frame.subject_prefix_span.start + relativeStart,
+    end: frame.subject_prefix_span.start + relativeStart + raw.length,
+    rule_version: SUBJECT_RULE_VERSION,
+  });
+}
+
+function resolvedFrameSubject(
+  resolutionBasis: ResolvedSubjectEvidence["resolution_basis"],
+  evidence: SubjectMatchedEvidence | null,
+  extras: Partial<Pick<
+    ResolvedSubjectEvidence,
+    "excluded_non_self_share_count" | "self_participated"
+  >> = {},
+): PredicateFrameSubjectResolution {
+  return frozenFrameRecord({
+    disposition: "resolved" as const,
+    subject: frozenFrameRecord({
+      kind: "self" as const,
+      resolution_basis: resolutionBasis,
+      subject_entity_created: false as const,
+      ...extras,
+      matched_span: evidence?.raw ?? null,
+      matched_evidence: evidence,
+      rule_version: SUBJECT_RULE_VERSION,
+    }),
+  });
+}
+
+/** Resolve only positively authorized current-user predicate-frame subjects. */
+export function resolvePredicateFrameSubject(
+  frame: Readonly<IngestionPredicateFrame>,
+  inherited: PredicateFrameSubjectResolution | null = null,
+): PredicateFrameSubjectResolution {
+  if (frame.coordination === "inherit_previous") {
+    return inherited?.disposition === "resolved"
+      ? inherited
+      : frozenFrameRecord({ disposition: "unresolved" as const });
+  }
+
+  const prefix = frame.subject_prefix_span.raw.trim();
+  if (prefix === "我们") {
+    const evidence = frameMatchedEvidence(
+      frame,
+      "subject.collective-self.we",
+      "我们",
+      frame.subject_prefix_span.raw.indexOf("我们"),
+    );
+    return resolvedFrameSubject(
+      "collective_self_participation",
+      evidence,
+      { self_participated: true },
+    );
+  }
+
+  const explicitSelf = /^我/u.exec(prefix);
+  if (explicitSelf !== null) {
+    const afterSelf = prefix.slice(explicitSelf[0].length).trim();
+    if (FRAME_EXPLICIT_SELF_MODIFIERS.test(afterSelf)) {
+      const relativeStart = frame.subject_prefix_span.raw.indexOf("我");
+      return resolvedFrameSubject(
+        "explicit_self",
+        frameMatchedEvidence(
+          frame,
+          "subject.explicit-self.me",
+          "我",
+          relativeStart,
+        ),
+      );
+    }
+  }
+
+  if (
+    FRAME_APPROVED_OMITTED_PREFIX.test(prefix) ||
+    FRAME_OBJECT_FRONTED_COMPLETION.test(prefix)
+  ) {
+    return resolvedFrameSubject("omitted_subject_default", null);
+  }
+
+  return frozenFrameRecord({ disposition: "unresolved" as const });
 }
 
 // These rules intentionally cover only the frozen PRODUCT-0.1 subject forms.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import casesCatalog from "../../../shared/acceptance-cases/cases.json";
 import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.json";
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
+import { parseIngestionPredicateFrames } from "../../src/parser/predicate-frame.js";
 import type { CoreParseResult } from "../../src/parser/types.js";
 
 const SELECTED_IDS = Object.freeze([
@@ -813,6 +814,28 @@ describe("core parser quality boundaries", () => {
     });
   }
 
+  it("creates immutable absolute predicate frames before semantic parsing", () => {
+    const frames = parseIngestionPredicateFrames(
+      "我吃了鸡蛋和朋友吃了两个鸡蛋。",
+    );
+
+    expect(frames).toMatchObject([
+      {
+        frame_span: { raw: "我吃了鸡蛋", start: 0, end: 5 },
+        subject_prefix_span: { raw: "我", start: 0, end: 1 },
+        predicate_span: { raw: "吃", start: 1, end: 2 },
+        object_span: { raw: "了鸡蛋", start: 2, end: 5 },
+      },
+      {
+        frame_span: { raw: "朋友吃了两个鸡蛋", start: 6, end: 14 },
+        subject_prefix_span: { raw: "朋友", start: 6, end: 8 },
+        predicate_span: { raw: "吃", start: 8, end: 9 },
+        object_span: { raw: "了两个鸡蛋", start: 9, end: 14 },
+      },
+    ]);
+    expectDeepFrozen(frames);
+  });
+
   it.each([
     ["吃了一个苹果吗？", "record_meal"],
     ["吃了一个苹果吗?", "record_meal"],
@@ -933,6 +956,70 @@ describe("core parser quality boundaries", () => {
     }]);
   });
 
+  it.each([
+    "王小明吃了两个鸡蛋，我吃了一个苹果。",
+    "张先生吃了两个鸡蛋，我吃了一个苹果。",
+    "小王同学吃了两个鸡蛋，我吃了一个苹果。",
+    "我吃了一个苹果，王小明吃了两个鸡蛋。",
+  ])("keeps a longer explicit non-self subject out of the self meal: %s", (
+    sourceText,
+  ) => {
+    const command = requiredMeal(variant(sourceText));
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "apple",
+      quantity: 1,
+      unit: "piece",
+      estimated: false,
+    }]);
+  });
+
+  it.each([
+    "朋友吃了两个鸡蛋，我吃了鸡蛋。",
+    "我吃了鸡蛋，朋友吃了两个鸡蛋。",
+    "我吃了鸡蛋和朋友吃了两个鸡蛋。",
+    "朋友吃了两个鸡蛋和我吃了鸡蛋。",
+  ])("does not re-expand a same-food non-self frame: %s", (sourceText) => {
+    const command = requiredMeal(variant(sourceText));
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "egg",
+      quantity: null,
+      unit: null,
+      estimated: null,
+    }]);
+  });
+
+  it.each([
+    ["我吃了两个鸡蛋又吃了鸡蛋。", [2, null]],
+    ["我吃了鸡蛋又吃了两个鸡蛋。", [null, 2]],
+  ])("binds duplicate self-item amounts to each predicate frame: %s", (
+    sourceText,
+    quantities,
+  ) => {
+    const command = requiredMeal(variant(sourceText));
+
+    expect(command.items.map((item) => item.normalized_name)).toEqual([
+      "egg",
+      "egg",
+    ]);
+    expect(command.items.map((item) => item.quantity)).toEqual(quantities);
+  });
+
+  it.each([
+    "其他时候吃了一个苹果。",
+    "在公司吃了一个苹果。",
+    "前天午饭吃了一个苹果。",
+  ])("never defaults an unapproved omitted-subject prefix to self: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText).disposition).not.toBe("candidate");
+  });
+
   it("does not borrow an amount for the same food from a friend's clause", () => {
     const command = requiredMeal(
       variant("给朋友买了两个鸡蛋，我吃了鸡蛋。"),
@@ -995,6 +1082,50 @@ describe("core parser quality boundaries", () => {
   });
 
   it.each([
+    "我喝了果汁时看见500ml水。",
+    "我喝了药时拿着500ml水。",
+    "我喝完饮料看见桌上500ml水。",
+    "喝完药旁边还有500ml水。",
+  ])("does not turn incidental water into a direct drinking fact: %s", (
+    sourceText,
+  ) => {
+    const result = variant(sourceText);
+    if (result.disposition === "candidate") {
+      expect(result.command.action).not.toBe("record_water");
+    }
+  });
+
+  it("keeps a direct coffee fact when water is only mentioned incidentally", () => {
+    const command = requiredMeal(
+      variant("我喝了咖啡时看见500ml水。"),
+    );
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "nutritious_drink",
+      normalized_name: "coffee",
+      quantity: null,
+      unit: null,
+      estimated: null,
+    }]);
+  });
+
+  it("keeps another person's direct water out of a later self meal", () => {
+    const command = requiredMeal(
+      variant("朋友喝了500ml水，我吃了一个苹果。"),
+    );
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "food",
+      normalized_name: "apple",
+      quantity: 1,
+      unit: "piece",
+      estimated: false,
+    }]);
+  });
+
+  it.each([
     "这句话里只是在讨论医疗诊断这个词，我吃了一个苹果。",
     "这不是医疗诊断，我吃了一个苹果。",
     "我想听听你的建议，我吃了一个苹果。",
@@ -1037,6 +1168,27 @@ describe("core parser quality boundaries", () => {
     "给我进行医疗诊断。",
   ])("keeps an anchored health-advice request ignored: %s", (sourceText) => {
     expect(variant(sourceText)).toMatchObject({
+      disposition: "ignored",
+      action: "health_advice",
+      reason_code: "unsupported_health_advice",
+    });
+  });
+
+  it.each([
+    "帮我理解减重建议是什么意思。",
+    "我想知道减重建议是什么。",
+  ])("routes a bounded health explanation variant to health clarification: %s", (
+    sourceText,
+  ) => {
+    expect(variant(sourceText)).toMatchObject({
+      disposition: "needs_clarification",
+      action: "health_advice",
+      reason_code: "unsupported_command",
+    });
+  });
+
+  it("routes the polite 请给我 composition to actual health advice", () => {
+    expect(variant("请给我医疗诊断。")).toMatchObject({
       disposition: "ignored",
       action: "health_advice",
       reason_code: "unsupported_health_advice",

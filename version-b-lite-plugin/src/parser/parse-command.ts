@@ -3,11 +3,11 @@ import { resolveMealContext } from "./context.js";
 import { cloneCoreParseInput } from "./input-authority.js";
 import {
   classifyMealLiquid,
+  hasNonSelfExplicitPlainWater,
   matchExplicitPlainWater,
   matchExplicitPlainWaters,
 } from "./liquid.js";
-import { proposeMealItems, toCoreMealItems } from "./meal.js";
-import { resolveSubject } from "./subject.js";
+import { proposeMealItems, resolveMealFrames } from "./meal.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
@@ -18,10 +18,11 @@ import type {
   CoreWaterCommandCandidate,
   OffsetIsoTimestamp,
 } from "./types.js";
+import type { ResolvedSubjectEvidence } from "./subject.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
-const HEALTH_TERMINOLOGY_EXPLANATION = /(?:^|[，,。；;！？!?])\s*(?:请\s*解释|帮我\s*理解)\s*(?:医疗\s*诊断|减重\s*建议)(?:这个词)?(?=$|[\s，,。；;！？!?])/u;
-const HEALTH_ADVICE_REQUEST = /(?:^|[，,。；;！？!?])\s*(?:请|帮我|给我)\s*(?:(?:做|提供|进行)\s*)?(?:医疗\s*诊断|减重\s*建议)(?=$|[\s，,。；;！？!?或和与])/u;
+const HEALTH_TERMINOLOGY_EXPLANATION = /(?:^|[，,。；;！？!?])\s*(?:(?:请\s*解释|帮我\s*理解|我想知道)\s*(?:医疗\s*诊断|减重\s*建议))(?:这个词)?(?:\s*(?:是(?:什么|什么意思)|是什么意思))?(?=$|[\s，,。；;！？!?])/u;
+const HEALTH_ADVICE_REQUEST = /(?:^|[，,。；;！？!?])\s*(?:(?:请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?=$|[\s，,。；;！？!?或和与])/u;
 const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
@@ -106,19 +107,19 @@ function ambiguityQuestion(input: Readonly<CoreParseInput>): string {
   return `这顿夜宵是指${previous[1]}月${previous[2]}日还是${current[1]}月${current[2]}日？`;
 }
 
-function subjectEvidence(subject: ReturnType<typeof resolveSubject> & { disposition: "resolved" }) {
+function subjectEvidence(subject: Readonly<ResolvedSubjectEvidence>) {
   return {
-    kind: subject.subject.kind,
-    resolution_basis: subject.subject.resolution_basis,
-    subject_entity_created: subject.subject.subject_entity_created,
-    ...(subject.subject.excluded_non_self_share_count === undefined
+    kind: subject.kind,
+    resolution_basis: subject.resolution_basis,
+    subject_entity_created: subject.subject_entity_created,
+    ...(subject.excluded_non_self_share_count === undefined
       ? {}
-      : { excluded_non_self_share_count: subject.subject.excluded_non_self_share_count }),
-    ...(subject.subject.self_participated === undefined
+      : { excluded_non_self_share_count: subject.excluded_non_self_share_count }),
+    ...(subject.self_participated === undefined
       ? {}
-      : { self_participated: subject.subject.self_participated }),
-    matched_span: subject.subject.matched_span,
-    rule_version: subject.subject.rule_version,
+      : { self_participated: subject.self_participated }),
+    matched_span: subject.matched_span,
+    rule_version: subject.rule_version,
   };
 }
 
@@ -127,20 +128,19 @@ function mealCandidate(
   completion: Extract<ReturnType<typeof classifyCompletion>, { disposition: "proceed" }>,
   occurredTime: OccurredTimeEvidence,
 ): CoreParseResult {
-  const proposed = proposeMealItems(input.source_text).filter((item) =>
+  const meal = resolveMealFrames(input.source_text);
+  if (meal.disposition === "unresolved" || meal.subject === null) {
+    return detachedFrozen({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+    });
+  }
+  const items = meal.items.filter((item) =>
     !completion.excluded_items.some((excluded) =>
       excluded.normalized_name === item.normalized_name
     )
-  );
-  const subject = resolveSubject(input.source_text, proposed);
-  if (subject.disposition === "ignored") {
-    return detachedFrozen({
-      disposition: "ignored",
-      action: subject.action,
-      reason_code: subject.reason_code,
-    });
-  }
-  const items = toCoreMealItems(subject.items, proposed);
+  ).map((item, order) => ({ ...item, order }));
   if (items.length === 0) {
     return detachedFrozen({
       disposition: "needs_clarification",
@@ -170,7 +170,7 @@ function mealCandidate(
     source_text: input.source_text,
     parser_version: PARSER_VERSION,
     occurred_time: occurredTime,
-    subject: subjectEvidence(subject),
+    subject: subjectEvidence(meal.subject),
     items,
     ...(completion.completion_evidence === null
       ? {}
@@ -188,14 +188,14 @@ function mealCandidate(
           matched_span: excluded.matched_span,
           rule_version: excluded.rule_version,
         })) }),
-    ...(subject.group_amount_evidence === undefined
+    ...(meal.group_amount_evidence === undefined
       ? {}
       : { group_amount_evidence: {
-          quantity: subject.group_amount_evidence.quantity,
-          unit: subject.group_amount_evidence.unit,
-          assigned_to_self: subject.group_amount_evidence.assigned_to_self,
-          matched_span: subject.group_amount_evidence.matched_span,
-          rule_version: subject.group_amount_evidence.rule_version,
+          quantity: meal.group_amount_evidence.quantity,
+          unit: meal.group_amount_evidence.unit,
+          assigned_to_self: meal.group_amount_evidence.assigned_to_self,
+          matched_span: meal.group_amount_evidence.matched_span,
+          rule_version: meal.group_amount_evidence.rule_version,
         } }),
     ...(context.accepted_context === null &&
         context.expired_context_ids.length === 0 &&
@@ -304,7 +304,7 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
   const water = waters[0] ?? null;
   if (water !== null) {
-    const mealItems = proposeMealItems(input.source_text).filter((item) =>
+    const mealItems = resolveMealFrames(input.source_text).items.filter((item) =>
       !completion.excluded_items.some((excluded) =>
         excluded.normalized_name === item.normalized_name
       )
@@ -315,23 +315,6 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
         action: "record_meal",
         reason_code: "unsupported_command",
         question: "请把白水和其他饮食分成两条消息记录。",
-      });
-    }
-    const waterSubject = resolveSubject(input.source_text, [{
-      normalized_name: "water",
-      raw_text: input.source_text.includes("白水") ? "白水" : "水",
-      amount_evidence: {
-        raw_text: water.raw_text,
-        quantity: water.quantity_ml,
-        unit: "ml",
-        estimated: false,
-      },
-    }]);
-    if (waterSubject.disposition === "ignored") {
-      return detachedFrozen({
-        disposition: "ignored",
-        action: "record_water",
-        reason_code: "non_self_subject",
       });
     }
     const command: CoreWaterCommandCandidate = {
@@ -351,6 +334,17 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     return detachedFrozen({
       disposition: "candidate",
       command,
+    });
+  }
+
+  if (
+    hasNonSelfExplicitPlainWater(input.source_text) &&
+    resolveMealFrames(input.source_text).items.length === 0
+  ) {
+    return detachedFrozen({
+      disposition: "ignored",
+      action: "record_water",
+      reason_code: "non_self_subject",
     });
   }
 
