@@ -511,6 +511,27 @@ describe("core parser ordinary-input authority", () => {
   });
 
   it.each([
+    "1000-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:30+08:00",
+    "9999-12-31T23:59:59-14:00",
+  ])("rejects received time whose Shanghai evidence interval leaves the supported year domain: %s", (receivedAt) => {
+    const input = ordinaryInput();
+    input.received_at = receivedAt;
+
+    expectInvalid(input, "input.received_at:iso_timestamp");
+  });
+
+  it.each([
+    "1000-01-01T06:00:00+14:00",
+    "9999-12-31T23:58:59+08:00",
+  ])("accepts a received time whose complete Shanghai evidence interval stays in range: %s", (receivedAt) => {
+    const input = ordinaryInput();
+    input.received_at = receivedAt;
+
+    expect(cloneCoreParseInput(input).received_at).toBe(receivedAt);
+  });
+
+  it.each([
     ["context_id", "", "input.prior_context[0].context_id:length"],
     ["context_id", "x".repeat(257), "input.prior_context[0].context_id:length"],
     ["generated_at", "not-iso", "input.prior_context[0].generated_at:iso_timestamp"],
@@ -545,6 +566,27 @@ describe("core parser ordinary-input authority", () => {
     const input = ordinaryInput();
     input.prior_context[0].generated_at = "1000-01-01T08:20:00+08:00";
     input.prior_context[0].valid_until = "1000-01-01T08:40:00+08:00";
+
+    expect(cloneCoreParseInput(input).prior_context[0]).toMatchObject({
+      generated_at: input.prior_context[0].generated_at,
+      valid_until: input.prior_context[0].valid_until,
+    });
+  });
+
+  it.each([
+    ["generated_at", "1000-01-01T00:00:00+14:00"],
+    ["valid_until", "9999-12-31T23:59:59-14:00"],
+  ])("rejects context time whose Shanghai instant leaves the supported year domain: %s", (key, value) => {
+    const input = ordinaryInput();
+    (input.prior_context[0] as Record<string, unknown>)[key] = value;
+
+    expectInvalid(input, `input.prior_context[0].${key}:iso_timestamp`);
+  });
+
+  it("accepts context boundary offsets whose Shanghai instants remain in range", () => {
+    const input = ordinaryInput();
+    input.prior_context[0].generated_at = "1000-01-01T06:00:00+14:00";
+    input.prior_context[0].valid_until = "9999-12-31T01:00:00-14:00";
 
     expect(cloneCoreParseInput(input).prior_context[0]).toMatchObject({
       generated_at: input.prior_context[0].generated_at,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import casesCatalog from "../../../shared/acceptance-cases/cases.json";
 import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.json";
 import { resolveMealContext } from "../../src/parser/context.js";
+import { cloneCoreParseInput } from "../../src/parser/input-authority.js";
 import { resolveOccurredTime } from "../../src/parser/time.js";
 import type {
   CoreContextEntry,
@@ -316,6 +317,78 @@ describe("core occurred-time resolution", () => {
       source_message_id: "message-prior-year-1000",
       scene: "company",
     });
+  });
+
+  it.each([
+    "1000-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:30+08:00",
+    "9999-12-31T23:59:59-14:00",
+  ] as const)("clarifies an explicit time whose Shanghai evidence interval leaves the year domain: %s", (explicit) => {
+    expect(resolveOccurredTime(
+      `吃了一个苹果。${explicit}`,
+      "2026-08-11T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: explicit,
+      resolved_start: null,
+      resolved_end: null,
+      precision: "unknown",
+      resolution_basis: "needs_clarification",
+    });
+  });
+
+  it.each([
+    [
+      "1000-01-01T06:00:00+14:00",
+      "1000-01-01T00:00:00+08:00",
+      "1000-01-01T00:01:00+08:00",
+    ],
+    [
+      "9999-12-31T23:58:59+08:00",
+      "9999-12-31T23:58:59+08:00",
+      "9999-12-31T23:59:59+08:00",
+    ],
+  ] as const)("resolves an explicit boundary interval that stays in the year domain: %s", (explicit, start, end) => {
+    expect(resolveOccurredTime(
+      `吃了一个苹果。${explicit}`,
+      "2026-08-11T08:30:00+08:00",
+    )).toMatchObject({
+      raw_text: explicit,
+      resolved_start: start,
+      resolved_end: end,
+      precision: "exact",
+      resolution_basis: "explicit",
+    });
+  });
+
+  it.each([
+    ["default", "吃了一个苹果。", "9999-12-31T23:58:59+08:00"],
+    ["explicit", "吃了一个苹果。1000-01-01T06:00:00+14:00", "2026-08-11T08:30:00+08:00"],
+  ] as const)("round-trips every %s evidence timestamp through core input authority", (_kind, sourceText, receivedAt) => {
+    const occurred = resolveOccurredTime(sourceText, receivedAt);
+    if (occurred.resolved_start === null || occurred.resolved_end === null) {
+      throw new Error("expected exact occurrence evidence");
+    }
+    const base = validContextFromCatalog();
+
+    const cloned = cloneCoreParseInput({
+      source_text: sourceText,
+      received_at: occurred.resolution_anchor,
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-roundtrip-time-evidence",
+      source_message_id: "message-roundtrip-current",
+      conversation_id: "conversation-core-v1",
+      prior_context: [{
+        ...base,
+        context_id: "context-roundtrip-time-evidence",
+        generated_at: occurred.resolved_start,
+        valid_until: occurred.resolved_end,
+        source_message_id: "message-roundtrip-prior",
+      }],
+    });
+
+    expect(cloned.received_at).toBe(occurred.resolution_anchor);
+    expect(cloned.prior_context[0].generated_at).toBe(occurred.resolved_start);
+    expect(cloned.prior_context[0].valid_until).toBe(occurred.resolved_end);
   });
 
   it("does not turn purchase or shelf-life evidence into an ingestion date", () => {

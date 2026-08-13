@@ -15,6 +15,8 @@ const MAX_CONTEXT_TEXT_LENGTH = 256;
 const MAX_UNIT_LENGTH = 64;
 const MAX_ISO_TIMESTAMP_LENGTH = 64;
 const OFFSET_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|([+-])(\d{2}):(\d{2}))$/;
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+const MINUTE_MS = 60_000;
 
 function invalid(reason: string): never {
   throw new TypeError(`CORE_INPUT_AUTHORITY_INVALID:${reason}`);
@@ -132,6 +134,7 @@ function offsetIsoTimestamp(value: unknown, path: string): OffsetIsoTimestamp {
   const second = Number(match[6]);
   const offsetHour = match[7] === "Z" ? 0 : Number(match[9]);
   const offsetMinute = match[7] === "Z" ? 0 : Number(match[10]);
+  const epochMs = Date.parse(value);
   if (
     year < 1_000 ||
     month < 1 ||
@@ -144,7 +147,18 @@ function offsetIsoTimestamp(value: unknown, path: string): OffsetIsoTimestamp {
     offsetHour > 14 ||
     offsetMinute > 59 ||
     (offsetHour === 14 && offsetMinute !== 0) ||
-    !Number.isFinite(Date.parse(value))
+    !Number.isFinite(epochMs)
+  ) {
+    return invalid(`${path}:iso_timestamp`);
+  }
+  const shanghaiYear = new Date(epochMs + SHANGHAI_OFFSET_MS).getUTCFullYear();
+  const evidenceEndYear = new Date(
+    epochMs + SHANGHAI_OFFSET_MS + MINUTE_MS,
+  ).getUTCFullYear();
+  if (
+    shanghaiYear < 1_000 || shanghaiYear > 9_999 ||
+    (path === "input.received_at" &&
+      (evidenceEndYear < 1_000 || evidenceEndYear > 9_999))
   ) {
     return invalid(`${path}:iso_timestamp`);
   }

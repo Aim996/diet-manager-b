@@ -68,6 +68,18 @@ function formatShanghai(epochMs: number): OffsetIsoTimestamp {
     `T${twoDigits(local.getUTCHours())}:${twoDigits(local.getUTCMinutes())}:${twoDigits(local.getUTCSeconds())}${fractional}+08:00` as OffsetIsoTimestamp;
 }
 
+function isSupportedShanghaiInstant(epochMs: number): boolean {
+  const year = new Date(
+    epochMs + SHANGHAI_OFFSET_MINUTES * MINUTE_MS,
+  ).getUTCFullYear();
+  return year >= 1_000 && year <= 9_999;
+}
+
+function hasSupportedEvidenceInterval(startEpochMs: number): boolean {
+  return isSupportedShanghaiInstant(startEpochMs) &&
+    isSupportedShanghaiInstant(startEpochMs + MINUTE_MS);
+}
+
 function evidence(
   rawText: string | null,
   startEpochMs: number | null,
@@ -93,7 +105,9 @@ export function resolveOccurredTime(
   receivedAt: OffsetIsoTimestamp,
 ): OccurredTimeEvidence {
   const received = parseOffsetIso(receivedAt);
-  if (received === null) throw new Error("CORE_TIME_INVALID:received_at");
+  if (received === null || !hasSupportedEvidenceInterval(received.epoch_ms)) {
+    throw new Error("CORE_TIME_INVALID:received_at");
+  }
   const anchor = formatShanghai(received.epoch_ms);
 
   const ambiguous = AMBIGUOUS_LATE_NIGHT_PATTERN.exec(sourceText);
@@ -110,7 +124,7 @@ export function resolveOccurredTime(
   const explicit = OFFSET_ISO_SHAPE_PATTERN.exec(sourceText);
   if (explicit !== null) {
     const parsed = parseOffsetIso(explicit[0]);
-    return parsed === null
+    return parsed === null || !hasSupportedEvidenceInterval(parsed.epoch_ms)
       ? evidence(
           explicit[0],
           null,
