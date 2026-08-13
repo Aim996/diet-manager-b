@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { isProxy } from "node:util/types";
 
 import { canonicalJson } from "../authority/canonical-json.js";
 import {
@@ -9,6 +10,7 @@ import { createWaterFactIdentity, type WaterFactPreviewMaterial } from "../autho
 import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
+  validateAndFreezeOccurredTimeEvidence,
   validateMealOperationEvidence,
 } from "../authority/meal-fact.js";
 import {
@@ -222,7 +224,7 @@ function validateStructuredAmount(value: unknown, field: string): void {
   enumValue(amount.evidence, ["explicit", "estimated_upper_bound"], `${field}.evidence`);
 }
 
-function validateOperation(value: unknown, field: string): void {
+function validateOperation(value: unknown, field: string): RecordWaterOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -268,7 +270,16 @@ function validateOperation(value: unknown, field: string): void {
       "kind", "operation_id", "occurred_time", "source_text", "plain_water_ml_milli", "amount_evidence",
     ], field);
     text(candidate.operation_id, `${field}.operation_id`);
-    timestamp(candidate.occurred_time, `${field}.occurred_time`);
+    let occurredTime;
+    try {
+      occurredTime = validateAndFreezeOccurredTimeEvidence(candidate.occurred_time, {
+        path: `${field}.occurred_time`,
+        requireExact: true,
+      });
+    } catch (error) {
+      if (error instanceof MealFactAuthorityError) return invalid(error.reason);
+      throw error;
+    }
     text(candidate.source_text, `${field}.source_text`);
     if (
       !Number.isSafeInteger(candidate.plain_water_ml_milli) ||
@@ -284,7 +295,7 @@ function validateOperation(value: unknown, field: string): void {
     if ((evidence.quantity as number) * 1_000 !== candidate.plain_water_ml_milli) {
       return invalid(`${field}.amount_evidence.quantity`);
     }
-    return;
+    return Object.freeze({ ...candidate, occurred_time: occurredTime }) as unknown as RecordWaterOperation;
   }
   if (kind === "correct_record") {
     const candidate = record(value, ["kind", "operation_id", "target_event_id", "base_revision", "item_order", "replacement_amount"], field);
@@ -361,6 +372,7 @@ function cloneUntrustedJson(value: unknown, path: string): unknown {
     return value;
   }
   if (typeof value !== "object") return unsafeClone(path, "value");
+  if (isProxy(value)) return unsafeClone(path, "proxy");
   if (Array.isArray(value)) {
     if (objectPrototype(value, path) !== Array.prototype) return unsafeClone(path, "prototype");
     const source = descriptors(value, path);
@@ -423,8 +435,11 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
   timestamp(envelope.received_at, "envelope.received_at");
   enumValue(envelope.timezone, ["Asia/Shanghai"], "envelope.timezone");
   if (!Array.isArray(envelope.operations) || envelope.operations.length === 0) return invalid("envelope.operations");
-  for (let index = 0; index < envelope.operations.length; index += 1) {
-    validateOperation(envelope.operations[index], `envelope.operations.${index}`);
+  const operations = envelope.operations;
+  const normalizedOperations = operations.map((operation, index) =>
+    validateOperation(operation, `envelope.operations.${index}`) ?? operation);
+  if (normalizedOperations.some((operation, index) => operation !== operations[index])) {
+    return Object.freeze({ ...envelope, operations: Object.freeze(normalizedOperations) }) as unknown as DomainEnvelopeInput;
   }
   return envelope as unknown as DomainEnvelopeInput;
 }
@@ -641,6 +656,8 @@ function mealFactPreviewMaterial(
   MealFactPreviewMaterial | WaterFactPreviewMaterial {
   const water = envelope.operations.find((operation): operation is RecordWaterOperation => operation.kind === "record_water");
   if (water) {
+    if (water.occurred_time.resolved_start === null) return invalid("envelope.operations.0.occurred_time.resolved_interval");
+    const occurredAtText = new Date(water.occurred_time.resolved_start).toISOString();
     return Object.freeze({
       authority_kind: "diet-manager/domain-preview/v3",
       input_digest: inputDigest,
@@ -649,10 +666,11 @@ function mealFactPreviewMaterial(
         sequence: 0, event_id: deriveDomainId("event", envelope.idempotency_key, 0), operation_id: water.operation_id,
         schema_version: "domain/v2", event_type: "diet_water", fact_kind: "water",
         source_message_id: envelope.source_message_id, conversation_id: envelope.conversation_id,
-        received_at: envelope.received_at, occurred_at_text: water.occurred_time, meal_id: null, meal_slot: null,
+        received_at: envelope.received_at, occurred_at_text: occurredAtText, meal_id: null, meal_slot: null,
         payload: {
           amount_evidence: water.amount_evidence, authority_kind: "diet-manager/water-fact/v1", estimated: false,
-          plain_water_ml_milli: water.plain_water_ml_milli, source_text: water.source_text, timezone: "Asia/Shanghai",
+          occurred_time: water.occurred_time, plain_water_ml_milli: water.plain_water_ml_milli,
+          source_text: water.source_text, timezone: "Asia/Shanghai",
         },
       })]),
     });

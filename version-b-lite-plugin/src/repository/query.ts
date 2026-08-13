@@ -6,7 +6,10 @@ import {
   mealFactIdentityEquals,
 } from "../authority/meal-fact-identity.js";
 import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/water-fact-identity.js";
-import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
+import {
+  validateAndFreezeMealFactPayload,
+  validateAndFreezeOccurredTimeEvidence,
+} from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 
@@ -562,14 +565,23 @@ export function listWaterEvents(input: DateRangeQuery): readonly WaterListItem[]
       const payload = parseCanonicalRecord(row.payload_json, "water_event");
       const hasReservation = Object.hasOwn(payload, "progress_reservation");
       const expectedPayloadFields = hasReservation
-        ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
-        : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"];
+        ? ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+        : ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "source_text", "timezone"];
       if (
         Object.keys(payload).sort().join("\u0000") !== expectedPayloadFields.sort().join("\u0000") ||
         payload.authority_kind !== "diet-manager/water-fact/v1" || payload.estimated !== false ||
         payload.timezone !== "Asia/Shanghai" || typeof payload.source_text !== "string" ||
         !Number.isSafeInteger(payload.plain_water_ml_milli) || (payload.plain_water_ml_milli as number) <= 0
       ) return invalid("water_event_authority");
+      try {
+        validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+          occurredAt: row.occurred_at_text,
+          path: "water_event.occurred_time",
+          requireExact: true,
+        });
+      } catch {
+        return invalid("water_event_authority");
+      }
       const evidence = payload.amount_evidence;
       if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence) ||
           Object.keys(evidence).sort().join("\u0000") !== ["estimated", "quantity", "raw_text", "unit"].join("\u0000") ||

@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
-import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
+import {
+  validateAndFreezeMealFactPayload,
+  validateAndFreezeOccurredTimeEvidence,
+} from "../authority/meal-fact.js";
 import type { DietManagerAction } from "../contracts.js";
 import type { PreparedEnvelopeOperation } from "../repository/fact-commit.js";
 import {
@@ -767,6 +770,12 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
 export function prepareWaterOperation(input: PrepareWaterInput): PreparedWater {
   const { operation } = input;
   if (operation.kind !== "record_water") return invalid("water_operation");
+  const occurredTime = validateAndFreezeOccurredTimeEvidence(operation.occurred_time, {
+    path: "water_operation.occurred_time",
+    requireExact: true,
+  });
+  if (occurredTime.resolved_start === null) return invalid("water_occurred_time");
+  const occurredAtText = new Date(occurredTime.resolved_start).toISOString();
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const effectId = deriveDomainId("effect", input.idempotencyKey, 9);
   const outboxId = deriveDomainId("outbox", input.idempotencyKey, 9);
@@ -775,6 +784,7 @@ export function prepareWaterOperation(input: PrepareWaterInput): PreparedWater {
     amount_evidence: operation.amount_evidence,
     authority_kind: "diet-manager/water-fact/v1",
     estimated: false,
+    occurred_time: occurredTime,
     plain_water_ml_milli: operation.plain_water_ml_milli,
     ...(input.progressReservation === undefined ? {} : { progress_reservation: input.progressReservation }),
     source_text: operation.source_text,
@@ -802,7 +812,7 @@ export function prepareWaterOperation(input: PrepareWaterInput): PreparedWater {
         conversationId: input.conversationId,
         receivedAt: input.receivedAt,
         committedAt: input.committedAt,
-        occurredAtText: operation.occurred_time,
+        occurredAtText,
         mealId: null,
         mealSlot: null,
         payload,
@@ -821,8 +831,13 @@ export function prepareWaterOperation(input: PrepareWaterInput): PreparedWater {
 }
 
 export function preflightWaterOperation(operation: RecordWaterOperation): DailyProgressResult {
+  const occurredTime = validateAndFreezeOccurredTimeEvidence(operation.occurred_time, {
+    path: "water_operation.occurred_time",
+    requireExact: true,
+  });
+  if (occurredTime.resolved_start === null) return invalid("water_occurred_time");
   return Object.freeze({
-    date: toNaturalDate(operation.occurred_time, "Asia/Shanghai"),
+    date: toNaturalDate(new Date(occurredTime.resolved_start).toISOString(), "Asia/Shanghai"),
     timezone: "Asia/Shanghai" as const,
     coverage_status: "partial" as const,
     nutrients: Object.freeze({
@@ -2174,13 +2189,22 @@ function waterProgressFromStoredFact(
   ) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:event");
   const payload = parseCanonical(event.payload_json, "water_event");
   exactKeys(payload, Object.hasOwn(payload, "progress_reservation")
-    ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
-    : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"], "water_event");
+    ? ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+    : ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "source_text", "timezone"], "water_event");
   if (
     payload.authority_kind !== "diet-manager/water-fact/v1" || payload.estimated !== false ||
     payload.timezone !== "Asia/Shanghai" || typeof payload.source_text !== "string" ||
     !Number.isSafeInteger(payload.plain_water_ml_milli) || (payload.plain_water_ml_milli as number) <= 0
   ) throw new Error("WATER_EFFECT_AUTHORITY_INVALID:payload");
+  try {
+    validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+      occurredAt: event.occurred_at_text,
+      path: "water_event.occurred_time",
+      requireExact: true,
+    });
+  } catch {
+    throw new Error("WATER_EFFECT_AUTHORITY_INVALID:payload");
+  }
   return Object.freeze({
     date: toNaturalDate(event.occurred_at_text, "Asia/Shanghai"),
     timezone: "Asia/Shanghai" as const,

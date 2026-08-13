@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
-import { validateAndFreezeMealFactPayload } from "../authority/meal-fact.js";
+import {
+  validateAndFreezeMealFactPayload,
+  validateAndFreezeOccurredTimeEvidence,
+} from "../authority/meal-fact.js";
 
 const NUTRIENT_FIELDS = [
   "carbohydrate_mg",
@@ -415,10 +418,18 @@ export function reservationFromEventPayload(
     const payload = exactRecord(
       value,
       hasReservation
-        ? ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
-        : ["amount_evidence", "authority_kind", "estimated", "plain_water_ml_milli", "source_text", "timezone"],
+        ? ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "progress_reservation", "source_text", "timezone"]
+        : ["amount_evidence", "authority_kind", "estimated", "occurred_time", "plain_water_ml_milli", "source_text", "timezone"],
       "water_fact",
     );
+    try {
+      validateAndFreezeOccurredTimeEvidence(payload.occurred_time, {
+        path: "water_fact.occurred_time",
+        requireExact: true,
+      });
+    } catch {
+      return invalid("water_fact");
+    }
     if (!hasReservation) return undefined;
     const reservation = parseProgressReservation(payload.progress_reservation);
     if (reservation.mode !== "contribution") return invalid("water_reservation_mode");
@@ -457,7 +468,11 @@ export function reservationFromEventPayload(
   return undefined;
 }
 
-function parseEventPayload(payloadJson: string, eventType: string): ProgressReservation | undefined {
+function parseEventPayload(
+  payloadJson: string,
+  eventType: string,
+  occurredAtText: string | null,
+): ProgressReservation | undefined {
   let payload: unknown;
   try {
     payload = JSON.parse(payloadJson) as unknown;
@@ -465,6 +480,20 @@ function parseEventPayload(payloadJson: string, eventType: string): ProgressRese
     return invalid("fact_json");
   }
   if (canonicalJson(payload) !== payloadJson) return invalid("fact_canonical");
+  if (eventType === "diet_water") {
+    if (occurredAtText === null || typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      return invalid("water_fact");
+    }
+    try {
+      validateAndFreezeOccurredTimeEvidence((payload as Record<string, unknown>).occurred_time, {
+        occurredAt: occurredAtText,
+        path: "water_fact.occurred_time",
+        requireExact: true,
+      });
+    } catch {
+      return invalid("water_fact");
+    }
+  }
   return reservationFromEventPayload(payload, eventType);
 }
 
@@ -475,15 +504,15 @@ interface StoredReservation {
 
 function activeReservations(database: DatabaseSync): StoredReservation[] {
   const rows = database.prepare(
-    `SELECT e.envelope_id, e.event_type, e.payload_json
+    `SELECT e.envelope_id, e.event_type, e.occurred_at_text, e.payload_json
      FROM event_records e
      JOIN command_envelopes c ON c.envelope_id = e.envelope_id
      WHERE c.state <> 'finalized'
      ORDER BY e.envelope_id, e.committed_at, e.event_id`,
-  ).all() as Array<{ envelope_id: string; event_type: string; payload_json: string }>;
+  ).all() as Array<{ envelope_id: string; event_type: string; occurred_at_text: string | null; payload_json: string }>;
   const reservations: StoredReservation[] = [];
   for (const row of rows) {
-    const reservation = parseEventPayload(row.payload_json, row.event_type);
+    const reservation = parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text);
     if (reservation) reservations.push({ envelope_id: row.envelope_id, reservation });
   }
   return reservations;
@@ -597,11 +626,11 @@ export function readEnvelopeProgressReservation(
   envelopeId: string,
 ): ProgressReservation | undefined {
   const rows = database.prepare(
-    `SELECT event_type, payload_json FROM event_records
+    `SELECT event_type, occurred_at_text, payload_json FROM event_records
      WHERE envelope_id = ? ORDER BY committed_at, event_id`,
-  ).all(envelopeId) as Array<{ event_type: string; payload_json: string }>;
+  ).all(envelopeId) as Array<{ event_type: string; occurred_at_text: string | null; payload_json: string }>;
   const reservations = rows
-    .map((row) => parseEventPayload(row.payload_json, row.event_type))
+    .map((row) => parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text))
     .filter((candidate): candidate is ProgressReservation => candidate !== undefined);
   if (reservations.length > 1) return invalid("reservation_count");
   return reservations[0];

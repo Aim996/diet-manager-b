@@ -1120,7 +1120,11 @@ describe("WaterEvent transaction faults", () => {
       const stableRevision = computeRepositoryDataRevision(runtime.database);
 
       const unrelated = waterEnvelope("unrelated-next-day");
-      (unrelated.operations[0] as { occurred_time: string }).occurred_time = "2026-08-13T12:00:00.000Z";
+      const unrelatedOccurred = (unrelated.operations[0] as unknown as {
+        occurred_time: { resolved_start: string; resolved_end: string };
+      }).occurred_time;
+      unrelatedOccurred.resolved_start = "2026-08-13T12:00:00.000Z";
+      unrelatedOccurred.resolved_end = "2026-08-13T12:01:00.000Z";
       const unrelatedService = createDietDomainService({
         database: runtime.database,
         secret,
@@ -1312,7 +1316,11 @@ function waterEnvelope(suffix: string): DomainEnvelopeInput {
     timezone: "Asia/Shanghai",
     operations: [{
       kind: "record_water", operation_id: `operation-water-fault-${suffix}`,
-      occurred_time: "2026-08-12T12:00:00.000Z", source_text: "喝了500ml白水。",
+      occurred_time: {
+        raw_text: null, resolved_start: "2026-08-12T12:00:00.000Z", resolved_end: "2026-08-12T12:01:00.000Z",
+        precision: "exact", timezone: "Asia/Shanghai", resolution_basis: "explicit",
+        resolution_anchor: "2026-08-12T04:00:00.000Z", resolver_version: "diet-manager/time-parser-v1",
+      }, source_text: "喝了500ml白水。",
       plain_water_ml_milli: 500_000, amount_evidence: { raw_text: "500ml", quantity: 500, unit: "ml", estimated: false },
     }],
   } as unknown as DomainEnvelopeInput;

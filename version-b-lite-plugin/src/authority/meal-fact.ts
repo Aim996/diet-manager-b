@@ -1,5 +1,7 @@
 import { isProxy } from "node:util/types";
 
+import type { OccurredTimeEvidence } from "../parser/types.js";
+
 export const MEAL_EVIDENCE_OPTIONAL_FIELDS = Object.freeze([
   "source_text",
   "occurred_time",
@@ -260,6 +262,24 @@ function validateOccurredTime(
   if (occurredAt !== undefined && new Date(start.epoch).toISOString() !== occurredAt) {
     return invalid(`${path}.occurred_at`);
   }
+}
+
+export function validateAndFreezeOccurredTimeEvidence(
+  value: unknown,
+  options: {
+    readonly occurredAt?: string;
+    readonly path?: string;
+    readonly requireExact?: boolean;
+  } = {},
+): Readonly<OccurredTimeEvidence> {
+  const path = options.path ?? "occurred_time";
+  const cloned = cloneMealFactJson(value, path);
+  validateOccurredTime(cloned, path, options.occurredAt);
+  const evidence = cloned as unknown as Readonly<OccurredTimeEvidence>;
+  if (options.requireExact === true && evidence.precision !== "exact") {
+    return invalid(`${path}.precision`);
+  }
+  return evidence;
 }
 
 function validateSubject(value: unknown, path: string): void {

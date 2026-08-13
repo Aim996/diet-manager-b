@@ -5,8 +5,13 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import casesCatalog from "../../../shared/acceptance-cases/cases.json";
+import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.json";
 import { createDietDomainService } from "../../src/domain/service.js";
+import { prepareWaterOperation } from "../../src/domain/effect-bundle.js";
 import type { DomainEnvelopeInput, MealItemInput } from "../../src/domain/types.js";
+import { parseCoreCommand } from "../../src/parser/parse-command.js";
+import type { OccurredTimeEvidence } from "../../src/parser/types.js";
 import { listWaterEvents } from "../../src/repository/query.js";
 import { parseWaterFactPreviewMaterial } from "../../src/authority/water-fact-identity.js";
 import { canonicalJson } from "../../src/authority/canonical-json.js";
@@ -43,7 +48,16 @@ function waterEnvelope(suffix: string): DomainEnvelopeInput {
     operations: [{
       kind: "record_water",
       operation_id: `operation-water-${suffix}`,
-      occurred_time: "2026-08-12T12:00:00.000Z",
+      occurred_time: {
+        raw_text: null,
+        resolved_start: "2026-08-12T12:00:00.000Z",
+        resolved_end: "2026-08-12T12:01:00.000Z",
+        precision: "exact",
+        timezone: "Asia/Shanghai",
+        resolution_basis: "explicit",
+        resolution_anchor: "2026-08-12T04:00:00.000Z",
+        resolver_version: "diet-manager/time-parser-v1",
+      },
       source_text: "喝了500ml白水。",
       plain_water_ml_milli: 500_000,
       amount_evidence: { raw_text: "500ml", quantity: 500, unit: "ml", estimated: false },
@@ -96,7 +110,209 @@ function businessSnapshot(database: ReturnType<typeof openDietDatabase>["databas
   ]));
 }
 
+const expectedWaterOccurredTime = Object.freeze({
+  raw_text: null,
+  resolved_start: "2026-08-11T08:30:00+08:00",
+  resolved_end: "2026-08-11T08:31:00+08:00",
+  precision: "exact",
+  timezone: "Asia/Shanghai",
+  resolution_basis: "default_received_at",
+  resolution_anchor: "2026-08-11T08:30:00+08:00",
+  resolver_version: "diet-manager/time-parser-v1",
+} as const satisfies OccurredTimeEvidence);
+
+function parserWaterEnvelope(suffix: string): { envelope: DomainEnvelopeInput; occurredTime: OccurredTimeEvidence } {
+  const entry = casesCatalog.cases.find(({ id }) => id === "CASE-WATER-001");
+  if (entry === undefined) throw new Error("missing CASE-WATER-001");
+  const environment = fixturesCatalog.environments.find(({ fixture_id }) => fixture_id === entry.setup.environment_fixture);
+  if (environment === undefined) throw new Error("missing CASE-WATER-001 environment");
+  const parsed = parseCoreCommand({
+    source_text: entry.source_text,
+    received_at: environment.clock,
+    timezone: environment.timezone,
+    operation_id: `operation-water-parser-${suffix}`,
+    source_message_id: `message-water-parser-${suffix}`,
+    conversation_id: "conversation-water-parser",
+    prior_context: entry.setup.prior_context,
+  });
+  if (parsed.disposition !== "candidate" || parsed.command.action !== "record_water") {
+    throw new Error("CASE-WATER-001 did not produce a water candidate");
+  }
+  const command = parsed.command;
+  return {
+    envelope: {
+      envelope_id: `envelope-water-parser-${suffix}`,
+      idempotency_key: `idem-water-parser-${suffix}`,
+      command_type: "record_water",
+      subject_scope: "user:self",
+      source_message_id: `message-water-parser-${suffix}`,
+      conversation_id: "conversation-water-parser",
+      received_at: new Date(environment.clock).toISOString(),
+      timezone: "Asia/Shanghai",
+      operations: [{
+        kind: "record_water",
+        operation_id: command.operation_id,
+        occurred_time: structuredClone(command.occurred_time),
+        source_text: command.source_text,
+        plain_water_ml_milli: command.plain_water_ml_milli,
+        amount_evidence: structuredClone(command.amount_evidence),
+      }],
+    } as unknown as DomainEnvelopeInput,
+    occurredTime: command.occurred_time,
+  };
+}
+
+function hostileProxy<T extends object>(target: T, revoked: boolean): { value: T; executions: () => number } {
+  let executionCount = 0;
+  const handler: ProxyHandler<T> = {
+    get(targetValue, property, receiver) {
+      executionCount += 1;
+      return Reflect.get(targetValue, property, receiver);
+    },
+    getPrototypeOf(targetValue) {
+      executionCount += 1;
+      return Reflect.getPrototypeOf(targetValue);
+    },
+    ownKeys(targetValue) {
+      executionCount += 1;
+      return Reflect.ownKeys(targetValue);
+    },
+    getOwnPropertyDescriptor(targetValue, property) {
+      executionCount += 1;
+      return Reflect.getOwnPropertyDescriptor(targetValue, property);
+    },
+  };
+  const revocable = Proxy.revocable(target, handler);
+  if (revoked) revocable.revoke();
+  return { value: revocable.proxy, executions: () => executionCount };
+}
+
 describe("CASE-WATER-001", () => {
+  it.each([
+    ["root transparent", "root", false, "DIET_DOMAIN_REQUEST_INVALID:envelope_proxy"],
+    ["root revoked", "root", true, "DIET_DOMAIN_REQUEST_INVALID:envelope_proxy"],
+    ["operations array transparent", "operations", false, "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_proxy"],
+    ["operations array revoked", "operations", true, "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_proxy"],
+    ["nested amount evidence transparent", "amount_evidence", false, "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_0_amount_evidence_proxy"],
+    ["nested amount evidence revoked", "amount_evidence", true, "DIET_DOMAIN_REQUEST_INVALID:envelope_operations_0_amount_evidence_proxy"],
+  ] as const)("rejects a %s proxy without executing any traps or writing business state", (_name, location, revoked, error) => {
+    const root = newRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T04:00:01.000Z" });
+      const envelope = waterEnvelope(`proxy-${location}-${revoked ? "revoked" : "transparent"}`);
+      let input: DomainEnvelopeInput;
+      let executions: () => number;
+      if (location === "root") {
+        const proxied = hostileProxy(envelope, revoked);
+        input = proxied.value;
+        executions = proxied.executions;
+      } else if (location === "operations") {
+        const proxied = hostileProxy(envelope.operations as DomainEnvelopeInput["operations"] & object, revoked);
+        (envelope as unknown as { operations: object }).operations = proxied.value;
+        input = envelope;
+        executions = proxied.executions;
+      } else {
+        const operation = envelope.operations[0] as unknown as Record<string, unknown>;
+        const proxied = hostileProxy(operation.amount_evidence as object, revoked);
+        operation.amount_evidence = proxied.value;
+        input = envelope;
+        executions = proxied.executions;
+      }
+      const before = businessSnapshot(runtime.database);
+      expect.soft(() => service.preview(input)).toThrow(error);
+      expect.soft(executions()).toBe(0);
+      expect.soft(businessSnapshot(runtime.database)).toEqual(before);
+    } finally {
+      runtime.database.close();
+    }
+  });
+
+  it("maps the catalog water candidate's exact occurred-time evidence into the bound WaterEvent", () => {
+    const root = newRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const { envelope, occurredTime } = parserWaterEnvelope("occurred-evidence");
+      expect(occurredTime).toEqual(expectedWaterOccurredTime);
+      expect(Object.isFrozen(occurredTime)).toBe(true);
+      expect(Object.keys(occurredTime).sort()).toEqual([
+        "precision", "raw_text", "resolution_anchor", "resolution_basis", "resolved_end",
+        "resolved_start", "resolver_version", "timezone",
+      ]);
+      const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-11T00:30:01.000Z" });
+      const preview = service.preview(envelope);
+      const input = { envelope, token: preview.token, input_digest: preview.input_digest, data_revision: preview.data_revision };
+      const operation = envelope.operations[0];
+      if (operation?.kind !== "record_water") throw new Error("expected water operation");
+      const prepared = prepareWaterOperation({
+        database: runtime.database, secret, token: preview.token, inputDigest: preview.input_digest,
+        dataRevision: preview.data_revision, subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key, sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id, receivedAt: envelope.received_at,
+        committedAt: "2026-08-11T00:30:01.000Z", sequence: 0, operation,
+      });
+      const preparedOccurrence = (prepared.fact.event.payload as Record<string, unknown>).occurred_time;
+      expect(preparedOccurrence).toEqual(expectedWaterOccurredTime);
+      expect(Object.isFrozen(preparedOccurrence)).toBe(true);
+      const first = service.execute(input);
+      const event = runtime.database.prepare(
+        "SELECT occurred_at_text, payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { occurred_at_text: string; payload_json: string };
+      const payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+      expect(event.occurred_at_text).toBe("2026-08-11T00:30:00.000Z");
+      expect(payload.occurred_time).toEqual(expectedWaterOccurredTime);
+      expect(event.payload_json).toBe(canonicalJson(payload));
+      const listed = listWaterEvents({
+        database: runtime.database,
+        authoritySecret: secret,
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      });
+      expect(listed).toEqual([expect.objectContaining({ plain_water_ml_milli: 500_000 })]);
+      expect(JSON.stringify(listed)).not.toContain("resolver_version");
+      expect(service.execute(input)).toEqual(first);
+
+      (payload.occurred_time as Record<string, unknown>).raw_text = "now";
+      runtime.database.prepare("UPDATE event_records SET payload_json = ? WHERE envelope_id = ?")
+        .run(canonicalJson(payload), envelope.envelope_id);
+      const beforeRejectedRead = businessSnapshot(runtime.database);
+      expect(() => listWaterEvents({
+        database: runtime.database,
+        authoritySecret: secret,
+        date: "2026-08-11",
+        timezone: "Asia/Shanghai",
+      })).toThrow("INVENTORY_PROJECTION_INVALID:water_event_identity");
+      expect(() => service.execute(input)).toThrow("WATER_EFFECT_AUTHORITY_INVALID");
+      expect(businessSnapshot(runtime.database)).toEqual(beforeRejectedRead);
+    } finally {
+      runtime.database.close();
+    }
+  });
+
+  it.each([
+    ["legacy timestamp string", () => {
+      const envelope = waterEnvelope("legacy-occurred-string");
+      (envelope.operations[0] as unknown as { occurred_time: unknown }).occurred_time = "2026-08-12T12:00:00.000Z";
+      return envelope;
+    }],
+    ["malformed evidence", () => {
+      const { envelope } = parserWaterEnvelope("malformed-occurred-evidence");
+      delete (envelope.operations[0] as unknown as { occurred_time: Record<string, unknown> }).occurred_time.resolver_version;
+      return envelope;
+    }],
+  ] as const)("rejects %s for explicit-water occurred_time", (_name, envelope) => {
+    const root = newRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-12T04:00:01.000Z" });
+      const before = businessSnapshot(runtime.database);
+      expect(() => service.preview(envelope())).toThrow("DIET_DOMAIN_REQUEST_INVALID");
+      expect(businessSnapshot(runtime.database)).toEqual(before);
+    } finally {
+      runtime.database.close();
+    }
+  });
+
   it("requires exactly one water identity in a v3 manifest", () => {
     const identity = {
       sequence: 0, event_id: "event", operation_id: "operation", schema_version: "domain/v2",

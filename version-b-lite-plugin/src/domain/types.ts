@@ -130,7 +130,7 @@ export interface RecordMealOperation {
 export interface RecordWaterOperation {
   readonly kind: "record_water";
   readonly operation_id: string;
-  readonly occurred_time: string;
+  readonly occurred_time: Readonly<OccurredTimeEvidence>;
   readonly source_text: string;
   readonly plain_water_ml_milli: number;
   readonly amount_evidence: unknown;
