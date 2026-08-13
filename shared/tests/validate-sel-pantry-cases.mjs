@@ -41,6 +41,25 @@ const SOURCE_TEXT = Object.freeze({
   'CASE-PURCHASE-009': '刚买的这瓶牛奶已经喝了一部分。',
   'CASE-PURCHASE-010': '更正：这批牛奶放在冷藏室，不是常温柜。',
 });
+const DOMAIN_FIXTURES = Object.freeze({
+  'CASE-PURCHASE-001': 'domain-purchase-milk-2x12x250-v1',
+  'CASE-PURCHASE-003': 'domain-purchase-default-location-v1',
+  'CASE-PURCHASE-007': 'domain-purchase-exact-identity-reuse-v1',
+  'CASE-INVENTORY-001': 'domain-inventory-unique-milk-v1',
+  'CASE-INVENTORY-002': 'domain-inventory-multi-batch-fefo-v1',
+  'CASE-INVENTORY-003': 'domain-inventory-multiple-products-v1',
+  'CASE-INVENTORY-005': 'domain-inventory-unit-incompatible-rice-v1',
+  'CASE-INVENTORY-004': 'domain-inventory-insufficient-milk-v1',
+  'CASE-INVENTORY-009': 'domain-inventory-expired-and-fresh-v1',
+  'CASE-MEAL-004': 'domain-meal-company-apple-v1',
+  'CASE-MEAL-005': 'domain-meal-explicit-inventory-skip-v1',
+  'CASE-PURCHASE-002': 'domain-purchase-eggs-outer-only-v1',
+  'CASE-PURCHASE-005': 'domain-purchase-unreliable-expiry-v1',
+  'CASE-PURCHASE-006': 'domain-purchase-multi-product-v1',
+  'CASE-PURCHASE-008': 'domain-purchase-identity-ambiguous-v1',
+  'CASE-PURCHASE-009': 'domain-purchase-partially-opened-v1',
+  'CASE-PURCHASE-010': 'domain-inventory-location-correction-v1',
+});
 
 function fail(code) {
   throw new Error(code);
@@ -97,14 +116,95 @@ function forbiddenLayer(token) {
   return mapping[token];
 }
 
-function fixtureOracleKey(value) {
-  if (value === null || typeof value !== 'object') return null;
-  for (const [key, child] of Object.entries(value)) {
-    if (/^(?:expected|assert|oracle|result|outcome|require)/i.test(key)) return key;
-    const nested = fixtureOracleKey(child);
-    if (nested) return nested;
+const string = Object.freeze({ type: 'string' });
+const number = Object.freeze({ type: 'number' });
+const boolean = Object.freeze({ type: 'boolean' });
+const nil = Object.freeze({ type: 'null' });
+const array = (item, { min = 0, unique = false } = {}) => ({ type: 'array', item, min, unique });
+const object = (required, optional = {}, { minKeys = 0 } = {}) => ({ type: 'object', required, optional, minKeys });
+const expectedImmutableIds = object({}, {
+  product_ids: array(string, { min: 1, unique: true }),
+  batch_ids: array(string, { min: 1, unique: true }),
+  event_ids: array(string, { min: 1, unique: true }),
+}, { minKeys: 1 });
+const root = (fields) => object({ fixture_id: string, scenario_type: string, received_at: string, ...fields }, { expected_immutable_ids: expectedImmutableIds });
+
+const productId = object({ product_id: string });
+const milkIdentity = object({ product_id: string, brand: string, flavour: string, specification: string });
+const historicalBatch = object({ batch_id: string, product_id: string, quantity: number, nutrition_profile_version: number });
+const batchWithExpiry = object({ batch_id: string, product_id: string, quantity: number, unit: string, expires_at: string });
+const batchWithoutExpiry = object({ batch_id: string, product_id: string, quantity: number, unit: string });
+
+const FIXTURE_SCHEMAS = Object.freeze({
+  purchase_default_location: root({ configured_home_default: object({ location: string, rule_version: string }) }),
+  purchase_exact_identity_reuse: root({ existing_products: array(milkIdentity, { min: 1 }), historical_batches: array(historicalBatch, { min: 1 }) }),
+  inventory_unique_product: root({ existing_batches: array(batchWithExpiry, { min: 1 }) }),
+  inventory_multi_batch_fefo_fifo: root({ existing_batches: array(batchWithExpiry, { min: 2 }) }),
+  inventory_unit_incompatible: root({ existing_batches: array(batchWithoutExpiry, { min: 1 }), nutrition_amount_evidence: object({ min_g: number, max_g: number }) }),
+  inventory_insufficient: root({ existing_batches: array(batchWithoutExpiry, { min: 1 }) }),
+  inventory_expired_and_fresh: root({ existing_batches: array(batchWithExpiry, { min: 2 }) }),
+  meal_outside_context: root({ profiles: array(object({ profile_id: string, product_id: string }), { min: 1 }), context: object({ scene: string, home_inventory_available: boolean }) }),
+  meal_explicit_inventory_skip: root({ profiles: array(object({ profile_id: string, product_id: string }), { min: 1 }), directive: object({ raw_text: string, action: string }) }),
+  purchase_outer_only: root({ explicit_package: object({ outer_count: number, outer_unit: string, inner_count: nil, capacity: nil, total: nil }) }),
+  purchase_unreliable_expiry: root({ existing_products: array(productId, { min: 1 }), expiration: object({ reliability: string, explicit_expires_at: nil }) }),
+  purchase_multi_product: root({ existing_products: array(productId, { min: 3 }) }),
+  purchase_identity_ambiguous: root({ existing_products: array(object({ product_id: string, normalized_name: string }), { min: 2 }) }),
+  purchase_partially_opened: root({ existing_products: array(object({ product_id: string, unit: string }), { min: 1 }), explicit_opening: object({ previously_unopened: boolean, partial_use: boolean }) }),
+  inventory_location_correction: root({ existing_batches: array(object({ batch_id: string, product_id: string, location: string, expires_at: string }), { min: 1 }), correction: object({ new_location: string, idempotency_key: string }) }),
+});
+const FIXTURE_SCENARIO_TYPES = Object.freeze({
+  'domain-purchase-default-location-v1': 'purchase_default_location',
+  'domain-purchase-exact-identity-reuse-v1': 'purchase_exact_identity_reuse',
+  'domain-inventory-unique-milk-v1': 'inventory_unique_product',
+  'domain-inventory-multi-batch-fefo-v1': 'inventory_multi_batch_fefo_fifo',
+  'domain-inventory-unit-incompatible-rice-v1': 'inventory_unit_incompatible',
+  'domain-inventory-insufficient-milk-v1': 'inventory_insufficient',
+  'domain-inventory-expired-and-fresh-v1': 'inventory_expired_and_fresh',
+  'domain-meal-company-apple-v1': 'meal_outside_context',
+  'domain-meal-explicit-inventory-skip-v1': 'meal_explicit_inventory_skip',
+  'domain-purchase-eggs-outer-only-v1': 'purchase_outer_only',
+  'domain-purchase-unreliable-expiry-v1': 'purchase_unreliable_expiry',
+  'domain-purchase-multi-product-v1': 'purchase_multi_product',
+  'domain-purchase-identity-ambiguous-v1': 'purchase_identity_ambiguous',
+  'domain-purchase-partially-opened-v1': 'purchase_partially_opened',
+  'domain-inventory-location-correction-v1': 'inventory_location_correction',
+});
+
+function fixtureSchemaFail(fixtureId, kind, key) {
+  fail(`SEL_PANTRY_FIXTURE_SCHEMA_${kind}:${fixtureId}:${key}`);
+}
+
+function validateFixtureSchema(value, schema, fixtureId, key = '$') {
+  if (schema.type === 'string' || schema.type === 'number' || schema.type === 'boolean') {
+    if (typeof value !== schema.type) fixtureSchemaFail(fixtureId, 'TYPE', key);
+    return;
   }
-  return null;
+  if (schema.type === 'null') {
+    if (value !== null) fixtureSchemaFail(fixtureId, 'TYPE', key);
+    return;
+  }
+  if (schema.type === 'array') {
+    if (!Array.isArray(value) || value.length < schema.min) fixtureSchemaFail(fixtureId, 'TYPE', key);
+    if (schema.unique && new Set(value).size !== value.length) fixtureSchemaFail(fixtureId, 'VALUE', key);
+    value.forEach((entry, index) => validateFixtureSchema(entry, schema.item, fixtureId, `${key}[${index}]`));
+    return;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) fixtureSchemaFail(fixtureId, 'TYPE', key);
+  const declared = { ...schema.required, ...schema.optional };
+  if (Object.keys(value).length < schema.minKeys) fixtureSchemaFail(fixtureId, 'TYPE', key);
+  for (const declaredKey of Object.keys(schema.required)) if (!(declaredKey in value)) fixtureSchemaFail(fixtureId, 'MISSING', `${key}.${declaredKey}`);
+  for (const [childKey, childValue] of Object.entries(value)) {
+    const childSchema = declared[childKey];
+    if (!childSchema) fixtureSchemaFail(fixtureId, 'KEY', key === '$' ? childKey : `${key}.${childKey}`);
+    validateFixtureSchema(childValue, childSchema, fixtureId, key === '$' ? childKey : `${key}.${childKey}`);
+  }
+}
+
+function validateSelectedFixture(fixture) {
+  if (FIXTURE_SCENARIO_TYPES[fixture.fixture_id] !== fixture.scenario_type) fixtureSchemaFail(fixture.fixture_id, 'SCENARIO', 'scenario_type');
+  const schema = FIXTURE_SCHEMAS[fixture.scenario_type];
+  if (!schema) fixtureSchemaFail(fixture.fixture_id, 'SCENARIO', 'scenario_type');
+  validateFixtureSchema(fixture, schema, fixture.fixture_id);
 }
 
 function validate(catalog = readJson(CATALOG_PATH), fixtures = readJson(FIXTURES_PATH), expected = EXPECTED) {
@@ -129,9 +229,9 @@ function validate(catalog = readJson(CATALOG_PATH), fixtures = readJson(FIXTURES
     if (entry.source_text !== SOURCE_TEXT[entry.id]) fail(`SEL_PANTRY_SOURCE_DRIFT:${entry.id}`);
     if (!entry.forbidden.length) fail(`SEL_PANTRY_FORBIDDEN_EMPTY:${entry.id}`);
     if (!knownFixtures.has(entry.setup.environment_fixture) || !knownFixtures.has(entry.setup.domain_scenario_fixture)) fail(`SEL_PANTRY_FIXTURE_UNKNOWN:${entry.id}`);
+    if (entry.setup.domain_scenario_fixture !== DOMAIN_FIXTURES[entry.id]) fail(`SEL_PANTRY_FIXTURE_DRIFT:${entry.id}`);
     const fixture = fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === entry.setup.domain_scenario_fixture);
-    const oracleKey = fixtureOracleKey(fixture);
-    if (oracleKey) fail(`SEL_PANTRY_FIXTURE_ORACLE_KEY:${fixture.fixture_id}:${oracleKey}`);
+    if (FIXTURE_SCENARIO_TYPES[fixture.fixture_id]) validateSelectedFixture(fixture);
     for (const pointer of paths.get(entry.id) ?? []) if (!pointerExists(entry, pointer)) fail(`SEL_PANTRY_ASSERTION_MISSING:${entry.id}:${pointer}`);
     for (const token of entry.forbidden) if (!FORBIDDEN_LAYERS.includes(forbiddenLayer(token))) fail(`SEL_PANTRY_FORBIDDEN_UNKNOWN:${entry.id}:${token}`);
   }
@@ -158,12 +258,25 @@ function assertMutation(label, mutate, expectedCode) {
   fail(`SEL_PANTRY_SELF_TEST_ACCEPTED:${label}`);
 }
 
+function assertAccepted(label, mutate) {
+  const catalog = clone(readJson(CATALOG_PATH));
+  const fixtures = clone(readJson(FIXTURES_PATH));
+  const expected = [...EXPECTED];
+  mutate({ catalog, fixtures, expected });
+  try {
+    validate(catalog, fixtures, expected);
+  } catch (error) {
+    fail(`SEL_PANTRY_SELF_TEST_REJECTED:${label}:${error.message}`);
+  }
+}
+
 function selfTest() {
   assertMutation('missing ID', ({ catalog }) => { catalog.cases = catalog.cases.filter(({ id }) => id !== 'CASE-PURCHASE-003'); }, 'SEL_PANTRY_CASE_MISSING:CASE-PURCHASE-003');
   assertMutation('extra ID', ({ expected }) => { expected.push('CASE-EXTRA-001'); }, 'SEL_PANTRY_EXPECTED_ID_EXTRA');
   assertMutation('reordered brief ID', ({ expected }) => { [expected[0], expected[1]] = [expected[1], expected[0]]; }, 'SEL_PANTRY_EXPECTED_ID_ORDER');
   assertMutation('duplicate ID', ({ catalog }) => { catalog.cases.push(clone(catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003'))); }, 'SEL_PANTRY_CASE_DUPLICATE_ID');
   assertMutation('unknown fixture', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').setup.domain_scenario_fixture = 'unknown-fixture'; }, 'SEL_PANTRY_FIXTURE_UNKNOWN:CASE-PURCHASE-003');
+  assertMutation('known fixture drift', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').setup.domain_scenario_fixture = 'domain-purchase-multi-product-v1'; }, 'SEL_PANTRY_FIXTURE_DRIFT:CASE-PURCHASE-003');
   assertMutation('missing assertion pointer', ({ catalog }) => { delete catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').oracle.receipt.inferred_fields_labeled; }, 'SEL_PANTRY_ASSERTION_MISSING:CASE-PURCHASE-003:/oracle/receipt/inferred_fields_labeled');
   assertMutation('extra case key', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').untrusted = true; }, 'SEL_PANTRY_CASE_SHAPE:CASE-PURCHASE-003');
   assertMutation('wrong stage', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').stage = 'PRODUCT-9.9'; }, 'SEL_PANTRY_CASE_STAGE:CASE-PURCHASE-003');
@@ -172,8 +285,9 @@ function selfTest() {
   assertMutation('changed source text', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-003').source_text = 'changed'; }, 'SEL_PANTRY_SOURCE_DRIFT:CASE-PURCHASE-003');
   assertMutation('unknown-to-zero Oracle', ({ catalog }) => { catalog.cases.find(({ id }) => id === 'CASE-PURCHASE-002').oracle.quantity_equation.total = 0; }, 'SEL_PANTRY_UNKNOWN_ZERO');
   assertMutation('catalog version drift', ({ catalog }) => { catalog.version = '1.5.0'; }, 'SEL_PANTRY_CATALOG_VERSION_DRIFT');
-  assertMutation('fixture Oracle key', ({ fixtures }) => { fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === 'domain-purchase-multi-product-v1').expected_product_order = ['milk', 'egg', 'apple']; }, 'SEL_PANTRY_FIXTURE_ORACLE_KEY:domain-purchase-multi-product-v1:expected_product_order');
-  console.log('SEL_PANTRY_CASES|SELF_TEST|PASS|mutations=14');
+  assertMutation('fixture semantic key', ({ fixtures }) => { fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === 'domain-purchase-multi-product-v1').product_order = ['milk', 'egg', 'apple']; }, 'SEL_PANTRY_FIXTURE_SCHEMA_KEY:domain-purchase-multi-product-v1:product_order');
+  assertAccepted('fixture expected immutable IDs', ({ fixtures }) => { fixtures.domain_scenarios.find(({ fixture_id }) => fixture_id === 'domain-purchase-multi-product-v1').expected_immutable_ids = { product_ids: ['fixture-product-milk-whole-250'], batch_ids: ['fixture-batch-milk-immutable-001'], event_ids: ['fixture-event-immutable-001'] }; });
+  console.log('SEL_PANTRY_CASES|SELF_TEST|PASS|mutations=15|controls=1');
 }
 
 try {
