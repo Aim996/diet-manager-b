@@ -2,7 +2,9 @@ export { default, dietManagerParameters } from "./openclaw/plugin.js";
 
 export type {
   DietManagerAction,
+  DietManagerItem,
   DietManagerOutcome,
+  DietManagerRequest,
   DietManagerStatus,
   NonWritingOutcome,
 } from "./contracts.js";

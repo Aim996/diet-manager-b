@@ -27,6 +27,26 @@ export const dietManagerStatuses = [
 
 export type DietManagerStatus = (typeof dietManagerStatuses)[number];
 
+export interface DietManagerItem {
+  name: string;
+  quantity?: number;
+  unit?: string;
+  per_item_amount?: number;
+  per_item_unit?: string;
+}
+
+export interface DietManagerRequest {
+  action: DietManagerAction;
+  operation_id?: string;
+  source_text?: string;
+  occurred_at_text?: string;
+  items?: DietManagerItem[];
+  received_at?: string;
+  timezone?: "Asia/Shanghai";
+  source_message_id?: string;
+  conversation_id?: string;
+}
+
 export interface CoreApplicationRequest {
   readonly action: DietManagerAction;
   readonly source_text: string;

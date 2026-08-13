@@ -29,15 +29,32 @@ const actionSchema = Type.Union([
   Type.Literal("undo_record"),
 ]);
 
+const legacyItemSchema = Type.Object(
+  {
+    name: Type.String(),
+    quantity: Type.Optional(Type.Number()),
+    unit: Type.Optional(Type.String()),
+    per_item_amount: Type.Optional(Type.Number()),
+    per_item_unit: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
 export const dietManagerParameters = Type.Object(
   {
     action: actionSchema,
-    source_text: Type.String(),
-    received_at: Type.String(),
-    timezone: Type.Literal("Asia/Shanghai"),
-    operation_id: Type.String(),
-    source_message_id: Type.String(),
-    conversation_id: Type.String(),
+    operation_id: Type.Optional(Type.String()),
+    source_text: Type.Optional(Type.String()),
+    occurred_at_text: Type.Optional(Type.String({
+      description: "Legacy compatibility evidence; never substitutes for received_at.",
+    })),
+    items: Type.Optional(Type.Array(legacyItemSchema, {
+      description: "Legacy compatibility evidence; the core parses source_text authoritatively.",
+    })),
+    received_at: Type.Optional(Type.String()),
+    timezone: Type.Optional(Type.Literal("Asia/Shanghai")),
+    source_message_id: Type.Optional(Type.String()),
+    conversation_id: Type.Optional(Type.String()),
   },
   {
     additionalProperties: false,
@@ -62,6 +79,18 @@ const coreConfigSchema = Type.Object(
 
 const PARAMETER_FIELDS = Object.freeze([
   "action",
+  "operation_id",
+  "source_text",
+  "occurred_at_text",
+  "items",
+  "received_at",
+  "timezone",
+  "source_message_id",
+  "conversation_id",
+] as const);
+
+const CORE_REQUEST_FIELDS = Object.freeze([
+  "action",
   "source_text",
   "received_at",
   "timezone",
@@ -80,22 +109,23 @@ const pluginRuntimeStates = new WeakMap<object, PluginRuntimeState>();
 const pluginRuntimeOwners = new WeakMap<CoreRuntime, Set<object>>();
 
 function isOrdinaryObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    !isProxy(value) && Object.getPrototypeOf(value) === Object.prototype;
+  return typeof value === "object" && value !== null && !isProxy(value) &&
+    !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function dataDescriptors(
   value: unknown,
-  expectedFields: readonly string[],
+  allowedFields: readonly string[],
+  requiredFields: readonly string[] = allowedFields,
 ): Readonly<Record<string, PropertyDescriptor>> {
   if (!isOrdinaryObject(value)) throw new TypeError("OPENCLAW_AUTHORITY_INVALID:shape");
   const keys = Reflect.ownKeys(value);
-  if (keys.length !== expectedFields.length || keys.some((key) => typeof key !== "string") ||
-      expectedFields.some((key) => !keys.includes(key))) {
+  if (keys.some((key) => typeof key !== "string" || !allowedFields.includes(key)) ||
+      requiredFields.some((key) => !keys.includes(key))) {
     throw new TypeError("OPENCLAW_AUTHORITY_INVALID:keys");
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  for (const field of expectedFields) {
+  for (const field of keys as string[]) {
     const descriptor = descriptors[field];
     if (descriptor === undefined || !Object.hasOwn(descriptor, "value") ||
         descriptor.enumerable !== true) {
@@ -105,8 +135,9 @@ function dataDescriptors(
   return descriptors;
 }
 
-function cloneToolRequest(value: unknown): CoreApplicationRequest {
-  const descriptors = dataDescriptors(value, PARAMETER_FIELDS);
+function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
+  const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action"]);
+  if (CORE_REQUEST_FIELDS.some((field) => descriptors[field] === undefined)) return undefined;
   return {
     action: descriptors.action?.value as DietManagerAction,
     source_text: descriptors.source_text?.value as string,
@@ -131,20 +162,24 @@ function safeRequestIdentity(value: unknown): {
   readonly action: DietManagerAction;
   readonly operationId?: string;
 } {
-  if (!isOrdinaryObject(value)) return { action: "record_meal" };
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const actionValue = descriptors.action;
-  const operationValue = descriptors.operation_id;
-  const action = actionValue !== undefined && Object.hasOwn(actionValue, "value") &&
-    typeof actionValue.value === "string" &&
-    dietManagerActions.includes(actionValue.value as DietManagerAction)
-    ? actionValue.value as DietManagerAction
-    : "record_meal";
-  const operationId = operationValue !== undefined && Object.hasOwn(operationValue, "value") &&
-    typeof operationValue.value === "string"
-    ? operationValue.value
-    : undefined;
-  return operationId === undefined ? { action } : { action, operationId };
+  try {
+    if (!isOrdinaryObject(value)) return { action: "record_meal" };
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const actionValue = descriptors.action;
+    const operationValue = descriptors.operation_id;
+    const action = actionValue !== undefined && Object.hasOwn(actionValue, "value") &&
+      typeof actionValue.value === "string" &&
+      dietManagerActions.includes(actionValue.value as DietManagerAction)
+      ? actionValue.value as DietManagerAction
+      : "record_meal";
+    const operationId = operationValue !== undefined && Object.hasOwn(operationValue, "value") &&
+      typeof operationValue.value === "string"
+      ? operationValue.value
+      : undefined;
+    return operationId === undefined ? { action } : { action, operationId };
+  } catch {
+    return { action: "record_meal" };
+  }
 }
 
 function validatedJsonOutcome(value: DietManagerOutcome): DietManagerOutcome {
@@ -230,7 +265,7 @@ async function executeDietManager(
   context: ToolPluginExecutionContext,
 ): Promise<DietManagerOutcome> {
   const identity = safeRequestIdentity(value);
-  let request: CoreApplicationRequest;
+  let request: CoreApplicationRequest | undefined;
   try {
     request = cloneToolRequest(value);
   } catch {
@@ -238,6 +273,13 @@ async function executeDietManager(
       identity.action,
       identity.operationId,
       "INVALID_REQUEST",
+    ));
+  }
+  if (request === undefined) {
+    return validatedJsonOutcome(failedOutcome(
+      identity.action,
+      identity.operationId,
+      "APPLICATION_AUTHORITY_REQUIRED",
     ));
   }
   let root: string;

@@ -76,21 +76,15 @@ describe("diet manager B core plugin boundary", () => {
     expect(Object.keys(dietManagerParameters.properties).sort()).toEqual([
       "action",
       "conversation_id",
+      "items",
+      "occurred_at_text",
       "operation_id",
       "received_at",
       "source_message_id",
       "source_text",
       "timezone",
     ]);
-    expect(dietManagerParameters.required).toEqual([
-      "action",
-      "source_text",
-      "received_at",
-      "timezone",
-      "operation_id",
-      "source_message_id",
-      "conversation_id",
-    ]);
+    expect(dietManagerParameters.required).toEqual(["action"]);
     expect(dietManagerParameters.additionalProperties).toBe(false);
     for (const field of ["official_data_root", "secret", "token", "data_revision", "prior_context"]) {
       expect(dietManagerParameters.properties).not.toHaveProperty(field);
@@ -135,6 +129,8 @@ describe("diet manager B core plugin boundary", () => {
     expect(skill).toContain("`official_data_root` 只由后端配置和管理");
     expect(skill).toContain("把用户原话逐字放入 `source_text`");
     expect(skill).toContain("不要传入数据路径、secret、token 或 revision");
+    expect(skill).toContain("`occurred_at_text` 和 `items`，但它们只是兼容字段");
+    expect(skill).toContain("实际请求写入时必须同时提供 `action`、逐字 `source_text`");
     expect(skill).toContain("牛奶、汤、豆浆、咖啡和茶按饮食处理，不按白水处理");
     expect(skill).toContain("健康建议请求不进入饮食记录");
     expect(skill).toContain("保留整句原话并单次使用 `record_meal`");
@@ -188,6 +184,25 @@ describe("diet manager B core plugin boundary", () => {
       "foundation_not_implemented",
     );
     expect(businessDataFiles()).toEqual([]);
+  });
+
+  test("keeps the legacy request and item shapes type-compatible", () => {
+    const legacyRequest: import("../src/index.js").DietManagerRequest = {
+      action: "record_meal",
+      operation_id: "legacy-operation",
+      source_text: "刚吃了一个苹果",
+      occurred_at_text: "刚才",
+      items: [{ name: "苹果", quantity: 1, unit: "个" }],
+      received_at: "2026-08-11T08:30:00+08:00",
+      timezone: "Asia/Shanghai",
+      source_message_id: "legacy-message",
+      conversation_id: "legacy-conversation",
+    };
+    const legacyItem: import("../src/index.js").DietManagerItem = {
+      name: "苹果",
+    };
+    expect(legacyRequest.items).toEqual([{ name: "苹果", quantity: 1, unit: "个" }]);
+    expect(legacyItem.name).toBe("苹果");
   });
 
   test("rejects outcomes whose committed flag contradicts their status", () => {

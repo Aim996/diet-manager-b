@@ -11,6 +11,8 @@ description: Use when a user reports completed food, water, or inventory activit
 
 调用时把用户原话逐字放入 `source_text`，不要自行改写成结构化食品事实。只发送工具 Schema 声明的字段；不要传入数据路径、secret、token 或 revision。`official_data_root` 与短期上下文由后端管理，不由聊天参数指定。本阶段公开入口不接收调用方构造的 `prior_context`。
 
+工具为旧调用方保留可选的 `occurred_at_text` 和 `items`，但它们只是兼容字段，不能替代写入所需的权威信息。实际请求写入时必须同时提供 `action`、逐字 `source_text`、`received_at`、`timezone`、`operation_id`、`source_message_id` 和 `conversation_id`；缺少时工具会返回未记录，不要由 Agent 猜测补齐。
+
 不要用记忆文件、便签、聊天历史、表格或其他存储代替饮食记录。只有工具返回 `committed=true` 才能告诉用户“已记录”。技术日志可以说明失败原因，但不属于饮食记录。
 
 只接受冻结契约 `contract_id=diet-manager/contract-v2`、`contract_version=2`、`contract_sha256=632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E`。契约身份与工具 Schema 或运行时不一致时，把结果视为未确认成功，不要猜测或补写。

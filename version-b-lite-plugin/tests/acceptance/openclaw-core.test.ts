@@ -70,6 +70,8 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     expect(Object.keys(properties).sort()).toEqual([
       "action",
       "conversation_id",
+      "items",
+      "occurred_at_text",
       "operation_id",
       "received_at",
       "source_message_id",
@@ -77,15 +79,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       "timezone",
     ]);
     expect(metadata?.tools[0]?.parameters).toMatchObject({
-      required: [
-        "action",
-        "source_text",
-        "received_at",
-        "timezone",
-        "operation_id",
-        "source_message_id",
-        "conversation_id",
-      ],
+      required: ["action"],
       additionalProperties: false,
     });
     for (const forbidden of [
@@ -94,10 +88,53 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       "token",
       "data_revision",
       "prior_context",
-      "items",
-      "occurred_at_text",
     ]) {
       expect(properties).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it("accepts the legacy public shape but requires application authority before writing", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-legacy-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    try {
+      const result = await registered.tool.execute("tool-call-legacy-001", {
+        action: "record_meal",
+        operation_id: "legacy-operation-001",
+        source_text: "刚吃了一个苹果",
+        occurred_at_text: "刚才",
+        items: [{ name: "苹果", quantity: 1, unit: "个" }],
+      });
+      expect(result.details).toEqual({
+        action: "record_meal",
+        status: "failed",
+        committed: false,
+        operation_id: "legacy-operation-001",
+        error_code: "APPLICATION_AUTHORITY_REQUIRED",
+      });
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("ignores legacy evidence fields when complete core authority is present", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-legacy-extra-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    try {
+      const result = await registered.tool.execute("tool-call-legacy-extra-001", {
+        ...mealParams(),
+        occurred_at_text: "明天",
+        items: [{ name: "不可信旧字段" }],
+      });
+      expect(result.details).toMatchObject({
+        action: "record_meal",
+        committed: true,
+        operation_id: "operation-openclaw-meal-001",
+      });
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
     }
   });
 
@@ -246,6 +283,77 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     }
   });
 
+  it("sanitizes revoked request proxies without rejecting execute", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-revoked-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    const revoked = Proxy.revocable(mealParams(), {});
+    revoked.revoke();
+    try {
+      const result = await registered.tool.execute("tool-call-revoked-001", revoked.proxy);
+      expect(result.details).toEqual({
+        action: "record_meal",
+        status: "failed",
+        committed: false,
+        error_code: "INVALID_REQUEST",
+      });
+      expect(Object.isFrozen(result.details)).toBe(true);
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("rejects accessor authority fields without invoking the getter", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-accessor-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    let getterCalls = 0;
+    const params = mealParams();
+    Object.defineProperty(params, "source_text", {
+      enumerable: true,
+      get(): never {
+        getterCalls += 1;
+        throw new Error("source getter executed");
+      },
+    });
+    try {
+      const result = await registered.tool.execute("tool-call-accessor-001", params);
+      expect(getterCalls).toBe(0);
+      expect(result.details).toMatchObject({
+        status: "failed",
+        committed: false,
+        error_code: "INVALID_REQUEST",
+      });
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("does not inspect nested legacy evidence when complete core authority is present", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-nested-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    let traps = 0;
+    const nested = new Proxy({ name: "untrusted" }, {
+      get(): never {
+        traps += 1;
+        throw new Error("nested legacy evidence trap executed");
+      },
+    });
+    try {
+      const result = await registered.tool.execute("tool-call-nested-001", {
+        ...mealParams(),
+        items: [nested],
+      });
+      expect(traps).toBe(0);
+      expect(result.details).toMatchObject({ committed: true });
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
   it("rejects proxy plugin config without executing traps", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-config-${randomUUID()}-`));
     let traps = 0;
@@ -264,6 +372,26 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         committed: false,
         error_code: "PLUGIN_CONFIG_INVALID",
       });
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("sanitizes revoked plugin config proxies without rejecting execute", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-config-revoked-${randomUUID()}-`));
+    const revoked = Proxy.revocable({ official_data_root: root }, {});
+    const registered = registerPlugin(revoked.proxy);
+    revoked.revoke();
+    try {
+      const result = await registered.tool.execute("tool-call-config-revoked-001", mealParams());
+      expect(result.details).toMatchObject({
+        status: "failed",
+        committed: false,
+        error_code: "PLUGIN_CONFIG_INVALID",
+      });
+      expect(Object.isFrozen(result.details)).toBe(true);
       expect(readdirSync(root)).toEqual([]);
     } finally {
       await registered.lifecycle()?.cleanup();
