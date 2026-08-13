@@ -43,33 +43,40 @@ describe("Task 8 production parser-to-domain mapping", () => {
     const envelope = mapCoreCandidateToEnvelope(input.request, input.command);
     expectDeepFrozen(envelope);
     expect(envelope.received_at).toBe(input.request.received_at);
-    expect(envelope.operations).toEqual([expect.objectContaining({
+    expect(envelope.operations).toEqual([{
       kind: "record_meal", operation_id: input.request.operation_id,
       meal_slot: "早餐", location: "home", source_text: input.request.source_text,
       items: [
-        expect.objectContaining({ normalized_name: "egg", item_type: "food",
-          amount: expect.objectContaining({ unit: "piece", observed_microunits: 2_000_000,
-            evidence: "explicit" }) }),
-        expect.objectContaining({ normalized_name: "bread", item_type: "food",
-          amount: expect.objectContaining({ unit: "slice", observed_microunits: 2_000_000,
-            evidence: "explicit" }) }),
-        expect.objectContaining({ normalized_name: "milk", item_type: "nutrition_drink",
-          amount: expect.objectContaining({ unit: "ml", observed_microunits: 250_000_000,
-            evidence: "explicit" }) }),
+        { normalized_name: "egg", item_type: "food", amount: { unit: "piece",
+          observed_microunits: 2_000_000, nutrition_adoption_microunits: null,
+          inventory_deduction_microunits: null, template_reference_microunits: null,
+          evidence: "explicit" }, nutrition_sources: [] },
+        { normalized_name: "bread", item_type: "food", amount: { unit: "slice",
+          observed_microunits: 2_000_000, nutrition_adoption_microunits: null,
+          inventory_deduction_microunits: null, template_reference_microunits: null,
+          evidence: "explicit" }, nutrition_sources: [] },
+        { normalized_name: "milk", item_type: "nutrition_drink", amount: { unit: "ml",
+          observed_microunits: 250_000_000, nutrition_adoption_microunits: null,
+          inventory_deduction_microunits: null, template_reference_microunits: null,
+          evidence: "explicit" }, nutrition_sources: [] },
       ],
-    })]);
+      occurred_at: "2026-08-11T00:30:00.000Z",
+      occurred_time: input.command.occurred_time,
+      subject: input.command.subject,
+      context: "context" in input.command ? input.command.context : undefined,
+    }]);
   });
 
   it("maps and recursively freezes exact water occurrence and amount evidence", () => {
     const input = candidate("CASE-WATER-001", "record_water");
     const envelope = mapCoreCandidateToEnvelope(input.request, input.command);
     expectDeepFrozen(envelope);
-    expect(envelope.operations).toEqual([expect.objectContaining({
+    expect(envelope.operations).toEqual([{
       kind: "record_water", operation_id: input.request.operation_id,
       source_text: input.request.source_text, plain_water_ml_milli: 500_000,
       amount_evidence: { raw_text: "喝了500ml白水", quantity: 500,
         unit: "ml", estimated: false },
-      occurred_time: expect.objectContaining({ timezone: "Asia/Shanghai" }),
-    })]);
+      occurred_time: input.command.occurred_time,
+    }]);
   });
 });
