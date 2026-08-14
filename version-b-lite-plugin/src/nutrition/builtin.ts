@@ -65,6 +65,17 @@ const COMMON_FOODS: Readonly<Record<string, Readonly<{
   },
 });
 
+const COMMON_DISHES: Readonly<Record<string, Readonly<Record<string, string | null>>>> = freezeNutritionData({
+  fried_rice: {
+    energy_kcal: "350", protein_g: "10", fat_g: "10", carbohydrate_g: "55", fiber_g: "2",
+    energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+  },
+  beef_noodle: {
+    energy_kcal: "550", protein_g: "25", fat_g: "18", carbohydrate_g: "70", fiber_g: "4",
+    energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+  },
+});
+
 function resolveBuiltin(request: Readonly<SourceRequest>): Readonly<SourceResolution> {
   const entry = COMMON_FOODS[request.normalized_food_name];
   if (entry === undefined) return freezeNutritionData({
@@ -108,13 +119,66 @@ function resolveBuiltin(request: Readonly<SourceRequest>): Readonly<SourceResolu
   });
 }
 
+function resolveCommonDish(request: Readonly<SourceRequest>): Readonly<SourceResolution> {
+  const nutrientValues = COMMON_DISHES[request.normalized_food_name];
+  if (nutrientValues === undefined) return freezeNutritionData({
+    status: "no_results",
+    source_id: "local.versioned_common_dish_template",
+    tier: "versioned_common_dish_template",
+    source_record_id: null,
+    source_version: BUILTIN_VERSION,
+    retained_fields_sha256: null,
+    evidence: null,
+    reason: "no_match",
+  });
+  const evidence: Readonly<ResolvedNutritionEvidence> = freezeNutritionData({
+    source_id: "local.versioned_common_dish_template",
+    source_type: "generic_template",
+    source_ref: `diet-manager/common-dish/${request.normalized_food_name}/v1`,
+    source_version: BUILTIN_VERSION,
+    basis_kind: "per_serving",
+    basis_amount: "1",
+    basis_unit: "serving",
+    nutrient_values: nutrientValues,
+    field_evidence: [{
+      evidence_kind: "versioned_common_dish_template",
+      rule_version: BUILTIN_VERSION,
+    }],
+    coverage_status: "partial",
+    adopted_amount: null,
+    adopted_unit: null,
+    amount_range: null,
+    formula: "profile_value * consumed_amount / basis_amount",
+  });
+  return freezeNutritionData({
+    status: "partial",
+    source_id: "local.versioned_common_dish_template",
+    tier: "versioned_common_dish_template",
+    source_record_id: evidence.source_ref,
+    source_version: BUILTIN_VERSION,
+    retained_fields_sha256: canonicalSha256(evidence),
+    evidence,
+    reason: null,
+  });
+}
+
 export function createBuiltinNutritionAdapters(): readonly NutritionSourceAdapter[] {
-  return Object.freeze([new LocalEvidenceAdapter({
-    source_id: "local.generic_estimate",
-    tier: "generic_estimate",
-    backend_id: "diet-manager-builtin-nutrition",
-    backend_version: BUILTIN_VERSION,
-    request_fields: Object.freeze(["normalized_food_name"]),
-    resolve: resolveBuiltin,
-  })]);
+  return Object.freeze([
+    new LocalEvidenceAdapter({
+      source_id: "local.versioned_common_dish_template",
+      tier: "versioned_common_dish_template",
+      backend_id: "diet-manager-common-dish-template",
+      backend_version: BUILTIN_VERSION,
+      request_fields: Object.freeze(["normalized_food_name"]),
+      resolve: resolveCommonDish,
+    }),
+    new LocalEvidenceAdapter({
+      source_id: "local.generic_estimate",
+      tier: "generic_estimate",
+      backend_id: "diet-manager-builtin-nutrition",
+      backend_version: BUILTIN_VERSION,
+      request_fields: Object.freeze(["normalized_food_name"]),
+      resolve: resolveBuiltin,
+    }),
+  ]);
 }

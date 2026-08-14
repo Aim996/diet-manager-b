@@ -111,6 +111,22 @@
 - 后续修复索引：下一批处理 common dish/unknown combo，再进入 supplementation 或 atomic effect 收口。
 - 批次提交：`feat: extend offline nutrition rules`。
 
+### Batch C4 / 2026-08-14
+
+- 目标：实现版本化常见菜模板优先于通用估算，并保持未知套餐不拆分、不臆造组件。
+- 绑定 REQ：`REQ-NUTR-002/004/005/010/011`。
+- 绑定 CASE：`CASE-NUTR-003`、`CASE-MEAL-007/008`。
+- 起始 HEAD：`7747e45`。
+- 改动文件：`nutrition/builtin.ts`、默认 config、份量采用规则和既有快速 application test。
+- 行为变化：新增 rank 6 `local.versioned_common_dish_template`，当前覆盖 fried rice 与 beef noodle；rank 7 generic estimate 仍只在 rank 6 无结果时适用。碗/份可采用 1 serving 并标记 `common-dish-serving-v1`；未注册组合继续无结果并最终 unknown。
+- 接口/Schema/authority 决策：模板字段是 partial、source_type=`generic_template`、公开标签 `field_inference`；来源顺序由 registry rank 决定，不由代码调用次序暗改。
+- 真实 RED：默认 adapter 集合不存在 common-dish source；加入版本化模板和默认配置后转 GREEN。
+- 定向 smoke：offline core food/common dish 1/1 PASS；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 延期到模块末的测试：unknown combo 全链、插件/full/fault/tamper/trace。
+- 已知风险/假设：模板当前只覆盖两个明确边界菜品，不尝试从任意菜名拆成食材；模板数值是版本化估算而非精确食谱。
+- 后续修复索引：接下来实现 nutrition supplement append-only 路径；Task 5 atomic effect 仍保留为关闭前必修项。
+- 批次提交：`feat: add common dish nutrition templates`。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

@@ -151,8 +151,14 @@ export function adoptNutritionAmount(
   evidence: Readonly<ResolvedNutritionEvidence>,
 ): Readonly<ResolvedNutritionEvidence> {
   if (evidence.adopted_amount !== null || item.quantity === null || item.unit === null) return evidence;
+  if (!Number.isFinite(item.quantity) || item.quantity <= 0) return invalid("item_quantity");
   const naturalUnit = ["item", "piece", "个", "枚"].includes(item.unit);
-  const range = evidence.basis_kind === "per_100g"
+  const range = evidence.basis_kind === "per_serving" && ["bowl", "碗", "serving", "份"].includes(item.unit)
+    ? {
+        min: String(item.quantity), max: String(item.quantity), adopted: String(item.quantity),
+        unit: "serving", rule_version: "common-dish-serving-v1",
+      }
+    : evidence.basis_kind === "per_100g"
     ? item.normalized_name === "rice" && ["bowl", "碗"].includes(item.unit) && item.quantity === 0.5
       ? { min: "100", max: "150", adopted: "150", unit: "g", rule_version: "portion-rice-bowl-v1" }
       : item.normalized_name === "orange" && naturalUnit && item.quantity === 1
@@ -182,7 +188,6 @@ export function adoptNutritionAmount(
     (evidence.basis_kind === "per_serving" && ["serving", "份"].includes(item.unit)) ||
     (evidence.basis_kind === "per_package" && ["package", "包"].includes(item.unit));
   if (!compatible) return evidence;
-  if (!Number.isFinite(item.quantity) || item.quantity <= 0) return invalid("item_quantity");
   const adopted = String(item.quantity);
   parseDecimal(adopted, "item_quantity");
   return freezeNutritionData({

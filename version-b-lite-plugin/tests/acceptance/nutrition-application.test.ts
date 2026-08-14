@@ -250,7 +250,12 @@ it("uses the versioned offline fallback for explicit core amounts", async () => 
 });
 
 it("resolves the offline core food table and adopts compatible gram amounts", async () => {
-  const adapter = createBuiltinNutritionAdapters()[0]!;
+  const adapters = createBuiltinNutritionAdapters();
+  const adapter = adapters.find((candidate) => candidate.describe().source_id === "local.generic_estimate")!;
+  const commonDish = adapters.find(
+    (candidate) => candidate.describe().source_id === "local.versioned_common_dish_template",
+  );
+  expect(commonDish).toBeDefined();
   const controller = new AbortController();
   const context = Object.freeze({
     signal: controller.signal,
@@ -289,6 +294,19 @@ it("resolves the offline core food table and adopts compatible gram amounts", as
   }, rice.evidence!)).toMatchObject({
     adopted_amount: "150",
     adopted_unit: "g",
-    amount_range: { min: "100", max: "150", adopted: "150", rule_version: "portion-rice-bowl-v1" },
+      amount_range: { min: "100", max: "150", adopted: "150", rule_version: "portion-rice-bowl-v1" },
+    });
+  const beefNoodle = await commonDish!.resolve(Object.freeze({
+    normalized_food_name: "beef_noodle", brand: null, variant: null, package_specification: null,
+    processing_state: null, minimum_food_category: "food", locale: "zh-CN" as const,
+  }), context);
+  expect(beefNoodle.status).toBe("partial");
+  expect(adoptNutritionAmount({
+    normalized_name: "beef_noodle", quantity: 1, unit: "bowl", estimated: true,
+  }, beefNoodle.evidence!)).toMatchObject({
+    source_type: "generic_template",
+    adopted_amount: "1",
+    adopted_unit: "serving",
+    amount_range: { min: "1", max: "1", adopted: "1", rule_version: "common-dish-serving-v1" },
   });
 });
