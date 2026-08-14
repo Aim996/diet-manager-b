@@ -380,7 +380,7 @@ export function reservationFromEventPayload(
         ? "meal_fact"
         : eventType === "inventory_stock"
           ? "purchase_fact"
-          : eventType === "diet_correction"
+          : eventType === "diet_correction" || eventType === "nutrition_supplemented"
             ? "correction_fact"
             : "fact_payload",
     );
@@ -435,7 +435,10 @@ export function reservationFromEventPayload(
     if (reservation.mode !== "contribution") return invalid("water_reservation_mode");
     return reservation;
   }
-  if (eventType === "diet_correction" && authorityKind === "diet-manager/correction-fact/v1") {
+  if (
+    (eventType === "diet_correction" || eventType === "nutrition_supplemented") &&
+    authorityKind === "diet-manager/correction-fact/v1"
+  ) {
     const payload = exactRecord(value, CORRECTION_FACT_FIELDS, "correction_fact");
     const deltaValue = payload.nutrition_delta;
     if (typeof deltaValue !== "object" || deltaValue === null || Array.isArray(deltaValue)) {
@@ -580,7 +583,7 @@ function unfinalizedProgressOwners(
     if (canonicalJson(payload) !== row.payload_json) return invalid("progress_owner");
     const correction = exactRecord(payload, CORRECTION_FACT_FIELDS, "progress_owner");
     if (
-      row.event_type !== "diet_correction" ||
+      (row.event_type !== "diet_correction" && row.event_type !== "nutrition_supplemented") ||
       !Array.isArray(correction.affected_dates) || correction.affected_dates.length !== 1
     ) return invalid("progress_owner");
     owners.set(envelope_id, {

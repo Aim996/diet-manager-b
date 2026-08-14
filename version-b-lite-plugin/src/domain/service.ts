@@ -85,6 +85,7 @@ import {
 import type {
   AddInventoryOperation,
   CorrectInventoryLocationOperation,
+  CorrectNutritionSupplementOperation,
   CorrectRecordOperation,
   DomainEnvelopeInput,
   DomainExecutionResult,
@@ -98,7 +99,9 @@ import type {
 function isInventoryLocationCorrection(
   operation: CorrectRecordOperation | UndoRecordOperation,
 ): operation is CorrectInventoryLocationOperation {
-  return operation.kind === "correct_record" && Object.hasOwn(operation, "correction_kind");
+  return operation.kind === "correct_record" &&
+    Object.hasOwn(operation, "correction_kind") &&
+    (operation as { correction_kind?: unknown }).correction_kind === "inventory_location";
 }
 
 function storedInventoryLocationCorrection(
@@ -337,7 +340,7 @@ function validatePantryInventoryPolicy(value: unknown, field: string): void {
 function validateOperation(
   value: unknown,
   field: string,
-): RecordWaterOperation | CorrectInventoryLocationOperation | undefined {
+): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -450,6 +453,25 @@ function validateOperation(
   }
   if (kind === "correct_record") {
     if (Object.hasOwn(operation, "correction_kind")) {
+      if ((operation as Record<string, unknown>).correction_kind === "nutrition_supplement") {
+        const candidate = record(value, [
+          "kind", "operation_id", "correction_kind", "target_event_id", "base_revision",
+          "item_order", "previous_snapshot_id", "replacement_amount", "replacement_nutrition_source",
+        ], field);
+        text(candidate.operation_id, `${field}.operation_id`);
+        enumValue(candidate.correction_kind, ["nutrition_supplement"], `${field}.correction_kind`);
+        text(candidate.target_event_id, `${field}.target_event_id`);
+        const baseRevision = safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+        if (baseRevision < 1) return invalid(`${field}.base_revision`);
+        safeNonnegativeInteger(candidate.item_order, `${field}.item_order`);
+        text(candidate.previous_snapshot_id, `${field}.previous_snapshot_id`);
+        validateKnownStructuredAmount(candidate.replacement_amount, `${field}.replacement_amount`);
+        validateNutritionSources(
+          [candidate.replacement_nutrition_source],
+          `${field}.replacement_nutrition_source`,
+        );
+        return Object.freeze({ ...candidate }) as unknown as CorrectNutritionSupplementOperation;
+      }
       const candidate = record(value, [
         "kind", "operation_id", "correction_kind", "batch_id", "base_revision",
         "previous_location", "previous_expiration", "next_location", "expected_expiration", "source_text",
@@ -1933,9 +1955,13 @@ export function createDietDomainService(
           event_type: string;
         } | undefined;
         if (existingFact) {
+          const expectedEventType = operation.kind === "correct_record" &&
+              "correction_kind" in operation && operation.correction_kind === "nutrition_supplement"
+            ? "nutrition_supplemented"
+            : "diet_correction";
           if (
             existingFact.event_id !== deriveDomainId("event", envelope.idempotency_key, 0) ||
-            existingFact.event_type !== "diet_correction"
+            existingFact.event_type !== expectedEventType
           ) {
             throw new Error("DIET_DOMAIN_RESULT_INVALID:correction_fact_identity");
           }

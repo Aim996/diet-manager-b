@@ -54,6 +54,7 @@ import type {
   AddInventoryOperation,
   CorrectInventoryLocationOperation,
   CorrectMealRecordOperation,
+  CorrectNutritionSupplementOperation,
   InventoryLocationCorrectionFactPayload,
   InventoryLocationCorrectionResult,
   InventoryAllocationPlan,
@@ -213,13 +214,13 @@ interface EffectiveMealState {
 }
 
 export interface PrepareCorrectionInput extends Omit<PreparePurchaseInput, "operation"> {
-  readonly operation: CorrectMealRecordOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
 }
 
 export interface PreparedCorrection {
   readonly fact: PreparedEnvelopeOperation;
   readonly correction_id: string;
-  readonly operation: CorrectMealRecordOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
   readonly progress_date: string;
   readonly progress_before: NutritionVector;
   readonly progress_after: NutritionVector;
@@ -233,7 +234,7 @@ export interface CorrectionOperationResult {
   readonly correction_id: string;
   readonly target_event_id: string;
   readonly revision: number;
-  readonly operation: "change_amount" | "void_event" | "restore_event";
+  readonly operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
   readonly compensation_transaction_id: string | null;
   readonly issue_codes: readonly "inventory_insufficient"[];
   readonly daily_progress: DailyProgressResult;
@@ -316,15 +317,17 @@ function readEffectiveMealState(
   }) as EffectiveMealSnapshot;
   let revision = 1;
   const corrections = database.prepare(
-    `SELECT c.base_revision, c.payload_json, b.effect_state, b.result_status
+    `SELECT c.base_revision, c.payload_json, e.event_type, b.effect_state, b.result_status
      FROM correction_events c
-     JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type IN ('diet_correction','nutrition_supplemented')
      JOIN effect_bundle_commits b
        ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
      WHERE c.target_event_id = ? ORDER BY c.base_revision`,
   ).all(targetEventId) as Array<{
     base_revision: number;
     payload_json: string;
+    event_type: "diet_correction" | "nutrition_supplemented";
     effect_state: string;
     result_status: string;
   }>;
@@ -342,7 +345,7 @@ function readEffectiveMealState(
       throw new Error("CORRECTION_TARGET_INVALID:chain_state");
     }
     const payload = parseCanonical(correction.payload_json, "correction_chain");
-    reservationFromEventPayload(payload, "diet_correction");
+    reservationFromEventPayload(payload, correction.event_type);
     if (
       correction.base_revision !== revision || payload.base_revision !== revision ||
       payload.target_event_id !== targetEventId ||
@@ -377,20 +380,42 @@ export function prepareCorrectionOperation(
     throw new Error("CORRECTION_TARGET_INVALID:inactive");
   }
   let afterSnapshot: EffectiveMealSnapshot;
-  let operationKind: "change_amount" | "void_event" | "restore_event";
+  let operationKind: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
   let itemOrder = 0;
   if (operation.kind === "correct_record") {
     itemOrder = operation.item_order;
     if (!Number.isSafeInteger(itemOrder) || itemOrder < 0 || itemOrder >= current.snapshot.items.length) {
       throw new Error("CORRECTION_TARGET_INVALID:item_order");
     }
-    afterSnapshot = freezeJson({
-      ...current.snapshot,
-      items: current.snapshot.items.map((item, index) => index === itemOrder
-        ? { ...item, amount: operation.replacement_amount }
-        : item),
-    }) as EffectiveMealSnapshot;
-    operationKind = "change_amount";
+    if ("correction_kind" in operation) {
+      const previous = input.database.prepare(
+        `SELECT snapshot_id FROM nutrition_snapshots
+         WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+         ORDER BY rowid DESC LIMIT 1`,
+      ).get(current.snapshot.items[itemOrder].item_id) as { snapshot_id: string } | undefined;
+      if (!previous || previous.snapshot_id !== operation.previous_snapshot_id) {
+        throw new Error("CORRECTION_TARGET_INVALID:nutrition_snapshot");
+      }
+      afterSnapshot = freezeJson({
+        ...current.snapshot,
+        items: current.snapshot.items.map((item, index) => index === itemOrder
+          ? {
+              ...item,
+              amount: operation.replacement_amount,
+              nutrition_sources: [operation.replacement_nutrition_source],
+            }
+          : item),
+      }) as EffectiveMealSnapshot;
+      operationKind = "change_nutrition_source";
+    } else {
+      afterSnapshot = freezeJson({
+        ...current.snapshot,
+        items: current.snapshot.items.map((item, index) => index === itemOrder
+          ? { ...item, amount: operation.replacement_amount }
+          : item),
+      }) as EffectiveMealSnapshot;
+      operationKind = "change_amount";
+    }
   } else {
     afterSnapshot = freezeJson({
       ...current.snapshot,
@@ -401,17 +426,19 @@ export function prepareCorrectionOperation(
   if (canonicalJson(afterSnapshot) === canonicalJson(current.snapshot)) {
     throw new Error("CORRECTION_TARGET_INVALID:no_change");
   }
-  const affectedItemOrders = operationKind === "change_amount"
+  const affectedItemOrders = operationKind === "change_amount" || operationKind === "change_nutrition_source"
     ? [itemOrder]
     : current.snapshot.items.map((item) => item.item_order);
   const beforeAmount = current.snapshot.items[itemOrder].amount;
   const afterAmount = afterSnapshot.items[itemOrder].amount;
-  const progressPreflight = preflightCorrectionNutrition(
-    input.database,
-    current.snapshot,
-    afterSnapshot,
-    affectedItemOrders,
-  );
+  const progressPreflight = operationKind === "change_nutrition_source"
+    ? preflightNutritionSupplement(input.database, current.snapshot, afterSnapshot, itemOrder)
+    : preflightCorrectionNutrition(
+        input.database,
+        current.snapshot,
+        afterSnapshot,
+        affectedItemOrders,
+      );
   const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
@@ -455,8 +482,17 @@ export function prepareCorrectionOperation(
     authority_kind: "diet-manager/correction-fact/v1",
     base_revision: current.revision,
     before_snapshot: current.snapshot,
-    change_set: operationKind === "change_amount"
-      ? [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
+    change_set: operationKind === "change_amount" || operationKind === "change_nutrition_source"
+      ? operationKind === "change_nutrition_source"
+        ? [
+            {
+              after: afterSnapshot.items[itemOrder].nutrition_sources,
+              before: current.snapshot.items[itemOrder].nutrition_sources,
+              path: `/items/${itemOrder}/nutrition_sources`,
+            },
+            { after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` },
+          ]
+        : [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
       : [{
         after: afterSnapshot.active,
         before: current.snapshot.active,
@@ -511,7 +547,9 @@ export function prepareCorrectionOperation(
         eventId,
         operationId: operation.operation_id,
         schemaVersion: "domain/v2",
-        eventType: "diet_correction",
+        eventType: operationKind === "change_nutrition_source"
+          ? "nutrition_supplemented"
+          : "diet_correction",
         factKind: "correction",
         sourceMessageId: input.sourceMessageId,
         conversationId: input.conversationId,
@@ -2993,6 +3031,42 @@ function preflightCorrectionNutrition(
   });
 }
 
+function preflightNutritionSupplement(
+  database: DatabaseSync,
+  beforeSnapshot: EffectiveMealSnapshot,
+  afterSnapshot: EffectiveMealSnapshot,
+  itemOrder: number,
+): { readonly before: NutritionVector; readonly after: NutritionVector } {
+  const item = beforeSnapshot.items[itemOrder];
+  const previous = database.prepare(
+    `SELECT payload_json FROM nutrition_snapshots
+     WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+     ORDER BY rowid DESC LIMIT 1`,
+  ).get(item.item_id) as { payload_json: string } | undefined;
+  if (!previous) throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
+  const previousPayload = parseCanonical(previous.payload_json, "nutrition_supplement_previous");
+  if (typeof previousPayload.nutrients !== "object" || previousPayload.nutrients === null) {
+    throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
+  }
+  const selection = selectNutritionSource(
+    afterSnapshot.items[itemOrder].nutrition_sources as Parameters<typeof selectNutritionSource>[0],
+    null,
+  );
+  const adopted = afterSnapshot.items[itemOrder].amount.nutrition_adoption_microunits;
+  const next = adopted === null
+    ? Object.freeze({
+        energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+        carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+      })
+    : selection.basis_microunits === null
+      ? selection.nutrients
+      : scaleNutritionVector(selection.nutrients, adopted, selection.basis_microunits);
+  return Object.freeze({
+    before: Object.freeze(previousPayload.nutrients as unknown as NutritionVector),
+    after: Object.freeze(next),
+  });
+}
+
 export function replaceDailyProgress(
   previous: DailyProgressResult,
   before: NutritionVector,
@@ -3195,11 +3269,12 @@ export function applyCorrectionEffects(
     }
 
     const correctionEvent = input.database.prepare(
-      `SELECT event_id, source_message_id, conversation_id, received_at
+      `SELECT event_id, event_type, source_message_id, conversation_id, received_at
        FROM event_records WHERE envelope_id = ? AND operation_id = ?
-         AND event_type = 'diet_correction'`,
+         AND event_type IN ('diet_correction','nutrition_supplemented')`,
     ).get(input.envelopeId, input.operationId) as {
       event_id: string;
+      event_type: "diet_correction" | "nutrition_supplemented";
       source_message_id: string;
       conversation_id: string;
       received_at: string;
@@ -3211,12 +3286,12 @@ export function applyCorrectionEffects(
       correction_id: string;
       target_event_id: string;
       base_revision: number;
-      operation: "change_amount" | "void_event" | "restore_event";
+      operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
       payload_json: string;
     } | undefined;
     if (!correctionEvent || !correction) throw new Error("CORRECTION_EFFECT_INVALID:fact");
     const payload = parseCanonical(correction.payload_json, "correction_fact");
-    reservationFromEventPayload(payload, "diet_correction");
+    reservationFromEventPayload(payload, correctionEvent.event_type);
     if (
       payload.correction_id !== correction.correction_id ||
       payload.target_event_id !== correction.target_event_id ||
@@ -3243,7 +3318,8 @@ export function applyCorrectionEffects(
     ) throw new Error("CORRECTION_EFFECT_INVALID:intents");
     const inventoryIntents = inventoryIntent.items as Array<Record<string, unknown>>;
     const nutritionIntents = nutritionDelta.items as Array<Record<string, unknown>>;
-    const expectedItemCount = correction.operation === "change_amount"
+    const expectedItemCount = correction.operation === "change_amount" ||
+        correction.operation === "change_nutrition_source"
       ? 1
       : beforeSnapshot.items.length;
     if (inventoryIntents.length !== expectedItemCount) {
@@ -3298,7 +3374,8 @@ export function applyCorrectionEffects(
         !Number.isSafeInteger(itemOrder) || itemOrder < 0 ||
         itemOrder >= beforeSnapshot.items.length || itemOrder >= afterSnapshot.items.length ||
         currentNutritionIntent.item_order !== itemOrder ||
-        (correction.operation !== "change_amount" && itemOrder !== intentIndex)
+        (correction.operation !== "change_amount" &&
+          correction.operation !== "change_nutrition_source" && itemOrder !== intentIndex)
       ) throw new Error("CORRECTION_EFFECT_INVALID:item_order");
       const beforeAmount = beforeSnapshot.items[itemOrder].amount;
       const afterAmount = afterSnapshot.items[itemOrder].amount;
@@ -3497,7 +3574,9 @@ export function applyCorrectionEffects(
       const previousNutrition = input.database.prepare(
         `SELECT snapshot_id, meal_event_id, intake_item_id, nutrition_profile_id,
                 profile_version, source_type, source_ref, payload_json
-         FROM nutrition_snapshots WHERE intake_item_id = ? ORDER BY rowid DESC LIMIT 1`,
+         FROM nutrition_snapshots
+         WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+         ORDER BY rowid DESC LIMIT 1`,
       ).get(item.item_id) as NutritionSnapshotRow | undefined;
       if (!previousNutrition) throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
       const previousNutritionPayload = parseCanonical(
@@ -3509,11 +3588,51 @@ export function applyCorrectionEffects(
         throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
       }
       const itemBeforeNutrients = previousNutritionPayload.nutrients as unknown as NutritionVector;
-      const itemAfterNutrients = correctedNutrition(
-        previousNutritionPayload,
-        afterSnapshot.active ? afterAmount.nutrition_adoption_microunits : 0,
-        afterSnapshot.active,
-      );
+      const supplementSelection = correction.operation === "change_nutrition_source"
+        ? selectNutritionSource(
+            afterSnapshot.items[itemOrder].nutrition_sources as Parameters<typeof selectNutritionSource>[0],
+            null,
+          )
+        : null;
+      const itemAfterNutrients = supplementSelection === null
+        ? correctedNutrition(
+            previousNutritionPayload,
+            afterSnapshot.active ? afterAmount.nutrition_adoption_microunits : 0,
+            afterSnapshot.active,
+          )
+        : afterAmount.nutrition_adoption_microunits === null
+          ? Object.freeze({
+              energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+              carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+            })
+          : supplementSelection.basis_microunits === null
+            ? supplementSelection.nutrients
+            : scaleNutritionVector(
+                supplementSelection.nutrients,
+                afterAmount.nutrition_adoption_microunits,
+                supplementSelection.basis_microunits,
+              );
+      const nextProfileId = supplementSelection === null
+        ? previousNutrition.nutrition_profile_id
+        : writeMealNutritionProfile(
+            input.database,
+            input.idempotencyKey,
+            itemOrder,
+            item.normalized_name,
+            supplementSelection,
+            input.now,
+          );
+      const nextProfileVersion = supplementSelection?.profile_version ?? previousNutrition.profile_version;
+      const nextSourceType = supplementSelection?.source_type ?? previousNutrition.source_type;
+      const nextSourceRef = supplementSelection?.source_ref ?? previousNutrition.source_ref;
+      const nextBasis = supplementSelection === null
+        ? previousNutritionPayload.basis
+        : {
+            kind: supplementSelection.basis_kind,
+            microunits: supplementSelection.basis_microunits,
+            unit: supplementSelection.basis_unit,
+          };
+      const nextSourceNutrients = supplementSelection?.nutrients ?? previousNutritionPayload.source_nutrients;
       beforeNutrients = addNutritionVectors(beforeNutrients, itemBeforeNutrients);
       afterNutrients = addNutritionVectors(afterNutrients, itemAfterNutrients);
       input.database.prepare(
@@ -3526,16 +3645,16 @@ export function applyCorrectionEffects(
         deriveDomainId("snapshot", input.idempotencyKey, itemOrder),
         correction.target_event_id,
         item.item_id,
-        previousNutrition.nutrition_profile_id,
-        previousNutrition.profile_version,
-        previousNutrition.source_type,
-        previousNutrition.source_ref,
+        nextProfileId,
+        nextProfileVersion,
+        nextSourceType,
+        nextSourceRef,
         Object.values(itemAfterNutrients).every((value) => value !== null) ? "complete" : "partial",
         input.now,
         canonicalJson({
           amount: afterAmount,
           authority_kind: "diet-manager/nutrition-snapshot/v1",
-          basis: previousNutritionPayload.basis,
+          basis: nextBasis,
           conversion: afterSnapshot.active && afterAmount.nutrition_adoption_microunits !== null
             ? {
               adopted_microunits: afterAmount.nutrition_adoption_microunits,
@@ -3544,7 +3663,7 @@ export function applyCorrectionEffects(
             : null,
           correction_id: correction.correction_id,
           nutrients: itemAfterNutrients,
-          source_nutrients: previousNutritionPayload.source_nutrients,
+          source_nutrients: nextSourceNutrients,
         }),
       );
     }
@@ -3770,18 +3889,20 @@ export function readAppliedCorrectionResult(
 
   const correctionRows = input.database.prepare(
     `SELECT c.correction_id, c.target_event_id, c.base_revision, c.request_id,
-            c.operation, c.payload_json, e.event_id
+            c.operation, c.payload_json, e.event_id, e.event_type
      FROM correction_events c
-     JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type IN ('diet_correction','nutrition_supplemented')
      WHERE c.request_id = ? AND e.envelope_id = ?`,
   ).all(input.operationId, input.envelopeId) as Array<{
     correction_id: string;
     target_event_id: string;
     base_revision: number;
     request_id: string;
-    operation: "change_amount" | "void_event" | "restore_event";
+    operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
     payload_json: string;
     event_id: string;
+    event_type: "diet_correction" | "nutrition_supplemented";
   }>;
   if (correctionRows.length !== 1) return correctionAuthorityInvalid("terminal_fact");
   const correction = correctionRows[0];
@@ -3814,7 +3935,7 @@ export function readAppliedCorrectionResult(
     ],
     "terminal_fact",
   );
-  reservationFromEventPayload(fact, "diet_correction");
+  reservationFromEventPayload(fact, correction.event_type);
   if (
     fact.authority_kind !== "diet-manager/correction-fact/v1" ||
     fact.correction_id !== correction.correction_id ||

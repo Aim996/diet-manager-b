@@ -549,7 +549,7 @@ function insertCorrectionFact(
   event: FrozenFactEvent,
   commandType: DietManagerAction,
 ): void {
-  if (event.eventType !== "diet_correction") return;
+  if (event.eventType !== "diet_correction" && event.eventType !== "nutrition_supplemented") return;
   if (commandType !== "correct_record" && commandType !== "undo_record") {
     throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_command");
   }
@@ -586,9 +586,11 @@ function insertCorrectionFact(
     !Number.isSafeInteger(payload.base_revision) ||
     (payload.base_revision as number) < 1 ||
     (payload.operation !== "change_amount" &&
+      payload.operation !== "change_nutrition_source" &&
       payload.operation !== "void_event" &&
       payload.operation !== "restore_event") ||
-    (commandType === "correct_record" && payload.operation !== "change_amount") ||
+    (commandType === "correct_record" &&
+      payload.operation !== "change_amount" && payload.operation !== "change_nutrition_source") ||
     (commandType === "undo_record" &&
       payload.operation !== "void_event" && payload.operation !== "restore_event") ||
     canonicalJson(payload.before_snapshot) === canonicalJson(payload.after_snapshot)

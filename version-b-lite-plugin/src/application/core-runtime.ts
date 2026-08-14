@@ -34,6 +34,7 @@ import { createDietDomainService, type DietDomainService } from "../domain/servi
 import type {
   DomainEnvelopeInput,
   DomainOperation,
+  KnownStructuredAmount,
   ProductIdentityEvidence,
 } from "../domain/types.js";
 import { cloneCoreParseInput } from "../parser/input-authority.js";
@@ -53,8 +54,11 @@ import {
   parseProjectionPayloadJson,
 } from "../storage/inventory-repository.js";
 import {
+  mapResolvedNutritionAmountMicrounits,
+  mapResolvedNutritionEvidenceToDomainSource,
   mapCoreCandidateToEnvelope,
   type ResolvedCoreInventoryLocationCorrection,
+  type ResolvedCoreNutritionSupplement,
   type ResolvedCorePurchaseItem,
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
@@ -880,7 +884,11 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
     : operation.kind === "add_inventory"
       ? { event_type: "inventory_stock", fact_kind: "inventory" }
       : operation.kind === "correct_record"
-        ? { event_type: "inventory_adjusted", fact_kind: "inventory" }
+        ? "correction_kind" in operation && operation.correction_kind === "inventory_location"
+          ? { event_type: "inventory_adjusted", fact_kind: "inventory" }
+          : "correction_kind" in operation && operation.correction_kind === "nutrition_supplement"
+            ? { event_type: "nutrition_supplemented", fact_kind: "correction" }
+            : { event_type: "diet_correction", fact_kind: "correction" }
         : { event_type: "diet_meal", fact_kind: "meal" };
   if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
       rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
@@ -895,7 +903,9 @@ function executeCandidate(
   command: CoreCommandCandidate,
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
   existingSession?: CoreRuntimeSession,
-  correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
+  correctionResolution?: Readonly<
+    ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
+  >,
   nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): { readonly status: "committed" | "committed_with_issues";
     readonly record_id: string; readonly record_ids?: readonly string[] } {
@@ -1032,10 +1042,147 @@ function nutritionSourceRequest(item: Readonly<{ normalized_name: string; kind: 
   });
 }
 
+interface NutritionResolutionCommand {
+  readonly operation_id: string;
+  readonly items: readonly Readonly<{
+    readonly normalized_name: string;
+    readonly kind: "food" | "nutritious_drink";
+    readonly quantity: number | null;
+    readonly unit: string | null;
+    readonly estimated: boolean | null;
+  }>[];
+}
+
+interface NutritionSupplementTarget {
+  readonly event_id: string;
+  readonly item_id: string;
+  readonly item_order: number;
+  readonly normalized_name: string;
+  readonly item_kind: "food" | "nutritious_drink";
+  readonly amount: Readonly<KnownStructuredAmount>;
+  readonly previous_snapshot_id: string;
+  readonly base_revision: number;
+}
+
+function resolveNutritionSupplementTarget(
+  database: DatabaseSync,
+  targetEventId: string,
+  operationId: string,
+): Readonly<NutritionSupplementTarget> {
+  const rows = database.prepare(
+    `SELECT e.event_id, i.item_id, i.item_order, i.item_type, i.normalized_name, i.payload_json
+     FROM event_records e JOIN meal_items i ON i.event_id = e.event_id
+     WHERE e.event_id = ? AND e.event_type = 'diet_meal'
+     ORDER BY i.item_order`,
+  ).all(targetEventId) as Array<{
+    event_id: string;
+    item_id: string;
+    item_order: number;
+    item_type: string;
+    normalized_name: string;
+    payload_json: string;
+  }>;
+  const row = rows[0];
+  if (rows.length !== 1 || row === undefined || row.item_order !== 0) {
+    throw new Error(rows.length === 0
+      ? "NUTRITION_SUPPLEMENT_TARGET_INVALID:missing"
+      : "NUTRITION_SUPPLEMENT_TARGET_INVALID:ambiguous_item");
+  }
+  let itemPayload: unknown;
+  try { itemPayload = JSON.parse(row.payload_json) as unknown; } catch {
+    throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:item_payload");
+  }
+  if (
+    canonicalJson(itemPayload) !== row.payload_json ||
+    typeof itemPayload !== "object" || itemPayload === null || Array.isArray(itemPayload)
+  ) throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:item_payload");
+  const amount = (itemPayload as Record<string, unknown>).amount;
+  if (typeof amount !== "object" || amount === null || Array.isArray(amount)) {
+    throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:amount");
+  }
+  const known = amount as unknown as KnownStructuredAmount;
+  if (
+    typeof known.unit !== "string" || known.unit.length === 0 ||
+    !Number.isSafeInteger(known.observed_microunits) || known.observed_microunits <= 0 ||
+    (known.evidence !== "explicit" && known.evidence !== "estimated_upper_bound")
+  ) throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:amount");
+  const snapshots = database.prepare(
+    `SELECT snapshot_id, payload_json FROM nutrition_snapshots
+     WHERE meal_event_id = ? AND intake_item_id = ? AND schema_version = 'domain/v2'
+     ORDER BY rowid`,
+  ).all(targetEventId, row.item_id) as Array<{ snapshot_id: string; payload_json: string }>;
+  if (snapshots.length === 0) throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:snapshot");
+  const existing = database.prepare(
+    `SELECT c.correction_id, c.target_event_id, c.base_revision, c.operation,
+            b.effect_state, b.result_status
+     FROM correction_events c
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type = 'nutrition_supplemented'
+     JOIN effect_bundle_commits b
+       ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+     WHERE c.request_id = ?`,
+  ).get(operationId) as {
+    correction_id: string;
+    target_event_id: string;
+    base_revision: number;
+    operation: string;
+    effect_state: string;
+    result_status: string;
+  } | undefined;
+  let previousSnapshotId = snapshots.at(-1)!.snapshot_id;
+  let revision = (database.prepare(
+    "SELECT COUNT(*) AS count FROM correction_events WHERE target_event_id = ?",
+  ).get(targetEventId) as { count: number }).count + 1;
+  if (existing !== undefined) {
+    if (
+      existing.target_event_id !== targetEventId ||
+      existing.operation !== "change_nutrition_source" ||
+      !Number.isSafeInteger(existing.base_revision) || existing.base_revision < 1
+    ) throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:existing_fact");
+    revision = existing.base_revision;
+    if (existing.effect_state === "pending" && existing.result_status === "facts_committed_effects_pending") {
+      // The new Snapshot is written atomically with the effect, so the current tail is still the original input.
+      previousSnapshotId = snapshots.at(-1)!.snapshot_id;
+    } else if (
+      (existing.effect_state === "succeeded" && existing.result_status === "applied") ||
+      (existing.effect_state === "permanent_business_skip" &&
+        existing.result_status === "applied_with_issues")
+    ) {
+      const appliedIndex = snapshots.findIndex((candidate) => {
+        let payload: unknown;
+        try { payload = JSON.parse(candidate.payload_json) as unknown; } catch { return false; }
+        return canonicalJson(payload) === candidate.payload_json &&
+          typeof payload === "object" && payload !== null && !Array.isArray(payload) &&
+          (payload as Record<string, unknown>).correction_id === existing.correction_id;
+      });
+      if (appliedIndex <= 0 || snapshots.some((candidate, index) => index !== appliedIndex && (() => {
+        try {
+          const payload = JSON.parse(candidate.payload_json) as unknown;
+          return typeof payload === "object" && payload !== null && !Array.isArray(payload) &&
+            (payload as Record<string, unknown>).correction_id === existing.correction_id;
+        } catch { return false; }
+      })())) throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:snapshot_chain");
+      previousSnapshotId = snapshots[appliedIndex - 1]!.snapshot_id;
+    } else {
+      throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:effect_state");
+    }
+  }
+  return Object.freeze({
+    event_id: row.event_id,
+    item_id: row.item_id,
+    item_order: row.item_order,
+    normalized_name: row.normalized_name,
+    item_kind: row.item_type === "nutrition_drink" ? "nutritious_drink" : "food",
+    amount: Object.freeze({ ...known }),
+    previous_snapshot_id: previousSnapshotId,
+    base_revision: revision,
+  });
+}
+
 async function resolveNutritionMaterial(
   runtime: CoreRuntime,
   request: Readonly<CoreApplicationRequest>,
-  command: Extract<CoreCommandCandidate, { action: "record_meal" }>,
+  command: Readonly<NutritionResolutionCommand>,
   session: CoreRuntimeSession,
 ): Promise<NutritionPreviewMaterialV6> {
   const state = states.get(runtime);
@@ -1152,6 +1299,93 @@ function storedMealItems(database: DatabaseSync, eventId: string): readonly Read
     }>);
 }
 
+async function handleNutritionSupplement(
+  runtime: CoreRuntime,
+  request: Readonly<CoreApplicationRequest>,
+  command: Extract<CoreCommandCandidate, { action: "correct_record"; kind: "nutrition_supplement" }>,
+): Promise<DietManagerOutcome> {
+  try {
+    const session = acquireSession(runtime);
+    if (command.target_record_id === null) {
+      return nonWritingOutcome(request.action, request.operation_id, "needs_clarification", "target_ambiguous");
+    }
+    const target = resolveNutritionSupplementTarget(
+      session.database,
+      command.target_record_id,
+      command.operation_id,
+    );
+    const resolutionCommand: NutritionResolutionCommand = Object.freeze({
+      operation_id: command.operation_id,
+      items: Object.freeze([Object.freeze({
+        normalized_name: target.normalized_name,
+        kind: target.item_kind,
+        quantity: target.amount.observed_microunits / 1_000_000,
+        unit: target.amount.unit,
+        estimated: target.amount.evidence !== "explicit",
+      })]),
+    });
+    const material = await resolveNutritionMaterial(runtime, request, resolutionCommand, session);
+    const evidence = material.nutrition_evidence[0];
+    if (material.nutrition_evidence.length !== 1 || evidence === undefined) {
+      throw new Error("NUTRITION_RESOLUTION_AUTHORITY_INVALID:item_count");
+    }
+    const source = mapResolvedNutritionEvidenceToDomainSource(evidence);
+    const adopted = mapResolvedNutritionAmountMicrounits(evidence);
+    if (source === null || adopted === null) {
+      return nonWritingOutcome(request.action, request.operation_id, "ignored", "nutrition_still_unknown");
+    }
+    const correctionResolution: ResolvedCoreNutritionSupplement = Object.freeze({
+      target_event_id: target.event_id,
+      base_revision: target.base_revision,
+      item_order: target.item_order,
+      previous_snapshot_id: target.previous_snapshot_id,
+      replacement_amount: Object.freeze({
+        ...target.amount,
+        nutrition_adoption_microunits: adopted,
+      }),
+      replacement_nutrition_source: source,
+    });
+    const execution = executeCandidate(
+      runtime,
+      request,
+      command,
+      Object.freeze([]),
+      session,
+      correctionResolution,
+    );
+    const supplementEvent = session.database.prepare(
+      "SELECT committed_at FROM event_records WHERE event_id = ?",
+    ).get(execution.record_id) as { committed_at: string } | undefined;
+    if (supplementEvent === undefined) {
+      throw new Error("NUTRITION_REPOSITORY_INVALID:supplement_event");
+    }
+    const records = [buildNutritionRecords({
+      operation_id: command.operation_id,
+      meal_event_id: target.event_id,
+      intake_item_id: target.item_id,
+      item_name: target.normalized_name,
+      subject_type: evidence.source_type === "product_label" ? "product" : "food",
+      subject_id: target.normalized_name,
+      created_at: supplementEvent.committed_at,
+    }, evidence)];
+    try {
+      persistNutritionRecords(session.database, records);
+    } catch {
+      return committedOutcome(request.action, request.operation_id, "committed_with_issues", execution.record_id);
+    }
+    return committedOutcome(
+      request.action,
+      request.operation_id,
+      execution.status,
+      execution.record_id,
+      undefined,
+      [nutritionOutcomeItem(target.normalized_name, records[0]!)],
+    );
+  } catch (error) {
+    return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+  }
+}
+
 export async function handleCoreRequestAsync(
   runtime: CoreRuntime,
   value: CoreApplicationRequest,
@@ -1160,7 +1394,6 @@ export async function handleCoreRequestAsync(
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
-  if (request.action !== "record_meal") return handleCoreRequest(runtime, value);
   let parsed;
   try {
     const { action: _action, ...parseInput } = request;
@@ -1168,6 +1401,11 @@ export async function handleCoreRequestAsync(
   } catch {
     return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
   }
+  if (
+    parsed.disposition === "candidate" && parsed.command.action === "correct_record" &&
+    "kind" in parsed.command && parsed.command.kind === "nutrition_supplement"
+  ) return handleNutritionSupplement(runtime, request, parsed.command);
+  if (request.action !== "record_meal") return handleCoreRequest(runtime, value);
   if (parsed.disposition !== "candidate" || parsed.command.action !== "record_meal") {
     return handleCoreRequest(runtime, value);
   }

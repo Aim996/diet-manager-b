@@ -159,6 +159,23 @@
 - 后续修复索引：supplement 先以 domain-v2 effective progress 为基线追加 correction；模块收口前再把 v1.1 row 纳入同一 effect 或明确双模型的事务权威。
 - 批次提交：`feat: bind resolved nutrition to meal effects`。
 
+### Batch C5c / 2026-08-14
+
+- 目标：把一次真实 unknown meal 的营养补全接入既有 FactCommit → EffectBundle → EnvelopeFinalize，并关闭 same-key 重放的重复联网/重复写入。
+- 绑定 REQ：`REQ-NUTR-004/005/006`。
+- 绑定 CASE：`CASE-NUTR-004/005` 的追加式补全主链；故障/篡改排列留到模块统一 Gate。
+- 起始 HEAD：`921a18c`。
+- 改动文件：`domain/types/service/effect-bundle`、`application/mapping/core-runtime`、`repository/fact-commit/progress-reservation/query`、`nutrition-supplement.test.ts`。
+- 行为变化：`correct_record` 营养补充生成 `nutrition_supplemented` 事实和 `change_nutrition_source` correction；旧 unknown Snapshot 不删除，新 domain/v2 与公开 v1.1 Snapshot 追加；daily progress 通过 correction replacement effect 更新；终态 Finalize 成功。同一 operation/source/conversation 的重放从既有 correction/effect/Snapshot 链重建原 envelope，复用已签 v6 evidence，不再次调用来源且不追加第二事实。
+- 接口/Schema/authority 决策：继续复用 migration-v1 已允许的 correction operation；新事件仍使用 correction fact authority。终态/查询/进度 reservation 不再硬编码 `diet_correction`，而是接受并交叉使用已存 `diet_correction | nutrition_supplemented` 事件类型。重放没有新增未认证捷径，仍走 server preview 与 domain execute 的既有私钥认证。
+- 真实 RED：初始旧入口返回 `ACTION_NOT_IMPLEMENTED`；接线后 effect 已 succeeded 但终态读取仍只 JOIN `diet_correction`，稳定停在 `effects_stable/CORRECTION_EFFECT_INVALID`；修复后主链 GREEN。随后同键重放因按当前 tail 重算 revision/Snapshot 而返回 `idempotency_conflict`；从既有 correction 与 Snapshot 链重建原输入后 GREEN。
+- 定向 smoke：`nutrition-supplement.test.ts` 2/2 PASS；同键 replay record ID 相同、来源调用总数保持 2、supplement event 总数为 1；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 环境记录：本轮 Codex shell 未继承系统 PowerShell modules 路径，Windows `Set-Acl` 控制用例先报模块自动加载失败；命令补回标准 `$SystemRoot\System32\WindowsPowerShell\v1.0\Modules` 后业务测试通过，未为该环境差异修改生产代码。
+- 延期到模块末的测试：after-Fact/effect CAS/tamper/concurrency、旧 correction 全族、完整 Nutrition CASE、full/trace。
+- 已知风险/假设：公开 v1.1 Profile/Snapshot 仍在 domain Finalize 后以幂等 savepoint 写入；domain/v2 Snapshot 与 progress 已在 EffectBundle 原子事务内。Task 5 的“v1.1 + progress 同事务”和 Task 6 的 new-key already-current no-write 尚未关闭。
+- 后续修复索引：下一小批先把 v1.1 记录移入 effect/terminal readback，随后补 new-key already-current 与代表性 fault/tamper，再进入统一 Gate。
+- 批次提交：`feat: append nutrition supplements`（本段记录随实现提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

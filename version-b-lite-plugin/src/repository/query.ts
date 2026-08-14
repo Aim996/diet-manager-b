@@ -492,7 +492,8 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
       const latestCorrection = query.database.prepare(
         `SELECT c.base_revision, c.payload_json
          FROM correction_events c
-         JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+         JOIN event_records e ON e.operation_id = c.request_id
+           AND e.event_type IN ('diet_correction','nutrition_supplemented')
          JOIN effect_bundle_commits b
            ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
          WHERE c.target_event_id = ? AND (

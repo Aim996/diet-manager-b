@@ -4,6 +4,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import type { CoreApplicationRequest } from "../contracts.js";
 import { resolveExpiration } from "../domain/inventory-service.js";
 import type {
+  CorrectNutritionSupplementOperation,
   DomainEnvelopeInput,
   DomainOperation,
   NutritionSourceCandidate,
@@ -32,6 +33,15 @@ export interface ResolvedCoreInventoryLocationCorrection {
   readonly previous_location: Readonly<PantryPurchaseEvidence["location"]>;
   readonly previous_expiration: Readonly<PantryPurchaseEvidence["expiration"]>;
   readonly expected_expiration: Readonly<PantryPurchaseEvidence["expiration"]>;
+}
+
+export interface ResolvedCoreNutritionSupplement {
+  readonly target_event_id: string;
+  readonly base_revision: number;
+  readonly item_order: number;
+  readonly previous_snapshot_id: string;
+  readonly replacement_amount: Readonly<CorrectNutritionSupplementOperation["replacement_amount"]>;
+  readonly replacement_nutrition_source: Readonly<NutritionSourceCandidate>;
 }
 
 function identity(request: Readonly<CoreApplicationRequest>): string {
@@ -68,7 +78,15 @@ function decimalMicrounits(value: string, scale: bigint, field: string): number 
   return Number(rounded);
 }
 
-function domainNutritionSource(
+export function mapResolvedNutritionAmountMicrounits(
+  evidence: Readonly<ResolvedNutritionEvidence>,
+): number | null {
+  return evidence.adopted_amount === null
+    ? null
+    : decimalMicrounits(evidence.adopted_amount, 1_000_000n, "adopted_amount");
+}
+
+export function mapResolvedNutritionEvidenceToDomainSource(
   evidence: Readonly<ResolvedNutritionEvidence>,
 ): Readonly<NutritionSourceCandidate> | null {
   if (evidence.source_type === "unknown") return null;
@@ -125,10 +143,10 @@ function mealOrWaterOperation(
     },
     items: command.items.map((item, index) => {
       const evidence = nutritionEvidence[index];
-      const source = evidence === undefined ? null : domainNutritionSource(evidence);
-      const adoptedMicrounits = evidence?.adopted_amount === null || evidence === undefined
+      const source = evidence === undefined ? null : mapResolvedNutritionEvidenceToDomainSource(evidence);
+      const adoptedMicrounits = evidence === undefined
         ? null
-        : decimalMicrounits(evidence.adopted_amount, 1_000_000n, "adopted_amount");
+        : mapResolvedNutritionAmountMicrounits(evidence);
       return ({
       normalized_name: item.normalized_name,
       item_type: item.kind === "food" ? "food" : "nutrition_drink",
@@ -341,6 +359,26 @@ function locationCorrectionOperation(
   });
 }
 
+function nutritionSupplementOperation(
+  command: Extract<CoreCommandCandidate, { action: "correct_record"; kind: "nutrition_supplement" }>,
+  resolution: Readonly<ResolvedCoreNutritionSupplement> | undefined,
+): Readonly<CorrectNutritionSupplementOperation> {
+  if (resolution === undefined || resolution.target_event_id !== command.target_record_id) {
+    throw new Error("CORE_APPLICATION_MAPPING_INVALID:nutrition_supplement_resolution");
+  }
+  return Object.freeze({
+    kind: "correct_record" as const,
+    operation_id: command.operation_id,
+    correction_kind: "nutrition_supplement" as const,
+    target_event_id: resolution.target_event_id,
+    base_revision: resolution.base_revision,
+    item_order: resolution.item_order,
+    previous_snapshot_id: resolution.previous_snapshot_id,
+    replacement_amount: resolution.replacement_amount,
+    replacement_nutrition_source: resolution.replacement_nutrition_source,
+  });
+}
+
 function deepFreeze(value: unknown): void {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) return;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -351,17 +389,24 @@ export function mapCoreCandidateToEnvelope(
   request: Readonly<CoreApplicationRequest>,
   command: CoreCommandCandidate,
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
-  correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
+  correctionResolution?: Readonly<
+    ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
+  >,
   nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): Readonly<DomainEnvelopeInput> {
   const digest = identity(request);
-  if (command.action === "correct_record" && !("correction_kind" in command)) {
-    throw new TypeError("CORE_APPLICATION_MAPPING_INVALID:nutrition_supplement_not_implemented");
-  }
   const operations = command.action === "add_inventory"
     ? purchaseOperations(request, command, purchaseResolutions)
     : command.action === "correct_record"
-      ? Object.freeze([locationCorrectionOperation(command, correctionResolution)])
+      ? Object.freeze(["correction_kind" in command
+          ? locationCorrectionOperation(
+              command,
+              correctionResolution as Readonly<ResolvedCoreInventoryLocationCorrection> | undefined,
+            )
+          : nutritionSupplementOperation(
+              command,
+              correctionResolution as Readonly<ResolvedCoreNutritionSupplement> | undefined,
+            )])
       : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
   const envelope = JSON.parse(canonicalJson({
     envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,

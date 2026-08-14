@@ -268,9 +268,22 @@ export interface CorrectInventoryLocationOperation {
   readonly rule_version: "diet-manager/location-correction/v1";
 }
 
+export interface CorrectNutritionSupplementOperation {
+  readonly kind: "correct_record";
+  readonly operation_id: string;
+  readonly correction_kind: "nutrition_supplement";
+  readonly target_event_id: string;
+  readonly base_revision: number;
+  readonly item_order: number;
+  readonly previous_snapshot_id: string;
+  readonly replacement_amount: Readonly<KnownStructuredAmount>;
+  readonly replacement_nutrition_source: Readonly<NutritionSourceCandidate>;
+}
+
 export type CorrectRecordOperation =
   | CorrectMealRecordOperation
-  | CorrectInventoryLocationOperation;
+  | CorrectInventoryLocationOperation
+  | CorrectNutritionSupplementOperation;
 
 export interface InventoryLocationCorrectionResult {
   readonly sequence: number;
