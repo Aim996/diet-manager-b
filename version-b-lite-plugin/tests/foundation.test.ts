@@ -51,6 +51,7 @@ describe("diet manager B core plugin boundary", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
     const metadata = getToolPluginMetadata(pluginEntry);
 
+    expect(manifest.skills).toEqual(["./skills"]);
     expect(metadata).toMatchObject({
       id: manifest.id,
       name: manifest.name,
