@@ -18,3 +18,6 @@ export {
   dietManagerContract,
   dietManagerStatuses,
 } from "./contracts.js";
+
+export { backupDietDatabase, restoreDietDatabase } from "./storage/backup.js";
+export type { DietDatabaseBackupResult } from "./storage/backup.js";

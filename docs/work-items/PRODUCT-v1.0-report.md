@@ -14,6 +14,7 @@
 6. `query_daily_summary` 返回餐食、白水、营养、库存扣减、购买、纠正六域只读进度，不写事实。
 7. `query_meals` 与 `query_inventory` 已公开只读接线，结果来自认证 read model 且查询零写入。
 8. 既有白水、购买、位置纠正功能保持可用。
+9. 支持在线 SQLite 备份与同一私有根恢复；备份有 SHA-256，恢复失败自动回滚旧数据库。
 
 ## 用户测试 FDC
 
@@ -48,6 +49,17 @@ $env:FDC_API_KEY = "你的 USDA / data.gov API key"
 
 API key 不要写入聊天、插件 JSON 或仓库。没有 key 或 USDA 不可用时，餐食仍会提交，营养返回 `unknown`。
 
+## 用户测试备份/恢复
+
+先停止插件 runtime 再执行恢复。备份可以在 runtime 工作时创建。
+
+```powershell
+node dist/admin/cli.js backup "E:\你的私有数据目录" "E:\备份\diet-manager.sqlite3"
+node dist/admin/cli.js restore "E:\你的私有数据目录" "E:\备份\diet-manager.sqlite3" "上一条输出的SHA256"
+```
+
+恢复只适用于原私有根，必须保留其中的 `.diet-manager-b.authority-secret`；它不会把裸 secret 复制到普通备份文件。
+
 ## 验证记录
 
 - v1 主链 focused：4 files / 87 tests PASS。
@@ -56,11 +68,12 @@ API key 不要写入聊天、插件 JSON 或仓库。没有 key 或 USDA 不可�
 - FDC + OpenClaw focused：2 files / 26 tests PASS。
 - 最新 TypeScript `--noEmit`：PASS。
 - 餐食/库存公开查询 smoke：1/1 PASS。
+- 备份/恢复 smoke：1/1 PASS。
 
 ## 尚未完成
 
 - 用户真实 USDA key/网络环境的在线验收。
-- 一键安装、备份、恢复及恢复后 I-1..I-8 检查。
+- 一键安装与跨机器加密灾备；当前恢复限定同一私有根。
 - 最终 dist 构建与安装包验证。本轮按约束没有 emit/build。
 
 ## 测试策略

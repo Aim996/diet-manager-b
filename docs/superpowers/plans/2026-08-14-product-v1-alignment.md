@@ -143,3 +143,18 @@
 - [x] Preserve the existing five public statuses and label both as `read_only_result`.
 - [x] Assert exact public shapes, recursive freeze, and an unchanged business snapshot.
 - [x] Run one combined smoke and `tsc --noEmit`; do not rerun full.
+
+### Task 9: Add database backup and same-root restore
+
+**Files:**
+- Create: `version-b-lite-plugin/src/storage/backup.ts`
+- Create: `version-b-lite-plugin/src/admin/cli.ts`
+- Modify: `version-b-lite-plugin/src/index.ts`
+- Modify: `version-b-lite-plugin/package.json`
+- Test: `version-b-lite-plugin/tests/acceptance/backup-restore.test.ts`
+
+- [x] Produce an integrity-checked online SQLite backup without overwriting an existing file.
+- [x] Return a SHA-256 that is required for restore.
+- [x] Restore only into the same initialized private root, preserve its private authority secret, and roll back on validation failure.
+- [x] Add admin CLI entry points without exposing them as model actions.
+- [x] Run one end-to-end backup/restore smoke and `tsc --noEmit`; do not emit dist.

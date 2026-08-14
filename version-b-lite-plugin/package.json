@@ -12,6 +12,8 @@
     "test:b-slice-crash": "npm run build && node tests/b-slice-crash-harness.mjs",
     "test:progress-reservation-concurrency": "npm run build && node tests/progress-reservation-concurrency.mjs",
     "test:repository-concurrency": "npm run build && node tests/repository-concurrency.mjs",
+    "admin:backup": "node dist/admin/cli.js backup",
+    "admin:restore": "node dist/admin/cli.js restore",
     "build": "tsc -p tsconfig.json",
     "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",
     "plugin:validate": "npm run build && openclaw plugins build --check --root . --entry ./dist/index.js && openclaw plugins validate --root . --entry ./dist/index.js"

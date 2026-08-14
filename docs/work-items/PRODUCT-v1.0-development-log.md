@@ -269,3 +269,27 @@ Batch V1-F：只进行一次统一 focused/full/noEmit/OpenClaw 元数据验证�
 - 新增合并 smoke：先提交餐食和购买，再分别查询；1/1 PASS（同文件其余 54 skipped）。
 - `tsc -p tsconfig.json --noEmit`：exit 0。
 - 未重复完整 Vitest。
+
+## Batch V1-I：数据库备份与同根恢复
+
+- 日期：2026-08-14
+- 目标：REQ-INSTALL-002/003 的安全最小闭环。
+
+### 生产改动
+
+- `backupDietDatabase` 使用 Node SQLite online backup 生成独立候选，验证 schema、quick check、foreign keys 后才发布。
+- 返回备份绝对路径、字节数与 SHA-256；目标已存在时拒绝覆盖。
+- `restoreDietDatabase` 要求插件 runtime 已关闭、私有 authority secret 仍在原根、备份 SHA-256 精确匹配。
+- 恢复先验证候选，再把当前数据库改名保留为回滚副本；新库验证失败会恢复旧库。
+- 新增 `dist/admin/cli.js` 对应的 `admin:backup` / `admin:restore` package scripts；错误只输出稳定码。
+
+### 小门验证
+
+- 1/1 PASS：提交餐食→在线备份→写入白水→关闭 runtime→恢复→餐食仍在、白水回到 0、私有 secret bytes 不变。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- 未生成 dist，未重复完整 Vitest。
+
+### 边界
+
+- 当前是“同一已初始化私有根”的数据库恢复；这样可以保留验证历史 HMAC 所需的 secret。
+- 尚未提供跨机器加密导出 authority secret；不允许把裸 secret 放进普通备份包。
