@@ -19,10 +19,17 @@ import {
   type ProgressReservation,
 } from "../repository/progress-reservation.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
-import { preparePantryPurchase } from "../storage/inventory-repository.js";
+import {
+  applyPantryAllocationsInTransaction,
+  listPantryAllocationCandidates,
+  parseInventoryAllocationPlan,
+  preparePantryPurchase,
+  type AppliedPantryAllocation,
+} from "../storage/inventory-repository.js";
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
+import { resolveInventoryAllocation } from "./inventory-service.js";
 import {
   buildPantryPurchaseReceiptItem,
   type PantryPurchaseReceiptItem,
@@ -36,6 +43,7 @@ import {
 import type {
   AddInventoryOperation,
   CorrectRecordOperation,
+  InventoryAllocationPlan,
   InventoryCandidate,
   InventoryMatchDecision,
   NutritionSelection,
@@ -90,8 +98,10 @@ export interface MealItemExecutionResult {
   readonly item_order: number;
   readonly normalized_name: string;
   readonly unit: string;
-  readonly inventory_match: InventoryMatchDecision["status"];
+  readonly inventory_match: InventoryMatchDecision["status"] | InventoryAllocationPlan["status"];
   readonly inventory_transaction_id: string | null;
+  readonly inventory_transaction_ids?: readonly string[];
+  readonly inventory_allocations?: readonly Readonly<AppliedPantryAllocation>[];
   readonly issue_codes: readonly string[];
   readonly observed_microunits: number | null;
   readonly amount_evidence?: "unknown";
@@ -109,7 +119,7 @@ export interface MealOperationResult {
   readonly status: "committed" | "committed_with_issues";
   readonly error_code: null;
   readonly fact_status: "committed";
-  readonly inventory_match: InventoryMatchDecision["status"];
+  readonly inventory_match: InventoryMatchDecision["status"] | InventoryAllocationPlan["status"];
   readonly inventory_transaction_id: string | null;
   readonly issue_codes: readonly string[];
   readonly meal_items: readonly MealItemExecutionResult[];
@@ -126,6 +136,7 @@ export interface DailyProgressResult {
 
 export interface PrepareMealInput extends Omit<PreparePurchaseInput, "operation"> {
   readonly operation: RecordMealOperation;
+  readonly inventoryPlans?: readonly (Readonly<InventoryAllocationPlan> | null)[];
 }
 
 export interface PreparedMeal {
@@ -722,6 +733,11 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
   if (operation.kind !== "record_meal" || operation.items.length === 0) {
     return invalid("meal_operation");
   }
+  if (input.inventoryPlans !== undefined && input.inventoryPlans.length !== operation.items.length) {
+    return invalid("inventory_plans");
+  }
+  const inventoryPlans = input.inventoryPlans?.map((plan) =>
+    plan === null ? null : parseInventoryAllocationPlan(plan));
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const mealId = deriveDomainId("meal", input.idempotencyKey, input.sequence);
   const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
@@ -810,6 +826,10 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
         payload: Object.freeze({
           amount: item.amount,
           authority_kind: "diet-manager/meal-item/v1",
+          ...(item.inventory_directive === undefined ? {} : { inventory_directive: item.inventory_directive }),
+          ...(inventoryPlans?.[itemOrder] === undefined || inventoryPlans[itemOrder] === null
+            ? {}
+            : { inventory_plan: inventoryPlans[itemOrder] }),
           nutrition_sources: item.nutrition_sources,
         }),
       }))),
@@ -1202,9 +1222,81 @@ function inventoryCandidates(
   }));
 }
 
+/**
+ * Builds immutable Pantry-v2 allocation authority before FactCommit. Legacy
+ * v1 inventory keeps its byte-exact single-candidate path by returning null.
+ * Outside and unknown-amount skips also retain their existing zero-read fact
+ * shape until an explicit inventory directive is supplied by the parser.
+ */
+export function prepareMealInventoryPlans(
+  database: DatabaseSync,
+  operation: RecordMealOperation,
+  envelopeId?: string,
+): readonly (Readonly<InventoryAllocationPlan> | null)[] {
+  if (envelopeId !== undefined) {
+    const stored = database.prepare(
+      `SELECT i.payload_json FROM meal_items i
+       JOIN event_records e ON e.event_id = i.event_id
+       WHERE e.envelope_id = ? AND e.operation_id = ?
+       ORDER BY i.item_order`,
+    ).all(envelopeId, operation.operation_id) as Array<{ payload_json: string }>;
+    if (stored.length > 0) {
+      if (stored.length !== operation.items.length) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:stored_inventory_plans");
+      }
+      return Object.freeze(stored.map(({ payload_json }) => {
+        const payload = parseCanonical(payload_json, "stored_inventory_plan");
+        return Object.hasOwn(payload, "inventory_plan")
+          ? parseInventoryAllocationPlan(payload.inventory_plan)
+          : null;
+      }));
+    }
+  }
+  return Object.freeze(operation.items.map((item) => {
+    if (item.inventory_directive !== undefined) {
+      return resolveInventoryAllocation({
+        location: operation.location,
+        explicit_skip: true,
+        requested_microunits: item.amount.inventory_deduction_microunits,
+        unit: item.amount.unit,
+        specified_batch_id: null,
+        candidates: Object.freeze([]),
+      });
+    }
+    if (operation.location === "outside" || item.amount.inventory_deduction_microunits === null) {
+      return null;
+    }
+    const read = listPantryAllocationCandidates(database, item.normalized_name, operation.occurred_at);
+    if (read === null) return null;
+    return resolveInventoryAllocation({
+      location: operation.location,
+      explicit_skip: false,
+      requested_microunits: item.amount.inventory_deduction_microunits,
+      unit: item.amount.unit,
+      specified_batch_id: null,
+      candidates: read.candidates,
+    });
+  }));
+}
+
+function allocationDecision(plan: Readonly<InventoryAllocationPlan>): InventoryMatchDecision {
+  const first = plan.allocations[0];
+  const issueCode = plan.issue_code === "inventory_unit_conversion_unproven"
+    ? "inventory_unit_incompatible" as const
+    : plan.issue_code;
+  return Object.freeze({
+    status: plan.status === "skipped_by_user" ? "skipped_outside" : plan.status,
+    batch_id: first?.batch_id ?? null,
+    product_id: first?.product_id ?? null,
+    deduction_microunits: plan.status === "matched" ? plan.requested_microunits ?? 0 : 0,
+    unit: plan.unit,
+    issue_code: issueCode,
+  }) as InventoryMatchDecision;
+}
+
 function selectMealNutrition(
   item: Record<string, unknown>,
-  decision: InventoryMatchDecision,
+  decision: Pick<InventoryMatchDecision, "product_id">,
 ): NutritionSelection {
   if (!Array.isArray(item.nutrition_sources)) {
     throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:nutrition_sources");
@@ -1227,19 +1319,27 @@ export function preflightMealOperation(
   precedingCandidates: ReadonlyMap<string, readonly InventoryCandidate[]> = new Map(),
 ): DailyProgressResult {
   let preflightMealProgress: NutritionVector = zeroNutrition();
-  for (const item of operation.items) {
-    const candidates = operation.location === "outside"
+  const pantryPlans = precedingCandidates.size === 0
+    ? prepareMealInventoryPlans(database, operation)
+    : Object.freeze(operation.items.map(() => null));
+  for (let itemOrder = 0; itemOrder < operation.items.length; itemOrder += 1) {
+    const item = operation.items[itemOrder]!;
+    const pantryPlan = pantryPlans[itemOrder];
+    const candidates = pantryPlan !== null && pantryPlan !== undefined ||
+        operation.location === "outside" || item.amount.inventory_deduction_microunits === null
       ? []
       : [...inventoryCandidates(database, item.normalized_name), ...(precedingCandidates.get(item.normalized_name) ?? [])];
-    const decision = resolveInventoryMatch({
-      location: operation.location,
-      requested_unit: item.amount.unit,
-      observed_microunits: item.amount.observed_microunits,
-      nutrition_adoption_microunits: item.amount.nutrition_adoption_microunits,
-      inventory_deduction_microunits: item.amount.inventory_deduction_microunits,
-      template_reference_microunits: item.amount.template_reference_microunits,
-      candidates,
-    });
+    const decision = pantryPlan === null || pantryPlan === undefined
+      ? resolveInventoryMatch({
+          location: operation.location,
+          requested_unit: item.amount.unit,
+          observed_microunits: item.amount.observed_microunits,
+          nutrition_adoption_microunits: item.amount.nutrition_adoption_microunits,
+          inventory_deduction_microunits: item.amount.inventory_deduction_microunits,
+          template_reference_microunits: item.amount.template_reference_microunits,
+          candidates,
+        })
+      : allocationDecision(pantryPlan);
     const selection = selectMealNutrition({ nutrition_sources: item.nutrition_sources }, decision);
     const scaled = item.amount.nutrition_adoption_microunits === null
       ? Object.freeze({
@@ -1446,7 +1546,7 @@ function writeMealIssue(
   input: ApplyMealEffectsInput,
   event: MealEventRow,
   item: StoredMealItem,
-  decision: InventoryMatchDecision,
+  decision: Pick<InventoryMatchDecision, "issue_code"> | Pick<InventoryAllocationPlan, "issue_code">,
 ): void {
   if (!decision.issue_code) return;
   database.prepare(
@@ -1540,6 +1640,7 @@ export interface ApplyMealEffectsInput {
   readonly fault?:
     | "after_nutrition"
     | "after_first_item"
+    | "after_first_inventory_allocation"
     | "after_issue_write"
     | "after_progress_contribution_prepared";
 }
@@ -1820,6 +1921,9 @@ function readAppliedMealResultInTransaction(
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
     }
     const amount = storedStructuredAmount(itemPayload.amount, "terminal_item_amount");
+    const pantryPlan = Object.hasOwn(itemPayload, "inventory_plan")
+      ? parseInventoryAllocationPlan(itemPayload.inventory_plan)
+      : null;
     const snapshots = input.database.prepare(
       `SELECT source_type, profile_version, payload_json FROM nutrition_snapshots
        WHERE intake_item_id = ? ORDER BY snapshot_id`,
@@ -1848,20 +1952,71 @@ function readAppliedMealResultInTransaction(
     ).all(item.item_id) as Array<{ issue_code: string }>;
     if (issues.length > 1) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_issues");
     const issueCodes = Object.freeze(issues.map((issue) => issue.issue_code));
+    if (
+      pantryPlan !== null &&
+      canonicalJson(issueCodes) !== canonicalJson(
+        pantryPlan.issue_code === null ? [] : [pantryPlan.issue_code],
+      )
+    ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_issues");
     const transactions = input.database.prepare(
-      `SELECT transaction_id FROM inventory_transactions
-       WHERE event_id = ? AND idempotency_key = ? ORDER BY transaction_id`,
+      `SELECT transaction_id, product_id, batch_id, direction, reason_code, unit,
+              result_status, lifecycle_status, payload_json
+       FROM inventory_transactions
+       WHERE event_id = ? AND idempotency_key = ? ORDER BY rowid`,
     ).all(
       event.event_id,
       mealEffectId(input.idempotencyKey, item.item_order, 0),
-    ) as Array<{ transaction_id: string }>;
-    if (transactions.length > 1) {
-      throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+    ) as Array<{
+      transaction_id: string;
+      product_id: string;
+      batch_id: string;
+      direction: string;
+      reason_code: string;
+      unit: string;
+      result_status: string;
+      lifecycle_status: string;
+      payload_json: string;
+    }>;
+    let terminalAllocations: readonly Readonly<AppliedPantryAllocation>[] | null = null;
+    if (pantryPlan === null) {
+      if (transactions.length > 1) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+      }
+    } else {
+      if (transactions.length !== pantryPlan.allocations.length) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+      }
+      terminalAllocations = Object.freeze(pantryPlan.allocations.map((allocation, index) => {
+        const transaction = transactions[index];
+        const expectedTransactionId = deriveDomainId(
+          "transaction",
+          mealEffectId(input.idempotencyKey, item.item_order, 0),
+          index,
+        );
+        const expectedPayload = canonicalJson({
+          allocation_index: index,
+          authority_kind: "diet-manager/inventory-transaction/v2",
+          quantity_after_microunits: allocation.after_microunits,
+          quantity_delta_microunits: -allocation.deducted_microunits,
+          selection_basis: allocation.selection_basis,
+          unit: allocation.unit,
+        });
+        if (
+          !transaction || transaction.transaction_id !== expectedTransactionId ||
+          transaction.product_id !== allocation.product_id || transaction.batch_id !== allocation.batch_id ||
+          transaction.direction !== "out" || transaction.reason_code !== "meal_consumption" ||
+          transaction.unit !== allocation.unit || transaction.result_status !== "applied" ||
+          transaction.lifecycle_status !== "active" || transaction.payload_json !== expectedPayload
+        ) throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+        return Object.freeze({ transaction_id: transaction.transaction_id, ...allocation });
+      }));
     }
     const transactionId = transactions[0]?.transaction_id ?? null;
-    const inventoryMatch = transactionId !== null
-      ? "matched" as const
-      : issueCodes[0] === "inventory_amount_unknown"
+    const inventoryMatch = pantryPlan !== null
+      ? pantryPlan.status
+      : transactionId !== null
+        ? "matched" as const
+        : issueCodes[0] === "inventory_amount_unknown"
         ? "skipped_amount_unknown" as const
         : input.location === "outside"
         ? "skipped_outside" as const
@@ -1884,6 +2039,10 @@ function readAppliedMealResultInTransaction(
       unit: String(amount.unit),
       inventory_match: inventoryMatch,
       inventory_transaction_id: transactionId,
+      ...(terminalAllocations === null ? {} : {
+        inventory_transaction_ids: Object.freeze(terminalAllocations.map(({ transaction_id }) => transaction_id)),
+        inventory_allocations: terminalAllocations,
+      }),
       issue_codes: issueCodes,
       observed_microunits: amount.observed_microunits,
       ...(amount.observed_microunits === null
@@ -2067,20 +2226,27 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:item_payload");
       }
       const amount = storedStructuredAmount(payload.amount, "item_amount");
-      const candidates = input.location === "outside" ? [] : inventoryCandidates(input.database, item.normalized_name);
       const adoptionValue = amount.nutrition_adoption_microunits;
       const deductionValue = amount.inventory_deduction_microunits;
       const adoptedMicrounits = adoptionValue;
       const deductionMicrounits = deductionValue;
-      const decision = resolveInventoryMatch({
-        location: input.location,
-        requested_unit: amount.unit,
-        observed_microunits: amount.observed_microunits,
-        nutrition_adoption_microunits: adoptedMicrounits,
-        inventory_deduction_microunits: deductionMicrounits,
-        template_reference_microunits: amount.template_reference_microunits,
-        candidates,
-      });
+      const pantryPlan = Object.hasOwn(payload, "inventory_plan")
+        ? parseInventoryAllocationPlan(payload.inventory_plan)
+        : null;
+      const candidates = pantryPlan !== null || input.location === "outside" || deductionMicrounits === null
+        ? []
+        : inventoryCandidates(input.database, item.normalized_name);
+      const decision = pantryPlan === null
+        ? resolveInventoryMatch({
+            location: input.location,
+            requested_unit: amount.unit,
+            observed_microunits: amount.observed_microunits,
+            nutrition_adoption_microunits: adoptedMicrounits,
+            inventory_deduction_microunits: deductionMicrounits,
+            template_reference_microunits: amount.template_reference_microunits,
+            candidates,
+          })
+        : allocationDecision(pantryPlan);
       const selection = selectMealNutrition(payload, decision);
       const scaledNutrients = adoptedMicrounits === null
         ? Object.freeze({
@@ -2112,8 +2278,29 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
       if (input.fault === "after_nutrition") {
         throw new Error("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
       }
-      const transactionId = writeMealDeduction(input.database, input, event, item, decision);
-      writeMealIssue(input.database, input, event, item, decision);
+      const allocations = pantryPlan === null
+        ? Object.freeze([]) as readonly Readonly<AppliedPantryAllocation>[]
+        : applyPantryAllocationsInTransaction({
+            database: input.database,
+            event_id: event.event_id,
+            source_message_id: event.source_message_id,
+            conversation_id: event.conversation_id,
+            received_at: event.received_at,
+            committed_at: input.now,
+            occurred_at: event.occurred_at_text,
+            effect_id: mealEffectId(input.idempotencyKey, item.item_order, 0),
+            plan: pantryPlan,
+            ...(input.fault === "after_first_inventory_allocation"
+              ? { afterAllocation: (index: number) => {
+                  if (index === 0) throw new Error("MEAL_EFFECT_FAILED:after_first_inventory_allocation");
+                } }
+              : {}),
+          });
+      const transactionId = pantryPlan === null
+        ? writeMealDeduction(input.database, input, event, item, decision)
+        : allocations[0]?.transaction_id ?? null;
+      writeMealIssue(input.database, input, event, item, pantryPlan ?? decision);
+      const issueCode = pantryPlan?.issue_code ?? decision.issue_code;
       if (input.fault === "after_issue_write") {
         throw new Error("MEAL_EFFECT_FAILED:after_issue_write");
       }
@@ -2122,9 +2309,13 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
         item_order: item.item_order,
         normalized_name: item.normalized_name,
         unit: amount.unit,
-        inventory_match: decision.status,
+        inventory_match: pantryPlan?.status ?? decision.status,
         inventory_transaction_id: transactionId,
-        issue_codes: Object.freeze(decision.issue_code ? [decision.issue_code] : []),
+        ...(pantryPlan === null ? {} : {
+          inventory_transaction_ids: Object.freeze(allocations.map(({ transaction_id }) => transaction_id)),
+          inventory_allocations: allocations,
+        }),
+        issue_codes: Object.freeze(issueCode === null ? [] : [issueCode]),
         observed_microunits: amount.observed_microunits,
         ...(amount.observed_microunits === null
           ? { amount_evidence: "unknown" as const }

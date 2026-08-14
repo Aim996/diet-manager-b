@@ -200,9 +200,17 @@ export interface AddInventoryOperation {
   readonly pantry_evidence?: Readonly<PantryPurchaseEvidence>;
 }
 
+export interface InventoryDirectiveEvidence {
+  readonly mode: "skip";
+  readonly evidence_kind: "explicit";
+  readonly matched_span: string;
+  readonly rule_version: string;
+}
+
 export interface MealItemInput {
   readonly normalized_name: string;
   readonly item_type: "dish" | "food" | "nutrition_drink";
+  readonly inventory_directive?: Readonly<InventoryDirectiveEvidence>;
   readonly amount: StructuredAmount;
   readonly nutrition_sources: readonly NutritionSourceCandidate[];
 }

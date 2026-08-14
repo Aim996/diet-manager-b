@@ -12,6 +12,7 @@ export type QuickPromptIssueCode =
   | "inventory_multiple_candidates"
   | "inventory_insufficient"
   | "inventory_unit_incompatible"
+  | "inventory_unit_conversion_unproven"
   | "inventory_amount_unknown";
 
 export interface BuildQuickPromptInput {
@@ -209,6 +210,7 @@ export function buildQuickPrompt(input: BuildQuickPromptInput): QuickPrompt {
     "inventory_multiple_candidates",
     "inventory_insufficient",
     "inventory_unit_incompatible",
+    "inventory_unit_conversion_unproven",
     "inventory_amount_unknown",
   ]);
   if (!allowedCodes.has(input.issue_code)) return invalid("issue_code");

@@ -7,9 +7,14 @@ import {
   validateAndFreezeProductIdentityEvidence,
 } from "../domain/inventory-service.js";
 import type {
+  InventoryAllocationCandidate,
+} from "../domain/inventory-service.js";
+import type {
+  InventoryAllocationPlan,
   PantryPurchaseEvidence,
   ProductIdentityEvidence,
 } from "../domain/types.js";
+import { deriveDomainId } from "../domain/identity.js";
 import type { PreparedEnvelopeOperation } from "../repository/fact-commit.js";
 import { assertCurrentMigrationAuthority } from "./migration-guard.js";
 
@@ -70,6 +75,21 @@ export interface ParsedPurchaseFactPayload {
   readonly pantry_evidence: Readonly<PantryPurchaseEvidence> | null;
   readonly effect_inputs: Readonly<Record<string, unknown>>;
   readonly result: unknown;
+}
+
+export interface PantryAllocationCandidateRead {
+  readonly candidates: readonly Readonly<InventoryAllocationCandidate>[];
+}
+
+export interface AppliedPantryAllocation {
+  readonly transaction_id: string;
+  readonly product_id: string;
+  readonly batch_id: string;
+  readonly before_microunits: number;
+  readonly deducted_microunits: number;
+  readonly after_microunits: number;
+  readonly unit: string;
+  readonly selection_basis: "explicit_batch" | "fefo" | "fifo";
 }
 
 function invalid(reason: string): never {
@@ -321,6 +341,248 @@ export function parsePurchaseFactPayload(value: unknown): Readonly<ParsedPurchas
 
 export function parsePurchaseFactPayloadJson(value: string): Readonly<ParsedPurchaseFactPayload> {
   return parsePurchaseFactPayload(parsedJson(value, "purchase_fact_payload"));
+}
+
+export function parseInventoryAllocationPlan(value: unknown): Readonly<InventoryAllocationPlan> {
+  const record = exact(value, [
+    "allocations", "candidate_count", "issue_code", "read_required",
+    "requested_microunits", "status", "unit",
+  ], "inventory_allocation_plan");
+  const statuses = [
+    "matched", "skipped_outside", "skipped_by_user", "skipped_amount_unknown",
+    "skipped_ambiguous", "skipped_unit_incompatible", "skipped_insufficient",
+  ];
+  if (typeof record.status !== "string" || !statuses.includes(record.status)) {
+    return invalid("inventory_allocation_status");
+  }
+  const requested = record.requested_microunits === null
+    ? null
+    : positiveSafeInteger(record.requested_microunits, "inventory_allocation_requested");
+  const unit = safeText(record.unit, "inventory_allocation_unit");
+  const candidateCount = nullableSafeNonnegativeInteger(record.candidate_count, "inventory_allocation_candidates");
+  if (candidateCount === null || typeof record.read_required !== "boolean" || !Array.isArray(record.allocations)) {
+    return invalid("inventory_allocation_plan");
+  }
+  const allocations = record.allocations.map((candidate, index) => {
+    const allocation = exact(candidate, [
+      "after_microunits", "batch_id", "before_microunits", "deducted_microunits",
+      "product_id", "selection_basis", "unit",
+    ], `inventory_allocation_${index}`);
+    const before = nullableSafeNonnegativeInteger(allocation.before_microunits, `inventory_allocation_${index}_before`);
+    const deducted = positiveSafeInteger(allocation.deducted_microunits, `inventory_allocation_${index}_deducted`);
+    const after = nullableSafeNonnegativeInteger(allocation.after_microunits, `inventory_allocation_${index}_after`);
+    if (
+      before === null || after === null || before - deducted !== after ||
+      allocation.unit !== unit ||
+      !["explicit_batch", "fefo", "fifo"].includes(String(allocation.selection_basis))
+    ) return invalid(`inventory_allocation_${index}`);
+    return Object.freeze({
+      product_id: safeText(allocation.product_id, `inventory_allocation_${index}_product`),
+      batch_id: safeText(allocation.batch_id, `inventory_allocation_${index}_batch`),
+      before_microunits: before,
+      deducted_microunits: deducted,
+      after_microunits: after,
+      unit,
+      selection_basis: allocation.selection_basis as "explicit_batch" | "fefo" | "fifo",
+    });
+  });
+  if (new Set(allocations.map(({ batch_id }) => batch_id)).size !== allocations.length) {
+    return invalid("inventory_allocation_batches");
+  }
+  const issueByStatus: Readonly<Record<string, InventoryAllocationPlan["issue_code"]>> = Object.freeze({
+    matched: null,
+    skipped_outside: null,
+    skipped_by_user: null,
+    skipped_amount_unknown: "inventory_amount_unknown",
+    skipped_ambiguous: "inventory_multiple_candidates",
+    skipped_unit_incompatible: "inventory_unit_conversion_unproven",
+    skipped_insufficient: "inventory_insufficient",
+  });
+  const issue = record.issue_code;
+  if (issue !== issueByStatus[record.status]) return invalid("inventory_allocation_issue");
+  const noRead = record.status === "skipped_outside" || record.status === "skipped_by_user" ||
+    record.status === "skipped_amount_unknown";
+  if (record.read_required !== !noRead) return invalid("inventory_allocation_read_required");
+  if (record.status === "matched") {
+    if (requested === null || allocations.length === 0 || candidateCount < allocations.length) {
+      return invalid("inventory_allocation_matched");
+    }
+    const total = allocations.reduce((sum, allocation) => sum + BigInt(allocation.deducted_microunits), 0n);
+    if (total !== BigInt(requested)) return invalid("inventory_allocation_total");
+  } else if (allocations.length !== 0) {
+    return invalid("inventory_allocation_skipped");
+  }
+  if ((record.status === "skipped_amount_unknown") !== (requested === null)) {
+    return invalid("inventory_allocation_requested");
+  }
+  return Object.freeze({
+    status: record.status as InventoryAllocationPlan["status"],
+    requested_microunits: requested,
+    unit,
+    allocations: Object.freeze(allocations),
+    candidate_count: candidateCount,
+    issue_code: issue as InventoryAllocationPlan["issue_code"],
+    read_required: record.read_required,
+  });
+}
+
+export function listPantryAllocationCandidates(
+  database: DatabaseSync,
+  normalizedName: string,
+  occurredAt: string,
+): Readonly<PantryAllocationCandidateRead> | null {
+  safeText(normalizedName, "inventory_candidate_name");
+  const occurredEpoch = Date.parse(occurredAt);
+  if (!Number.isFinite(occurredEpoch)) return invalid("inventory_candidate_time");
+  const rows = database.prepare(
+    `SELECT p.product_id, p.payload_json AS product_payload_json,
+            b.batch_id, b.stocked_at, b.payload_json AS batch_payload_json,
+            i.quantity_status, i.effective_status, i.payload_json AS projection_payload_json
+     FROM products p
+     JOIN inventory_batches b ON b.product_id = p.product_id
+     JOIN inventory_batch_projections i ON i.batch_id = b.batch_id
+     WHERE p.normalized_name = ?
+     ORDER BY b.batch_id`,
+  ).all(normalizedName) as Array<{
+    product_id: string;
+    product_payload_json: string;
+    batch_id: string;
+    stocked_at: string;
+    batch_payload_json: string;
+    quantity_status: string;
+    effective_status: string;
+    projection_payload_json: string;
+  }>;
+  if (rows.length === 0) return null;
+  const candidates: InventoryAllocationCandidate[] = [];
+  for (const row of rows) {
+    const product = parseProductPayloadJson(row.product_payload_json);
+    const batch = parseBatchPayloadJson(row.batch_payload_json);
+    const projection = parseProjectionPayloadJson(row.projection_payload_json);
+    if (product.version !== 2 || batch.version !== 2 || projection.version !== 2) return null;
+    if (
+      product.identity_fingerprint === null || batch.pantry_evidence === null ||
+      projection.pantry_evidence === null || projection.product_id !== row.product_id ||
+      projection.batch_id !== row.batch_id ||
+      canonicalJson(batch.pantry_evidence) !== canonicalJson(projection.pantry_evidence)
+    ) return invalid("inventory_candidate_evidence");
+    const expiration = batch.pantry_evidence.expiration.effective_at;
+    const expired = expiration !== null && Date.parse(expiration) <= occurredEpoch;
+    const available = projection.quantity_microunits ?? 0;
+    const status = expired || row.effective_status === "expired"
+      ? "expired" as const
+      : row.effective_status === "active" && row.quantity_status === "available" && available > 0
+        ? "available" as const
+        : "unavailable" as const;
+    candidates.push(Object.freeze({
+      product_id: row.product_id,
+      product_identity_fingerprint: product.identity_fingerprint,
+      batch_id: row.batch_id,
+      available_microunits: available,
+      unit: projection.unit,
+      effective_expiration_at: expiration,
+      stocked_at: row.stocked_at,
+      effective_status: status,
+    }));
+  }
+  return Object.freeze({ candidates: Object.freeze(candidates) });
+}
+
+export function applyPantryAllocationsInTransaction(input: Readonly<{
+  readonly database: DatabaseSync;
+  readonly event_id: string;
+  readonly source_message_id: string;
+  readonly conversation_id: string;
+  readonly received_at: string;
+  readonly committed_at: string;
+  readonly occurred_at: string;
+  readonly effect_id: string;
+  readonly plan: Readonly<InventoryAllocationPlan>;
+  readonly afterAllocation?: (index: number) => void;
+}>): readonly Readonly<AppliedPantryAllocation>[] {
+  const plan = parseInventoryAllocationPlan(input.plan);
+  if (plan.status !== "matched") return Object.freeze([]);
+  const occurredEpoch = Date.parse(input.occurred_at);
+  if (!Number.isFinite(occurredEpoch)) return invalid("inventory_allocation_time");
+  const applied = plan.allocations.map((allocation, index) => {
+    const row = input.database.prepare(
+      `SELECT quantity_status, effective_status, payload_json
+       FROM inventory_batch_projections WHERE batch_id = ?`,
+    ).get(allocation.batch_id) as {
+      quantity_status: string;
+      effective_status: string;
+      payload_json: string;
+    } | undefined;
+    if (!row || row.quantity_status !== "available" || row.effective_status !== "active") {
+      return invalid("inventory_allocation_projection");
+    }
+    const projection = parseProjectionPayloadJson(row.payload_json);
+    if (
+      projection.version !== 2 || projection.pantry_evidence === null ||
+      projection.product_id !== allocation.product_id || projection.batch_id !== allocation.batch_id ||
+      projection.quantity_microunits !== allocation.before_microunits ||
+      projection.unit !== allocation.unit
+    ) return invalid("inventory_allocation_projection");
+    const expiration = projection.pantry_evidence.expiration.effective_at;
+    if (expiration !== null && Date.parse(expiration) <= occurredEpoch) {
+      return invalid("inventory_allocation_expired");
+    }
+    const transactionId = deriveDomainId("transaction", input.effect_id, index);
+    input.database.prepare(
+      `INSERT INTO inventory_transactions(
+        transaction_id, event_id, product_id, batch_id, idempotency_key,
+        schema_version, direction, reason_code, unit, related_event_id,
+        related_transaction_id, source_message_id, conversation_id, received_at,
+        committed_at, result_status, lifecycle_status, payload_json
+      ) VALUES (?, ?, ?, ?, ?, 'domain/v2', 'out', 'meal_consumption', ?, NULL,
+        NULL, ?, ?, ?, ?, 'applied', 'active', ?)`,
+    ).run(
+      transactionId,
+      input.event_id,
+      allocation.product_id,
+      allocation.batch_id,
+      input.effect_id,
+      allocation.unit,
+      input.source_message_id,
+      input.conversation_id,
+      input.received_at,
+      input.committed_at,
+      canonicalJson({
+        allocation_index: index,
+        authority_kind: "diet-manager/inventory-transaction/v2",
+        quantity_after_microunits: allocation.after_microunits,
+        quantity_delta_microunits: -allocation.deducted_microunits,
+        selection_basis: allocation.selection_basis,
+        unit: allocation.unit,
+      }),
+    );
+    const nextPayload = createPantryProjectionPayload({
+      batch_id: allocation.batch_id,
+      product_id: allocation.product_id,
+      quantity_microunits: allocation.after_microunits,
+      unit: allocation.unit,
+      pantry_evidence: projection.pantry_evidence,
+    });
+    input.database.prepare(
+      `UPDATE inventory_batch_projections
+       SET last_event_id = ?, last_changed_at = ?, quantity_status = ?, effective_status = ?, payload_json = ?
+       WHERE batch_id = ? AND quantity_status = 'available' AND effective_status = 'active' AND payload_json = ?`,
+    ).run(
+      input.event_id,
+      input.committed_at,
+      allocation.after_microunits === 0 ? "empty" : "available",
+      allocation.after_microunits === 0 ? "empty" : "active",
+      canonicalJson(nextPayload),
+      allocation.batch_id,
+      row.payload_json,
+    );
+    if (Number((input.database.prepare("SELECT changes() AS count").get() as { count: number }).count) !== 1) {
+      return invalid("inventory_allocation_compare_and_set");
+    }
+    input.afterAllocation?.(index);
+    return Object.freeze({ transaction_id: transactionId, ...allocation });
+  });
+  return Object.freeze(applied);
 }
 
 export function assertStoredPurchaseFactMatchesExpected(input: Readonly<{

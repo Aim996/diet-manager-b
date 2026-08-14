@@ -54,6 +54,7 @@ import {
   prepareCorrectionOperation,
   readAppliedMealResult,
   readAppliedCorrectionResult,
+  prepareMealInventoryPlans,
   preflightMealOperation,
   preflightWaterOperation,
   prepareMealOperation,
@@ -111,6 +112,7 @@ type DietDomainFault =
   | "after_inventory_business_writes"
   | "after_meal_nutrition"
   | "after_meal_first_item"
+  | "after_meal_first_inventory_allocation"
   | "after_meal_issue_write"
   | "after_meal_progress_contribution_prepared"
   | "after_water_event"
@@ -258,6 +260,14 @@ function validateKnownStructuredAmount(value: unknown, field: string): void {
   }
 }
 
+function validateInventoryDirective(value: unknown, field: string): void {
+  const directive = record(value, ["mode", "evidence_kind", "matched_span", "rule_version"], field);
+  enumValue(directive.mode, ["skip"], `${field}.mode`);
+  enumValue(directive.evidence_kind, ["explicit"], `${field}.evidence_kind`);
+  text(directive.matched_span, `${field}.matched_span`);
+  text(directive.rule_version, `${field}.rule_version`);
+}
+
 function validateOperation(value: unknown, field: string): RecordWaterOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
@@ -309,9 +319,17 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     enumValue(candidate.location, ["home", "outside"], `${field}.location`);
     if (!Array.isArray(candidate.items) || candidate.items.length === 0) return invalid(`${field}.items`);
     for (const [index, item] of candidate.items.entries()) {
-      const mealItem = record(item, ["normalized_name", "item_type", "amount", "nutrition_sources"], `${field}.items.${index}`);
+      const directiveKeys = typeof item === "object" && item !== null && Object.hasOwn(item, "inventory_directive")
+        ? ["inventory_directive"]
+        : [];
+      const mealItem = record(item, [
+        "normalized_name", "item_type", "amount", "nutrition_sources", ...directiveKeys,
+      ], `${field}.items.${index}`);
       text(mealItem.normalized_name, `${field}.items.${index}.normalized_name`);
       enumValue(mealItem.item_type, ["dish", "food", "nutrition_drink"], `${field}.items.${index}.item_type`);
+      if (directiveKeys.length === 1) {
+        validateInventoryDirective(mealItem.inventory_directive, `${field}.items.${index}.inventory_directive`);
+      }
       validateStructuredAmount(mealItem.amount, `${field}.items.${index}.amount`);
       validateNutritionSources(mealItem.nutrition_sources, `${field}.items.${index}.nutrition_sources`);
     }
@@ -551,6 +569,7 @@ function quickPromptIssueCode(value: string): QuickPromptIssueCode {
     case "inventory_multiple_candidates":
     case "inventory_insufficient":
     case "inventory_unit_incompatible":
+    case "inventory_unit_conversion_unproven":
     case "inventory_amount_unknown":
       return value;
     default:
@@ -740,6 +759,12 @@ function factPreviewMaterial(
   }
   const meals = envelope.operations.flatMap((operation, sequence) =>
     operation.kind === "record_meal" ? [{ operation, sequence }] : []);
+  const mealPlans = new Map(meals.map(({ operation, sequence }) => [
+    sequence,
+    envelope.operations.length === 1
+      ? prepareMealInventoryPlans(database, operation, envelope.envelope_id)
+      : Object.freeze(operation.items.map(() => null)),
+  ]));
   const mealIdentities = () => meals.map(({ operation, sequence }) =>
     createMealFactIdentity({
       sequence,
@@ -771,6 +796,11 @@ function factPreviewMaterial(
         payload: {
           amount: item.amount,
           authority_kind: "diet-manager/meal-item/v1",
+          ...(item.inventory_directive === undefined ? {} : { inventory_directive: item.inventory_directive }),
+          ...(mealPlans.get(sequence)?.[itemOrder] === null ||
+              mealPlans.get(sequence)?.[itemOrder] === undefined
+            ? {}
+            : { inventory_plan: mealPlans.get(sequence)?.[itemOrder] }),
           nutrition_sources: item.nutrition_sources,
         },
       })),
@@ -824,7 +854,8 @@ function factPreviewMaterial(
   }
   const hasEvidence = meals.some(({ operation }) =>
     ["source_text", "occurred_time", "subject", "context"].some((field) =>
-      Object.hasOwn(operation, field)));
+      Object.hasOwn(operation, field))) ||
+    [...mealPlans.values()].some((plans) => plans.some((plan) => plan !== null));
   if (!hasEvidence) {
     return Object.freeze({
       authority_kind: "diet-manager/domain-preview/v1",
@@ -1001,6 +1032,7 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
     input.fault !== "after_inventory_business_writes" &&
     input.fault !== "after_meal_nutrition" &&
     input.fault !== "after_meal_first_item" &&
+    input.fault !== "after_meal_first_inventory_allocation" &&
     input.fault !== "after_meal_issue_write" &&
     input.fault !== "after_meal_progress_contribution_prepared" &&
     input.fault !== "after_water_event" &&
@@ -1264,6 +1296,8 @@ export function createDietDomainService(
               ? { fault: "after_nutrition" as const }
               : options.fault === "after_meal_first_item"
                 ? { fault: "after_first_item" as const }
+                : options.fault === "after_meal_first_inventory_allocation"
+                  ? { fault: "after_first_inventory_allocation" as const }
                 : options.fault === "after_meal_issue_write"
                   ? { fault: "after_issue_write" as const }
                   : options.fault === "after_meal_progress_contribution_prepared"
@@ -1632,6 +1666,11 @@ export function createDietDomainService(
         }).payload as DomainExecutionResult;
       }
       if (operation.kind === "record_meal") {
+        const inventoryPlans = prepareMealInventoryPlans(
+          options.database,
+          operation,
+          envelope.envelope_id,
+        );
         const preparedMeal = prepareMealOperation({
           database: options.database,
           secret: options.secret,
@@ -1647,6 +1686,7 @@ export function createDietDomainService(
           committedAt,
           sequence: 0,
           operation,
+          inventoryPlans,
           ...(progressReservation === undefined ? {} : { progressReservation }),
         });
         const storedMealFactAuthority = Object.freeze({
@@ -1676,6 +1716,11 @@ export function createDietDomainService(
           if (parsed.status !== "committed" && parsed.status !== "committed_with_issues") {
             throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_status");
           }
+          const recoveredMeal = readAppliedMealResult(storedMealFactAuthority);
+          if (
+            parsed.items.length !== 1 ||
+            canonicalJson(parsed.items[0]) !== canonicalJson(recoveredMeal)
+          ) throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_meal");
           return finalize({
             database: options.database,
             secret: options.secret,
@@ -1729,6 +1774,8 @@ export function createDietDomainService(
                 ? { fault: "after_nutrition" as const }
                 : options.fault === "after_meal_first_item"
                   ? { fault: "after_first_item" as const }
+                  : options.fault === "after_meal_first_inventory_allocation"
+                    ? { fault: "after_first_inventory_allocation" as const }
                   : options.fault === "after_meal_issue_write"
                     ? { fault: "after_issue_write" as const }
                     : options.fault === "after_meal_progress_contribution_prepared"
