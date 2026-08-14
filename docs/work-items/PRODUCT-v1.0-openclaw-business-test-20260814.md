@@ -206,3 +206,12 @@
 - GREEN：只修改 `diet_manager` 的模型可见 description；要求 `committed=false` 首句先说明未记录，只保留本次结果和一个必要追问。
 - focused：`foundation` 11/11 通过；`tsc --noEmit` 与 `git diff --check` 通过。
 - 未修改解析器、数据库、业务事件、Skill 文件或测试数据；待一次构建后只更新 03，复测“刚刚喝了两杯水”和“今天喝了多少水”。
+
+### 批次 2 实例复测结果
+
+- 源码提交 `4393c37`，唯一一次 emit build 后产物提交 `14cb8c0`。
+- 安装包 `diet-manager-b-min-14cb8c0.zip`，SHA-256 `058C6A4BCBAF0B2EDBC0E7132D0B0D9D39C399005CB8B3260125354D981C8A31`。
+- 03 号安装 exit 0；Gateway 自动重启后 PID 从 9 变为 8、运行时间重置为 1 分钟。
+- “刚刚喝了两杯水。”：只调用一次 Diet Manager；回复首句明确“这次没有记录成功”，只询问杯容量或总毫升，`RESPONSE-TRUTH-001` 已关闭。
+- “今天喝了多少水？”：只调用一次只读查询；一段回复直接给出 1 次、500 毫升以及 2 餐，没有提醒、鼓励或能力推销，`RESPONSE-NOISE-001` 在该代表场景关闭。
+- 当前仍只更新 03；批量更新 02、04–07 前不再改源码。
