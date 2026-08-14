@@ -19,6 +19,7 @@ import { createServerPreview } from "../../src/preview/store.js";
 import { reservationFromEventPayload } from "../../src/repository/progress-reservation.js";
 import { computeRepositoryDataRevision } from "../../src/repository/revision.js";
 import { openDietDatabase } from "../../src/storage/database.js";
+import { unknownNutritionEvidence } from "../../src/nutrition/types.js";
 
 const secret = Buffer.from("SEL-CORE-001 meal evidence test secret", "utf8");
 const fixedNow = "2026-08-11T00:30:01.000Z";
@@ -1181,6 +1182,59 @@ describe("SEL-CORE-001 meal fact evidence authority", () => {
       expect(service.execute(executionInput(envelope, preview))).toEqual(first);
       expect(databaseSnapshot(database)).toBe(before);
     });
+  });
+
+  it("rolls back v1.1 nutrition with the meal effect and rejects a tampered terminal readback", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-nutrition-atomic-${randomUUID()}-`));
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = ordinaryClone(parserMealEnvelope("atomic-v11"));
+      const operation = envelope.operations[0] as unknown as {
+        items: Array<Record<string, unknown>>;
+      };
+      operation.items[0]!.nutrition_evidence = ordinaryClone(unknownNutritionEvidence());
+      const faulting = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => fixedNow,
+        fault: "after_meal_nutrition",
+      });
+      const preview = faulting.preview(envelope);
+
+      expect(() => faulting.execute(executionInput(envelope, preview))).toThrowError(
+        "NUTRITION_EFFECT_WRITE_FAILED:after_nutrition",
+      );
+      expect(runtime.database.prepare(
+        "SELECT schema_version, COUNT(*) AS count FROM nutrition_snapshots GROUP BY schema_version",
+      ).all()).toEqual([]);
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM nutrition_profiles").get())
+        .toEqual({ count: 0 });
+
+      const recovering = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-11T00:30:02.000Z",
+      });
+      recovering.execute(executionInput(envelope, preview));
+      expect(runtime.database.prepare(
+        "SELECT schema_version, COUNT(*) AS count FROM nutrition_snapshots GROUP BY schema_version ORDER BY schema_version",
+      ).all()).toEqual([
+        { schema_version: "1.1.0", count: 1 },
+        { schema_version: "domain/v2", count: 1 },
+      ]);
+
+      runtime.database.prepare(
+        "UPDATE nutrition_snapshots SET payload_json = '{}' WHERE schema_version = '1.1.0'",
+      ).run();
+      const before = databaseSnapshot(runtime.database);
+      expect(() => recovering.execute(executionInput(envelope, preview))).toThrowError(
+        "NUTRITION_REPOSITORY_INVALID:snapshot_readback",
+      );
+      expect(databaseSnapshot(runtime.database)).toBe(before);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
   });
 
   it.each(["source_text", "occurred_time", "subject", "context"] as const)(

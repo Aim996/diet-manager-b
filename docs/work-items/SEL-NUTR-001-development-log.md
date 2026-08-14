@@ -206,6 +206,19 @@
 - 后续修复索引：进入一组精简 fault/tamper 验证，然后统一模块 Gate。
 - 批次提交：`feat: ignore redundant nutrition supplements`（本段记录随实现提交）。
 
+### Batch C5f / 2026-08-14
+
+- 目标：用一条代表性测试同时验证 v1.1 事务回滚、恢复和终态篡改拒绝，不展开等价故障排列。
+- 绑定 REQ：`REQ-NUTR-004/005`。
+- 绑定 CASE：`CASE-EFFECT-001`、`CASE-NUTR-009` 的营养存储边界。
+- 起始 HEAD：`8fcc39c`。
+- 改动文件：只修改 `core-meal-fact.test.ts`，生产代码不变。
+- 验证结果：`after_meal_nutrition` 后 domain/v2 与 v1.1 Snapshot/Profile 均为零；同 token 恢复后两种 Snapshot 各一条；篡改 v1.1 payload 后终态 replay fail closed 且不产生写入。
+- 定向 smoke：单一目标测试 1/1 PASS（同文件其余 93 条未运行）。
+- 延期到模块末的测试：完整 Nutrition CASE、source/Doctor、插件/full/trace；不再在开发阶段增加同类 fault/tamper 组合。
+- 后续修复索引：直接进入模块统一 Gate，根据统一结果集中修复。
+- 批次提交：`test: cover nutrition atomic recovery`（本段记录随实现提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。
