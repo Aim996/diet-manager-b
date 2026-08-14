@@ -7,6 +7,12 @@ import {
 } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
+  createPantryProjectionPayload,
+  parseBatchPayload,
+  parseProductPayload,
+} from "../storage/inventory-repository.js";
+import type { PantryPurchaseEvidence } from "../domain/types.js";
+import {
   parseInventoryProjectionRow,
   type InventoryProjectionResult,
 } from "./query.js";
@@ -132,7 +138,7 @@ export interface InventoryEffectResult {
   result_status: "applied" | "insufficient_inventory";
   batch_id: string;
   transaction_id: string | null;
-  quantity_microunits: number;
+  quantity_microunits: number | null;
   unit: string;
 }
 
@@ -167,7 +173,7 @@ interface AddIntent {
   kind: "inventory_add";
   transactionId: string;
   reasonCode: string;
-  quantityMicrounits: number;
+  quantityMicrounits: number | null;
   unit: string;
   product: {
     productId: string;
@@ -175,6 +181,8 @@ interface AddIntent {
     normalizedName: string;
     productType: string;
     payloadJson: string;
+    payloadVersion: 1 | 2;
+    brand: string | null;
   };
   batch: {
     batchId: string;
@@ -183,6 +191,8 @@ interface AddIntent {
     explicitExpirationAt: string | null;
     quantityUnit: string;
     payloadJson: string;
+    pantryEvidence: Readonly<PantryPurchaseEvidence> | null;
+    effectiveExpirationAt: string | null;
   };
   nutritionProfile: PreparedNutritionProfile | null;
 }
@@ -325,6 +335,11 @@ function positiveMicrounits(value: unknown): number {
   return value as number;
 }
 
+function nullablePurchaseMicrounits(value: unknown, version: 1 | 2): number | null {
+  if (value === null && version === 2) return null;
+  return positiveMicrounits(value);
+}
+
 function nullableNutrient(value: unknown, field: string): number | null {
   if (value === null) return null;
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
@@ -455,22 +470,56 @@ function parseAdd(value: unknown): AddIntent {
   const product = exactJsonObject(source.product, PRODUCT_FIELDS);
   const batch = exactJsonObject(source.batch, BATCH_FIELDS);
   const productId = ascii(product.product_id, "product_id");
+  let parsedProduct;
+  let parsedBatch;
+  try {
+    parsedProduct = parseProductPayload(product.payload);
+    parsedBatch = parseBatchPayload(batch.payload);
+  } catch {
+    return authorityInvalid("pantry_payload");
+  }
+  if (parsedProduct.version !== parsedBatch.version) return authorityInvalid("pantry_payload_version");
+  if (parsedProduct.version === 2) {
+    if (
+      parsedProduct.identity === null || parsedBatch.pantry_evidence === null ||
+      canonicalJson(parsedProduct.identity) !== canonicalJson(parsedBatch.pantry_evidence.product_identity) ||
+      parsedProduct.identity.normalized_name !== product.normalized_name
+    ) return authorityInvalid("pantry_identity");
+  }
   const explicitExpirationAt =
     batch.explicit_expiration_at === null
       ? null
       : timestamp(batch.explicit_expiration_at, "explicit_expiration_at");
+  if (
+    parsedBatch.pantry_evidence !== null &&
+    explicitExpirationAt !== parsedBatch.pantry_evidence.expiration.explicit_at
+  ) return authorityInvalid("explicit_expiration_at");
+  const quantityMicrounits = nullablePurchaseMicrounits(
+    source.quantity_microunits,
+    parsedProduct.version,
+  );
+  if (
+    quantityMicrounits === null &&
+    (
+      parsedBatch.pantry_evidence === null || source.unit !== "unknown" ||
+      parsedBatch.pantry_evidence.package_quantity.total_inner !== null ||
+      parsedBatch.pantry_evidence.package_quantity.total_capacity !== null
+    )
+  ) return authorityInvalid("quantity_microunits");
   return Object.freeze({
     kind: "inventory_add",
     transactionId: ascii(source.transaction_id, "transaction_id"),
     reasonCode: ascii(source.reason_code, "reason_code", 128),
-    quantityMicrounits: positiveMicrounits(source.quantity_microunits),
+    quantityMicrounits,
     unit: ascii(source.unit, "unit", 128),
     product: Object.freeze({
       productId,
       schemaVersion: ascii(product.schema_version, "product_schema_version", 128),
       normalizedName: text(product.normalized_name, "normalized_name"),
       productType: ascii(product.product_type, "product_type", 128),
-      payloadJson: canonicalJson(product.payload),
+      payloadJson: parsedProduct.canonical_json,
+      payloadVersion: parsedProduct.version,
+      brand: parsedProduct.identity?.brand ?? null,
     }),
     batch: Object.freeze({
       batchId: ascii(batch.batch_id, "batch_id"),
@@ -478,7 +527,9 @@ function parseAdd(value: unknown): AddIntent {
       stockedAt: timestamp(batch.stocked_at, "stocked_at"),
       explicitExpirationAt,
       quantityUnit: ascii(batch.quantity_unit, "quantity_unit", 128),
-      payloadJson: canonicalJson(batch.payload),
+      payloadJson: parsedBatch.canonical_json,
+      pantryEvidence: parsedBatch.pantry_evidence,
+      effectiveExpirationAt: parsedBatch.pantry_evidence?.expiration.effective_at ?? null,
     }),
     nutritionProfile: Object.hasOwn(sourceRecord, "nutrition_profile")
       ? parsePreparedNutritionProfile(source.nutrition_profile, productId)
@@ -644,25 +695,37 @@ function writeNutritionProfile(
 function projectionPayload(
   batchId: string,
   productId: string,
-  quantityMicrounits: number,
+  quantityMicrounits: number | null,
   unit: string,
+  pantryEvidence: Readonly<PantryPurchaseEvidence> | null,
 ): string {
-  return canonicalJson({
-    authority_kind: "diet-manager/inventory-projection/v1",
-    batch_id: batchId,
-    product_id: productId,
-    quantity_microunits: quantityMicrounits,
-    unit,
-  });
+  if (pantryEvidence === null && quantityMicrounits === null) return authorityInvalid("projection_quantity");
+  return canonicalJson(pantryEvidence === null
+    ? {
+        authority_kind: "diet-manager/inventory-projection/v1",
+        batch_id: batchId,
+        product_id: productId,
+        quantity_microunits: quantityMicrounits,
+        unit,
+      }
+    : createPantryProjectionPayload({
+        batch_id: batchId,
+        product_id: productId,
+        quantity_microunits: quantityMicrounits,
+        unit,
+        pantry_evidence: pantryEvidence,
+      }));
 }
 
 function transactionPayload(
-  deltaMicrounits: number,
-  quantityAfterMicrounits: number,
+  deltaMicrounits: number | null,
+  quantityAfterMicrounits: number | null,
   unit: string,
 ): string {
   return canonicalJson({
-    authority_kind: "diet-manager/inventory-transaction/v1",
+    authority_kind: deltaMicrounits === null
+      ? "diet-manager/inventory-transaction/v2"
+      : "diet-manager/inventory-transaction/v1",
     quantity_after_microunits: quantityAfterMicrounits,
     quantity_delta_microunits: deltaMicrounits,
     unit,
@@ -676,8 +739,8 @@ function insertTransaction(
   productId: string,
   batchId: string,
   direction: "in" | "out",
-  deltaMicrounits: number,
-  quantityAfterMicrounits: number,
+  deltaMicrounits: number | null,
+  quantityAfterMicrounits: number | null,
   now: string,
 ): void {
   database
@@ -712,18 +775,23 @@ function writeProjection(
   productId: string,
   eventId: string,
   now: string,
-  quantityMicrounits: number,
+  quantityMicrounits: number | null,
   unit: string,
   explicitExpirationAt: string | null,
+  effectiveExpirationAt: string | null,
+  pantryEvidence: Readonly<PantryPurchaseEvidence> | null,
 ): void {
   const empty = quantityMicrounits === 0;
+  const unknown = quantityMicrounits === null;
+  const sealStatus = pantryEvidence?.opening?.status ?? "unknown";
+  const expiryStatus = effectiveExpirationAt === null ? "unknown" : "known";
   database
     .prepare(
       `INSERT INTO inventory_batch_projections(
         batch_id, last_event_id, last_changed_at, last_verified_at,
         quantity_status, seal_status, expiry_status, effective_status,
         effective_expiration_at, payload_json
-      ) VALUES (?, ?, ?, NULL, ?, 'unknown', 'unknown', ?, ?, ?)
+      ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(batch_id) DO UPDATE SET
         last_event_id = excluded.last_event_id,
         last_changed_at = excluded.last_changed_at,
@@ -736,10 +804,12 @@ function writeProjection(
       batchId,
       eventId,
       now,
-      empty ? "empty" : "available",
+      unknown ? "unknown" : empty ? "empty" : "available",
+      sealStatus,
+      expiryStatus,
       empty ? "empty" : "active",
-      explicitExpirationAt,
-      projectionPayload(batchId, productId, quantityMicrounits, unit),
+      effectiveExpirationAt ?? explicitExpirationAt,
+      projectionPayload(batchId, productId, quantityMicrounits, unit, pantryEvidence),
     );
 }
 
@@ -758,10 +828,11 @@ function applyAdd(
       product.schema_version !== intent.product.schemaVersion ||
       product.normalized_name !== intent.product.normalizedName ||
       product.product_type !== intent.product.productType ||
-      product.brand !== null ||
+      product.brand !== intent.product.brand ||
       product.manufacturer !== null ||
       product.barcode !== null ||
-      product.sku !== null
+      product.sku !== null ||
+      (intent.product.payloadVersion === 2 && product.payload_json !== intent.product.payloadJson)
     ) {
       return authorityInvalid("product_conflict");
     }
@@ -771,13 +842,14 @@ function applyAdd(
         `INSERT INTO products(
           product_id, schema_version, normalized_name, product_type,
           brand, manufacturer, barcode, sku, payload_json
-        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
       )
       .run(
         intent.product.productId,
         intent.product.schemaVersion,
         intent.product.normalizedName,
         intent.product.productType,
+        intent.product.brand,
         intent.product.payloadJson,
       );
   }
@@ -824,6 +896,8 @@ function applyAdd(
     intent.quantityMicrounits,
     intent.unit,
     intent.batch.explicitExpirationAt,
+    intent.batch.effectiveExpirationAt,
+    intent.batch.pantryEvidence,
   );
   return Object.freeze({
     outbox_id: row.outbox_id,
@@ -873,6 +947,7 @@ function applyDeduct(
   if (projection.product_id !== intent.productId || projection.unit !== intent.unit) {
     return authorityInvalid("projection_identity");
   }
+  if (projection.quantity_microunits === null) return authorityInvalid("projection_quantity_unknown");
   if (projection.quantity_microunits < intent.quantityMicrounits) {
     return Object.freeze({
       outbox_id: row.outbox_id,
@@ -909,6 +984,8 @@ function applyDeduct(
     remaining,
     intent.unit,
     batch.explicit_expiration_at,
+    projection.effective_expiration_at ?? batch.explicit_expiration_at,
+    projection.pantry_evidence ?? null,
   );
   return Object.freeze({
     outbox_id: row.outbox_id,
@@ -1232,12 +1309,15 @@ function transactionResult(
     "quantity_delta_microunits",
     "unit",
   ]);
-  if (
-    payload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
-    !Number.isSafeInteger(payload.quantity_after_microunits) ||
-    (payload.quantity_after_microunits as number) < 0 ||
-    payload.unit !== transaction.unit
-  ) {
+  const unknown = payload.authority_kind === "diet-manager/inventory-transaction/v2";
+  if (payload.unit !== transaction.unit || (
+    unknown
+      ? payload.quantity_after_microunits !== null || payload.quantity_delta_microunits !== null
+      : payload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
+        !Number.isSafeInteger(payload.quantity_after_microunits) ||
+        (payload.quantity_after_microunits as number) < 0 ||
+        !Number.isSafeInteger(payload.quantity_delta_microunits)
+  )) {
     return authorityInvalid("transaction_payload_authority");
   }
   return Object.freeze({
@@ -1247,7 +1327,7 @@ function transactionResult(
     result_status: "applied",
     batch_id: transaction.batch_id,
     transaction_id: transaction.transaction_id,
-    quantity_microunits: payload.quantity_after_microunits as number,
+    quantity_microunits: unknown ? null : payload.quantity_after_microunits as number,
     unit: transaction.unit,
   });
 }

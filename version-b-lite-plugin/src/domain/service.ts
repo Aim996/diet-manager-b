@@ -9,6 +9,10 @@ import {
 } from "../authority/meal-fact-identity.js";
 import { createWaterFactIdentity, type WaterFactPreviewMaterial } from "../authority/water-fact-identity.js";
 import {
+  createPurchaseFactIdentity,
+  type PurchaseFactPreviewMaterial,
+} from "../authority/purchase-fact-identity.js";
+import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
   validateAndFreezeOccurredTimeEvidence,
@@ -37,6 +41,7 @@ import {
   type ContributionProgressReservation,
 } from "../repository/progress-reservation.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
+import { assertStoredPurchaseFactMatchesExpected } from "../storage/inventory-repository.js";
 import {
   applyMealEffects,
   applyWaterEffects,
@@ -268,11 +273,24 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     text(product.product_id, `${field}.product.product_id`);
     text(product.normalized_name, `${field}.product.normalized_name`);
     text(product.product_type, `${field}.product.product_type`);
-    validateKnownStructuredAmount(candidate.amount, `${field}.amount`);
+    if (evidenceKeys.length === 0) {
+      validateKnownStructuredAmount(candidate.amount, `${field}.amount`);
+    } else {
+      validateStructuredAmount(candidate.amount, `${field}.amount`);
+    }
     validateNutritionSources(candidate.nutrition_sources, `${field}.nutrition_sources`);
     if (evidenceKeys.length === 1) {
       try {
-        validateAndFreezePantryPurchaseEvidence(candidate.pantry_evidence);
+        const evidence = validateAndFreezePantryPurchaseEvidence(candidate.pantry_evidence);
+        const amount = candidate.amount as Record<string, unknown>;
+        if (
+          amount.observed_microunits === null &&
+          (
+            amount.unit !== "unknown" || amount.evidence !== "unknown" ||
+            evidence.package_quantity.total_inner !== null ||
+            evidence.package_quantity.total_capacity !== null
+          )
+        ) return invalid(`${field}.amount.observed_microunits`);
       } catch (error) {
         if (error instanceof PantryEvidenceAuthorityError) return invalid(`${field}.${error.reason}`);
         throw error;
@@ -490,12 +508,15 @@ function preflightWriteOperations(
 ): readonly ReturnType<typeof preflightMealOperation>[] {
   if (operations.length === 2) {
     const [purchase, meal] = operations;
-    return Object.freeze([preflightMealOperation(database, meal, new Map([[purchase.product.normalized_name, Object.freeze([{
-      batch_id: purchase.batch_id,
-      product_id: purchase.product.product_id,
-      available_microunits: purchase.amount.observed_microunits,
-      unit: purchase.amount.unit,
-    }])]]))]);
+    const purchaseCandidates = purchase.amount.observed_microunits === null
+      ? new Map<string, readonly []>()
+      : new Map([[purchase.product.normalized_name, Object.freeze([{
+          batch_id: purchase.batch_id,
+          product_id: purchase.product.product_id,
+          available_microunits: purchase.amount.observed_microunits,
+          unit: purchase.amount.unit,
+        }])]]);
+    return Object.freeze([preflightMealOperation(database, meal, purchaseCandidates)]);
   }
   const contributions = [];
   for (const operation of operations) {
@@ -689,11 +710,13 @@ function writeOperations(
   return invalid("command_operation");
 }
 
-function mealFactPreviewMaterial(
+function factPreviewMaterial(
   envelope: DomainEnvelopeInput,
   inputDigest: string,
+  database: DatabaseSync,
+  secret: Uint8Array,
 ): Readonly<{ authority_kind: "diet-manager/domain-preview/v1"; envelope: DomainEnvelopeInput }> |
-  MealFactPreviewMaterial | WaterFactPreviewMaterial {
+  MealFactPreviewMaterial | WaterFactPreviewMaterial | PurchaseFactPreviewMaterial {
   const water = envelope.operations.find((operation): operation is RecordWaterOperation => operation.kind === "record_water");
   if (water) {
     if (water.occurred_time.resolved_start === null) return invalid("envelope.operations.0.occurred_time.resolved_interval");
@@ -717,6 +740,88 @@ function mealFactPreviewMaterial(
   }
   const meals = envelope.operations.flatMap((operation, sequence) =>
     operation.kind === "record_meal" ? [{ operation, sequence }] : []);
+  const mealIdentities = () => meals.map(({ operation, sequence }) =>
+    createMealFactIdentity({
+      sequence,
+      event_id: deriveDomainId("event", envelope.idempotency_key, sequence),
+      operation_id: operation.operation_id,
+      schema_version: "domain/v2",
+      event_type: "diet_meal",
+      fact_kind: "meal",
+      source_message_id: envelope.source_message_id,
+      conversation_id: envelope.conversation_id,
+      received_at: envelope.received_at,
+      occurred_at_text: operation.occurred_at,
+      meal_id: deriveDomainId("meal", envelope.idempotency_key, sequence),
+      meal_slot: operation.meal_slot,
+      payload: {
+        authority_kind: "diet-manager/meal-fact/v1",
+        location: operation.location,
+        ...(Object.hasOwn(operation, "source_text") ? { source_text: operation.source_text } : {}),
+        ...(Object.hasOwn(operation, "occurred_time") ? { occurred_time: operation.occurred_time } : {}),
+        ...(Object.hasOwn(operation, "subject") ? { subject: operation.subject } : {}),
+        ...(Object.hasOwn(operation, "context") ? { context: operation.context } : {}),
+        timezone: "Asia/Shanghai",
+      },
+      items: operation.items.map((item, itemOrder) => ({
+        item_id: deriveDomainId("item", envelope.idempotency_key, itemOrder),
+        item_order: itemOrder,
+        item_type: item.item_type,
+        normalized_name: item.normalized_name,
+        payload: {
+          amount: item.amount,
+          authority_kind: "diet-manager/meal-item/v1",
+          nutrition_sources: item.nutrition_sources,
+        },
+      })),
+    }));
+  const purchaseEntry = envelope.operations
+    .map((operation, sequence) => ({ operation, sequence }))
+    .find((entry): entry is { operation: AddInventoryOperation; sequence: number } =>
+      entry.operation.kind === "add_inventory" && entry.operation.pantry_evidence !== undefined);
+  if (purchaseEntry) {
+    const purchaseIdentityKey = envelope.operations.length === 2
+      ? deriveDomainId("idempotency", envelope.idempotency_key, purchaseEntry.sequence)
+      : undefined;
+    const prepared = preparePurchaseOperation({
+      database,
+      secret,
+      token: "preview-material",
+      inputDigest,
+      dataRevision: "repository-v1:preview-material",
+      subjectScope: envelope.subject_scope,
+      commandType: envelope.command_type,
+      idempotencyKey: envelope.idempotency_key,
+      ...(purchaseIdentityKey === undefined ? {} : { effectIdentityKey: purchaseIdentityKey }),
+      sourceMessageId: envelope.source_message_id,
+      conversationId: envelope.conversation_id,
+      receivedAt: envelope.received_at,
+      committedAt: envelope.received_at,
+      sequence: purchaseEntry.sequence,
+      operation: purchaseEntry.operation,
+    });
+    const event = prepared.fact.event;
+    return Object.freeze({
+      authority_kind: "diet-manager/domain-preview/v4",
+      input_digest: inputDigest,
+      meal_fact_identities: Object.freeze(mealIdentities()),
+      purchase_fact_identities: Object.freeze([createPurchaseFactIdentity({
+        sequence: purchaseEntry.sequence,
+        event_id: event.eventId,
+        operation_id: event.operationId,
+        schema_version: "domain/v2",
+        event_type: "inventory_stock",
+        fact_kind: "inventory",
+        source_message_id: event.sourceMessageId,
+        conversation_id: event.conversationId,
+        received_at: event.receivedAt,
+        occurred_at_text: event.occurredAtText ?? envelope.received_at,
+        meal_id: null,
+        meal_slot: null,
+        payload: event.payload,
+      })]),
+    });
+  }
   const hasEvidence = meals.some(({ operation }) =>
     ["source_text", "occurred_time", "subject", "context"].some((field) =>
       Object.hasOwn(operation, field)));
@@ -729,47 +834,13 @@ function mealFactPreviewMaterial(
   return Object.freeze({
     authority_kind: "diet-manager/domain-preview/v2",
     input_digest: inputDigest,
-    meal_fact_identities: Object.freeze(meals.map(({ operation, sequence }) =>
-      createMealFactIdentity({
-        sequence,
-        event_id: deriveDomainId("event", envelope.idempotency_key, sequence),
-        operation_id: operation.operation_id,
-        schema_version: "domain/v2",
-        event_type: "diet_meal",
-        fact_kind: "meal",
-        source_message_id: envelope.source_message_id,
-        conversation_id: envelope.conversation_id,
-        received_at: envelope.received_at,
-        occurred_at_text: operation.occurred_at,
-        meal_id: deriveDomainId("meal", envelope.idempotency_key, sequence),
-        meal_slot: operation.meal_slot,
-        payload: {
-          authority_kind: "diet-manager/meal-fact/v1",
-          location: operation.location,
-          ...(Object.hasOwn(operation, "source_text") ? { source_text: operation.source_text } : {}),
-          ...(Object.hasOwn(operation, "occurred_time") ? { occurred_time: operation.occurred_time } : {}),
-          ...(Object.hasOwn(operation, "subject") ? { subject: operation.subject } : {}),
-          ...(Object.hasOwn(operation, "context") ? { context: operation.context } : {}),
-          timezone: "Asia/Shanghai",
-        },
-        items: operation.items.map((item, itemOrder) => ({
-          item_id: deriveDomainId("item", envelope.idempotency_key, itemOrder),
-          item_order: itemOrder,
-          item_type: item.item_type,
-          normalized_name: item.normalized_name,
-          payload: {
-            amount: item.amount,
-            authority_kind: "diet-manager/meal-item/v1",
-            nutrition_sources: item.nutrition_sources,
-          },
-        })),
-      }))),
+    meal_fact_identities: Object.freeze(mealIdentities()),
   });
 }
 
 function assertMealFactPreviewAuthority(
   authority: AuthorizedRepositoryPreview,
-  expected: ReturnType<typeof mealFactPreviewMaterial>,
+  expected: ReturnType<typeof factPreviewMaterial>,
 ): void {
   if (expected.authority_kind === "diet-manager/domain-preview/v1") {
     if (authority.preview_authority_kind !== "diet-manager/server-preview/v1") {
@@ -783,6 +854,14 @@ function assertMealFactPreviewAuthority(
         canonicalJson(authority.water_fact_preview_material) !== canonicalJson(expected)) {
       throw new Error("PREVIEW_AUTHORITY_INVALID:water_fact_identity");
     }
+    return;
+  }
+  if (expected.authority_kind === "diet-manager/domain-preview/v4") {
+    if (
+      authority.preview_authority_kind !== "diet-manager/server-preview/v4" ||
+      authority.purchase_fact_preview_material === undefined ||
+      canonicalJson(authority.purchase_fact_preview_material) !== canonicalJson(expected)
+    ) throw new Error("PREVIEW_AUTHORITY_INVALID:purchase_fact_identity");
     return;
   }
   if (
@@ -963,7 +1042,7 @@ export function createDietDomainService(
       const validatedEnvelope = validateAndFreezeEnvelope(envelope);
       const operations = writeOperations(validatedEnvelope);
       const inputDigest = digestDomainEnvelope(validatedEnvelope);
-      const previewMaterial = mealFactPreviewMaterial(validatedEnvelope, inputDigest);
+      const previewMaterial = factPreviewMaterial(validatedEnvelope, inputDigest, options.database, options.secret);
       const reused = reuseServerPreview({
         database: options.database,
         secret: options.secret,
@@ -1016,7 +1095,7 @@ export function createDietDomainService(
       const operations = writeOperations(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
-      const expectedPreviewMaterial = mealFactPreviewMaterial(envelope, inputDigest);
+      const expectedPreviewMaterial = factPreviewMaterial(envelope, inputDigest, options.database, options.secret);
       const authority = authorizeRepositoryPreview({
         database: options.database,
         secret: options.secret,
@@ -1081,7 +1160,33 @@ export function createDietDomainService(
           sequence: 1,
           operation: mealOperation,
         });
+        const preparedPurchase = preparePurchaseOperation({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          dataRevision: execution.data_revision,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          effectIdentityKey: purchaseIdentityKey,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt: purchaseAt,
+          sequence: 0,
+          operation: purchaseOperation,
+          ...(progressReservation === undefined ? {} : { progressReservation }),
+        });
         if (authority.envelope_state !== "received") {
+          assertStoredPurchaseFactMatchesExpected({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: purchaseOperation.operation_id,
+            operationSequence: 0,
+            expectedFact: preparedPurchase.fact,
+            requireAppliedEffect: authority.envelope_state !== "effects_pending",
+          });
           assertStoredMealFactMatchesExpected({
             database: options.database,
             envelopeId: envelope.envelope_id,
@@ -1117,24 +1222,6 @@ export function createDietDomainService(
         ) {
           throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
         }
-        const preparedPurchase = preparePurchaseOperation({
-          database: options.database,
-          secret: options.secret,
-          token: execution.token,
-          inputDigest,
-          dataRevision: execution.data_revision,
-          subjectScope: envelope.subject_scope,
-          commandType: envelope.command_type,
-          idempotencyKey: envelope.idempotency_key,
-          effectIdentityKey: purchaseIdentityKey,
-          sourceMessageId: envelope.source_message_id,
-          conversationId: envelope.conversation_id,
-          receivedAt: envelope.received_at,
-          committedAt: purchaseAt,
-          sequence: 0,
-          operation: purchaseOperation,
-          ...(progressReservation === undefined ? {} : { progressReservation }),
-        });
         if (options.fault === "before_fact_commit") {
           emitFailure(options.failureSink, {
             stage: "FactCommit",
@@ -1767,9 +1854,22 @@ export function createDietDomainService(
         mixedItems: Object.freeze([]),
       };
 
+      if (authority.envelope_state !== "received") {
+        assertStoredPurchaseFactMatchesExpected({
+          database: options.database,
+          envelopeId: envelope.envelope_id,
+          operationId: operation.operation_id,
+          operationSequence: 0,
+          expectedFact: prepared.fact,
+          requireAppliedEffect: authority.envelope_state !== "effects_pending",
+        });
+      }
+
       if (authority.envelope_state === "finalized") {
         return finalize(finalizerInput).payload as DomainExecutionResult;
       }
+      const shouldApplyPurchase =
+        authority.envelope_state === "received" || authority.envelope_state === "effects_pending";
       if (authority.envelope_state === "received") {
         if (options.fault === "before_fact_commit") {
           emitFailure(options.failureSink, {
@@ -1781,6 +1881,8 @@ export function createDietDomainService(
           throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
         }
         appendFactWithFailure(prepared.fact, options.failureSink);
+      }
+      if (shouldApplyPurchase) {
         try {
           applyPurchaseEffect(
             options.database,

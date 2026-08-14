@@ -19,9 +19,14 @@ import {
   type ProgressReservation,
 } from "../repository/progress-reservation.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { preparePantryPurchase } from "../storage/inventory-repository.js";
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
+import {
+  buildPantryPurchaseReceiptItem,
+  type PantryPurchaseReceiptItem,
+} from "./receipt.js";
 import {
   addNutritionVectors,
   resolveInventoryMatch,
@@ -35,6 +40,7 @@ import type {
   InventoryMatchDecision,
   NutritionSelection,
   NutritionVector,
+  PantryPurchaseEvidence,
   RecordMealOperation,
   RecordWaterOperation,
   StructuredAmount,
@@ -48,9 +54,11 @@ export interface PurchaseOperationResult {
   readonly error_code: null;
   readonly batch_id: string;
   readonly product_id: string;
-  readonly inventory_quantity_microunits: number;
+  readonly inventory_quantity_microunits: number | null;
   readonly unit: string;
   readonly nutrition_profile_id: string | null;
+  readonly pantry_evidence?: Readonly<PantryPurchaseEvidence>;
+  readonly receipt_item?: Readonly<PantryPurchaseReceiptItem>;
 }
 
 export interface PreparePurchaseInput {
@@ -513,8 +521,20 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
   const effectIdentityKey = input.effectIdentityKey ?? input.idempotencyKey;
   const effectIdentitySequence = input.effectIdentityKey === undefined ? input.sequence : 0;
   if (operation.kind !== "add_inventory") return invalid("operation_kind");
-  if (operation.amount.evidence !== "explicit") return invalid("amount_evidence");
-  const quantity = positive(operation.amount.observed_microunits, "observed_microunits");
+  if (
+    operation.amount.evidence !== "explicit" &&
+    !(operation.pantry_evidence !== undefined && operation.amount.evidence === "unknown")
+  ) return invalid("amount_evidence");
+  const quantity = operation.amount.observed_microunits === null
+    ? null
+    : positive(operation.amount.observed_microunits, "observed_microunits");
+  if (
+    quantity === null &&
+    (
+      operation.pantry_evidence === undefined || operation.amount.evidence !== "unknown" ||
+      operation.amount.unit !== "unknown"
+    )
+  ) return invalid("observed_microunits");
   if (
     operation.amount.inventory_deduction_microunits !== null ||
     operation.amount.nutrition_adoption_microunits !== null
@@ -538,6 +558,17 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
   const outboxId = deriveDomainId("outbox", effectIdentityKey, effectIdentitySequence);
   const transactionId = deriveDomainId("transaction", effectIdentityKey, effectIdentitySequence);
   const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
+  const pantry = operation.pantry_evidence === undefined
+    ? undefined
+    : preparePantryPurchase({
+        evidence: operation.pantry_evidence,
+        product_id: operation.product.product_id,
+        normalized_name: operation.product.normalized_name,
+        batch_id: operation.batch_id,
+        quantity_microunits: quantity,
+        unit: operation.amount.unit,
+        template_reference_microunits: operation.amount.template_reference_microunits,
+      });
   const effectInput = Object.freeze({
     kind: "inventory_add" as const,
     transaction_id: transactionId,
@@ -550,7 +581,9 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
       normalized_name: operation.product.normalized_name,
       product_type: operation.product.product_type,
       payload: Object.freeze({
-        authority_kind: "diet-manager/product/v1",
+        ...(pantry === undefined
+          ? { authority_kind: "diet-manager/product/v1" as const }
+          : pantry.product_payload),
       }),
     }),
     nutrition_profile:
@@ -571,11 +604,15 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
       batch_id: operation.batch_id,
       schema_version: "domain/v2",
       stocked_at: input.receivedAt,
-      explicit_expiration_at: null,
+      explicit_expiration_at: pantry?.explicit_expiration_at ?? null,
       quantity_unit: operation.amount.unit,
       payload: Object.freeze({
-        authority_kind: "diet-manager/inventory-batch/v1",
-        template_reference_microunits: operation.amount.template_reference_microunits,
+        ...(pantry === undefined
+          ? {
+              authority_kind: "diet-manager/inventory-batch/v1" as const,
+              template_reference_microunits: operation.amount.template_reference_microunits,
+            }
+          : pantry.batch_payload),
       }),
     }),
   });
@@ -589,6 +626,16 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
     inventory_quantity_microunits: quantity,
     unit: operation.amount.unit,
     nutrition_profile_id: profileId,
+    ...(pantry === undefined ? {} : {
+      pantry_evidence: pantry.evidence,
+      receipt_item: buildPantryPurchaseReceiptItem({
+        product_id: operation.product.product_id,
+        batch_id: operation.batch_id,
+        name: operation.product.normalized_name,
+        stocked_at: input.receivedAt,
+        evidence: pantry.evidence,
+      }),
+    }),
   });
   return Object.freeze({
     fact: Object.freeze({
@@ -616,7 +663,10 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
         mealId: null,
         mealSlot: null,
         payload: Object.freeze({
-          authority_kind: "diet-manager/purchase-fact/v1",
+          authority_kind: pantry === undefined
+            ? "diet-manager/purchase-fact/v1"
+            : "diet-manager/purchase-fact/v2",
+          ...(pantry === undefined ? {} : { pantry_evidence: pantry.evidence }),
           effect_inputs: Object.freeze({ [effectId]: effectInput }),
           ...(input.progressReservation === undefined
             ? {}

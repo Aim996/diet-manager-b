@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
 
-import { canonicalJson } from "../../src/authority/canonical-json.js";
+import { canonicalJson, canonicalSha256 } from "../../src/authority/canonical-json.js";
 import { digestDomainEnvelope } from "../../src/domain/identity.js";
 import {
   PantryEvidenceAuthorityError,
@@ -151,6 +152,32 @@ function mutableEvidence(): Record<string, unknown> {
 
 function expectAuthorityFailure(value: unknown): void {
   expect(() => validateAndFreezePantryPurchaseEvidence(value)).toThrow(PantryEvidenceAuthorityError);
+}
+
+function tableSnapshot(database: DatabaseSync): string {
+  const tables = database.prepare(
+    "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).all() as Array<{ name: string }>;
+  return canonicalJson(Object.fromEntries(tables.map(({ name }) => [
+    name,
+    database.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+  ])));
+}
+
+function previewAndExecute(
+  service: ReturnType<typeof createDietDomainService>,
+  envelope: DomainEnvelopeInput,
+) {
+  const preview = service.preview(envelope);
+  return {
+    preview,
+    result: service.execute({
+      envelope,
+      token: preview.token,
+      input_digest: preview.input_digest,
+      data_revision: preview.data_revision,
+    }),
+  };
 }
 
 describe("SEL-PANTRY-001 purchase evidence authority", () => {
@@ -628,5 +655,521 @@ describe("SEL-PANTRY-001 deterministic purchase rules", () => {
       anchor_at: "2026-08-11T08:30:00+08:00",
       rule_version: "diet-manager/shelf-life-v1",
     })).toThrow(PantryEvidenceAuthorityError);
+  });
+});
+
+describe("SEL-PANTRY-001 purchase evidence vertical persistence", () => {
+  it("persists canonical v2 fact, product, batch and projection evidence and replays exactly", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:00:01.000Z",
+      });
+      const envelope = purchaseEnvelope();
+      const { preview, result } = previewAndExecute(service, envelope);
+      expect(result.status).toBe("committed");
+      expect(result.items[0]).toMatchObject({
+        pantry_evidence: pantryEvidence(),
+        receipt_item: {
+          product_id: "product-milk-brand-a-whole-250ml",
+          batch_id: "batch-pantry-authority-001",
+          name: "milk",
+          stocked_at: "2026-08-14T08:00:00.000Z",
+          location: { value: "home", evidence_kind: "configured_home_default" },
+          inferred_fields: ["location"],
+        },
+      });
+
+      const event = runtime.database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const product = runtime.database.prepare(
+        "SELECT brand,payload_json FROM products WHERE product_id = ?",
+      ).get("product-milk-brand-a-whole-250ml") as { brand: string; payload_json: string };
+      const batch = runtime.database.prepare(
+        "SELECT explicit_expiration_at,quantity_unit,payload_json FROM inventory_batches WHERE batch_id = ?",
+      ).get("batch-pantry-authority-001") as { explicit_expiration_at: string | null; quantity_unit: string; payload_json: string };
+      const projection = runtime.database.prepare(
+        "SELECT seal_status,expiry_status,effective_expiration_at,payload_json FROM inventory_batch_projections WHERE batch_id = ?",
+      ).get("batch-pantry-authority-001") as {
+        seal_status: string; expiry_status: string; effective_expiration_at: string | null; payload_json: string;
+      };
+      const previewAuthority = runtime.database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      expect(JSON.parse(previewAuthority.payload_json)).toMatchObject({
+        authority_kind: "diet-manager/server-preview/v4",
+        input_digest: preview.input_digest,
+        meal_fact_identities: [],
+        purchase_fact_identities: [{
+          event_id: expect.any(String),
+          operation_id: "operation-pantry-authority-001",
+          payload_digest: expect.stringMatching(/^[A-F0-9]{64}$/),
+        }],
+        fact_identity_mac: expect.stringMatching(/^[A-F0-9]{64}$/),
+      });
+      expect(previewAuthority.payload_json).not.toContain("brand-a");
+      expect(JSON.parse(event.payload_json)).toMatchObject({
+        authority_kind: "diet-manager/purchase-fact/v2",
+        pantry_evidence: pantryEvidence(),
+      });
+      expect(product.brand).toBe("brand-a");
+      expect(JSON.parse(product.payload_json)).toMatchObject({
+        authority_kind: "diet-manager/product/v2",
+        identity: pantryEvidence().product_identity,
+      });
+      expect(batch.explicit_expiration_at).toBeNull();
+      expect(batch.quantity_unit).toBe("carton");
+      expect(JSON.parse(batch.payload_json)).toEqual({
+        authority_kind: "diet-manager/inventory-batch/v2",
+        pantry_evidence: pantryEvidence(),
+        template_reference_microunits: null,
+      });
+      expect(projection).toMatchObject({
+        seal_status: "unknown",
+        expiry_status: "unknown",
+        effective_expiration_at: null,
+      });
+      expect(JSON.parse(projection.payload_json)).toMatchObject({
+        authority_kind: "diet-manager/inventory-projection/v2",
+        pantry_evidence: pantryEvidence(),
+        quantity_microunits: 24_000_000,
+        unit: "carton",
+      });
+      expect(runtime.database.prepare(
+        "SELECT direction,reason_code,unit,payload_json FROM inventory_transactions WHERE batch_id = ?",
+      ).get("batch-pantry-authority-001")).toMatchObject({
+        direction: "in",
+        reason_code: "purchase",
+        unit: "carton",
+      });
+      expect(service.query({ kind: "query_inventory", operation_id: "query-pantry-v2" })).toMatchObject({
+        kind: "inventory",
+        batches: [{
+          batch_id: "batch-pantry-authority-001",
+          pantry_evidence: pantryEvidence(),
+        }],
+      });
+
+      const beforeReplay = tableSnapshot(runtime.database);
+      expect(service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toEqual(result);
+      expect(tableSnapshot(runtime.database)).toBe(beforeReplay);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("preserves outer-only package unknowns without inventing inner egg counts", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:10:01.000Z",
+      });
+      const base = purchaseEnvelope();
+      const evidence = pantryEvidence();
+      evidence.product_identity = {
+        ...(evidence.product_identity as Record<string, unknown>),
+        raw_name: "鸡蛋",
+        normalized_name: "egg",
+        brand: null,
+        variant_or_flavor: null,
+        specification: null,
+      };
+      evidence.package_quantity = {
+        outer_count: 1,
+        outer_unit: "bag",
+        inner_per_outer: null,
+        inner_unit: null,
+        capacity_per_inner: null,
+        capacity_unit: null,
+        total_inner: null,
+        total_capacity: null,
+        formula: null,
+      };
+      const operation = structuredClone(base.operations[0]!) as Record<string, unknown>;
+      operation.operation_id = "operation-pantry-eggs-outer-only";
+      operation.product = { product_id: "product-eggs", normalized_name: "egg", product_type: "food" };
+      operation.batch_id = "batch-pantry-eggs-outer-only";
+      operation.amount = {
+        unit: "unknown", observed_microunits: null, nutrition_adoption_microunits: null,
+        inventory_deduction_microunits: null, template_reference_microunits: null, evidence: "unknown",
+      };
+      operation.pantry_evidence = evidence;
+      const envelope = {
+        ...base,
+        envelope_id: "envelope-pantry-eggs-outer-only",
+        idempotency_key: "idem-pantry-eggs-outer-only",
+        source_message_id: "message-pantry-eggs-outer-only",
+        operations: [operation],
+      } as unknown as DomainEnvelopeInput;
+      const committed = previewAndExecute(service, envelope);
+      expect(committed.result.status).toBe("committed");
+      const query = service.query({ kind: "query_inventory", operation_id: "query-eggs-outer-only" });
+      expect(query).toMatchObject({ batches: [{
+        batch_id: "batch-pantry-eggs-outer-only",
+        quantity_microunits: null,
+        quantity_status: "unknown",
+        pantry_evidence: { package_quantity: {
+          outer_count: 1,
+          inner_per_outer: null,
+          capacity_per_inner: null,
+          total_inner: null,
+          total_capacity: null,
+          formula: null,
+        } },
+      }] });
+      expect(runtime.database.prepare(
+        "SELECT payload_json FROM inventory_transactions WHERE batch_id = ?",
+      ).get("batch-pantry-eggs-outer-only")).toMatchObject({
+        payload_json: canonicalJson({
+          authority_kind: "diet-manager/inventory-transaction/v2",
+          quantity_delta_microunits: null,
+          quantity_after_microunits: null,
+          unit: "unknown",
+        }),
+      });
+      const beforeReplay = tableSnapshot(runtime.database);
+      expect(service.execute({
+        envelope,
+        token: committed.preview.token,
+        input_digest: committed.preview.input_digest,
+        data_revision: committed.preview.data_revision,
+      })).toEqual(committed.result);
+      expect(tableSnapshot(runtime.database)).toBe(beforeReplay);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("reuses one exact product identity and frozen nutrition profile across new batches", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:15:01.000Z",
+      });
+      const first = structuredClone(purchaseEnvelope()) as DomainEnvelopeInput;
+      const firstOperation = first.operations[0] as unknown as Record<string, unknown>;
+      firstOperation.nutrition_sources = [{
+        source_type: "product_label",
+        source_ref: "label-brand-a-whole-250-v2",
+        profile_version: 2,
+        applicable_product_id: "product-milk-brand-a-whole-250ml",
+        basis_kind: "per_package",
+        basis_microunits: 1_000_000,
+        basis_unit: "carton",
+        nutrients: {
+          energy_kcal_milli: 160_000,
+          protein_mg: 8_000,
+          fat_mg: 9_000,
+          carbohydrate_mg: 12_000,
+          fiber_mg: null,
+          water_ml_milli: null,
+        },
+      }];
+      expect(previewAndExecute(service, first).result.status).toBe("committed");
+      const second = structuredClone(first) as DomainEnvelopeInput;
+      (second as unknown as Record<string, unknown>).envelope_id = "envelope-pantry-authority-002";
+      (second as unknown as Record<string, unknown>).idempotency_key = "idem-pantry-authority-002";
+      (second as unknown as Record<string, unknown>).source_message_id = "message-pantry-authority-002";
+      const secondOperation = second.operations[0] as unknown as Record<string, unknown>;
+      secondOperation.operation_id = "operation-pantry-authority-002";
+      secondOperation.batch_id = "batch-pantry-authority-002";
+      expect(previewAndExecute(service, second).result.status).toBe("committed");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM products").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM inventory_batches").get()).toEqual({ count: 2 });
+      expect(runtime.database.prepare(
+        "SELECT subject_id,profile_version,source_ref FROM nutrition_profiles",
+      ).all()).toEqual([{
+        subject_id: "product-milk-brand-a-whole-250ml",
+        profile_version: "2",
+        source_ref: "label-brand-a-whole-250-v2",
+      }]);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("persists rule-labeled opening and expiration evidence without rewriting the source anchor", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:18:01.000Z",
+      });
+      const envelope = structuredClone(purchaseEnvelope()) as DomainEnvelopeInput;
+      const operation = envelope.operations[0] as unknown as Record<string, unknown>;
+      const evidence = operation.pantry_evidence as Record<string, unknown>;
+      evidence.opening = {
+        status: "opened",
+        opened_at: "2026-08-14T16:00:00+08:00",
+        evidence_kind: "rule",
+        rule_version: "diet-manager/opening-evidence-v1",
+      };
+      evidence.expiration = {
+        explicit_at: null,
+        effective_at: "2026-08-15T16:00:00+08:00",
+        basis: "rule",
+        rule_version: "diet-manager/shelf-life-v1",
+      };
+      const committed = previewAndExecute(service, envelope).result;
+      expect(committed.items[0]).toMatchObject({
+        receipt_item: {
+          stocked_at: envelope.received_at,
+          opening: evidence.opening,
+          expiration: evidence.expiration,
+          inferred_fields: ["location", "opening", "expiration"],
+        },
+      });
+      expect(runtime.database.prepare(
+        `SELECT seal_status,expiry_status,effective_expiration_at
+         FROM inventory_batch_projections WHERE batch_id = ?`,
+      ).get("batch-pantry-authority-001")).toEqual({
+        seal_status: "opened",
+        expiry_status: "known",
+        effective_expiration_at: "2026-08-15T16:00:00+08:00",
+      });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("resumes a staged purchase from the immutable fact without duplicating business rows", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const envelope = purchaseEnvelope();
+      const failing = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:19:01.000Z",
+        fault: "after_inventory_business_writes",
+      });
+      const preview = failing.preview(envelope);
+      expect(() => failing.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("INVENTORY_EFFECT_FAILED:after_business_writes");
+      expect(runtime.database.prepare(
+        "SELECT state,result_status FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id)).toEqual({
+        state: "received",
+        result_status: "preview_ready",
+      });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM products").get()).toEqual({ count: 0 });
+      const resumed = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:20:01.000Z",
+      }).execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      });
+      expect(resumed.status).toBe("committed");
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM products").get()).toEqual({ count: 1 });
+      expect(runtime.database.prepare("SELECT COUNT(*) AS count FROM inventory_transactions").get()).toEqual({ count: 1 });
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("rejects a schema-valid stored purchase-event evidence mutation on retry and query with zero added writes", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:20:01.000Z",
+      });
+      const envelope = purchaseEnvelope();
+      const { preview } = previewAndExecute(service, envelope);
+      const row = runtime.database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+      ((payload.pantry_evidence as Record<string, unknown>).product_identity as Record<string, unknown>).brand = "brand-tampered";
+      runtime.database.prepare(
+        "UPDATE event_records SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(payload), envelope.envelope_id);
+      const tampered = tableSnapshot(runtime.database);
+
+      expect(() => service.execute({
+        envelope,
+        token: preview.token,
+        input_digest: preview.input_digest,
+        data_revision: preview.data_revision,
+      })).toThrow("PURCHASE_EFFECT_AUTHORITY_INVALID:terminal_event_payload");
+      expect(() => service.query({ kind: "query_inventory", operation_id: "query-tampered-purchase" })).toThrow(
+        "INVENTORY_PROJECTION_INVALID:purchase_event_evidence",
+      );
+      expect(tableSnapshot(runtime.database)).toBe(tampered);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it.each(["product", "batch", "projection"] as const)(
+    "rejects a coordinated schema-valid %s evidence mutation on retry and query",
+    (target) => {
+      const root = newTestRoot();
+      const runtime = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const service = createDietDomainService({
+          database: runtime.database,
+          secret,
+          now: () => "2026-08-14T08:30:01.000Z",
+        });
+        const envelope = purchaseEnvelope();
+        const { preview } = previewAndExecute(service, envelope);
+        if (target === "product") {
+          const row = runtime.database.prepare(
+            "SELECT payload_json FROM products WHERE product_id = ?",
+          ).get("product-milk-brand-a-whole-250ml") as { payload_json: string };
+          const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+          const identity = payload.identity as Record<string, unknown>;
+          identity.brand = "brand-tampered";
+          payload.identity_fingerprint = productIdentityFingerprint(identity as never);
+          runtime.database.prepare(
+            "UPDATE products SET brand = ?, payload_json = ? WHERE product_id = ?",
+          ).run("brand-tampered", canonicalJson(payload), "product-milk-brand-a-whole-250ml");
+        } else if (target === "batch") {
+          const row = runtime.database.prepare(
+            "SELECT payload_json FROM inventory_batches WHERE batch_id = ?",
+          ).get("batch-pantry-authority-001") as { payload_json: string };
+          const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+          (((payload.pantry_evidence as Record<string, unknown>).product_identity) as Record<string, unknown>).brand =
+            "brand-tampered";
+          runtime.database.prepare(
+            "UPDATE inventory_batches SET payload_json = ? WHERE batch_id = ?",
+          ).run(canonicalJson(payload), "batch-pantry-authority-001");
+        } else {
+          const row = runtime.database.prepare(
+            "SELECT payload_json FROM inventory_batch_projections WHERE batch_id = ?",
+          ).get("batch-pantry-authority-001") as { payload_json: string };
+          const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+          (((payload.pantry_evidence as Record<string, unknown>).product_identity) as Record<string, unknown>).brand =
+            "brand-tampered";
+          runtime.database.prepare(
+            "UPDATE inventory_batch_projections SET payload_json = ? WHERE batch_id = ?",
+          ).run(canonicalJson(payload), "batch-pantry-authority-001");
+        }
+        const tampered = tableSnapshot(runtime.database);
+        expect(() => service.execute({
+          envelope,
+          token: preview.token,
+          input_digest: preview.input_digest,
+          data_revision: preview.data_revision,
+        })).toThrow("PURCHASE_EFFECT_AUTHORITY_INVALID:terminal_business_payload");
+        expect(() => service.query({
+          kind: "query_inventory",
+          operation_id: `query-tampered-${target}`,
+        })).toThrow("INVENTORY_PROJECTION_INVALID:purchase_event_evidence");
+        expect(tableSnapshot(runtime.database)).toBe(tampered);
+      } finally {
+        runtime.close();
+      }
+    },
+  );
+
+  it("rejects a public-hash purchase event and manifest forge without the private MAC", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const service = createDietDomainService({
+        database: runtime.database,
+        secret,
+        now: () => "2026-08-14T08:40:01.000Z",
+      });
+      const envelope = purchaseEnvelope();
+      const committed = previewAndExecute(service, envelope);
+      const eventRow = runtime.database.prepare(
+        "SELECT payload_json FROM event_records WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const eventPayload = JSON.parse(eventRow.payload_json) as Record<string, unknown>;
+      (((eventPayload.pantry_evidence as Record<string, unknown>).product_identity) as Record<string, unknown>).brand =
+        "brand-public-forge";
+      runtime.database.prepare(
+        "UPDATE event_records SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(eventPayload), envelope.envelope_id);
+      const productRow = runtime.database.prepare(
+        "SELECT payload_json FROM products WHERE product_id = ?",
+      ).get("product-milk-brand-a-whole-250ml") as { payload_json: string };
+      const productPayload = JSON.parse(productRow.payload_json) as Record<string, unknown>;
+      const productIdentity = productPayload.identity as Record<string, unknown>;
+      productIdentity.brand = "brand-public-forge";
+      productPayload.identity_fingerprint = productIdentityFingerprint(productIdentity as never);
+      runtime.database.prepare(
+        "UPDATE products SET brand = ?, payload_json = ? WHERE product_id = ?",
+      ).run("brand-public-forge", canonicalJson(productPayload), "product-milk-brand-a-whole-250ml");
+      for (const [table, idColumn] of [
+        ["inventory_batches", "batch_id"],
+        ["inventory_batch_projections", "batch_id"],
+      ] as const) {
+        const row = runtime.database.prepare(
+          `SELECT payload_json FROM ${table} WHERE ${idColumn} = ?`,
+        ).get("batch-pantry-authority-001") as { payload_json: string };
+        const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+        (((payload.pantry_evidence as Record<string, unknown>).product_identity) as Record<string, unknown>).brand =
+          "brand-public-forge";
+        runtime.database.prepare(
+          `UPDATE ${table} SET payload_json = ? WHERE ${idColumn} = ?`,
+        ).run(canonicalJson(payload), "batch-pantry-authority-001");
+      }
+
+      const previewRow = runtime.database.prepare(
+        "SELECT payload_json FROM command_envelopes WHERE envelope_id = ?",
+      ).get(envelope.envelope_id) as { payload_json: string };
+      const previewPayload = JSON.parse(previewRow.payload_json) as Record<string, unknown>;
+      const identities = previewPayload.purchase_fact_identities as Array<Record<string, unknown>>;
+      const stableEventPayload = { ...eventPayload };
+      delete stableEventPayload.progress_reservation;
+      identities[0]!.payload_digest = canonicalSha256(stableEventPayload);
+      const material = {
+        authority_kind: "diet-manager/domain-preview/v4",
+        input_digest: previewPayload.input_digest,
+        meal_fact_identities: previewPayload.meal_fact_identities,
+        purchase_fact_identities: identities,
+      };
+      (previewPayload.binding as Record<string, unknown>).preview_hash = canonicalSha256(material);
+      runtime.database.prepare(
+        "UPDATE command_envelopes SET payload_json = ? WHERE envelope_id = ?",
+      ).run(canonicalJson(previewPayload), envelope.envelope_id);
+      const forged = tableSnapshot(runtime.database);
+      expect(() => service.execute({
+        envelope,
+        token: committed.preview.token,
+        input_digest: committed.preview.input_digest,
+        data_revision: committed.preview.data_revision,
+      })).toThrow("PREVIEW_AUTHORITY_INVALID:binding");
+      expect(() => service.query({
+        kind: "query_inventory",
+        operation_id: "query-public-purchase-forge",
+      })).toThrow("INVENTORY_PROJECTION_INVALID:purchase_event_identity");
+      expect(tableSnapshot(runtime.database)).toBe(forged);
+    } finally {
+      runtime.close();
+    }
   });
 });

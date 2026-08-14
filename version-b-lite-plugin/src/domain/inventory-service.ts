@@ -224,6 +224,10 @@ function validateProductIdentity(value: unknown, path: string): Readonly<Product
   return record as unknown as Readonly<ProductIdentityEvidence>;
 }
 
+export function validateAndFreezeProductIdentityEvidence(value: unknown): Readonly<ProductIdentityEvidence> {
+  return validateProductIdentity(cloneOrdinary(value, "product_identity"), "product_identity");
+}
+
 function safeProduct(left: number, right: number, path: string): number {
   const product = BigInt(left) * BigInt(right);
   if (product > BigInt(Number.MAX_SAFE_INTEGER)) return invalid(path);

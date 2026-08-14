@@ -4,6 +4,7 @@ import type {
   MealItemExecutionResult,
 } from "./effect-bundle.js";
 import { deriveDomainId } from "./identity.js";
+import type { PantryPurchaseEvidence } from "./types.js";
 
 const FREE_TEXT_LINE = "也可以直接说明实际情况，不必选择以上选项。";
 
@@ -108,6 +109,20 @@ export interface ReceiptData {
   readonly blocks: readonly ReceiptBlock[];
 }
 
+export interface PantryPurchaseReceiptItem {
+  readonly product_id: string;
+  readonly batch_id: string;
+  readonly name: string;
+  readonly stocked_at: string;
+  readonly location: Readonly<{
+    readonly value: PantryPurchaseEvidence["location"]["value"];
+    readonly evidence_kind: PantryPurchaseEvidence["location"]["evidence_kind"];
+  }>;
+  readonly opening: PantryPurchaseEvidence["opening"];
+  readonly expiration: PantryPurchaseEvidence["expiration"];
+  readonly inferred_fields: readonly ("location" | "opening" | "expiration")[];
+}
+
 function invalid(reason: string): never {
   throw new TypeError(`RECEIPT_DATA_INVALID:${reason}`);
 }
@@ -149,6 +164,37 @@ function freezeProgress(value: DailyProgressResult): DailyProgressResult {
     timezone: value.timezone,
     coverage_status: value.coverage_status,
     nutrients: Object.freeze({ ...value.nutrients }),
+  });
+}
+
+export function buildPantryPurchaseReceiptItem(input: Readonly<{
+  readonly product_id: string;
+  readonly batch_id: string;
+  readonly name: string;
+  readonly stocked_at: string;
+  readonly evidence: Readonly<PantryPurchaseEvidence>;
+}>): Readonly<PantryPurchaseReceiptItem> {
+  const productId = safeText(input.product_id, "pantry_product_id", 256);
+  const batchId = safeText(input.batch_id, "pantry_batch_id", 256);
+  const name = safeText(input.name, "pantry_name", 256);
+  const stockedAt = safeText(input.stocked_at, "pantry_stocked_at", 64);
+  if (!Number.isFinite(Date.parse(stockedAt))) return invalid("pantry_stocked_at");
+  const inferred: ("location" | "opening" | "expiration")[] = [];
+  if (input.evidence.location.evidence_kind !== "explicit") inferred.push("location");
+  if (input.evidence.opening?.evidence_kind === "rule") inferred.push("opening");
+  if (input.evidence.expiration.basis === "rule") inferred.push("expiration");
+  return Object.freeze({
+    product_id: productId,
+    batch_id: batchId,
+    name,
+    stocked_at: stockedAt,
+    location: Object.freeze({
+      value: input.evidence.location.value,
+      evidence_kind: input.evidence.location.evidence_kind,
+    }),
+    opening: input.evidence.opening,
+    expiration: input.evidence.expiration,
+    inferred_fields: Object.freeze(inferred),
   });
 }
 

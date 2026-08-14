@@ -195,7 +195,7 @@ export interface AddInventoryOperation {
   readonly operation_id: string;
   readonly product: ProductInput;
   readonly batch_id: string;
-  readonly amount: KnownStructuredAmount;
+  readonly amount: StructuredAmount;
   readonly nutrition_sources: readonly NutritionSourceCandidate[];
   readonly pantry_evidence?: Readonly<PantryPurchaseEvidence>;
 }
