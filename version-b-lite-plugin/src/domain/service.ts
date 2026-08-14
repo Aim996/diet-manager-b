@@ -57,6 +57,10 @@ import {
   type MealOperationResult,
 } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
+import {
+  PantryEvidenceAuthorityError,
+  validateAndFreezePantryPurchaseEvidence,
+} from "./inventory-service.js";
 import { queryDomainReadModel, type DomainQueryResult } from "./read-model.js";
 import {
   buildQuickPrompt,
@@ -254,7 +258,10 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
   if (kind === "add_inventory") {
-    const candidate = record(value, ["kind", "operation_id", "product", "batch_id", "amount", "nutrition_sources"], field);
+    const evidenceKeys = Object.hasOwn(operation, "pantry_evidence") ? ["pantry_evidence"] : [];
+    const candidate = record(value, [
+      "kind", "operation_id", "product", "batch_id", "amount", "nutrition_sources", ...evidenceKeys,
+    ], field);
     text(candidate.operation_id, `${field}.operation_id`);
     text(candidate.batch_id, `${field}.batch_id`);
     const product = record(candidate.product, ["product_id", "normalized_name", "product_type"], `${field}.product`);
@@ -263,6 +270,14 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     text(product.product_type, `${field}.product.product_type`);
     validateKnownStructuredAmount(candidate.amount, `${field}.amount`);
     validateNutritionSources(candidate.nutrition_sources, `${field}.nutrition_sources`);
+    if (evidenceKeys.length === 1) {
+      try {
+        validateAndFreezePantryPurchaseEvidence(candidate.pantry_evidence);
+      } catch (error) {
+        if (error instanceof PantryEvidenceAuthorityError) return invalid(`${field}.${error.reason}`);
+        throw error;
+      }
+    }
     return;
   }
   if (kind === "record_meal") {

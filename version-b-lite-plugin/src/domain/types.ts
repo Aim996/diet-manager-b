@@ -103,6 +103,88 @@ export interface ProductInput {
   readonly product_type: string;
 }
 
+export interface ProductSpecificationEvidence {
+  readonly value: number;
+  readonly unit: string;
+}
+
+export interface ProductIdentityEvidence {
+  readonly raw_name: string;
+  readonly normalized_name: string;
+  readonly brand: string | null;
+  readonly variant_or_flavor: string | null;
+  readonly specification: Readonly<ProductSpecificationEvidence> | null;
+  readonly evidence_kind: "explicit" | "inherited_exact" | "unknown";
+}
+
+export interface PackageQuantityEvidence {
+  readonly outer_count: number | null;
+  readonly outer_unit: string | null;
+  readonly inner_per_outer: number | null;
+  readonly inner_unit: string | null;
+  readonly capacity_per_inner: number | null;
+  readonly capacity_unit: string | null;
+  readonly total_inner: number | null;
+  readonly total_capacity: number | null;
+  readonly formula: string | null;
+}
+
+export interface StorageLocationEvidence {
+  readonly value: string;
+  readonly evidence_kind: "explicit" | "configured_home_default" | "corrected_explicit";
+  readonly rule_version: string | null;
+}
+
+export interface OpeningEvidence {
+  readonly status: "sealed" | "opened";
+  readonly opened_at: string | null;
+  readonly evidence_kind: "explicit" | "rule";
+  readonly rule_version: string | null;
+}
+
+export interface ExpirationEvidence {
+  readonly explicit_at: string | null;
+  readonly effective_at: string | null;
+  readonly basis: "explicit" | "rule" | "unknown";
+  readonly rule_version: string | null;
+}
+
+export interface PantryPurchaseEvidence {
+  readonly schema_version: "diet-manager/pantry-evidence/v1";
+  readonly product_identity: Readonly<ProductIdentityEvidence>;
+  readonly package_quantity: Readonly<PackageQuantityEvidence>;
+  readonly location: Readonly<StorageLocationEvidence>;
+  readonly opening: Readonly<OpeningEvidence> | null;
+  readonly expiration: Readonly<ExpirationEvidence>;
+}
+
+export interface InventoryAllocation {
+  readonly product_id: string;
+  readonly batch_id: string;
+  readonly before_microunits: number;
+  readonly deducted_microunits: number;
+  readonly after_microunits: number;
+  readonly unit: string;
+  readonly selection_basis: "explicit_batch" | "fefo" | "fifo";
+}
+
+export interface InventoryAllocationPlan {
+  readonly status:
+    | "matched"
+    | "skipped_outside"
+    | "skipped_by_user"
+    | "skipped_amount_unknown"
+    | "skipped_ambiguous"
+    | "skipped_unit_incompatible"
+    | "skipped_insufficient";
+  readonly requested_microunits: number | null;
+  readonly unit: string;
+  readonly allocations: readonly Readonly<InventoryAllocation>[];
+  readonly candidate_count: number;
+  readonly issue_code: string | null;
+  readonly read_required: boolean;
+}
+
 export interface AddInventoryOperation {
   readonly kind: "add_inventory";
   readonly operation_id: string;
@@ -110,6 +192,7 @@ export interface AddInventoryOperation {
   readonly batch_id: string;
   readonly amount: KnownStructuredAmount;
   readonly nutrition_sources: readonly NutritionSourceCandidate[];
+  readonly pantry_evidence?: Readonly<PantryPurchaseEvidence>;
 }
 
 export interface MealItemInput {
