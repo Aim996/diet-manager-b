@@ -1,6 +1,6 @@
 {
   "case_set_id": "diet-manager/core-acceptance-cases-v1",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "contract": {
     "contract_id": "diet-manager/contract-v2",
     "contract_version": 2
@@ -376,6 +376,177 @@
         }
       },
       "forbidden": ["lower_tier_override", "unknown_field_filled_with_zero", "public_source_override"]
+    },
+    {
+      "id": "CASE-NUTR-002",
+      "requirement_ids": ["REQ-NUTR-001", "REQ-NUTR-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了一个鸡蛋、一碗米饭和一个苹果。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-authoritative-basics-v1","prior_context":[]},
+      "oracle": {
+        "source_resolution": {"authority":{"tier":"authoritative_public_database","automatic":true,"cache_allowed":true}},
+        "effect_bundle": {"nutrition_snapshot":{"item_count":3,"source_label":"public_reference"}}
+      },
+      "forbidden": ["label_upload_required", "model_memory_as_source", "unknown_field_filled_with_zero"]
+    },
+    {
+      "id": "CASE-NUTR-003",
+      "requirement_ids": ["REQ-NUTR-001", "REQ-MEAL-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了蛋炒饭。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-common-dish-v1","prior_context":[]},
+      "oracle": {
+        "template": {"components":["rice","egg","oil"],"template_version":"common-egg-fried-rice-v1"},
+        "business_effects": {"no_double_count":true}
+      },
+      "forbidden": ["opaque_template", "whole_dish_component_double_count", "personal_template_learning"]
+    },
+    {
+      "id": "CASE-NUTR-004",
+      "requirement_ids": ["REQ-MEAL-003", "REQ-NUTR-006"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "喝了奇亚籽牛油果青瓜液体沙拉。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-unknown-custom-drink-v1","prior_context":[]},
+      "oracle": {
+        "fact_commit": {"meal_event":{"event_count":1,"status":"committed"}},
+        "effect_bundle": {"coverage":{"status":"unknown","nutrient_values_all_null":true}}
+      },
+      "forbidden": ["generic_juice_substitution", "unknown_field_filled_with_zero", "meal_fact_rollback"]
+    },
+    {
+      "id": "CASE-NUTR-005",
+      "requirement_ids": ["REQ-NUTR-001", "REQ-NUTR-003", "REQ-PRODUCT-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "今天又喝了一盒同款牛奶。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-profile-history-v1","prior_context":[]},
+      "oracle": {
+        "nutrition_profile": {"version_history":{"current":"v2","historical":"v1","append_only":true}},
+        "nutrition_snapshot": {"profile_version":"v2"}
+      },
+      "forbidden": ["historical_snapshot_rewrite", "profile_in_place_update", "variant_cross_reuse"]
+    },
+    {
+      "id": "CASE-NUTR-006",
+      "requirement_ids": ["REQ-NUTR-002", "REQ-NUTR-006", "REQ-CORE-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了这个只标了蛋白质和能量的食品。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-partial-fields-v1","prior_context":[]},
+      "oracle": {
+        "nutrition_snapshot": {
+          "nutrient_values":{"energy_kcal":"120","protein_g":"8","fat_g":null,"carbohydrate_g":null,"fiber_g":null},
+          "coverage":{"status":"partial","known_fields":["energy_kcal","protein_g"],"missing_fields":["fat_g","carbohydrate_g","fiber_g"]}
+        }
+      },
+      "forbidden": ["unknown_field_filled_with_zero", "complete_coverage_claim", "invented_nutrient_source"]
+    },
+    {
+      "id": "CASE-NUTR-008",
+      "requirement_ids": ["REQ-NUTR-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个橙子。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-orange-range-v1","prior_context":[]},
+      "oracle": {
+        "quantity": {"adopted_amount":{"value":"150","unit":"g","range":{"min":"120","max":"150"},"rule_version":"edible-orange-v1"}},
+        "receipt": {"estimated_fields_labeled":["adopted_amount"]}
+      },
+      "forbidden": ["hidden_adopted_weight", "whole_item_estimated_label", "invented_exact_weight"]
+    },
+    {
+      "id": "CASE-NUTR-009",
+      "requirement_ids": ["REQ-NUTR-005"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了200g米饭。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-explicit-rice-v1","prior_context":[]},
+      "oracle": {
+        "quantity": {"explicit_amount":{"value":"200","unit":"g","estimated":false}},
+        "receipt": {"source_label":"public_reference"}
+      },
+      "forbidden": ["explicit_quantity_marked_estimated", "hidden_public_source", "quantity_rewrite"]
+    },
+    {
+      "id": "CASE-MEAL-003",
+      "requirement_ids": ["REQ-MEAL-002", "REQ-NUTR-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了半碗米饭",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-bounded-rice-v1","prior_context":[]},
+      "oracle": {
+        "fact_commit": {"meal_event":{"event_count":1,"status":"committed"}},
+        "nutrition": {"adopted_upper_bound":{"min":"100","max":"150","adopted":"150","unit":"g"}},
+        "inventory": {"amount_isolation":{"nutrition_amount_not_inventory_evidence":true}}
+      },
+      "forbidden": ["invented_exact_quantity", "nutrition_amount_as_inventory_quantity", "hidden_amount_range"]
+    },
+    {
+      "id": "CASE-MEAL-006",
+      "requirement_ids": ["REQ-MEAL-002", "REQ-NUTR-005"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了米饭200g、鸡胸150g。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-explicit-meal-v1","prior_context":[]},
+      "oracle": {
+        "quantity": {"explicit_grams":[{"item":"rice","value":"200"},{"item":"chicken_breast","value":"150"}]},
+        "nutrition": {"source_trace":{"required":true,"quantity_estimated":false}}
+      },
+      "forbidden": ["explicit_quantity_marked_estimated", "source_trace_missing", "item_merge"]
+    },
+    {
+      "id": "CASE-MEAL-007",
+      "requirement_ids": ["REQ-MEAL-003"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了一碗牛肉面。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-beef-noodle-template-v1","prior_context":[]},
+      "oracle": {
+        "template": {"components":["noodles","beef","broth"],"template_version":"common-beef-noodle-v1"},
+        "business_effects": {"no_double_count":true}
+      },
+      "forbidden": ["opaque_template", "whole_dish_component_double_count", "silent_personal_template"]
+    },
+    {
+      "id": "CASE-MEAL-008",
+      "requirement_ids": ["REQ-MEAL-003", "REQ-NUTR-006"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个肉夹馍套餐。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-nutrition-unknown-combo-v1","prior_context":[]},
+      "oracle": {
+        "fact_commit": {"meal_event":{"event_count":1,"status":"committed_with_issues"}},
+        "clarification": {"key_components":{"required":true,"bounded":true}},
+        "nutrition": {"unknown":{"coverage":"unknown","nutrient_values_all_null":true}}
+      },
+      "forbidden": ["generic_combo_substitution", "meal_fact_rollback", "unbounded_questionnaire"]
+    },
+    {
+      "id": "CASE-SOURCE-001",
+      "requirement_ids": ["REQ-SOURCE-001", "REQ-NUTR-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个苹果。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-source-tier-traversal-v1","prior_context":[]},
+      "oracle": {
+        "source_registry": {"tier_traversal":{"ranks":[1,2,3,4,5,6,7,8],"within_tier":["local","cache","network"]},"capability":{"exact":true,"frozen":true}}
+      },
+      "forbidden": ["second_priority_table", "lower_tier_cache_preemption", "open_web_search"]
+    },
+    {
+      "id": "CASE-SOURCE-002",
+      "requirement_ids": ["REQ-SOURCE-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "检查营养来源状态。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-source-doctor-health-v1","prior_context":[]},
+      "oracle": {
+        "source_probe": {"real_health":{"per_source":true,"deadline_ms":2000}},
+        "doctor": {"sanitized_status":{"read_only":true,"secret_fields":0}}
+      },
+      "forbidden": ["fake_probe", "secret_leak", "doctor_business_write"]
+    },
+    {
+      "id": "CASE-SOURCE-003",
+      "requirement_ids": ["REQ-SOURCE-001", "REQ-NUTR-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了一个苹果。",
+      "setup": {"environment_fixture":"env-zh-cn-20260811","goals_fixture":null,"query_view_fixture":null,"domain_scenario_fixture":"domain-source-offline-degradation-v1","prior_context":[]},
+      "oracle": {
+        "config": {"secret_isolation":{"model_fields":0,"persistent_secret_fields":0}},
+        "source_resolution": {"offline_degradation":{"fact_committed":true,"status":"unknown","deadline_ms":2000}}
+      },
+      "forbidden": ["model_supplied_secret", "unbounded_network_wait", "meal_fact_rollback"]
     },
     {
       "id": "CASE-ISSUE-001",

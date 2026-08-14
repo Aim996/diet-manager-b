@@ -4,7 +4,24 @@ import type {
   FailedOutcome,
   NonWritingOutcome,
   ProductIdentityClarification,
+  NutritionOutcomeItem,
 } from "../contracts.js";
+
+function freezeNutritionItem(item: Readonly<NutritionOutcomeItem>): NutritionOutcomeItem {
+  return Object.freeze({
+    item_id: item.item_id,
+    name: item.name,
+    adopted_amount: item.adopted_amount,
+    adopted_unit: item.adopted_unit,
+    amount_range: item.amount_range === null ? null : Object.freeze({ ...item.amount_range }),
+    quantity_evidence: item.quantity_evidence,
+    source_label: item.source_label,
+    coverage_status: item.coverage_status,
+    known_fields: Object.freeze([...item.known_fields]),
+    missing_fields: Object.freeze([...item.missing_fields]),
+    estimated_fields: Object.freeze([...item.estimated_fields]),
+  });
+}
 
 export function failedOutcome(
   action: DietManagerAction,
@@ -43,6 +60,7 @@ export function committedOutcome(
   status: "committed" | "committed_with_issues",
   recordId: string,
   recordIds?: readonly string[],
+  nutritionItems?: readonly Readonly<NutritionOutcomeItem>[],
 ): CommittedOutcome {
   return Object.freeze({
     action,
@@ -51,5 +69,6 @@ export function committedOutcome(
     operation_id: operationId,
     record_id: recordId,
     ...(recordIds === undefined ? {} : { record_ids: Object.freeze([...recordIds]) }),
+    ...(nutritionItems === undefined ? {} : { nutrition_items: Object.freeze(nutritionItems.map(freezeNutritionItem)) }),
   });
 }

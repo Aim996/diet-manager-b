@@ -22,20 +22,25 @@
       "contract_id": "diet-manager/storage-mapping-v1",
       "path": "shared/contracts/storage-mapping.md",
       "sha256": "6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47"
+    },
+    {
+      "contract_id": "diet-manager/nutrition-source-capability-v1",
+      "path": "shared/contracts/source-capability-contract.md",
+      "sha256": "270C0E75181DB46707C39ACEC08CCBE8AE72CAD2C9269F24A46A1E9114585655"
     }
   ],
   "case_catalog": {
     "path": "shared/acceptance-cases/cases.json",
     "case_set_id": "diet-manager/core-acceptance-cases-v1",
-    "version": "1.6.0",
-    "case_count": 59,
-    "sha256": "5736FAB34BD80F6F4C29A9AF461DDEC9FFCA314580393B1A67977CED111CBBBB"
+    "version": "1.7.0",
+    "case_count": 73,
+    "sha256": "0F7E7DC6E26A49638F4E64B1DC26DE6800176C055D10A9754EFD790579EC2F28"
   },
   "fixture_catalog": {
     "path": "shared/acceptance-cases/fixtures/core-v1.json",
     "fixture_catalog_id": "diet-manager/core-fixtures-v1",
-    "version": "1.4.0",
-    "sha256": "A916DB2750BE1668EB9CAC89B69837690E985FFF25AD21416FF0FBC2D2C20F4E"
+    "version": "1.5.0",
+    "sha256": "5C189AB033DD12B9DDB6A5D87FA975EBD37F904CB5CF4FC51E4A3CF0B02B7DBA"
   },
   "b_slice_input_catalog": {
     "path": "shared/acceptance-cases/b-slice-inputs.json",

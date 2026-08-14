@@ -8,13 +8,13 @@
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
-      "length": 63532,
-      "sha256": "5736FAB34BD80F6F4C29A9AF461DDEC9FFCA314580393B1A67977CED111CBBBB"
+      "length": 73335,
+      "sha256": "0F7E7DC6E26A49638F4E64B1DC26DE6800176C055D10A9754EFD790579EC2F28"
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
       "length": 54274,
-      "sha256": "634DE6CBE2F9EBBB1E0D25AA180F81A8524F608CED212C5A36FE91BCEDA3645F"
+      "sha256": "A31C9EB99EE6471E80975365FF123E3F9890A90F94F655E9FEDE191D810DBE95"
     }
   },
   "counts": {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://diet-manager.local/schemas/nutrition-progress/v1",
   "title": "Diet Manager Nutrition and Progress Model v1",
-  "x-schema-version": "1.0.0",
+  "x-schema-version": "1.1.0",
   "oneOf": [
     { "$ref": "#/$defs/NutritionProfile" },
     { "$ref": "#/$defs/NutritionSnapshot" },
@@ -74,7 +74,7 @@
       "required": ["nutrition_profile_id", "schema_version", "subject_type", "subject_id", "applicable_variant", "profile_version", "source_type", "source_name", "source_ref", "source_version", "retrieved_at", "basis_kind", "basis_amount", "basis_unit", "serving_name", "serving_size", "servings_per_package", "nutrient_values", "raw_label_values", "parsed_fields", "field_evidence", "coverage_status", "issues", "created_at", "supersedes_profile_id"],
       "properties": {
         "nutrition_profile_id": { "type": "string", "minLength": 1 },
-        "schema_version": { "const": "1.0.0" },
+        "schema_version": { "enum": ["1.0.0", "1.1.0"] },
         "subject_type": { "enum": ["food", "product"] },
         "subject_id": { "type": "string", "minLength": 1 },
         "applicable_variant": { "type": ["string", "null"] },
@@ -106,7 +106,7 @@
       "required": ["snapshot_id", "schema_version", "meal_event_id", "intake_item_id", "nutrition_profile_id", "profile_version", "source_type", "source_ref", "basis_amount", "basis_unit", "consumed_amount", "consumed_unit", "nutrient_values", "formula", "rounding_rule", "estimated_fields", "uncertainty", "known_fields", "missing_fields", "coverage_status", "created_at"],
       "properties": {
         "snapshot_id": { "type": "string", "minLength": 1 },
-        "schema_version": { "const": "1.0.0" },
+        "schema_version": { "enum": ["1.0.0", "1.1.0"] },
         "meal_event_id": { "type": "string", "minLength": 1 },
         "intake_item_id": { "type": "string", "minLength": 1 },
         "nutrition_profile_id": { "type": "string", "minLength": 1 },
@@ -115,8 +115,8 @@
         "source_ref": { "type": "string", "minLength": 1 },
         "basis_amount": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
         "basis_unit": { "enum": ["g", "ml", "serving", "item", "package", "recipe"] },
-        "consumed_amount": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
-        "consumed_unit": { "type": "string", "minLength": 1 },
+        "consumed_amount": { "anyOf": [{ "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" }, { "type": "null" }] },
+        "consumed_unit": { "type": ["string", "null"], "minLength": 1 },
         "nutrient_values": { "$ref": "#/$defs/NutrientValues" },
         "formula": { "type": "string", "minLength": 1 },
         "rounding_rule": { "const": "stable_decimal_then_display_half_up" },
@@ -126,7 +126,46 @@
         "missing_fields": { "type": "array", "uniqueItems": true, "items": { "enum": ["energy_kcal", "protein_g", "fat_g", "carbohydrate_g", "fiber_g", "energy_kj", "sodium_mg", "sugar_g", "saturated_fat_g", "water_ml"] } },
         "coverage_status": { "$ref": "#/$defs/CoverageStatus" },
         "created_at": { "type": "string", "format": "date-time" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "schema_version": { "const": "1.0.0" } }, "required": ["schema_version"] },
+          "then": {
+            "properties": {
+              "consumed_amount": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+              "consumed_unit": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "schema_version": { "const": "1.1.0" }, "consumed_amount": { "type": "null" } }, "required": ["schema_version", "consumed_amount"] },
+          "then": {
+            "properties": {
+              "consumed_unit": { "type": "null" },
+              "source_type": { "const": "unknown" },
+              "coverage_status": { "const": "unknown" },
+              "formula": { "const": "unknown composition" },
+              "known_fields": { "maxItems": 0 },
+              "estimated_fields": { "maxItems": 0 },
+              "nutrient_values": {
+                "properties": {
+                  "energy_kcal": { "type": "null" }, "protein_g": { "type": "null" },
+                  "fat_g": { "type": "null" }, "carbohydrate_g": { "type": "null" },
+                  "fiber_g": { "type": "null" }, "energy_kj": { "type": "null" },
+                  "sodium_mg": { "type": "null" }, "sugar_g": { "type": "null" },
+                  "saturated_fat_g": { "type": "null" }, "water_ml": { "type": "null" }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "consumed_amount": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+              "consumed_unit": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
     },
     "GoalVersion": {
       "type": "object",

@@ -218,7 +218,7 @@ function validate(catalog = readJson(CATALOG_PATH), fixtures = readJson(FIXTURES
     if (!entry) fail(`SEL_PANTRY_CASE_MISSING:${id}`);
     return entry;
   });
-  if (catalog.version !== '1.6.0') fail('SEL_PANTRY_CATALOG_VERSION_DRIFT');
+  if (catalog.version !== '1.7.0') fail('SEL_PANTRY_CATALOG_VERSION_DRIFT');
   if (byId.size !== catalog.cases.length) fail('SEL_PANTRY_CASE_DUPLICATE_ID');
   if (selected.length !== 17) fail('SEL_PANTRY_CASE_EXTRA_ID');
   const paths = assertionPathsFromBrief();
@@ -294,7 +294,7 @@ try {
   if (process.argv.includes('--self-test')) selfTest();
   else {
     validate();
-    console.log('SEL_PANTRY_CASES|PASS|cases=17|catalog=1.6.0|fixtures=17');
+    console.log('SEL_PANTRY_CASES|PASS|cases=17|catalog=1.7.0|fixtures=17');
   }
 } catch (error) {
   console.error(error.message);

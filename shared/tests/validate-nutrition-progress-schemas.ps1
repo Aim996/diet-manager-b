@@ -9,9 +9,10 @@ $SchemaPath = Join-Path $ProjectRoot 'shared\schemas\nutrition-progress.schema.j
 $FixturePath = Join-Path $ProjectRoot 'shared\tests\fixtures\nutrition-progress-cases.json'
 $ExpectedSchemaId = 'https://diet-manager.local/schemas/nutrition-progress/v1'
 $ExpectedFixtureSetId = 'diet-manager/nutrition-progress-cases/v1'
-$ExpectedVersion = '1.0.0'
-$ExpectedSchemaSha256 = 'E8F0C95006529D5D6F9C388E657EA1F834C567D975577C5903B2B28D79C26DE8'
-$ExpectedFixtureSha256 = '0686975A30F8F74ECD8866F5F0D795F226E1AA374B9165ECB2CE44F12F498623'
+$ExpectedVersion = '1.1.0'
+$CompatibleModelVersions = @('1.0.0', '1.1.0')
+$ExpectedSchemaSha256 = 'D31CA16C654D63AA9AC7F64EF2125921064077C460B37D1265C2484ACC31C2CC'
+$ExpectedFixtureSha256 = '0A944537D8A5E5D0C29EFFF9701559DB1371D2D8E65ED25C40212BC699BFDC27'
 $ExpectedCaseIds = @(
     'NUTR-PROFILE-COMPLETE-VALID',
     'NUTR-PROFILE-PARTIAL-VALID',
@@ -24,6 +25,7 @@ $ExpectedCaseIds = @(
     'NUTR-SNAPSHOT-COMPLETE-VALID',
     'NUTR-SNAPSHOT-PARTIAL-VALID',
     'NUTR-SNAPSHOT-UNKNOWN-VALID',
+    'NUTR-SNAPSHOT-V11-KNOWN-AMOUNT-NULL-INVALID',
     'NUTR-SNAPSHOT-KNOWN-MISSING-OVERLAP-INVALID',
     'NUTR-SNAPSHOT-KNOWN-NULL-INVALID',
     'NUTR-SNAPSHOT-MISSING-NONNULL-INVALID',
@@ -72,13 +74,13 @@ function Get-Value($Object, [string]$Name) {
 
 function Get-RawValue($Object, [string]$Name) {
     if (-not (Has-Property $Object $Name)) { return $null }
-    Write-Output -NoEnumerate $Object.PSObject.Properties[$Name].Value
+    Write-Output -NoEnumerate ($Object.PSObject.Properties[$Name].Value)
 }
 
 function Read-JsonStrict([string]$Path) {
     try {
         $utf8 = New-Object Text.UTF8Encoding($false, $true)
-        return ([IO.File]::ReadAllText($Path, $utf8) | ConvertFrom-Json)
+        return ([IO.File]::ReadAllText($Path, $utf8) | ConvertFrom-Json -DateKind String)
     } catch {
         Fail 'NUTRITION_PROGRESS_JSON_INVALID' ("$Path $($_.Exception.Message)")
     }
@@ -193,20 +195,20 @@ function Apply-FixtureMutation($Root, $Mutation, $Templates) {
     $current = $Root
     for ($index = 0; $index -lt ($segments.Count - 1); $index++) {
         $segment = $segments[$index]
-        if ($current -is [Collections.IList]) {
+        if ($current -is [Array]) {
             $current = $current[[int]$segment]
         } else {
             if (-not (Has-Property $current $segment)) {
                 Fail 'NUTRITION_PROGRESS_FIXTURE_COVERAGE_INVALID' "missing mutation parent $path"
             }
-            $current = Get-RawValue $current $segment
+            $current = $current.PSObject.Properties[$segment].Value
         }
         if ($null -eq $current) {
             Fail 'NUTRITION_PROGRESS_FIXTURE_COVERAGE_INVALID' "null mutation parent $path"
         }
     }
     $leaf = $segments[-1]
-    if ($current -is [Collections.IList]) {
+    if ($current -is [Array]) {
         if ($operation -eq 'remove') { Fail 'NUTRITION_PROGRESS_FIXTURE_COVERAGE_INVALID' 'array removal unsupported' }
         $current[[int]$leaf] = Resolve-TemplateNode (Get-Value $Mutation 'value') $Templates
         return
@@ -217,11 +219,7 @@ function Apply-FixtureMutation($Root, $Mutation, $Templates) {
         return
     }
     $nextValue = Resolve-TemplateNode (Get-Value $Mutation 'value') $Templates
-    if (Has-Property $current $leaf) {
-        $current.PSObject.Properties[$leaf].Value = $nextValue
-    } else {
-        $current | Add-Member -MemberType NoteProperty -Name $leaf -Value $nextValue
-    }
+    $current | Add-Member -MemberType NoteProperty -Name $leaf -Value $nextValue -Force
 }
 
 $NutrientFields = @('energy_kcal', 'protein_g', 'fat_g', 'carbohydrate_g', 'fiber_g', 'energy_kj', 'sodium_mg', 'sugar_g', 'saturated_fat_g', 'water_ml')
@@ -290,7 +288,7 @@ function Assert-Profile($Value) {
     $properties = @('nutrition_profile_id', 'schema_version', 'subject_type', 'subject_id', 'applicable_variant', 'profile_version', 'source_type', 'source_name', 'source_ref', 'source_version', 'retrieved_at', 'basis_kind', 'basis_amount', 'basis_unit', 'serving_name', 'serving_size', 'servings_per_package', 'nutrient_values', 'raw_label_values', 'parsed_fields', 'field_evidence', 'coverage_status', 'issues', 'created_at', 'supersedes_profile_id')
     Assert-ExactProperties $Value $properties 'profile'
     foreach ($name in @('nutrition_profile_id', 'subject_id', 'profile_version', 'source_name', 'source_ref', 'source_version')) { Assert-NonEmptyString (Get-Value $Value $name) "profile $name" }
-    if ([string](Get-Value $Value 'schema_version') -ne $ExpectedVersion) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'profile schema_version' }
+    if ([string](Get-Value $Value 'schema_version') -notin $CompatibleModelVersions) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'profile schema_version' }
     if ([string](Get-Value $Value 'subject_type') -notin @('food', 'product')) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'profile subject_type' }
     if ([string](Get-Value $Value 'source_type') -notin $SourceTypes) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'profile source_type' }
     if ([string](Get-Value $Value 'basis_kind') -notin @('per_100g', 'per_100ml', 'per_serving', 'per_item', 'per_package', 'custom_recipe')) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'profile basis_kind' }
@@ -321,13 +319,26 @@ function Assert-Profile($Value) {
 function Assert-Snapshot($Value) {
     $properties = @('snapshot_id', 'schema_version', 'meal_event_id', 'intake_item_id', 'nutrition_profile_id', 'profile_version', 'source_type', 'source_ref', 'basis_amount', 'basis_unit', 'consumed_amount', 'consumed_unit', 'nutrient_values', 'formula', 'rounding_rule', 'estimated_fields', 'uncertainty', 'known_fields', 'missing_fields', 'coverage_status', 'created_at')
     Assert-ExactProperties $Value $properties 'snapshot'
-    foreach ($name in @('snapshot_id', 'meal_event_id', 'intake_item_id', 'nutrition_profile_id', 'profile_version', 'source_ref', 'consumed_unit', 'formula')) { Assert-NonEmptyString (Get-Value $Value $name) "snapshot $name" }
-    if ([string](Get-Value $Value 'schema_version') -ne $ExpectedVersion) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot schema_version' }
+    foreach ($name in @('snapshot_id', 'meal_event_id', 'intake_item_id', 'nutrition_profile_id', 'profile_version', 'source_ref', 'formula')) { Assert-NonEmptyString (Get-Value $Value $name) "snapshot $name" }
+    $snapshotVersion = [string](Get-Value $Value 'schema_version')
+    if ($snapshotVersion -notin $CompatibleModelVersions) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot schema_version' }
     if ([string](Get-Value $Value 'source_type') -notin $SourceTypes) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot source_type' }
     if ([string](Get-Value $Value 'basis_unit') -notin @('g', 'ml', 'serving', 'item', 'package', 'recipe')) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot basis_unit' }
     Assert-Decimal (Get-Value $Value 'basis_amount') 'snapshot basis_amount' $false $false
-    Assert-Decimal (Get-Value $Value 'consumed_amount') 'snapshot consumed_amount' $false $false
-    if ((Convert-Decimal ([string](Get-Value $Value 'basis_amount'))) -le 0 -or (Convert-Decimal ([string](Get-Value $Value 'consumed_amount'))) -le 0) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot amount positive' }
+    $consumedAmount = Get-Value $Value 'consumed_amount'
+    $consumedUnit = Get-Value $Value 'consumed_unit'
+    if ($null -eq $consumedAmount) {
+        if ($snapshotVersion -ne '1.1.0' -or $null -ne $consumedUnit -or
+            [string](Get-Value $Value 'source_type') -ne 'unknown' -or
+            [string](Get-Value $Value 'coverage_status') -ne 'unknown') {
+            Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot known source amount required'
+        }
+    } else {
+        Assert-NonEmptyString $consumedUnit 'snapshot consumed_unit'
+        Assert-Decimal $consumedAmount 'snapshot consumed_amount' $false $false
+        if ((Convert-Decimal ([string]$consumedAmount)) -le 0) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot amount positive' }
+    }
+    if ((Convert-Decimal ([string](Get-Value $Value 'basis_amount'))) -le 0) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot amount positive' }
     if ([string](Get-Value $Value 'rounding_rule') -ne 'stable_decimal_then_display_half_up') { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot rounding_rule' }
     if ([string](Get-Value $Value 'uncertainty') -notin @('none', 'bounded', 'unbounded', 'unknown')) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot uncertainty' }
     Assert-Timestamp (Get-Value $Value 'created_at') 'snapshot created_at'
@@ -343,6 +354,7 @@ function Assert-Snapshot($Value) {
         if ($known.Contains($field) -and $null -eq $fieldValue) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' "snapshot known field null $field" }
         if ($missing.Contains($field) -and $null -ne $fieldValue) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' "snapshot missing field nonnull $field" }
     }
+    if ($null -eq $consumedAmount -and $known.Count -ne 0) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'snapshot unknown amount known fields' }
     Assert-NutrientCoverage $nutrients ([string](Get-Value $Value 'coverage_status')) 'snapshot'
 }
 
@@ -367,7 +379,7 @@ function Assert-Goal($Value) {
     Assert-ExactProperties $Value $properties 'goal'
     foreach ($name in @('goal_version_id', 'user_id', 'timezone')) { Assert-NonEmptyString (Get-Value $Value $name) "goal $name" }
     Assert-NonEmptyString (Get-Value $Value 'confirmed_by_source_message_id') 'goal confirmation'
-    if ([string](Get-Value $Value 'schema_version') -ne $ExpectedVersion) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'goal schema_version' }
+    if ([string](Get-Value $Value 'schema_version') -ne '1.0.0') { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'goal schema_version' }
     $from = Convert-Date ([string](Get-Value $Value 'effective_from')) 'goal effective_from'
     $toValue = Get-Value $Value 'effective_to'
     if ($null -ne $toValue) {
@@ -439,7 +451,7 @@ function Assert-ProgressResult($Value) {
     Assert-RequiredProperties $Value @('result_id', 'schema_version', 'result_status', 'result_kind', 'daily_progress_by_date') 'result'
     foreach ($property in @($Value.PSObject.Properties)) { if ([string]$property.Name -notin $allowed) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' "result unexpected property $([string]$property.Name)" } }
     Assert-NonEmptyString (Get-Value $Value 'result_id') 'result result_id'
-    if ([string](Get-Value $Value 'schema_version') -ne $ExpectedVersion) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'result schema_version' }
+    if ([string](Get-Value $Value 'schema_version') -ne '1.0.0') { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'result schema_version' }
     if ([string](Get-Value $Value 'result_status') -ne 'committed') { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'result status must be committed' }
     $kind = [string](Get-Value $Value 'result_kind')
     if ($kind -notin @('write_finalized', 'direct_query')) { Fail 'NUTRITION_PROGRESS_CASE_RESULT_INVALID' 'result kind' }

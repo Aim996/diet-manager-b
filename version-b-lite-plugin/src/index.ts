@@ -7,6 +7,8 @@ export type {
   DietManagerRequest,
   DietManagerStatus,
   NonWritingOutcome,
+  NutritionOutcomeAmountRange,
+  NutritionOutcomeItem,
 } from "./contracts.js";
 
 export {

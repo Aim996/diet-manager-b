@@ -1,6 +1,6 @@
 {
   "fixture_catalog_id": "diet-manager/core-fixtures-v1",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "environments": [
     {
       "fixture_id": "env-zh-cn-20260811",
@@ -121,6 +121,7 @@
     {
       "fixture_id": "domain-nutrition-label-milk-v1",
       "scenario_type": "exact_product_label",
+      "received_at": "2026-08-11T08:30:00+08:00",
       "product": {
         "product_id": "fixture-product-milk-whole-250",
         "normalized_name": "milk",
@@ -379,6 +380,99 @@
       "received_at": "2026-08-11T08:30:00+08:00",
       "existing_batches": [{"batch_id": "fixture-batch-milk-location-001", "product_id": "fixture-product-milk-whole-250", "location": "room_temperature_cabinet", "expires_at": "2026-08-12T08:30:00+08:00"}],
       "correction": {"new_location": "refrigerator", "idempotency_key": "fixture-location-correction-001"}
+    },
+    {
+      "fixture_id": "domain-nutrition-authoritative-basics-v1",
+      "scenario_type": "nutrition_authoritative_basics",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "foods": ["egg", "rice", "apple"],
+      "source": {"source_id":"fdc","tier":"authoritative_public_database","cache_state":"fresh"}
+    },
+    {
+      "fixture_id": "domain-nutrition-common-dish-v1",
+      "scenario_type": "nutrition_common_dish",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "template": {"template_id":"common-egg-fried-rice-v1","components":["rice","egg","oil"]}
+    },
+    {
+      "fixture_id": "domain-nutrition-unknown-custom-drink-v1",
+      "scenario_type": "nutrition_unknown_custom_drink",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "known_components": ["chia_seed", "avocado", "cucumber"],
+      "recipe_complete": false
+    },
+    {
+      "fixture_id": "domain-nutrition-profile-history-v1",
+      "scenario_type": "nutrition_profile_history",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "product_id": "fixture-product-milk-whole-250",
+      "profiles": [{"profile_id":"fixture-profile-milk-v1","version":"v1"},{"profile_id":"fixture-profile-milk-v2","version":"v2"}]
+    },
+    {
+      "fixture_id": "domain-nutrition-partial-fields-v1",
+      "scenario_type": "nutrition_partial_fields",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "nutrient_values": {"energy_kcal":"120","protein_g":"8","fat_g":null,"carbohydrate_g":null,"fiber_g":null}
+    },
+    {
+      "fixture_id": "domain-nutrition-orange-range-v1",
+      "scenario_type": "nutrition_natural_unit_range",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "range": {"min":"120","max":"150","adopted":"150","unit":"g","rule_version":"edible-orange-v1"}
+    },
+    {
+      "fixture_id": "domain-nutrition-explicit-rice-v1",
+      "scenario_type": "nutrition_explicit_amount",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "amount": {"value":"200","unit":"g","evidence":"explicit"},
+      "source": {"source_id":"fdc","label":"public_reference"}
+    },
+    {
+      "fixture_id": "domain-nutrition-bounded-rice-v1",
+      "scenario_type": "nutrition_bounded_amount",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "range": {"min":"100","max":"150","adopted":"150","unit":"g","rule_version":"portion-rice-bowl-v1"},
+      "inventory_conversion": null
+    },
+    {
+      "fixture_id": "domain-nutrition-explicit-meal-v1",
+      "scenario_type": "nutrition_explicit_multi_item",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "items": [{"name":"rice","amount":"200","unit":"g"},{"name":"chicken_breast","amount":"150","unit":"g"}]
+    },
+    {
+      "fixture_id": "domain-nutrition-beef-noodle-template-v1",
+      "scenario_type": "nutrition_common_dish",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "template": {"template_id":"common-beef-noodle-v1","components":["noodles","beef","broth"]}
+    },
+    {
+      "fixture_id": "domain-nutrition-unknown-combo-v1",
+      "scenario_type": "nutrition_unknown_combo",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "known_item": "roujiamo_combo",
+      "components_known": false
+    },
+    {
+      "fixture_id": "domain-source-tier-traversal-v1",
+      "scenario_type": "source_tier_traversal",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "ranks": [1,2,3,4,5,6,7,8],
+      "within_tier": ["local","cache","network"]
+    },
+    {
+      "fixture_id": "domain-source-doctor-health-v1",
+      "scenario_type": "source_doctor_health",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "sources": [{"source_id":"local","status":"ok"},{"source_id":"fdc","status":"skipped_unconfigured"},{"source_id":"trusted-exact-product","status":"source_disabled"}]
+    },
+    {
+      "fixture_id": "domain-source-offline-degradation-v1",
+      "scenario_type": "source_offline_degradation",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "deadline_ms": 2000,
+      "network_status": "timeout",
+      "expected_coverage": "unknown"
     },
     {
       "fixture_id": "core-purchase-no-expiration-v1",

@@ -39,6 +39,11 @@ const expectedContracts = [
     path: "shared/contracts/storage-mapping.md",
     sha256: "6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47",
   },
+  {
+    contract_id: "diet-manager/nutrition-source-capability-v1",
+    path: "shared/contracts/source-capability-contract.md",
+    sha256: "270C0E75181DB46707C39ACEC08CCBE8AE72CAD2C9269F24A46A1E9114585655",
+  },
 ] as const;
 
 test("freezes the shared harness manifest", () => {
@@ -65,15 +70,15 @@ test("freezes the shared harness manifest", () => {
   assert.deepEqual(manifest.case_catalog, {
     path: "shared/acceptance-cases/cases.json",
     case_set_id: "diet-manager/core-acceptance-cases-v1",
-    version: "1.5.0",
-    case_count: 44,
-    sha256: "1D8BF7ED23A863CDD0AF1DC0525388FB5D1A34E224195E4D17E3AE92A0882E64",
+    version: "1.7.0",
+    case_count: 73,
+    sha256: "0F7E7DC6E26A49638F4E64B1DC26DE6800176C055D10A9754EFD790579EC2F28",
   });
   assert.deepEqual(manifest.fixture_catalog, {
     path: "shared/acceptance-cases/fixtures/core-v1.json",
     fixture_catalog_id: "diet-manager/core-fixtures-v1",
-    version: "1.3.0",
-    sha256: "346FAED1EF37E9ABAF4FDDDE6F841C15F9802C0CEB04BB384F5A95F1714CA881",
+    version: "1.5.0",
+    sha256: "5C189AB033DD12B9DDB6A5D87FA975EBD37F904CB5CF4FC51E4A3CF0B02B7DBA",
   });
   assert.deepEqual(manifest.b_slice_input_catalog, {
     path: "shared/acceptance-cases/b-slice-inputs.json",
@@ -324,12 +329,12 @@ test("default runner is deterministic, backend-pending, and Oracle-free", async 
   assert.deepEqual(first, second);
   assert.equal(first.protocol_status, "passed");
   assert.equal(first.product_status, "backend_pending");
-  assert.equal(first.catalog.case_count, 44);
+  assert.equal(first.catalog.case_count, 73);
   assert.deepEqual(first.summary, {
-    case_count: 44,
-    a_degraded: 44,
+    case_count: 73,
+    a_degraded: 73,
     a_business_writes: 0,
-    b_backend_pending: 44,
+    b_backend_pending: 73,
     b_executed: 0,
     b_compared: 0,
     b_matched: 0,
@@ -355,7 +360,7 @@ test("runner resolves setup but never delivers Oracle authority to B", async () 
       observation: { deliberately: "wrong" },
     };
   });
-  assert.equal(received.length, 44);
+  assert.equal(received.length, 73);
   assert.deepEqual(Object.keys(received[0]).sort(), [
     "case_id",
     "contract_hashes",
@@ -373,8 +378,8 @@ test("runner resolves setup but never delivers Oracle authority to B", async () 
     "query_view",
   ]);
   assert.equal(report.product_status, "acceptance_failed");
-  assert.equal(report.summary.b_executed, 44);
-  assert.equal(report.summary.b_mismatched, 44);
+  assert.equal(report.summary.b_executed, 73);
+  assert.equal(report.summary.b_mismatched, 73);
 });
 
 test("runner can compare exact observations without exposing them in report", async () => {
@@ -389,8 +394,8 @@ test("runner can compare exact observations without exposing them in report", as
     observation: expected.get(input.case_id) as never,
   }));
   assert.equal(report.product_status, "acceptance_passed");
-  assert.equal(report.summary.b_compared, 44);
-  assert.equal(report.summary.b_matched, 44);
+  assert.equal(report.summary.b_compared, 73);
+  assert.equal(report.summary.b_matched, 73);
   assert.equal(report.summary.b_mismatched, 0);
   const text = formatHarnessReport(report);
   assert.equal(text.includes("returned_exact_original_result"), false);

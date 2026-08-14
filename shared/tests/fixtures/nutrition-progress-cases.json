@@ -1,6 +1,6 @@
 {
   "fixture_set_id": "diet-manager/nutrition-progress-cases/v1",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "templates": {
     "profile_complete": {
       "nutrition_profile_id": "profile-milk-v1",
@@ -137,7 +137,7 @@
     },
     "snapshot_unknown": {
       "snapshot_id": "snapshot-unknown-001",
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "meal_event_id": "evt-meal-003",
       "intake_item_id": "item-set-meal-001",
       "nutrition_profile_id": "profile-unknown-001",
@@ -146,8 +146,8 @@
       "source_ref": "user-text:unknown-set-meal",
       "basis_amount": "1",
       "basis_unit": "serving",
-      "consumed_amount": "1",
-      "consumed_unit": "serving",
+      "consumed_amount": null,
+      "consumed_unit": null,
       "nutrient_values": {"energy_kcal":null,"protein_g":null,"fat_g":null,"carbohydrate_g":null,"fiber_g":null,"energy_kj":null,"sodium_mg":null,"sugar_g":null,"saturated_fat_g":null,"water_ml":null},
       "formula": "unknown composition",
       "rounding_rule": "stable_decimal_then_display_half_up",
@@ -292,6 +292,7 @@
     {"case_id":"NUTR-SNAPSHOT-COMPLETE-VALID","target":"NutritionSnapshot","template_id":"snapshot_complete_v1","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"NUTR-SNAPSHOT-PARTIAL-VALID","target":"NutritionSnapshot","template_id":"snapshot_partial","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"NUTR-SNAPSHOT-UNKNOWN-VALID","target":"NutritionSnapshot","template_id":"snapshot_unknown","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"NUTR-SNAPSHOT-V11-KNOWN-AMOUNT-NULL-INVALID","target":"NutritionSnapshot","template_id":"snapshot_partial","mutations":[{"op":"set","path":"/schema_version","value":"1.1.0"},{"op":"set","path":"/consumed_amount","value":null},{"op":"set","path":"/consumed_unit","value":null}],"expected_valid":false,"expected_error_contains":"known source amount required"},
     {"case_id":"NUTR-SNAPSHOT-KNOWN-MISSING-OVERLAP-INVALID","target":"NutritionSnapshot","template_id":"snapshot_partial","mutations":[{"op":"set","path":"/missing_fields","value":["energy_kcal","fiber_g","energy_kj","sodium_mg","sugar_g","saturated_fat_g","water_ml"]}],"expected_valid":false,"expected_error_contains":"known missing overlap"},
     {"case_id":"NUTR-SNAPSHOT-KNOWN-NULL-INVALID","target":"NutritionSnapshot","template_id":"snapshot_partial","mutations":[{"op":"set","path":"/nutrient_values/energy_kcal","value":null}],"expected_valid":false,"expected_error_contains":"known field null energy_kcal"},
     {"case_id":"NUTR-SNAPSHOT-MISSING-NONNULL-INVALID","target":"NutritionSnapshot","template_id":"snapshot_partial","mutations":[{"op":"set","path":"/nutrient_values/fiber_g","value":"1"}],"expected_valid":false,"expected_error_contains":"missing field nonnull fiber_g"},

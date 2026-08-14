@@ -8,9 +8,9 @@ $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $EventSchemaPath = Join-Path $ProjectRoot 'shared\schemas\event-and-amount.schema.json'
 $InventorySchemaPath = Join-Path $ProjectRoot 'shared\schemas\product-inventory.schema.json'
 $FixturePath = Join-Path $ProjectRoot 'shared\tests\fixtures\core-model-cases.json'
-$ExpectedEventSchemaSha256 = 'FD5F2B44C5AC1B8295F54774AA3425DD2DB4BA16915111A3E1B241104CEE47CA'
+$ExpectedEventSchemaSha256 = '4E2BD0A50D3A145D616966A9F9AAAD7B49D980F564921771D645B66A8D55503A'
 $ExpectedInventorySchemaSha256 = '681551FA18759AE3F993B0951C3A650FA8ABE16B28D7A9E7223E24F5E9B6613F'
-$ExpectedFixtureSha256 = '3FF78E234D063E86294143BD2D91765E96E6569D53704EECEE4A83F29945AA39'
+$ExpectedFixtureSha256 = 'B6E7F27946DB06A0B378360842467EF0BEE16F9602B2C21E56A85669CC4AFA93'
 
 $ExpectedCaseIds = @(
     'MODEL-TIME-EXACT-VALID',
@@ -53,6 +53,7 @@ $ExpectedCaseIds = @(
     'MODEL-TX-PARTIAL-NO-AUTH-INVALID',
     'MODEL-TX-PARTIAL-WRONG-MESSAGE-INVALID',
     'MODEL-TX-GENERIC-STATUS-INVALID',
+    'MODEL-NUTRITION-SUPPLEMENT-EVENT-VALID',
     'MODEL-TIME-SEPARATION-VALID'
 )
 
@@ -70,7 +71,7 @@ function Get-Value($Object, [string]$Name) {
 }
 
 function Copy-FixtureValue($Value) {
-    return ($Value | ConvertTo-Json -Depth 64 -Compress | ConvertFrom-Json)
+    return ($Value | ConvertTo-Json -Depth 64 -Compress | ConvertFrom-Json -DateKind String)
 }
 
 function Apply-FixtureMutation($Root, $Mutation) {
@@ -82,7 +83,7 @@ function Apply-FixtureMutation($Root, $Mutation) {
     $current = $Root
     for ($index = 0; $index -lt ($segments.Count - 1); $index++) {
         $segment = $segments[$index]
-        if ($current -is [System.Collections.IList]) {
+        if ($current -is [Array]) {
             $current = $current[[int]$segment]
         } else {
             if (-not (Has-Property $current $segment)) { Fail 'MODEL_FIXTURE_COVERAGE_INVALID' "missing mutation parent $path" }
@@ -90,7 +91,7 @@ function Apply-FixtureMutation($Root, $Mutation) {
         }
     }
     $leaf = $segments[-1]
-    if ($current -is [System.Collections.IList]) {
+    if ($current -is [Array]) {
         $leafIndex = [int]$leaf
         if ($operation -eq 'remove') { Fail 'MODEL_FIXTURE_COVERAGE_INVALID' 'array removal is not supported' }
         $current[$leafIndex] = Copy-FixtureValue (Get-Value $Mutation 'value')
@@ -111,11 +112,7 @@ function Apply-FixtureMutation($Root, $Mutation) {
         return
     }
     $mutationValue = Copy-FixtureValue $rawMutationValue
-    if (Has-Property $current $leaf) {
-        $current.PSObject.Properties[$leaf].Value = $mutationValue
-    } else {
-        $current | Add-Member -MemberType NoteProperty -Name $leaf -Value $mutationValue
-    }
+    $current | Add-Member -MemberType NoteProperty -Name $leaf -Value $mutationValue -Force
 }
 
 function Assert-RequiredProperties($Object, [string[]]$Names, [string]$Label) {
@@ -204,6 +201,8 @@ function Assert-EventEnvelope($Value, [string]$Label) {
     $required = @('event_id','schema_version','event_type','fact_kind','source_text','source_message_id','conversation_id','received_at','committed_at','occurred_at_text','occurred_time','result_status','lifecycle_status','provenance_refs')
     Assert-RequiredProperties $Value $required $Label
     Assert-NoGenericStatus $Value $Label
+    if ([string](Get-Value $Value 'schema_version') -notin @('1.0.0','1.1.0')) { Fail 'MODEL_CASE_RESULT_INVALID' "$Label schema version" }
+    if ([string](Get-Value $Value 'event_type') -notin @('diet_meal','diet_water','nutrition_supplemented','inventory_stocked','inventory_gift_received','inventory_opened','inventory_consumed','inventory_returned_to_stock','inventory_returned_to_vendor','inventory_gifted_out','inventory_adjusted','inventory_discarded','inventory_depleted','inventory_voided')) { Fail 'MODEL_CASE_RESULT_INVALID' "$Label event type" }
     if ([string](Get-Value $Value 'fact_kind') -ne 'completed') { Fail 'MODEL_CASE_RESULT_INVALID' "$Label fact kind" }
     if ([string](Get-Value $Value 'result_status') -ne 'committed') { Fail 'MODEL_CASE_RESULT_INVALID' "$Label result status" }
     if ([string](Get-Value $Value 'lifecycle_status') -notin @('active','superseded','voided')) { Fail 'MODEL_CASE_RESULT_INVALID' "$Label lifecycle" }
@@ -337,6 +336,7 @@ function Invoke-Case($Case) {
         switch ($target) {
             'OccurredTime' { Assert-OccurredTime $input 'occurred_time' }
             'Amount' { Assert-Amount $input 'amount' }
+            'EventEnvelope' { Assert-EventEnvelope $input 'event'; Assert-ExactProperties $input @('event_id','schema_version','event_type','fact_kind','source_text','source_message_id','conversation_id','received_at','committed_at','occurred_at_text','occurred_time','result_status','lifecycle_status','provenance_refs') 'event' }
             'MealEvent' { Assert-MealEvent $input }
             'ProductIdentity' { Assert-ProductIdentity $input }
             'InventoryBatch' { Assert-InventoryBatch $input }
@@ -354,7 +354,7 @@ function Assert-SchemaIdentity($EventSchema, $InventorySchema) {
     if ([string](Get-Value $EventSchema '$schema') -ne 'https://json-schema.org/draft/2020-12/schema' -or [string](Get-Value $InventorySchema '$schema') -ne 'https://json-schema.org/draft/2020-12/schema') { Fail 'MODEL_SCHEMA_IDENTITY_INVALID' 'draft' }
     if ([string](Get-Value $EventSchema '$id') -ne 'https://diet-manager.local/schemas/event-and-amount/v1') { Fail 'MODEL_SCHEMA_IDENTITY_INVALID' 'event id' }
     if ([string](Get-Value $InventorySchema '$id') -ne 'https://diet-manager.local/schemas/product-inventory/v1') { Fail 'MODEL_SCHEMA_IDENTITY_INVALID' 'inventory id' }
-    if ([string](Get-Value $EventSchema 'x-schema-version') -ne '1.0.0' -or [string](Get-Value $InventorySchema 'x-schema-version') -ne '1.0.0') { Fail 'MODEL_SCHEMA_IDENTITY_INVALID' 'version' }
+    if ([string](Get-Value $EventSchema 'x-schema-version') -ne '1.1.0' -or [string](Get-Value $InventorySchema 'x-schema-version') -ne '1.0.0') { Fail 'MODEL_SCHEMA_IDENTITY_INVALID' 'version' }
 }
 
 function Assert-SchemaShape($EventSchema, $InventorySchema) {
@@ -376,6 +376,7 @@ function Assert-SchemaShape($EventSchema, $InventorySchema) {
     $eventEnvelope = Get-Value $eventDefs 'EventEnvelope'
     if (Has-Property (Get-Value $eventEnvelope 'properties') 'status') { Fail 'MODEL_SCHEMA_SHAPE_INVALID' 'event generic status property' }
     if ([string](Get-Value (Get-Value (Get-Value $eventEnvelope 'properties') 'result_status') 'const') -ne 'committed') { Fail 'MODEL_SCHEMA_SHAPE_INVALID' 'event result_status must be committed' }
+    if ('nutrition_supplemented' -notin @((Get-Value (Get-Value (Get-Value $eventEnvelope 'properties') 'event_type') 'enum'))) { Fail 'MODEL_SCHEMA_SHAPE_INVALID' 'nutrition supplement event type' }
     foreach ($composedName in @('MealEvent')) {
         $composed = Get-Value $eventDefs $composedName
         if ((Get-Value $composed 'unevaluatedProperties') -ne $false) { Fail 'MODEL_SCHEMA_SHAPE_INVALID' "$composedName unevaluatedProperties" }
@@ -394,9 +395,9 @@ foreach ($requiredFile in @($EventSchemaPath,$InventorySchemaPath)) {
 if (-not [IO.File]::Exists($FixturePath)) { Fail 'MODEL_FIXTURE_FILE_MISSING' $FixturePath }
 
 try {
-    $eventSchema = [IO.File]::ReadAllText($EventSchemaPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
-    $inventorySchema = [IO.File]::ReadAllText($InventorySchemaPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
-    $fixture = [IO.File]::ReadAllText($FixturePath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+    $eventSchema = [IO.File]::ReadAllText($EventSchemaPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json -DateKind String
+    $inventorySchema = [IO.File]::ReadAllText($InventorySchemaPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json -DateKind String
+    $fixture = [IO.File]::ReadAllText($FixturePath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json -DateKind String
 } catch {
     Fail 'MODEL_JSON_INVALID' $_.Exception.Message
 }
@@ -411,7 +412,7 @@ if ($ExpectedEventSchemaSha256 -eq '__PENDING__' -or $eventHash -ne $ExpectedEve
 if ($ExpectedInventorySchemaSha256 -eq '__PENDING__' -or $inventoryHash -ne $ExpectedInventorySchemaSha256) { Fail 'MODEL_SCHEMA_HASH_INVALID' 'inventory schema' }
 if ($ExpectedFixtureSha256 -eq '__PENDING__' -or $fixtureHash -ne $ExpectedFixtureSha256) { Fail 'MODEL_FIXTURE_COVERAGE_INVALID' 'fixture hash' }
 
-if ([string](Get-Value $fixture 'fixture_set_id') -ne 'diet-manager/core-model-cases/v1' -or [string](Get-Value $fixture 'schema_version') -ne '1.0.0') { Fail 'MODEL_FIXTURE_COVERAGE_INVALID' 'fixture identity' }
+if ([string](Get-Value $fixture 'fixture_set_id') -ne 'diet-manager/core-model-cases/v1' -or [string](Get-Value $fixture 'schema_version') -ne '1.1.0') { Fail 'MODEL_FIXTURE_COVERAGE_INVALID' 'fixture identity' }
 $templates = Get-Value $fixture 'templates'
 $cases = @((Get-Value $fixture 'cases'))
 $caseIds = @($cases | ForEach-Object { [string](Get-Value $_ 'case_id') })
@@ -450,4 +451,4 @@ $coverageMutation = @($caseIds | Select-Object -Skip 1)
 if ([string]::Join('|',$coverageMutation) -ne [string]::Join('|',$ExpectedCaseIds)) { $mutationFailures++ }
 if ($mutationFailures -ne 4) { Fail 'MODEL_MUTATION_NOT_REJECTED' "expected=4 actual=$mutationFailures" }
 
-Write-Output "CORE_MODEL_SCHEMAS|PASS|version=1.0.0|cases=$passed|event_defs=6|inventory_defs=6|mutations=$mutationFailures"
+Write-Output "CORE_MODEL_SCHEMAS|PASS|version=1.1.0|cases=$passed|event_defs=6|inventory_defs=6|mutations=$mutationFailures"

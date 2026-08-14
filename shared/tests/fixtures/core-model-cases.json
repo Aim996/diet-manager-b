@@ -1,6 +1,6 @@
 {
   "fixture_set_id": "diet-manager/core-model-cases/v1",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "templates": {
     "occurred_exact": {
       "raw_text": "昨晚23点",
@@ -242,6 +242,32 @@
       "related_transaction_id": null,
       "idempotency_key": "idem-stock-001",
       "partial_deduction": false
+    },
+    "event_nutrition_supplemented": {
+      "event_id": "evt-nutrition-supplement-001",
+      "schema_version": "1.1.0",
+      "event_type": "nutrition_supplemented",
+      "fact_kind": "completed",
+      "source_text": "重新补全这条记录的营养。",
+      "source_message_id": "msg-nutrition-supplement-001",
+      "conversation_id": "conv-001",
+      "received_at": "2026-08-11T14:00:00+08:00",
+      "committed_at": "2026-08-11T14:00:01+08:00",
+      "occurred_at_text": "午饭",
+      "occurred_time": {
+        "raw_text": "午饭",
+        "resolved_start": "2026-08-11T11:00:00+08:00",
+        "resolved_end": "2026-08-11T14:00:00+08:00",
+        "resolved_occurred_at": null,
+        "precision": "meal_period",
+        "timezone": "Asia/Shanghai",
+        "resolution_basis": "meal_period_rule",
+        "resolution_anchor": "2026-08-11T14:00:00+08:00",
+        "resolver_version": "time-v1"
+      },
+      "result_status": "committed",
+      "lifecycle_status": "active",
+      "provenance_refs": ["evt-meal-001", "msg-nutrition-supplement-001"]
     }
   },
   "cases": [
@@ -285,6 +311,7 @@
     {"case_id":"MODEL-TX-PARTIAL-NO-AUTH-INVALID","target":"InventoryTransaction","template_id":"tx_stocked","mutations":[{"op":"set","path":"/event_type","value":"inventory_consumed"},{"op":"set","path":"/reason_code","value":"consumed"},{"op":"set","path":"/direction","value":"out"},{"op":"set","path":"/quantity_delta","value":"-2"},{"op":"set","path":"/quantity_before","value":"10"},{"op":"set","path":"/quantity_after","value":"8"},{"op":"set","path":"/authorization_kind","value":"rule_version"},{"op":"set","path":"/authorization_source_message_id","value":null},{"op":"set","path":"/partial_deduction","value":true}],"expected_valid":false,"expected_error_contains":"partial authorization"},
     {"case_id":"MODEL-TX-PARTIAL-WRONG-MESSAGE-INVALID","target":"InventoryTransaction","template_id":"tx_stocked","mutations":[{"op":"set","path":"/event_type","value":"inventory_consumed"},{"op":"set","path":"/reason_code","value":"consumed"},{"op":"set","path":"/direction","value":"out"},{"op":"set","path":"/quantity_delta","value":"-2"},{"op":"set","path":"/quantity_before","value":"10"},{"op":"set","path":"/quantity_after","value":"8"},{"op":"set","path":"/authorization_source_message_id","value":"msg-other"},{"op":"set","path":"/related_event_id","value":"evt-meal-001"},{"op":"set","path":"/partial_deduction","value":true}],"expected_valid":false,"expected_error_contains":"partial authorization"},
     {"case_id":"MODEL-TX-GENERIC-STATUS-INVALID","target":"InventoryTransaction","template_id":"tx_stocked","mutations":[{"op":"set","path":"/status","value":"active"}],"expected_valid":false,"expected_error_contains":"generic status"},
+    {"case_id":"MODEL-NUTRITION-SUPPLEMENT-EVENT-VALID","target":"EventEnvelope","template_id":"event_nutrition_supplemented","mutations":[],"expected_valid":true,"expected_error_contains":null},
     {"case_id":"MODEL-TIME-SEPARATION-VALID","target":"InventoryBatch","template_id":"batch_valid","mutations":[],"expected_valid":true,"expected_error_contains":null}
   ]
 }

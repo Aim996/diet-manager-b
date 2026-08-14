@@ -89,6 +89,29 @@ export interface ProductIdentityClarification {
   readonly free_text_allowed: true;
 }
 
+export interface NutritionOutcomeAmountRange {
+  readonly min: string;
+  readonly max: string;
+  readonly adopted: string;
+  readonly unit: string;
+  readonly rule_version: string;
+}
+
+export interface NutritionOutcomeItem {
+  readonly item_id: string;
+  readonly name: string;
+  readonly adopted_amount: string | null;
+  readonly adopted_unit: string | null;
+  readonly amount_range: Readonly<NutritionOutcomeAmountRange> | null;
+  readonly quantity_evidence: "explicit" | "field_inference" | "unknown";
+  readonly source_label: "explicit" | "confirmed_history" | "personal_template" |
+    "public_reference" | "field_inference" | "unknown";
+  readonly coverage_status: "complete" | "partial" | "unknown";
+  readonly known_fields: readonly string[];
+  readonly missing_fields: readonly string[];
+  readonly estimated_fields: readonly string[];
+}
+
 export interface CommittedOutcome {
   action: DietManagerAction;
   status: "committed" | "committed_with_issues";
@@ -96,6 +119,7 @@ export interface CommittedOutcome {
   operation_id: string;
   record_id: string;
   record_ids?: readonly string[];
+  nutrition_items?: readonly NutritionOutcomeItem[];
 }
 
 export type DietManagerOutcome =
@@ -137,6 +161,67 @@ function assertClarification(value: unknown): asserts value is ProductIdentityCl
       return invalidOutcome("clarification_option");
     }
   }
+}
+
+const CANONICAL_DECIMAL = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u;
+function isCanonicalFiniteDecimal(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 32 && CANONICAL_DECIMAL.test(value) &&
+    Number.isFinite(Number(value));
+}
+const NUTRITION_FIELD_NAMES = new Set([
+  "energy_kcal", "protein_g", "fat_g", "carbohydrate_g", "fiber_g",
+  "energy_kj", "sodium_mg", "sugar_g", "saturated_fat_g", "water_ml",
+  "adopted_amount",
+]);
+
+function assertExactStringSet(value: unknown, label: string): asserts value is readonly string[] {
+  if (!Array.isArray(value) || value.length > 16 || new Set(value).size !== value.length ||
+      value.some((item) => typeof item !== "string" || !NUTRITION_FIELD_NAMES.has(item))) {
+    return invalidOutcome(label);
+  }
+}
+
+function assertNutritionItem(value: unknown): asserts value is NutritionOutcomeItem {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("nutrition_item");
+  const item = value as Record<string, unknown>;
+  const keys = [
+    "adopted_amount", "adopted_unit", "amount_range", "coverage_status", "estimated_fields",
+    "item_id", "known_fields", "missing_fields", "name", "quantity_evidence", "source_label",
+  ];
+  if (Object.keys(item).sort().join("\0") !== keys.join("\0") ||
+      typeof item.item_id !== "string" || item.item_id.length === 0 || item.item_id.length > 128 ||
+      typeof item.name !== "string" || item.name.length === 0 || item.name.length > 256 ||
+      !["explicit", "field_inference", "unknown"].includes(item.quantity_evidence as string) ||
+      !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "unknown"].includes(item.source_label as string) ||
+      !["complete", "partial", "unknown"].includes(item.coverage_status as string)) {
+    return invalidOutcome("nutrition_item");
+  }
+  if (item.adopted_amount === null || item.adopted_unit === null) {
+    if (item.adopted_amount !== null || item.adopted_unit !== null || item.quantity_evidence !== "unknown" || item.amount_range !== null) {
+      return invalidOutcome("nutrition_amount");
+    }
+  } else if (!isCanonicalFiniteDecimal(item.adopted_amount) ||
+      typeof item.adopted_unit !== "string" || item.adopted_unit.length === 0 || item.adopted_unit.length > 32) {
+    return invalidOutcome("nutrition_amount");
+  }
+  if (item.amount_range !== null) {
+    if (typeof item.amount_range !== "object" || Array.isArray(item.amount_range)) return invalidOutcome("nutrition_amount_range");
+    const range = item.amount_range as Record<string, unknown>;
+    if (Object.keys(range).sort().join("\0") !== "adopted\0max\0min\0rule_version\0unit" ||
+        !isCanonicalFiniteDecimal(range.min) ||
+        !isCanonicalFiniteDecimal(range.max) ||
+        !isCanonicalFiniteDecimal(range.adopted) ||
+        typeof range.unit !== "string" || range.unit.length === 0 || range.unit !== item.adopted_unit ||
+        typeof range.rule_version !== "string" || range.rule_version.length === 0 ||
+        Number(range.min) > Number(range.adopted) || Number(range.adopted) > Number(range.max) ||
+        range.adopted !== item.adopted_amount || item.quantity_evidence !== "field_inference") {
+      return invalidOutcome("nutrition_amount_range");
+    }
+  }
+  assertExactStringSet(item.known_fields, "nutrition_known_fields");
+  assertExactStringSet(item.missing_fields, "nutrition_missing_fields");
+  assertExactStringSet(item.estimated_fields, "nutrition_estimated_fields");
+  if (item.known_fields.some((field) => item.missing_fields.includes(field))) return invalidOutcome("nutrition_field_overlap");
 }
 
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
@@ -199,7 +284,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification"]);
   } else {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items"]);
   }
   if (candidate.clarification !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
@@ -211,6 +296,14 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
         new Set(candidate.record_ids).size !== candidate.record_ids.length ||
         candidate.record_ids.some((id) => typeof id !== "string" || id.length === 0)) {
       return invalidOutcome("record_ids");
+    }
+  }
+  if (candidate.nutrition_items !== undefined) {
+    if (!hasCommittedStatus || !Array.isArray(candidate.nutrition_items) || candidate.nutrition_items.length < 1 ||
+        candidate.nutrition_items.length > 64) return invalidOutcome("nutrition_items");
+    for (const item of candidate.nutrition_items) assertNutritionItem(item);
+    if (new Set(candidate.nutrition_items.map((item) => (item as NutritionOutcomeItem).item_id)).size !== candidate.nutrition_items.length) {
+      return invalidOutcome("nutrition_items_duplicate");
     }
   }
 
