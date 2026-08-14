@@ -135,6 +135,7 @@ describe("diet manager B core plugin boundary", () => {
     expect(skill).toContain("实际请求写入时必须同时提供 `action`、逐字 `source_text`");
     expect(skill).toContain("牛奶、汤、豆浆、咖啡和茶按饮食处理，不按白水处理");
     expect(skill).toContain("健康建议请求不进入饮食记录");
+    expect(skill).toContain("不要建议用户原样重发同一句");
     expect(skill).toContain("保留整句原话并单次使用 `record_meal`");
     expect(skill).toContain("本阶段后端可能返回 `needs_clarification`");
     expect(skill).toContain("不要擅自改写原话拆成两次调用");
@@ -158,6 +159,7 @@ describe("diet manager B core plugin boundary", () => {
     expect(tool?.description).toContain("only create a reminder when the user explicitly asks");
     expect(tool?.description).toContain("Never say recorded, noted, saved, or updated when committed=false");
     expect(tool?.description).toContain("Do not add encouragement, onboarding, capability offers, or reminder suggestions");
+    expect(tool?.description).toContain("Never advise the user to repeat the same unchanged request");
     for (const field of [
       "source_text",
       "received_at",

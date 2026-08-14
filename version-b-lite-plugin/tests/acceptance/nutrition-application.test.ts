@@ -17,7 +17,11 @@ import {
 import { createBuiltinNutritionAdapters } from "../../src/nutrition/builtin.js";
 import { persistNutritionRecords, readNutritionRecordsForMeal } from "../../src/nutrition/nutrition-repository.js";
 import { cloneNutritionRuntimeConfig } from "../../src/nutrition/config.js";
-import type { NutritionSourceAdapter, ResolvedNutritionEvidence } from "../../src/nutrition/types.js";
+import {
+  unknownNutritionEvidence,
+  type NutritionSourceAdapter,
+  type ResolvedNutritionEvidence,
+} from "../../src/nutrition/types.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 import { MIGRATION_V1_TABLE_STATEMENTS } from "../../src/storage/migration-v1.js";
 
@@ -345,4 +349,14 @@ it("resolves the offline core food table and adopts compatible gram amounts", as
     adopted_unit: "serving",
     amount_range: { min: "1", max: "1", adopted: "1", rule_version: "common-dish-serving-v1" },
   });
+});
+
+it("keeps terminal unknown nutrition amount-free for an explicit bowl", () => {
+  const unknown = unknownNutritionEvidence();
+  expect(adoptNutritionAmount({
+    normalized_name: "rice",
+    quantity: 1,
+    unit: "bowl",
+    estimated: false,
+  }, unknown)).toBe(unknown);
 });

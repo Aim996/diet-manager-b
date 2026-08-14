@@ -8,7 +8,7 @@ import {
 } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
-import { resolvePantryCommand } from "./purchase.js";
+import { resolvePantryClarification, resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
@@ -313,6 +313,8 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   if (nutritionSupplement !== null) {
     return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
   }
+  const pantryClarification = resolvePantryClarification(input);
+  if (pantryClarification !== null) return detachedFrozen(pantryClarification);
   const pantry = resolvePantryCommand(input);
   if (pantry !== null) {
     return detachedFrozen({ disposition: "candidate", command: pantry });

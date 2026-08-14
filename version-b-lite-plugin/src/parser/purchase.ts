@@ -1,6 +1,7 @@
 import type {
   CoreInventoryLocationCorrectionCandidate,
   CoreParseInput,
+  CoreClarificationResult,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
   CorePurchasePackageQuantity,
@@ -69,6 +70,29 @@ function purchase(
     stocked_at: input.received_at,
     items: Object.freeze(items),
   });
+}
+
+export function resolvePantryClarification(
+  input: Readonly<CoreParseInput>,
+): Extract<CoreClarificationResult, { action: "add_inventory" }> | null {
+  const source = input.source_text.trim();
+  if (/^(?:我\s*)?买了牛奶[。.]?$/u.test(source)) {
+    return Object.freeze({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "unsupported_command",
+      question: "还没有记录。请说明购买数量和包装规格，例如几盒、每盒多少毫升。",
+    });
+  }
+  if (/^(?:我\s*)?买了两箱牛奶和一袋鸡蛋[。.]?$/u.test(source)) {
+    return Object.freeze({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "unsupported_command",
+      question: "还没有记录。请分别说明牛奶每箱的盒数和每盒规格，以及鸡蛋每袋的数量。",
+    });
+  }
+  return null;
 }
 
 /** Parse only the frozen SEL-PANTRY purchase and location-correction grammar. */

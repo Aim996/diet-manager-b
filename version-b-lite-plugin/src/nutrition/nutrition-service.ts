@@ -150,6 +150,7 @@ export function adoptNutritionAmount(
   item: Readonly<NutritionAmountCandidate>,
   evidence: Readonly<ResolvedNutritionEvidence>,
 ): Readonly<ResolvedNutritionEvidence> {
+  if (evidence.source_type === "unknown") return evidence;
   if (evidence.adopted_amount !== null || item.quantity === null || item.unit === null) return evidence;
   if (!Number.isFinite(item.quantity) || item.quantity <= 0) return invalid("item_quantity");
   const naturalUnit = ["item", "piece", "个", "枚"].includes(item.unit);

@@ -1553,6 +1553,24 @@ describe("core parser quality boundaries", () => {
     });
   });
 
+  it("asks for purchase quantity instead of returning an action conflict", () => {
+    expect(variant("我买了牛奶。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "unsupported_command",
+      question: expect.stringMatching(/数量|规格/u),
+    });
+  });
+
+  it("asks for per-item purchase specifications for a multi-product sentence", () => {
+    expect(variant("买了两箱牛奶和一袋鸡蛋。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "unsupported_command",
+      question: expect.stringMatching(/分别|规格/u),
+    });
+  });
+
   it("fails closed instead of truncating a mixed plain-water and milk input", () => {
     expect(variant("我喝了500ml白水和250ml牛奶。")).toMatchObject({
       disposition: "needs_clarification",

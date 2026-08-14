@@ -259,3 +259,14 @@
 2. 无数量单品采购改为稳定 `needs_clarification`；多商品采购若尚不能原子提交，也应返回具体采购澄清而非 `ACTION_CONFLICT`。
 3. 撤销和位置纠正涉及追加事实与选择目标，继续作为独立较大功能，不与本次小修混写。
 4. 非提交回复不再建议“原样再发一次”；只询问确实缺少的信息或明确说明功能尚未实现。
+
+## 2026-08-15 集中修复批次 4（餐食事实优先与采购澄清）
+
+- `NUTRITION_EVIDENCE_INVALID` 根因：终端 unknown 营养证据的 basis 是 `per_serving`；一碗米饭被通用采用逻辑错误补成 `adopted_amount=1`，违反 unknown 证据必须保持无采用量的不变量，导致整个餐食在事实提交前失败。
+- 修复：`adoptNutritionAmount` 对 `source_type=unknown` 直接保留原证据，不为其推断采用量；食物事实可提交，营养继续标 unknown。
+- 采购冲突根因：“我买了牛奶”和“两箱牛奶+一袋鸡蛋”不在冻结采购 grammar，落到 meal/subject 解析后变成非本人或与调用 action 冲突。
+- 修复：这两类输入在 pantry 入口先返回 `needs_clarification/add_inventory`；单品询问数量与包装，多商品分别询问牛奶和鸡蛋规格，均零写且不建议盲目重试。
+- 回复边界：Skill/工具说明新增“失败、冲突、未实现不得建议用户原样重发同一句”。
+- RED：unknown bowl 采用量 1/1 失败；采购两种场景 2/2 失败；回复说明 2 个断言失败。
+- GREEN：`foundation` 11/11、采购 focused 2/2、unknown nutrition focused 1/1、`tsc --noEmit`、`git diff --check` 均通过。
+- 整个 nutrition-application 文件另有 2 条 Windows PowerShell ACL 环境失败（`CORE_RUNTIME_SECRET_INVALID`），与本修复无关；本批不把该环境失败冒充产品回归。
