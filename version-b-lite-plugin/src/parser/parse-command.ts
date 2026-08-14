@@ -451,6 +451,17 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
 
   const waters = waterResolution.self_matches;
+  if (
+    retainedMeal.length > 0 &&
+    waterResolution.self_unquantified_count > 0
+  ) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+      question: "请把白水和其他饮食分成两条消息记录。",
+    });
+  }
   if (waters.length > 1) {
     return detachedFrozen({
       disposition: "needs_clarification",

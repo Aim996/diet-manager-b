@@ -15,7 +15,7 @@ export interface PlainWaterMatch {
   readonly quantity_ml: number;
 }
 
-const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
+const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*(?:([0-9]+)\s*ml\s*)?(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
 const ADJUNCT_START = /(?:时|后)?(?:看见|看到|拿着|放着|旁边|桌上|还有|使用|用了)/u;
 const PUNCTUATED_WATER_CONTINUATION = /^\s*[，,]\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
 const MAX_WATER_OCCURRENCES = 256;
@@ -49,12 +49,14 @@ function plainWaterMatch(entries: {
 
 export interface WaterFrameScan {
   readonly self_matches: readonly Readonly<PlainWaterMatch>[];
+  readonly self_unquantified_count: number;
   readonly non_self_direct_count: number;
   readonly occurrence_limit_exceeded: boolean;
 }
 
 export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan> {
   const selfMatches: Readonly<PlainWaterMatch>[] = [];
+  let selfUnquantifiedCount = 0;
   let nonSelfDirectCount = 0;
   let occurrenceLimitExceeded = false;
   let inherited: PredicateFrameSubjectResolution | null = null;
@@ -72,8 +74,10 @@ export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan>
     let waterIndex = 0;
     for (const direct of directText.matchAll(DIRECT_OR_COORDINATED_WATER)) {
       const quantityText = direct[1];
-      const waterText = direct[2];
-      if (quantityText === undefined || waterText === undefined) continue;
+      if (quantityText === undefined) {
+        if (subject.disposition === "resolved") selfUnquantifiedCount += 1;
+        continue;
+      }
       const quantityOffset = direct[0].indexOf(quantityText);
       const tokenStart = directStart + direct.index + quantityOffset;
       const tokenEnd = directStart + direct.index + direct[0].length;
@@ -131,6 +135,7 @@ export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan>
   }
   return frozenRecord({
     self_matches: Object.freeze(selfMatches),
+    self_unquantified_count: selfUnquantifiedCount,
     non_self_direct_count: nonSelfDirectCount,
     occurrence_limit_exceeded: occurrenceLimitExceeded,
   });

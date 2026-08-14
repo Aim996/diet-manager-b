@@ -1494,6 +1494,17 @@ describe("core parser quality boundaries", () => {
     });
   });
 
+  it("fails closed instead of dropping unquantified plain water from a mixed drink", () => {
+    const result = variant("喝了豆浆和白水。");
+
+    expect(result).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_meal",
+      reason_code: "unsupported_command",
+    });
+    expect(Object.hasOwn(result, "command")).toBe(false);
+  });
+
   it.each([
     "我喝了500ml白水，又喝了200ml水。",
     "我喝了500ml白水和300ml水。",
