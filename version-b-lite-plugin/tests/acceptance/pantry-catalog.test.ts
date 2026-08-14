@@ -95,7 +95,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterMarker: (paths: { child: string }) => void }) => void;
     };
     const displaced = join(isolatedRoot, "test-displaced-owned-child");
@@ -145,7 +145,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }) => void;
     };
 
@@ -160,7 +160,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterSnapshot: () => void }) => void;
     };
     const displaced = join(dirname(isolatedRoot), `.test-displaced-${randomUUID()}`);
@@ -194,7 +194,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { beforeOfficialReadDir: (paths: { directory: string }) => void }) => Promise<void>;
     };
     const displaced = join(dirname(officialRoot), `.test-decoy-displaced-${randomUUID()}`);
@@ -230,7 +230,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const officialParent = dirname(officialRoot);
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: {
         beforeOfficialReadDir: (paths: { directory: string }) => void;
         onNativeGuardStarted: (value: { watchSpecs: ReadonlyArray<{ kind: string; directory: string; target?: string }> }) => void;
@@ -276,7 +276,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { nativeGuardEnv: Record<string, string> }) => Promise<void>;
     };
 
@@ -292,7 +292,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterSnapshot: () => void }) => Promise<void>;
     };
     const before = lstatSync(officialRoot);
@@ -316,7 +316,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { beforeIsolatedReadDir: () => void }) => Promise<void>;
     };
     const displaced = join(dirname(isolatedRoot), `.test-isolated-decoy-${randomUUID()}`);
@@ -351,7 +351,7 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
     const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
     const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
     const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
-    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+    const { validateRoots } = await import(/* @vite-ignore */ decodeURI(pathToFileURL(validator).href)) as {
       validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: {
         nativeGuardEnv: Record<string, string>;
         onNativeGuardStarted: (value: { pid: number }) => void;

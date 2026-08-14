@@ -110,9 +110,9 @@ OpenClaw 契约目前声明八个 action，但 application 真实执行只有：
   `SEL-RELEASE-001`。
 - PRODUCT-0.2 未开始任务：`SEL-TEMPLATE-001`、`SEL-REVIEW-001`、
   `SEL-LIFE-001`、`SEL-EXPORT-001`、`SEL-UPGRADE-002`、`SEL-RELEASE-002`。
-- 旧 SEL-PANTRY brief 中的 worktree 绝对根已经失效，因为开发已按用户要求迁入
-  `E:\codx\skill\饮食管家`；继续 Pantry 前必须先把 active brief 和 trace mirror
-  更新到主目录任务自有验证根，并用正常/自测门证明无镜像漂移。
+- SEL-PANTRY brief 的旧 worktree 绝对根已在迁入主目录后改为
+  `E:\codx\skill\饮食管家` 及其任务自有验证根；继续 Pantry 前仍须用 trace
+  normal/self-test 证明四份 mirror 与该绑定逐字节一致。
 
 ## 6. 后续强制顺序
 

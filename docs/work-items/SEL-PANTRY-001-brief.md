@@ -46,11 +46,11 @@
   "risk_ids": ["RISK-005", "RISK-010", "RISK-011", "RISK-012", "RISK-013", "RISK-016", "RISK-017"],
   "decision_ids": ["DEC-004", "DEC-005", "DEC-009", "DEC-011", "DEC-012", "DEC-023", "DEC-024", "DEC-027", "DEC-028"],
   "change_ids": ["CHG-20260810-001", "CHG-20260811-001", "CHG-20260811-002", "CHG-20260813-001", "CHG-20260813-002"],
-  "project_root": "E:\\codx\\skill\\.worktrees\\diet-manager-b-b-slice-001",
-  "plugin_root": "E:\\codx\\skill\\.worktrees\\diet-manager-b-b-slice-001\\version-b-lite-plugin",
+  "project_root": "E:\\codx\\skill\\饮食管家",
+  "plugin_root": "E:\\codx\\skill\\饮食管家\\version-b-lite-plugin",
   "node_exe": "C:\\Users\\10481\\AppData\\Local\\Temp\\diet-manager-validation-node-24.15.0\\node-v24.15.0-win-x64\\node.exe",
-  "official_data_roots": ["E:\\codx\\skill\\.worktrees\\diet-manager-b-b-slice-001\\.tmp\\official-manifest-sentinel\\SEL-PANTRY-001"],
-  "isolated_test_roots": ["E:\\codx\\skill\\.worktrees\\diet-manager-b-b-slice-001\\.tmp\\isolated-test-roots\\SEL-PANTRY-001"],
+  "official_data_roots": ["E:\\codx\\skill\\饮食管家\\.tmp\\official-manifest-sentinel\\SEL-PANTRY-001"],
+  "isolated_test_roots": ["E:\\codx\\skill\\饮食管家\\.tmp\\isolated-test-roots\\SEL-PANTRY-001"],
   "owner": "Codex /root",
   "reviewer": "待分配独立领域复核",
   "status": "进行中",
@@ -225,10 +225,10 @@ Use pinned Node.js `v24.15.0`, one worker and no file parallelism. Before produc
 
 ```powershell
 $nodeExe = 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe'
-$projectRoot = 'E:\codx\skill\.worktrees\diet-manager-b-b-slice-001'
-$pluginRoot = 'E:\codx\skill\.worktrees\diet-manager-b-b-slice-001\version-b-lite-plugin'
-$officialVerificationRoot = 'E:\codx\skill\.worktrees\diet-manager-b-b-slice-001\.tmp\official-manifest-sentinel\SEL-PANTRY-001'
-$isolatedTestRootBase = 'E:\codx\skill\.worktrees\diet-manager-b-b-slice-001\.tmp\isolated-test-roots\SEL-PANTRY-001'
+$projectRoot = 'E:\codx\skill\饮食管家'
+$pluginRoot = 'E:\codx\skill\饮食管家\version-b-lite-plugin'
+$officialVerificationRoot = 'E:\codx\skill\饮食管家\.tmp\official-manifest-sentinel\SEL-PANTRY-001'
+$isolatedTestRootBase = 'E:\codx\skill\饮食管家\.tmp\isolated-test-roots\SEL-PANTRY-001'
 Set-Location -LiteralPath $projectRoot
 & $nodeExe shared/tests/validate-sel-pantry-cases.mjs
 & $nodeExe shared/tests/validate-sel-pantry-cases.mjs --self-test
@@ -248,9 +248,9 @@ Closure also runs the full plugin suite, catalog/trace/X-GATE normal and self-te
 
 ## 数据根与执行约束
 
-- official_data_roots: local verification uses only the task-owned absolute sentinel `E:\codx\skill\.worktrees\diet-manager-b-b-slice-001\.tmp\official-manifest-sentinel\SEL-PANTRY-001` for before/after manifest and zero-business-write checks; it is not a production data root and must contain no business database. Deployments still resolve their existing absolute production `official_data_root` from trusted plugin config; that private value is never written to tracked files or accepted from model parameters.
-- isolated_test_roots: absolute base `E:\codx\skill\.worktrees\diet-manager-b-b-slice-001\.tmp\isolated-test-roots\SEL-PANTRY-001`; every test family creates a new ordinary direct child; fixed database leaf `diet-manager-b.sqlite3`; DB/WAL/SHM/secret/state removed after verification.
-- current_worktree: `E:\codx\skill\.worktrees\diet-manager-b-b-slice-001`.
+- official_data_roots: local verification uses only the task-owned absolute sentinel `E:\codx\skill\饮食管家\.tmp\official-manifest-sentinel\SEL-PANTRY-001` for before/after manifest and zero-business-write checks; it is not a production data root and must contain no business database. Deployments still resolve their existing absolute production `official_data_root` from trusted plugin config; that private value is never written to tracked files or accepted from model parameters.
+- isolated_test_roots: absolute base `E:\codx\skill\饮食管家\.tmp\isolated-test-roots\SEL-PANTRY-001`; every test family creates a new ordinary direct child; fixed database leaf `diet-manager-b.sqlite3`; DB/WAL/SHM/secret/state removed after verification.
+- current_project_root: `E:\codx\skill\饮食管家`; development continues directly on `main` after the merged Task2 worktree was removed.
 - No remote OpenClaw, network source, gateway credential or user production data is used in this task.
 
 ## 所需证据与责任
