@@ -1,6 +1,6 @@
 export const SUBJECT_RULE_VERSION = "diet-manager/subject-v1";
-const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|在公司|然后|接着|后来|又|没|没有)\s*)*$/u;
-const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|午饭|刚刚|在公司|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|后来|没(?:有)?)?$/u;
+const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|在公司|然后|接着|后来|又|没|没有)\s*)*$/u;
+const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|午饭|晚饭|刚刚|刚|在公司|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|后来|没(?:有)?)?$/u;
 const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
 function frozenFrameRecord(entries) {
     return Object.freeze(Object.assign(Object.create(null), entries));
@@ -73,11 +73,11 @@ const EXPLICIT_NON_SELF_THIRD_PERSON = Object.freeze({
 });
 const EXPLICIT_SELF = Object.freeze({
     rule_id: "subject.explicit-self.me",
-    pattern: /^\s*我(?=\s*(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐)\s*)*(?:吃|喝))/u,
+    pattern: /^\s*我(?=\s*(?:(?:刚才|刚刚|刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭)\s*)*(?:吃|喝))/u,
 });
 const OMITTED_SUBJECT_GRAMMAR = Object.freeze([
     /^\s*(?:吃|喝)(?:了|过)?/u,
-    /^\s*(?:(?:今天|昨天|前天|今早|昨晚|今晚|刚才|刚刚|早上|上午|中午|下午|晚上|夜里|其他时候|早餐|午餐|晚餐|早餐后|午餐后|晚餐后|回家后)\s*)+(?:\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?\s*)?(?:吃|喝)(?:了|过)?/u,
+    /^\s*(?:(?:今天|昨天|前天|今早|昨晚|今晚|刚才|刚刚|刚|早上|上午|中午|下午|晚上|夜里|其他时候|早餐|午餐|晚餐|午饭|晚饭|早餐后|午餐后|晚餐后|回家后)\s*)+(?:\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?\s*)?(?:吃|喝)(?:了|过)?/u,
     /^\s*(?:本来不想|后来还是)\s*(?:吃|喝)(?:了|过)?/u,
 ]);
 const EXPLICIT_SELF_SHARE_FRIEND = Object.freeze({

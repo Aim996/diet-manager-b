@@ -22,13 +22,14 @@ export function failedOutcome(action, operationId, errorCode) {
         error_code: errorCode,
     });
 }
-export function nonWritingOutcome(action, operationId, status, reasonCode, clarification, dailyProgress, mealHistory, inventoryView) {
+export function nonWritingOutcome(action, operationId, status, reasonCode, clarification, dailyProgress, mealHistory, inventoryView, question) {
     return Object.freeze({
         action,
         status,
         committed: false,
         operation_id: operationId,
         reason_code: reasonCode,
+        ...(question === undefined ? {} : { question }),
         ...(clarification === undefined ? {} : { clarification }),
         ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
                 date: dailyProgress.date,
