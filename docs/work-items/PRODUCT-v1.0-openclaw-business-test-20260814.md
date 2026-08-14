@@ -232,3 +232,12 @@
 - GREEN：清单新增 `skills: ["./skills"]`；安装包改为保留 `skills/diet-manager-b/SKILL.md`，不再扁平化。
 - focused：`foundation` 11/11、`git diff --check` 通过。
 - 本批不需要 TypeScript emit build；只更新清单和安装包结构。下一步先更新 06 验证未来计划，再更新其余实例。
+
+### 批次 3 部署与验证结果
+
+- 源码/清单提交 `9f4f520`；未执行 emit build。
+- 新包 `diet-manager-b-min-9f4f520.zip`，SHA-256 `F3ED851D7DE32F3BEE200B3C2BD39DAFF0BFD15D86CE442E3269D6C0B0DEDD79`，共 1437 项；含 `skills/diet-manager-b/SKILL.md`，不含旧的扁平路径。
+- 02–07 安装目录均验证 `openclaw.plugin.json.skills` 含 `./skills` 且 Skill 文件存在；六个 Gateway 均已重启恢复。
+- 06 复测“明天想买两箱牛奶。”：0 次工具调用，明确“没有把它记入饮食记录”，没有创建待办或提醒；原虚假“记到待办”关闭。
+- 05 复测“午饭吃了米饭和鸡胸肉。”：成功记录并返回实际记录 ID；不再追加起名、身份档案或记忆初始化；原开户式闲聊关闭。
+- 05 重启后的旧浏览器标签停在断线错误页，但端口持续在线；重新建立认证标签后业务通过，属于测试标签恢复，不是 Gateway 或插件故障。
