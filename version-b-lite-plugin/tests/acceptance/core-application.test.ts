@@ -1021,6 +1021,52 @@ Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
     }
   });
 
+  it("returns the parser's concrete clarification question without opening storage", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-runtime-${randomUUID()}-`));
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => "2026-08-15T02:15:00.000Z",
+    });
+    try {
+      const base = catalogInput("CASE-MEAL-021");
+      const purchase = handleCoreRequest(runtime, {
+        ...base,
+        action: "add_inventory",
+        source_text: "我买了牛奶。",
+        operation_id: "operation-purchase-question",
+      });
+      expect(purchase).toEqual({
+        action: "add_inventory",
+        status: "needs_clarification",
+        committed: false,
+        operation_id: "operation-purchase-question",
+        reason_code: "unsupported_command",
+        question: "还没有记录。请说明购买数量和包装规格，例如几盒、每盒多少毫升。",
+      });
+      expect(assertDietManagerOutcome(purchase)).toBe(purchase);
+
+      const water = handleCoreRequest(runtime, {
+        ...base,
+        action: "record_water",
+        source_text: "刚喝了一瓶水。",
+        operation_id: "operation-water-question",
+      });
+      expect(water).toEqual({
+        action: "record_water",
+        status: "needs_clarification",
+        committed: false,
+        operation_id: "operation-water-question",
+        reason_code: "amount_ambiguous",
+        question: "请说明实际喝了多少毫升白水。",
+      });
+      expect(assertDietManagerOutcome(water)).toBe(water);
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
   it("creates only the fixed database and private secret for the first valid candidate", () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-runtime-${randomUUID()}-`));
     let activeRuntime: ReturnType<typeof createCoreRuntime> | undefined;

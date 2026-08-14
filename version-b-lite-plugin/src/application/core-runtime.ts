@@ -1121,7 +1121,17 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     if (parsed.action !== request.action) {
       return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
     }
-    return nonWritingOutcome(request.action, request.operation_id, parsed.disposition, parsed.reason_code);
+    return nonWritingOutcome(
+      request.action,
+      request.operation_id,
+      parsed.disposition,
+      parsed.reason_code,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      parsed.disposition === "needs_clarification" ? parsed.question : undefined,
+    );
   }
   if (parsed.command.action !== request.action) {
     return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");

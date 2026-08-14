@@ -73,6 +73,7 @@ export interface NonWritingOutcome {
   committed: false;
   operation_id?: string;
   reason_code: string;
+  question?: string;
   clarification?: ProductIdentityClarification;
   daily_progress?: Readonly<DailyProgressView>;
   meal_history?: Readonly<MealHistoryView>;
@@ -527,13 +528,17 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "clarification", "daily_progress", "meal_history", "inventory_view"]);
+      ["operation_id", "question", "clarification", "daily_progress", "meal_history", "inventory_view"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt"]);
   }
   if (candidate.clarification !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
     assertClarification(candidate.clarification);
+  }
+  if (candidate.question !== undefined) {
+    if (candidate.status !== "needs_clarification") return invalidOutcome("question_status");
+    boundedText(candidate.question, "question", 512);
   }
   if (candidate.record_ids !== undefined) {
     if (!hasCommittedStatus || !Array.isArray(candidate.record_ids) || candidate.record_ids.length < 2 ||

@@ -305,3 +305,22 @@
 2. 再查 clarification/ignored disposition 到 public outcome 的映射，保留具体问题文本并禁止错误 `ACTION_CONFLICT`。
 3. 最后补“晚饭”本人省略和两种常见采购语法；每个根因一个 RED、一个 focused GREEN。
 4. 同一源码批次完成后统一跑受影响 parser/application/foundation 测试和 `tsc --noEmit`，只 emit build 一次，再更新 02–07 做代表性复测。
+
+## 2026-08-15 集中修复批次 5（多食物与公开澄清）
+
+本批只处理上一节已经冻结的两个主根因和两个同源时间前缀，不扩展撤销、位置纠正或采购存储模型。
+
+- `MULTI-ITEM-LOSS-001` 根因：食物词边界不接受前置“克”，数量解析也不认识克数，所以 `150克鸡胸肉` 在词法阶段被整个跳过，而不是作为营养未知条目保留。
+- 修复：既有食物数量语法新增“克→g”，米饭、鸡胸肉等常见食物都保留显式克重；不为任何食物推断未提供的克数。
+- `MEAL-SUBJECT-002` 根因：本人省略主语白名单有“午饭/刚刚”，却没有同级的“晚饭/刚”。修复仅补这两个已真实采样的时间前缀。
+- `DISPOSITION-OUTCOME-001` 根因：parser 已返回具体 `question`，但 `NonWritingOutcome` 没有该可选字段；应用层只留下 `reason_code`，OpenClaw 只能猜测重复提交、功能未开通或库存冲突。
+- 修复：公开非写入结果新增可选、受限长度的 `question`；只允许 `needs_clarification` 携带，并由应用层原样转交 parser 的冻结问题。查询、ignored、failed 和 committed 形状不变。
+- 水瓶冲突根因：`刚喝了一瓶水` 的“刚”不在本人省略白名单，water scan 因而没有保留未知容量，最终 action 从 `record_water` 错落为 `record_meal` 并触发 `ACTION_CONFLICT`。补齐“刚”后返回明确毫升问题。
+
+### RED / GREEN 记录
+
+- RED：parser 精确 3/3 失败——双食物只剩米饭；晚饭为 ignored；一瓶水为 `ignored/record_meal/non_self_subject`。
+- RED：application 精确 1/1 失败——采购澄清结果缺少 parser 的完整问题文本。
+- GREEN：上述 parser 3/3、application 1/1 全部通过。
+- 受影响验证：`core-parser` 204/204、`foundation` 11/11；application storage-lazy + concrete-question 2/2；`tsc --noEmit` 与 `git diff --check` 均通过。
+- 本节记录时尚未 emit build、未更新 OpenClaw。明确盒装采购、近似数量、撤销、位置纠正继续保留在下一批，不宣称已完成。

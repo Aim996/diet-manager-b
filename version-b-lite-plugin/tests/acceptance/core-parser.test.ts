@@ -1499,6 +1499,46 @@ describe("core parser quality boundaries", () => {
     ]);
   });
 
+  it("keeps every food and its explicit gram amount in a coordinated meal", () => {
+    const command = requiredMeal(
+      variant("午饭吃了一碗米饭、150克鸡胸肉。"),
+    );
+
+    expect(command.items).toEqual([
+      {
+        order: 0,
+        kind: "food",
+        normalized_name: "rice",
+        quantity: 1,
+        unit: "bowl",
+        estimated: false,
+      },
+      {
+        order: 1,
+        kind: "food",
+        normalized_name: "chicken",
+        quantity: 150,
+        unit: "g",
+        estimated: false,
+      },
+    ]);
+  });
+
+  it("treats a dinner-time omitted subject as the current user", () => {
+    const command = requiredMeal(
+      variant("晚饭吃了200克米饭和150克鸡胸肉。"),
+    );
+
+    expect(command.subject).toMatchObject({
+      kind: "self",
+      resolution_basis: "omitted_subject_default",
+    });
+    expect(command.items.map((item) => item.normalized_name)).toEqual([
+      "rice",
+      "chicken",
+    ]);
+  });
+
   it("records an explicit Chinese-milliliter plain-water amount", () => {
     const command = requiredCandidate(variant("我刚刚喝了500毫升白水。"));
 
@@ -1531,6 +1571,15 @@ describe("core parser quality boundaries", () => {
       disposition: "needs_clarification",
       action: "record_water",
       reason_code: "amount_ambiguous",
+    });
+  });
+
+  it("asks for bottle capacity when the user says just drank one bottle", () => {
+    expect(variant("刚喝了一瓶水。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_water",
+      reason_code: "amount_ambiguous",
+      question: expect.stringMatching(/毫升/u),
     });
   });
 

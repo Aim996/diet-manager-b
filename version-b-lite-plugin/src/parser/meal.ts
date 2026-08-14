@@ -19,7 +19,7 @@ interface Lexeme {
   readonly allowed_next: RegExp;
 }
 
-const ITEM_PREVIOUS = /[吃喝了过的个片瓶盒碗块盘升、和与\s0-9lL]/u;
+const ITEM_PREVIOUS = /[吃喝了过的个片瓶盒碗块盘升克、和与\s0-9lL]/u;
 const ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不]/u;
 const DRINK_ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不时]/u;
 
@@ -138,20 +138,20 @@ function amountForOccurrence(
   const before = frame.object_span.raw
     .slice(0, relativePosition)
     .replace(/(?:这个|这瓶|这种)\s*$/u, "");
-  const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|ml|mL|ML|毫升)\s*$/u.exec(before);
+  const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u.exec(before);
   if (match !== null) {
     const quantityText = match[1] ?? "";
     const rawUnit = match[2] ?? "";
     const quantity = parseChineseQuantity(quantityText);
     const allowedUnits: Readonly<Record<string, Readonly<Record<string, string>>>> = frozenRecord({
-      egg: frozenRecord({ 个: "piece" }),
-      apple: frozenRecord({ 个: "piece" }),
-      banana: frozenRecord({ 个: "piece" }),
-      chicken: frozenRecord({ 块: "piece" }),
-      bread: frozenRecord({ 片: "slice" }),
+      egg: frozenRecord({ 个: "piece", 克: "g" }),
+      apple: frozenRecord({ 个: "piece", 克: "g" }),
+      banana: frozenRecord({ 个: "piece", 克: "g" }),
+      chicken: frozenRecord({ 块: "piece", 克: "g" }),
+      bread: frozenRecord({ 片: "slice", 克: "g" }),
       milk: frozenRecord({ 瓶: "bottle", 盒: "carton", ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-      rice: frozenRecord({ 碗: "bowl" }),
-      fried_rice: frozenRecord({ 盘: "plate" }),
+      rice: frozenRecord({ 碗: "bowl", 克: "g" }),
+      fried_rice: frozenRecord({ 盘: "plate", 克: "g" }),
       soup: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
       soy_milk: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
       coffee: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),

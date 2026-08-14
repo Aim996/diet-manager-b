@@ -50,6 +50,7 @@ export function nonWritingOutcome(
   dailyProgress?: Readonly<DailyProgressView>,
   mealHistory?: Readonly<MealHistoryView>,
   inventoryView?: Readonly<InventoryView>,
+  question?: string,
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -57,6 +58,7 @@ export function nonWritingOutcome(
     committed: false as const,
     operation_id: operationId,
     reason_code: reasonCode,
+    ...(question === undefined ? {} : { question }),
     ...(clarification === undefined ? {} : { clarification }),
     ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
       date: dailyProgress.date,
