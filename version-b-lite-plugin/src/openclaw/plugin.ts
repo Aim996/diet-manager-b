@@ -247,6 +247,8 @@ function acquirePluginRuntime(
   const candidate = createCoreRuntime({
     officialDataRoot: physicalRoot,
     now: () => new Date().toISOString(),
+    nutritionConfig: nutrition,
+    nutritionAdapters: [],
   });
   if (state.runtime === undefined) {
     state.runtime = candidate;

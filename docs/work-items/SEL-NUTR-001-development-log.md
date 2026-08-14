@@ -61,6 +61,23 @@
 - 后续修复索引：Task 5 必须在签 v6 前解析来源，并在赢家完成后走既有 FactCommit→EffectBundle→Finalize；Task 7 再统一验证跨进程并发/崩溃。
 - 批次提交：`feat: serialize nutrition resolution`（本段日志与实现同一提交）。
 
+### Batch C1 / 2026-08-14
+
+- 目标：把已认证的 v6 营养证据接到真实餐食入口，生成并持久化 Profile/Snapshot v1.1，并在 committed outcome 返回字段级营养结果。
+- 绑定 REQ：`REQ-NUTR-001/002/004/005/006`、`REQ-MEAL-003`。
+- 绑定 CASE：本批代表性覆盖 `CASE-MEAL-003` 的范围换算规则、`CASE-MEAL-019` 的 unknown amount 保留；15 案完整矩阵延期到模块最终 Gate。
+- 起始 HEAD：`0b77d52`。
+- 改动文件：新增 `nutrition-service.ts`、`nutrition-repository.ts`、`nutrition-application.test.ts`；修改异步 core runtime/OpenClaw 接线、nutrition outcome 类型校验和 Profile/Snapshot v1.1 Schema source enum。
+- 行为变化：OpenClaw 的异步餐食入口先复用 durable resolution claim，再调用既有 0.3 FactCommit/EffectBundle/Finalize；成功后用真实 event/item identity 生成十字段 Profile/Snapshot，并返回递归冻结的 `nutrition_items`。同步 `handleCoreRequest` 继续保留，旧调用无需改成 Promise。
+- 接口/Schema/authority 决策：Profile version 由 subject/source/version/字段值派生，Snapshot ID 由 operation/event/item/profile 派生；换算使用 BigInt 固定六位、half-up；unknown amount 保持 `null/null`，绝不转 0；`generic_estimate` 作为 v1.1 来源类型加入兼容 Schema。
+- 兼容边界：本批没有 migration、没有正式 build、没有真实网络；旧同步入口和已有餐食/库存 effect 不改。新增营养来源为空时仍降级 unknown 并提交餐食。
+- 真实 RED：新应用测试先缺少 service/repository；接线后代表性真实入口暴露三个测试夹具问题（营养 Oracle 文本并非 parser candidate、当前 Windows PowerShell 模块路径继承错误、表内已有 legacy Profile 使全表计数不等于 v1.1 计数），均在测试/命令边界修正，没有放宽产品 authority。类型检查另捕获 claim union narrowing、outcome 数组 narrowing 和 generic freeze cast 三处静态错误并做窄修。
+- 定向 smoke：`nutrition-application + nutrition-resolution` 2 files / 5 tests PASS；Nutrition Profile/Snapshot Schema `43` cases / `4` mutations PASS；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 延期到模块末的测试：15 案 table、旧插件/full、跨进程并发、tamper/fault、补充事件、trace。按 B 模式不在本批重复运行这些族。
+- 已知风险/假设：当前 Profile/Snapshot 写入发生在既有 meal finalize 之后的独立 SQLite savepoint；若该写失败，已提交餐食返回 `committed_with_issues`。这满足 fact-first，但尚未达到计划 Task 5 的“营养 Snapshot + progress 同一 EffectBundle 事务”，后续 C2 必须接入原子 effect/replay 后才能关闭 Task 5。
+- 后续修复索引：C2 接 exact progress contribution、terminal replay 与同事务 rollback；Task 6 再实现 append-only `nutrition_supplemented`。
+- 批次提交：`feat: connect nutrition application results`（阶段性 C1；Task 5 尚未关闭）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

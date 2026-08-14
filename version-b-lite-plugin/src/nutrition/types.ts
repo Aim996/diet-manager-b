@@ -156,7 +156,7 @@ export function freezeNutritionData<T>(value: T, path = "nutrition"): Readonly<T
   if (isProxy(value)) throw new TypeError(`NUTRITION_DATA_INVALID:${path}:proxy`);
   if (value instanceof Uint8Array) throw new TypeError(`NUTRITION_DATA_INVALID:${path}:binary`);
   if (Array.isArray(value)) {
-    return Object.freeze(value.map((item, index) => freezeNutritionData(item, `${path}.${index}`))) as Readonly<T>;
+    return Object.freeze(value.map((item, index) => freezeNutritionData(item, `${path}.${index}`))) as unknown as Readonly<T>;
   }
   if (Object.getPrototypeOf(value) !== Object.prototype) {
     throw new TypeError(`NUTRITION_DATA_INVALID:${path}:prototype`);

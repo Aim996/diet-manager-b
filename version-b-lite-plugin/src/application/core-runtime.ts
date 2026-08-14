@@ -17,7 +17,7 @@ import { dirname, join, parse } from "node:path";
 import { isProxy } from "node:util/types";
 import type { DatabaseSync } from "node:sqlite";
 
-import { canonicalJson } from "../authority/canonical-json.js";
+import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import {
   dietManagerActions,
   type CoreApplicationRequest,
@@ -58,6 +58,27 @@ import {
   type ResolvedCorePurchaseItem,
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
+import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { resolveNutrition } from "../nutrition/source-client.js";
+import {
+  claimNutritionResolution,
+  completeNutritionResolution,
+  type NutritionPreviewMaterialV6,
+} from "../nutrition/resolution-claim.js";
+import {
+  buildNutritionRecords,
+  nutritionOutcomeItem,
+  type NutritionRecords,
+} from "../nutrition/nutrition-service.js";
+import { persistNutritionRecords } from "../nutrition/nutrition-repository.js";
+import {
+  freezeNutritionData,
+  type NutritionRuntimeConfig,
+  type NutritionSourceAdapter,
+  type ResolvedNutritionEvidence,
+  type SourceContext,
+  type SourceRequest,
+} from "../nutrition/types.js";
 
 export const CORE_RUNTIME_SECRET_FILENAME = ".diet-manager-b.authority-secret";
 
@@ -427,6 +448,9 @@ function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array 
 export interface CreateCoreRuntimeOptions {
   readonly officialDataRoot: string;
   readonly now: () => string;
+  readonly nutritionConfig?: Readonly<NutritionRuntimeConfig>;
+  readonly nutritionAdapters?: readonly NutritionSourceAdapter[];
+  readonly nutritionCredential?: SourceContext["credential"];
 }
 
 export interface CoreRuntime {
@@ -443,6 +467,9 @@ interface RuntimeState {
   readonly root: string;
   readonly rootAuthority: RuntimeRootAuthority;
   readonly now: () => string;
+  readonly nutritionConfig: Readonly<NutritionRuntimeConfig>;
+  readonly nutritionAdapters: readonly NutritionSourceAdapter[];
+  readonly nutritionCredential: SourceContext["credential"];
   closed: boolean;
   databaseRuntime?: DietDatabaseRuntime;
   session?: CoreRuntimeSession;
@@ -450,6 +477,7 @@ interface RuntimeState {
 
 const liveByRoot = new Map<string, CoreRuntime>();
 const states = new WeakMap<CoreRuntime, RuntimeState>();
+const nutritionFlights = new WeakMap<CoreRuntime, Map<string, Promise<NutritionPreviewMaterialV6>>>();
 
 function runtimeInvalid(reason: string): never {
   throw new TypeError(`CORE_RUNTIME_INVALID:${reason}`);
@@ -476,7 +504,8 @@ function exactOptions(value: unknown): CreateCoreRuntimeOptions {
     return runtimeInvalid("options");
   }
   const keys = Reflect.ownKeys(value);
-  if (keys.length !== 2 || keys.some((key) => typeof key !== "string") ||
+  const allowed = ["officialDataRoot", "now", "nutritionConfig", "nutritionAdapters", "nutritionCredential"];
+  if (keys.length < 2 || keys.length > allowed.length || keys.some((key) => typeof key !== "string" || !allowed.includes(key)) ||
       !keys.includes("officialDataRoot") || !keys.includes("now")) return runtimeInvalid("options");
   const descriptors = Object.getOwnPropertyDescriptors(value);
   for (const key of keys as string[]) {
@@ -490,7 +519,26 @@ function exactOptions(value: unknown): CreateCoreRuntimeOptions {
   if (typeof root !== "string") return runtimeInvalid("root");
   if (typeof now !== "function") return runtimeInvalid("clock");
   clockValue(now as () => string);
-  return Object.freeze({ officialDataRoot: root, now: now as () => string });
+  const nutritionConfig = descriptors.nutritionConfig?.value ?? cloneNutritionRuntimeConfig(undefined);
+  if (typeof nutritionConfig !== "object" || nutritionConfig === null || isProxy(nutritionConfig) ||
+      typeof (nutritionConfig as NutritionRuntimeConfig).source_config_digest !== "string" ||
+      !/^[A-F0-9]{64}$/u.test((nutritionConfig as NutritionRuntimeConfig).source_config_digest) ||
+      !Array.isArray((nutritionConfig as NutritionRuntimeConfig).sources)) return runtimeInvalid("nutrition_config");
+  const adaptersValue = descriptors.nutritionAdapters?.value ?? [];
+  if (typeof adaptersValue !== "object" || adaptersValue === null || isProxy(adaptersValue) || !Array.isArray(adaptersValue) ||
+      adaptersValue.some((adapter) => typeof adapter !== "object" || adapter === null || isProxy(adapter) ||
+        typeof (adapter as NutritionSourceAdapter).describe !== "function" ||
+        typeof (adapter as NutritionSourceAdapter).probe !== "function" ||
+        typeof (adapter as NutritionSourceAdapter).resolve !== "function")) return runtimeInvalid("nutrition_adapters");
+  const credential = descriptors.nutritionCredential?.value ?? (() => undefined);
+  if (typeof credential !== "function") return runtimeInvalid("nutrition_credential");
+  return Object.freeze({
+    officialDataRoot: root,
+    now: now as () => string,
+    nutritionConfig: nutritionConfig as Readonly<NutritionRuntimeConfig>,
+    nutritionAdapters: Object.freeze([...(adaptersValue as NutritionSourceAdapter[])]),
+    nutritionCredential: credential as SourceContext["credential"],
+  });
 }
 
 export function createCoreRuntime(options: CreateCoreRuntimeOptions): CoreRuntime {
@@ -501,11 +549,18 @@ export function createCoreRuntime(options: CreateCoreRuntimeOptions): CoreRuntim
     const cachedState = states.get(cached);
     if (cachedState === undefined) throw new Error("STORAGE_PATH_INVALID:root_identity");
     assertRuntimeRootAuthority(cachedState.rootAuthority);
+    if (cachedState.nutritionConfig.source_config_digest !== validated.nutritionConfig?.source_config_digest) {
+      throw new Error("CORE_RUNTIME_INVALID:nutrition_config_conflict");
+    }
     return cached;
   }
   let runtime!: CoreRuntime;
   const state: RuntimeState = { root: rootAuthority.root, rootAuthority,
-    now: validated.now, closed: false };
+    now: validated.now,
+    nutritionConfig: validated.nutritionConfig ?? cloneNutritionRuntimeConfig(undefined),
+    nutritionAdapters: validated.nutritionAdapters ?? Object.freeze([]),
+    nutritionCredential: validated.nutritionCredential ?? (() => undefined),
+    closed: false };
   runtime = Object.freeze({
     close(): void {
       if (state.closed) return;
@@ -944,9 +999,202 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
 
 // Public plugin execution is asynchronous so nutrition adapters can be awaited without
 // weakening the existing synchronous internal/test compatibility surface.
+function nutritionClaimIdentity(request: Readonly<CoreApplicationRequest>): string {
+  return canonicalSha256({
+    authority_kind: "diet-manager/nutrition-claim-identity/v1",
+    operation_id: request.operation_id,
+    source_message_id: request.source_message_id,
+    conversation_id: request.conversation_id,
+  });
+}
+
+function nutritionSourceRequest(item: Readonly<{ normalized_name: string; kind: string }>): Readonly<SourceRequest> {
+  return freezeNutritionData({
+    normalized_food_name: item.normalized_name,
+    brand: null,
+    variant: null,
+    package_specification: null,
+    processing_state: null,
+    minimum_food_category: item.kind === "nutritious_drink" ? "processed_beverage" : "food",
+    locale: "zh-CN",
+  });
+}
+
+async function resolveNutritionMaterial(
+  runtime: CoreRuntime,
+  request: Readonly<CoreApplicationRequest>,
+  command: Extract<CoreCommandCandidate, { action: "record_meal" }>,
+  session: CoreRuntimeSession,
+): Promise<NutritionPreviewMaterialV6> {
+  const state = states.get(runtime);
+  if (state === undefined || state.closed) return runtimeInvalid("runtime");
+  const baseInputDigest = canonicalSha256({ request, command });
+  let flights = nutritionFlights.get(runtime);
+  if (flights === undefined) {
+    flights = new Map();
+    nutritionFlights.set(runtime, flights);
+  }
+  const active = flights.get(baseInputDigest);
+  if (active !== undefined) return active;
+  const flight = (async (): Promise<NutritionPreviewMaterialV6> => {
+    const identityDigest = nutritionClaimIdentity(request);
+    const ownerNonce = randomUUID();
+    const startedAt = clockValue(state.now);
+    const deadlineMs = state.nutritionConfig.resolution_deadline_ms;
+    const deadlineAt = new Date(Date.parse(startedAt) + deadlineMs).toISOString();
+    let claim = claimNutritionResolution({
+      database: session.database,
+      authority_secret: session.authoritySecret,
+      envelope_id: `nutrition-resolution-${identityDigest.slice(0, 32).toLowerCase()}`,
+      idempotency_key: `nutrition-resolution-${identityDigest}`,
+      operation_id: command.operation_id,
+      base_input_digest: baseInputDigest,
+      source_message_id: request.source_message_id,
+      conversation_id: request.conversation_id,
+      source_config_digest: state.nutritionConfig.source_config_digest,
+      owner_nonce: ownerNonce,
+      now: startedAt,
+      lease_expires_at: deadlineAt,
+    });
+    while (claim.kind === "pending") {
+      if (Date.now() >= Date.parse(deadlineAt)) throw new Error("NUTRITION_RESOLUTION_PENDING:deadline");
+      const retryAfterMs = claim.retry_after_ms;
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, retryAfterMs))));
+      claim = claimNutritionResolution({
+        database: session.database,
+        authority_secret: session.authoritySecret,
+        envelope_id: `nutrition-resolution-${identityDigest.slice(0, 32).toLowerCase()}`,
+        idempotency_key: `nutrition-resolution-${identityDigest}`,
+        operation_id: command.operation_id,
+        base_input_digest: baseInputDigest,
+        source_message_id: request.source_message_id,
+        conversation_id: request.conversation_id,
+        source_config_digest: state.nutritionConfig.source_config_digest,
+        owner_nonce: ownerNonce,
+        now: new Date().toISOString(),
+        lease_expires_at: new Date(Date.now() + deadlineMs).toISOString(),
+      });
+    }
+    if (claim.kind === "complete") return claim.material;
+    const parent = new AbortController();
+    const timer = setTimeout(() => parent.abort(new Error("nutrition_deadline")), Math.max(0, Date.parse(deadlineAt) - Date.now()));
+    let evidence: readonly Readonly<ResolvedNutritionEvidence>[];
+    try {
+      const context: SourceContext = Object.freeze({
+        signal: parent.signal,
+        deadline_at: deadlineAt,
+        now: state.now,
+        credential: state.nutritionCredential,
+      });
+      const values: Readonly<ResolvedNutritionEvidence>[] = [];
+      for (const item of command.items) {
+        values.push(await resolveNutrition(nutritionSourceRequest(item), context, {
+          adapters: state.nutritionAdapters,
+          config: state.nutritionConfig,
+        }));
+      }
+      evidence = Object.freeze(values);
+    } finally {
+      clearTimeout(timer);
+      if (!parent.signal.aborted) parent.abort();
+    }
+    const material = freezeNutritionData({
+      authority_kind: "diet-manager/domain-preview/v6",
+      base_input_digest: baseInputDigest,
+      resolved_evidence_digest: canonicalSha256(evidence),
+      source_config_digest: state.nutritionConfig.source_config_digest,
+      operation_id: command.operation_id,
+      source_message_id: request.source_message_id,
+      conversation_id: request.conversation_id,
+      meal_fact_identities: [],
+      nutrition_evidence: evidence,
+      effect_identities: [],
+    }) as NutritionPreviewMaterialV6;
+    return completeNutritionResolution({
+      database: session.database,
+      authority_secret: session.authoritySecret,
+      envelope_id: claim.envelope_id,
+      owner_nonce: claim.owner_nonce,
+      generation: claim.generation,
+      material,
+      now: clockValue(state.now),
+    }).material;
+  })();
+  flights.set(baseInputDigest, flight);
+  try {
+    return await flight;
+  } finally {
+    if (flights.get(baseInputDigest) === flight) flights.delete(baseInputDigest);
+  }
+}
+
+function storedMealItems(database: DatabaseSync, eventId: string): readonly Readonly<{
+  item_id: string;
+  normalized_name: string;
+}>[] {
+  return Object.freeze(database.prepare(`SELECT item_id, normalized_name FROM meal_items
+    WHERE event_id = ? ORDER BY item_order`).all(eventId) as unknown as Array<{
+      item_id: string;
+      normalized_name: string;
+    }>);
+}
+
 export async function handleCoreRequestAsync(
   runtime: CoreRuntime,
   value: CoreApplicationRequest,
 ): Promise<DietManagerOutcome> {
-  return handleCoreRequest(runtime, value);
+  let request: Readonly<CoreApplicationRequest>;
+  try { request = cloneRequest(value); } catch {
+    return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
+  }
+  if (request.action !== "record_meal") return handleCoreRequest(runtime, value);
+  let parsed;
+  try {
+    const { action: _action, ...parseInput } = request;
+    parsed = parseCoreCommand(parseInput);
+  } catch {
+    return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+  }
+  if (parsed.disposition !== "candidate" || parsed.command.action !== "record_meal") {
+    return handleCoreRequest(runtime, value);
+  }
+  try {
+    const session = acquireSession(runtime);
+    const material = await resolveNutritionMaterial(runtime, request, parsed.command, session);
+    if (material.nutrition_evidence.length !== parsed.command.items.length) {
+      throw new Error("NUTRITION_RESOLUTION_AUTHORITY_INVALID:item_count");
+    }
+    const outcome = handleCoreRequest(runtime, value);
+    if (!outcome.committed) return outcome;
+    const event = session.database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?")
+      .get(outcome.record_id) as { committed_at: string } | undefined;
+    const storedItems = storedMealItems(session.database, outcome.record_id);
+    if (event === undefined || storedItems.length !== parsed.command.items.length) {
+      throw new Error("NUTRITION_REPOSITORY_INVALID:meal_identity");
+    }
+    const records: Readonly<NutritionRecords>[] = parsed.command.items.map((item, index) => {
+      const stored = storedItems[index]!;
+      if (stored.normalized_name !== item.normalized_name) throw new Error("NUTRITION_REPOSITORY_INVALID:item_name");
+      return buildNutritionRecords({
+        operation_id: parsed.command.operation_id,
+        meal_event_id: outcome.record_id,
+        intake_item_id: stored.item_id,
+        item_name: stored.normalized_name,
+        subject_type: material.nutrition_evidence[index]!.source_type === "product_label" ? "product" : "food",
+        subject_id: stored.normalized_name,
+        created_at: event.committed_at,
+      }, material.nutrition_evidence[index]!);
+    });
+    try {
+      persistNutritionRecords(session.database, records);
+    } catch {
+      return committedOutcome(request.action, request.operation_id, "committed_with_issues", outcome.record_id,
+        "record_ids" in outcome ? outcome.record_ids : undefined);
+    }
+    return committedOutcome(request.action, request.operation_id, outcome.status, outcome.record_id,
+      "record_ids" in outcome ? outcome.record_ids : undefined,
+      records.map((record, index) => nutritionOutcomeItem(storedItems[index]!.normalized_name, record)));
+  } catch (error) {
+    return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+  }
 }

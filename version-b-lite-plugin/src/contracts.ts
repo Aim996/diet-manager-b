@@ -218,10 +218,13 @@ function assertNutritionItem(value: unknown): asserts value is NutritionOutcomeI
       return invalidOutcome("nutrition_amount_range");
     }
   }
-  assertExactStringSet(item.known_fields, "nutrition_known_fields");
-  assertExactStringSet(item.missing_fields, "nutrition_missing_fields");
-  assertExactStringSet(item.estimated_fields, "nutrition_estimated_fields");
-  if (item.known_fields.some((field) => item.missing_fields.includes(field))) return invalidOutcome("nutrition_field_overlap");
+  const knownFields = item.known_fields;
+  const missingFields = item.missing_fields;
+  const estimatedFields = item.estimated_fields;
+  assertExactStringSet(knownFields, "nutrition_known_fields");
+  assertExactStringSet(missingFields, "nutrition_missing_fields");
+  assertExactStringSet(estimatedFields, "nutrition_estimated_fields");
+  if (knownFields.some((field) => missingFields.includes(field))) return invalidOutcome("nutrition_field_overlap");
 }
 
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {

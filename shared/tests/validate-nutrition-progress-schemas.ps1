@@ -11,7 +11,7 @@ $ExpectedSchemaId = 'https://diet-manager.local/schemas/nutrition-progress/v1'
 $ExpectedFixtureSetId = 'diet-manager/nutrition-progress-cases/v1'
 $ExpectedVersion = '1.1.0'
 $CompatibleModelVersions = @('1.0.0', '1.1.0')
-$ExpectedSchemaSha256 = 'D31CA16C654D63AA9AC7F64EF2125921064077C460B37D1265C2484ACC31C2CC'
+$ExpectedSchemaSha256 = 'D172E4B3282F6FC5EC884BEFA40A17536F5B773B5A54CEB27011AF493F5671D8'
 $ExpectedFixtureSha256 = '0A944537D8A5E5D0C29EFFF9701559DB1371D2D8E65ED25C40212BC699BFDC27'
 $ExpectedCaseIds = @(
     'NUTR-PROFILE-COMPLETE-VALID',
@@ -226,7 +226,7 @@ $NutrientFields = @('energy_kcal', 'protein_g', 'fat_g', 'carbohydrate_g', 'fibe
 $CoreNutrientFields = @('energy_kcal', 'protein_g', 'fat_g', 'carbohydrate_g', 'fiber_g')
 $MetricFields = @('energy_kcal', 'protein_g', 'fat_g', 'carbohydrate_g', 'fiber_g', 'water_ml')
 $CoverageValues = @('complete', 'partial', 'unknown', 'not_applicable')
-$SourceTypes = @('product_label', 'confirmed_same_product_history', 'authoritative_public_database', 'trusted_public_web', 'personal_template', 'generic_template', 'unknown')
+$SourceTypes = @('product_label', 'confirmed_same_product_history', 'authoritative_public_database', 'trusted_public_web', 'personal_template', 'generic_template', 'generic_estimate', 'unknown')
 
 function Assert-Coverage($Value, [string]$Label) {
     if ($Value -isnot [string] -or [string]$Value -notin $CoverageValues) {
