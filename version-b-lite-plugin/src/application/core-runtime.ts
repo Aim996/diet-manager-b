@@ -968,6 +968,9 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
       );
     }
     if (parsed.command.action === "correct_record") {
+      if (!("correction_kind" in parsed.command)) {
+        return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
+      }
       const session = acquireSession(runtime);
       const resolution = resolveLocationCorrection(
         session.database,

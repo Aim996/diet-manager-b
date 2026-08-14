@@ -127,6 +127,22 @@
 - 后续修复索引：接下来实现 nutrition supplement append-only 路径；Task 5 atomic effect 仍保留为关闭前必修项。
 - 批次提交：`feat: add common dish nutrition templates`。
 
+### Batch C5a / 2026-08-14
+
+- 目标：先冻结营养补充的窄 `correct_record` 解析入口，避免在事务实现时同时猜测自然语言与业务状态机。
+- 绑定 REQ：`REQ-NUTR-006`。
+- 绑定 CASE：`CASE-NUTR-004/005` 的补充入口前置语法；追加事实与网络恢复语义尚未在本小批完成。
+- 起始 HEAD：`8a8606f`。
+- 改动文件：新增 `nutrition-supplement.test.ts`；修改 parser candidate/type、core runtime 未实现边界及 mapping fail-closed 分支。
+- 行为变化：精确文本 `补充营养记录 <event-id>` 解析为当前用户的 `nutrition_supplement` candidate；record ID 只接受 `event-` 加 32 位小写十六进制。事务链尚未接入时，应用入口在打开数据库前稳定返回 `ACTION_NOT_IMPLEMENTED`，不会误走库存位置纠正。
+- 接口/Schema/authority 决策：所有 Core candidate 保持统一的 `operation_id/parser_version` 字段；计划示例缺少这两个现有必需字段，本实现按既有候选兼容约束补齐。目标日期/项目保持 `null`，禁止由文本猜测。
+- 真实 RED：旧 parser 将精确补充请求误判为 `record_meal/non_self_subject`；新候选分支后转 GREEN。
+- 定向 smoke：`nutrition-supplement.test.ts` 1/1 PASS；`tsc --noEmit` PASS。
+- 延期到模块末的测试：缺失/歧义目标、真实 DB 目标解析、FactCommit/effect/finalize、same-key replay、网络恢复、tamper/fault/concurrency 与 full。
+- 已知风险/假设：这只是 Task 6 的解析子批，不代表 supplementation 已可用；下一批必须先做目标 readback 与 append-only fact，不允许直接覆盖旧 Snapshot。
+- 后续修复索引：C5b 从一条真实 unknown meal + exact record ID RED 开始，先固定事件/修订身份，再接 effect。
+- 批次提交：`feat: parse nutrition supplement targets`。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

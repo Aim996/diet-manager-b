@@ -296,6 +296,9 @@ export function mapCoreCandidateToEnvelope(
   correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
 ): Readonly<DomainEnvelopeInput> {
   const digest = identity(request);
+  if (command.action === "correct_record" && !("correction_kind" in command)) {
+    throw new TypeError("CORE_APPLICATION_MAPPING_INVALID:nutrition_supplement_not_implemented");
+  }
   const operations = command.action === "add_inventory"
     ? purchaseOperations(request, command, purchaseResolutions)
     : command.action === "correct_record"

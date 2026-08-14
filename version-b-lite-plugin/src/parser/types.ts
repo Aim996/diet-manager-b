@@ -232,12 +232,25 @@ export interface CoreInventoryLocationCorrectionCandidate {
   readonly rule_version: "diet-manager/location-correction/v1";
 }
 
+export interface CoreNutritionSupplementCandidate {
+  readonly action: "correct_record";
+  readonly operation_id: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly kind: "nutrition_supplement";
+  readonly target_record_id: string | null;
+  readonly target_date_text: string | null;
+  readonly target_item_text: string | null;
+  readonly source_text: string;
+  readonly subject: Readonly<CoreSubjectEvidence>;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
   | Readonly<CoreInventoryCommandCandidate>
   | Readonly<CorePurchaseCommandCandidate>
-  | Readonly<CoreInventoryLocationCorrectionCandidate>;
+  | Readonly<CoreInventoryLocationCorrectionCandidate>
+  | Readonly<CoreNutritionSupplementCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;

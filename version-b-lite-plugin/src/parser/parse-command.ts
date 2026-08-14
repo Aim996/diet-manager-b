@@ -13,6 +13,7 @@ import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
   CoreMealCommandCandidate,
+  CoreNutritionSupplementCandidate,
   OccurredTimeEvidence,
   CoreParseInput,
   CoreParseResult,
@@ -28,8 +29,33 @@ const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 const MAX_CORE_OCCURRENCES = 256;
+const NUTRITION_SUPPLEMENT_TARGET = /^补充营养记录\s+(event-[0-9a-f]{32})[。.]?$/u;
 
 type HealthIntent = "actual_request" | "terminology_explanation" | null;
+
+function nutritionSupplementCandidate(
+  input: Readonly<CoreParseInput>,
+): Readonly<CoreNutritionSupplementCandidate> | null {
+  const match = NUTRITION_SUPPLEMENT_TARGET.exec(input.source_text.trim());
+  if (match === null || match[1] === undefined) return null;
+  return detachedFrozen({
+    action: "correct_record",
+    operation_id: input.operation_id,
+    parser_version: PARSER_VERSION,
+    kind: "nutrition_supplement",
+    target_record_id: match[1],
+    target_date_text: null,
+    target_item_text: null,
+    source_text: input.source_text,
+    subject: {
+      kind: "self",
+      resolution_basis: "omitted_subject_default",
+      subject_entity_created: false,
+      matched_span: null,
+      rule_version: "diet-manager/subject-v1",
+    },
+  });
+}
 
 function classifyHealthIntent(sourceText: string): HealthIntent {
   let explanation = false;
@@ -283,6 +309,10 @@ function mealCandidate(
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value: unknown): CoreParseResult {
   const input = cloneCoreParseInput(value);
+  const nutritionSupplement = nutritionSupplementCandidate(input);
+  if (nutritionSupplement !== null) {
+    return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
+  }
   const pantry = resolvePantryCommand(input);
   if (pantry !== null) {
     return detachedFrozen({ disposition: "candidate", command: pantry });
