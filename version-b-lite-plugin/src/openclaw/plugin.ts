@@ -47,18 +47,35 @@ const legacyItemSchema = Type.Object(
 export const dietManagerParameters = Type.Object(
   {
     action: actionSchema,
-    operation_id: Type.Optional(Type.String()),
-    source_text: Type.Optional(Type.String()),
+    operation_id: Type.Optional(Type.String({
+      description:
+        "Operational calls require this field: use one stable identifier for the current attempted operation.",
+    })),
+    source_text: Type.Optional(Type.String({
+      description:
+        "Operational calls require this field: copy the user's current message verbatim; never normalize or invent food facts.",
+    })),
     occurred_at_text: Type.Optional(Type.String({
       description: "Legacy compatibility evidence; never substitutes for received_at.",
     })),
     items: Type.Optional(Type.Array(legacyItemSchema, {
       description: "Legacy compatibility evidence; the core parses source_text authoritatively.",
     })),
-    received_at: Type.Optional(Type.String()),
-    timezone: Type.Optional(Type.Literal("Asia/Shanghai")),
-    source_message_id: Type.Optional(Type.String()),
-    conversation_id: Type.Optional(Type.String()),
+    received_at: Type.Optional(Type.String({
+      description:
+        "Operational calls require this field: use the current inbound OpenClaw message timestamp as an ISO offset timestamp.",
+    })),
+    timezone: Type.Optional(Type.Literal("Asia/Shanghai", {
+      description: "Operational calls require this field; use Asia/Shanghai.",
+    })),
+    source_message_id: Type.Optional(Type.String({
+      description:
+        "Operational calls require this field: use the stable identifier of the current inbound OpenClaw message.",
+    })),
+    conversation_id: Type.Optional(Type.String({
+      description:
+        "Operational calls require this field: use the current OpenClaw session or conversation identifier.",
+    })),
   },
   {
     additionalProperties: false,
@@ -383,7 +400,7 @@ export default defineToolPlugin({
     tool({
       name: "diet_manager",
       description:
-        "Record completed current-user meals or plain water, or return a truthful non-writing outcome.",
+        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. If committed is false, report that nothing was recorded and do not write a note, memory, or fallback record. Use only returned nutrition data and never estimate nutrition values yourself.",
       parameters: dietManagerParameters,
       execute: executeDietManager,
     }),

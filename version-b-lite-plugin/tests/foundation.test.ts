@@ -137,6 +137,31 @@ describe("diet manager B core plugin boundary", () => {
     expect(skill).toContain("保留整句原话并单次使用 `record_meal`");
     expect(skill).toContain("本阶段后端可能返回 `needs_clarification`");
     expect(skill).toContain("不要擅自改写原话拆成两次调用");
+    expect(skill).toContain("这些调用元数据不是食物、数量或营养事实");
+    expect(skill).toContain("直接告诉用户本次未记录，不创建便签、记忆或替代记录");
+  });
+
+  test("teaches natural-language callers the complete runtime authority recipe", () => {
+    const metadata = getToolPluginMetadata(pluginEntry);
+    const tool = metadata?.tools[0];
+    const properties = dietManagerParameters.properties as Record<string, {
+      description?: string;
+    }>;
+
+    expect(tool?.description).toContain("all seven fields");
+    expect(tool?.description).toContain("current OpenClaw message/session metadata");
+    expect(tool?.description).toContain("do not write a note, memory, or fallback record");
+    expect(tool?.description).toContain("never estimate nutrition values yourself");
+    for (const field of [
+      "source_text",
+      "received_at",
+      "timezone",
+      "operation_id",
+      "source_message_id",
+      "conversation_id",
+    ]) {
+      expect(properties[field]?.description, field).toContain("Operational calls require this field");
+    }
   });
 
   test("keeps runtime/root ownership private to the OpenClaw module", () => {
