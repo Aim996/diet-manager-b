@@ -181,7 +181,12 @@ export interface InventoryAllocationPlan {
   readonly unit: string;
   readonly allocations: readonly Readonly<InventoryAllocation>[];
   readonly candidate_count: number;
-  readonly issue_code: string | null;
+  readonly issue_code:
+    | "inventory_amount_unknown"
+    | "inventory_multiple_candidates"
+    | "inventory_unit_conversion_unproven"
+    | "inventory_insufficient"
+    | null;
   readonly read_required: boolean;
 }
 

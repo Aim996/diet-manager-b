@@ -5,6 +5,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import type {
   ExpirationEvidence,
+  InventoryAllocationPlan,
   OpeningEvidence,
   PackageQuantityEvidence,
   PantryPurchaseEvidence,
@@ -69,6 +70,26 @@ export interface ExpirationRuleInput {
   readonly duration_days: number | null;
   readonly anchor_at: string;
   readonly rule_version: string | null;
+}
+
+export interface InventoryAllocationCandidate {
+  readonly product_id: string;
+  readonly product_identity_fingerprint: string;
+  readonly batch_id: string;
+  readonly available_microunits: number;
+  readonly unit: string;
+  readonly effective_expiration_at: string | null;
+  readonly stocked_at: string;
+  readonly effective_status: "available" | "expired" | "unavailable";
+}
+
+export interface InventoryAllocationInput {
+  readonly location: "home" | "outside";
+  readonly explicit_skip: boolean;
+  readonly requested_microunits: number | null;
+  readonly unit: string;
+  readonly specified_batch_id: string | null;
+  readonly candidates: readonly Readonly<InventoryAllocationCandidate>[];
 }
 
 const MAX_TEXT_LENGTH = 256;
@@ -552,5 +573,161 @@ export function resolveExpiration(input: Readonly<ExpirationRuleInput>): Readonl
     effective_at: shanghaiCalendarAdd(anchor, duration, "expiration_rule.effective_at"),
     basis: "rule",
     rule_version: rule,
+  });
+}
+
+function emptyAllocationPlan(
+  status: Exclude<InventoryAllocationPlan["status"], "matched">,
+  requestedMicrounits: number | null,
+  unit: string,
+  candidateCount: number,
+  issueCode: InventoryAllocationPlan["issue_code"],
+  readRequired: boolean,
+): Readonly<InventoryAllocationPlan> {
+  return Object.freeze({
+    status,
+    requested_microunits: requestedMicrounits,
+    unit,
+    allocations: Object.freeze([]),
+    candidate_count: candidateCount,
+    issue_code: issueCode,
+    read_required: readRequired,
+  });
+}
+
+function nonnegativeSafeInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return invalid(path);
+  return value;
+}
+
+function timestampEpoch(value: unknown, path: string): { readonly value: string; readonly epoch: number } {
+  const timestamp = assertOffsetIsoTimestamp(value, () => invalid(path));
+  const epoch = Date.parse(timestamp);
+  if (!Number.isFinite(epoch)) return invalid(path);
+  return Object.freeze({ value: timestamp, epoch });
+}
+
+export function resolveInventoryAllocation(
+  input: Readonly<InventoryAllocationInput>,
+): Readonly<InventoryAllocationPlan> {
+  if (typeof input !== "object" || input === null || isProxy(input)) return invalid("inventory_allocation");
+  const unit = text(input.unit, "inventory_allocation.unit");
+  if (input.location !== "home" && input.location !== "outside") return invalid("inventory_allocation.location");
+  if (typeof input.explicit_skip !== "boolean") return invalid("inventory_allocation.explicit_skip");
+  const requested = input.requested_microunits === null
+    ? null
+    : positiveSafeInteger(input.requested_microunits, "inventory_allocation.requested_microunits");
+  if (input.location === "outside") {
+    return emptyAllocationPlan("skipped_outside", requested, unit, 0, null, false);
+  }
+  if (input.explicit_skip) {
+    return emptyAllocationPlan("skipped_by_user", requested, unit, 0, null, false);
+  }
+  if (requested === null) {
+    return emptyAllocationPlan("skipped_amount_unknown", null, unit, 0, "inventory_amount_unknown", false);
+  }
+
+  const specifiedBatch = nullableText(input.specified_batch_id, "inventory_allocation.specified_batch_id");
+  if (isProxy(input.candidates) || !Array.isArray(input.candidates)) return invalid("inventory_allocation.candidates");
+  if (input.candidates.length > 256) return invalid("inventory_allocation.candidates.length");
+  const candidates = input.candidates.map((value, index) => {
+    const cloned = cloneOrdinary(value, `inventory_allocation.candidates.${index}`);
+    const record = exactRecord(cloned, [
+      "product_id", "product_identity_fingerprint", "batch_id", "available_microunits", "unit",
+      "effective_expiration_at", "stocked_at", "effective_status",
+    ], `inventory_allocation.candidates.${index}`);
+    const fingerprint = text(
+      record.product_identity_fingerprint,
+      `inventory_allocation.candidates.${index}.product_identity_fingerprint`,
+    );
+    if (!/^[A-F0-9]{64}$/.test(fingerprint)) {
+      return invalid(`inventory_allocation.candidates.${index}.product_identity_fingerprint`);
+    }
+    const expiration = record.effective_expiration_at === null
+      ? null
+      : timestampEpoch(record.effective_expiration_at, `inventory_allocation.candidates.${index}.effective_expiration_at`);
+    return Object.freeze({
+      product_id: text(record.product_id, `inventory_allocation.candidates.${index}.product_id`),
+      product_identity_fingerprint: fingerprint,
+      batch_id: text(record.batch_id, `inventory_allocation.candidates.${index}.batch_id`),
+      available_microunits: nonnegativeSafeInteger(
+        record.available_microunits,
+        `inventory_allocation.candidates.${index}.available_microunits`,
+      ),
+      unit: text(record.unit, `inventory_allocation.candidates.${index}.unit`),
+      effective_expiration_at: expiration?.value ?? null,
+      effective_expiration_epoch: expiration?.epoch ?? null,
+      stocked_at: timestampEpoch(record.stocked_at, `inventory_allocation.candidates.${index}.stocked_at`),
+      effective_status: enumValue(
+        record.effective_status,
+        ["available", "expired", "unavailable"],
+        `inventory_allocation.candidates.${index}.effective_status`,
+      ),
+    });
+  });
+  const batchIds = new Set(candidates.map(({ batch_id }) => batch_id));
+  if (batchIds.size !== candidates.length) return invalid("inventory_allocation.candidates.batch_id");
+  const eligible = candidates.filter(({ effective_status, available_microunits }) =>
+    effective_status === "available" && available_microunits > 0);
+  const identities = new Set(eligible.map(({ product_identity_fingerprint }) => product_identity_fingerprint));
+  if (identities.size > 1) {
+    return emptyAllocationPlan(
+      "skipped_ambiguous", requested, unit, eligible.length, "inventory_multiple_candidates", true,
+    );
+  }
+  const compatible = eligible.filter((candidate) => candidate.unit === unit);
+  if (eligible.length > 0 && compatible.length === 0) {
+    return emptyAllocationPlan(
+      "skipped_unit_incompatible", requested, unit, eligible.length, "inventory_unit_conversion_unproven", true,
+    );
+  }
+  const ordered = [...compatible].sort((left, right) => {
+    const leftSpecified = left.batch_id === specifiedBatch;
+    const rightSpecified = right.batch_id === specifiedBatch;
+    if (leftSpecified !== rightSpecified) return leftSpecified ? -1 : 1;
+    if (left.effective_expiration_epoch === null && right.effective_expiration_epoch !== null) return 1;
+    if (left.effective_expiration_epoch !== null && right.effective_expiration_epoch === null) return -1;
+    if (
+      left.effective_expiration_epoch !== null && right.effective_expiration_epoch !== null &&
+      left.effective_expiration_epoch !== right.effective_expiration_epoch
+    ) return left.effective_expiration_epoch - right.effective_expiration_epoch;
+    if (left.stocked_at.epoch !== right.stocked_at.epoch) return left.stocked_at.epoch - right.stocked_at.epoch;
+    return ordinal(left.batch_id, right.batch_id);
+  });
+  const availableTotal = ordered.reduce((sum, candidate) => sum + BigInt(candidate.available_microunits), 0n);
+  if (availableTotal < BigInt(requested)) {
+    return emptyAllocationPlan(
+      "skipped_insufficient", requested, unit, compatible.length, "inventory_insufficient", true,
+    );
+  }
+  let remaining = requested;
+  const allocations = [];
+  for (const candidate of ordered) {
+    if (remaining === 0) break;
+    const deducted = Math.min(remaining, candidate.available_microunits);
+    remaining -= deducted;
+    allocations.push(Object.freeze({
+      product_id: candidate.product_id,
+      batch_id: candidate.batch_id,
+      before_microunits: candidate.available_microunits,
+      deducted_microunits: deducted,
+      after_microunits: candidate.available_microunits - deducted,
+      unit,
+      selection_basis: candidate.batch_id === specifiedBatch
+        ? "explicit_batch" as const
+        : candidate.effective_expiration_at === null
+          ? "fifo" as const
+          : "fefo" as const,
+    }));
+  }
+  if (remaining !== 0) return invalid("inventory_allocation.remaining");
+  return Object.freeze({
+    status: "matched",
+    requested_microunits: requested,
+    unit,
+    allocations: Object.freeze(allocations),
+    candidate_count: compatible.length,
+    issue_code: null,
+    read_required: true,
   });
 }
