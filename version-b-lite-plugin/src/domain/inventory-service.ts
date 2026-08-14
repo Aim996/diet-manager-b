@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 
+import { canonicalJson } from "../authority/canonical-json.js";
 import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import type {
   ExpirationEvidence,
@@ -10,6 +12,64 @@ import type {
   ProductSpecificationEvidence,
   StorageLocationEvidence,
 } from "./types.js";
+
+export type {
+  ExpirationEvidence,
+  InventoryAllocationPlan,
+  OpeningEvidence,
+  PackageQuantityEvidence,
+  PantryPurchaseEvidence,
+  ProductIdentityEvidence,
+  StorageLocationEvidence,
+} from "./types.js";
+
+export interface PackageQuantityInput {
+  readonly outer_count: number | null;
+  readonly outer_unit: string | null;
+  readonly inner_per_outer: number | null;
+  readonly inner_unit: string | null;
+  readonly capacity_per_inner: number | null;
+  readonly capacity_unit: string | null;
+  readonly total_inner: number | null;
+  readonly total_capacity: number | null;
+}
+
+export interface ProductIdentityCandidate {
+  readonly product_id: string;
+  readonly identity: Readonly<ProductIdentityEvidence>;
+}
+
+export interface ProductIdentityResolutionInput {
+  readonly requested: Readonly<ProductIdentityEvidence>;
+  readonly candidates: readonly Readonly<ProductIdentityCandidate>[];
+}
+
+export type ProductIdentityResolution =
+  | Readonly<{ status: "new"; product_id: string }>
+  | Readonly<{ status: "reuse_exact"; product_id: string }>
+  | Readonly<{ status: "needs_clarification"; candidate_product_ids: readonly string[] }>;
+
+export interface LocationRuleInput {
+  readonly explicit_location: string | null;
+  readonly configured_home_default: Readonly<{
+    readonly value: string;
+    readonly rule_version: string;
+  }> | null;
+}
+
+export interface OpeningRuleInput {
+  readonly partial_use_explicit: boolean;
+  readonly anchor_at: string;
+  readonly rule_version: "diet-manager/opening-evidence-v1";
+}
+
+export interface ExpirationRuleInput {
+  readonly reliability: "explicit" | "reliable_rule" | "unreliable";
+  readonly explicit_at: string | null;
+  readonly duration_days: number | null;
+  readonly anchor_at: string;
+  readonly rule_version: string | null;
+}
 
 const MAX_TEXT_LENGTH = 256;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
@@ -32,7 +92,31 @@ function cloneOrdinary(value: unknown, path: string): unknown {
   }
   if (typeof value !== "object") return invalid(path);
   if (isProxy(value)) return invalid(`${path}.proxy`);
-  if (Array.isArray(value)) return invalid(path);
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return invalid(`${path}.prototype`);
+    const descriptors = Object.getOwnPropertyDescriptors(value) as Record<string, PropertyDescriptor>;
+    const lengthDescriptor = descriptors.length;
+    if (
+      !lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number" ||
+      !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0
+    ) return invalid(`${path}.length`);
+    const length = lengthDescriptor.value as number;
+    const keys = Reflect.ownKeys(value);
+    const expected = ["length", ...Array.from({ length }, (_, index) => String(index))];
+    if (
+      keys.some((key) => typeof key === "symbol") || keys.length !== expected.length ||
+      expected.some((key) => !Object.hasOwn(descriptors, key))
+    ) return invalid(path);
+    const clone: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (!descriptor || !("value" in descriptor) || descriptor.get !== undefined || descriptor.set !== undefined) {
+        return invalid(`${path}.${index}.descriptor`);
+      }
+      clone.push(cloneOrdinary(descriptor.value, `${path}.${index}`));
+    }
+    return Object.freeze(clone);
+  }
   if (Object.getPrototypeOf(value) !== Object.prototype) return invalid(`${path}.prototype`);
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const keys = Reflect.ownKeys(value);
@@ -222,4 +306,251 @@ export function validateAndFreezePantryPurchaseEvidence(value: unknown): Readonl
   validateOpening(record.opening, "pantry_evidence.opening");
   validateExpiration(record.expiration, "pantry_evidence.expiration");
   return record as unknown as Readonly<PantryPurchaseEvidence>;
+}
+
+export function resolvePackageQuantity(input: Readonly<PackageQuantityInput>): Readonly<PackageQuantityEvidence> {
+  const cloned = cloneOrdinary(input, "package_quantity_input");
+  const record = exactRecord(cloned, [
+    "outer_count", "outer_unit", "inner_per_outer", "inner_unit", "capacity_per_inner",
+    "capacity_unit", "total_inner", "total_capacity",
+  ], "package_quantity_input");
+  const outerCount = nullablePositiveSafeInteger(record.outer_count, "package_quantity_input.outer_count");
+  const outerUnit = nullableText(record.outer_unit, "package_quantity_input.outer_unit");
+  const innerPerOuter = nullablePositiveSafeInteger(record.inner_per_outer, "package_quantity_input.inner_per_outer");
+  const innerUnit = nullableText(record.inner_unit, "package_quantity_input.inner_unit");
+  const capacityPerInner = nullablePositiveSafeInteger(record.capacity_per_inner, "package_quantity_input.capacity_per_inner");
+  const capacityUnit = nullableText(record.capacity_unit, "package_quantity_input.capacity_unit");
+  const suppliedTotalInner = nullablePositiveSafeInteger(record.total_inner, "package_quantity_input.total_inner");
+  const suppliedTotalCapacity = nullablePositiveSafeInteger(record.total_capacity, "package_quantity_input.total_capacity");
+  if ((outerCount === null) !== (outerUnit === null)) return invalid("package_quantity_input.outer");
+  if ((innerPerOuter === null) !== (innerUnit === null)) return invalid("package_quantity_input.inner");
+  if ((capacityPerInner === null) !== (capacityUnit === null)) return invalid("package_quantity_input.capacity");
+  if (outerCount === null) {
+    if ([innerPerOuter, capacityPerInner, suppliedTotalInner, suppliedTotalCapacity].some((value) => value !== null)) {
+      return invalid("package_quantity_input");
+    }
+    return Object.freeze({
+      outer_count: null,
+      outer_unit: null,
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: null,
+      capacity_unit: null,
+      total_inner: null,
+      total_capacity: null,
+      formula: null,
+    });
+  }
+  if (innerPerOuter === null) {
+    if (capacityPerInner !== null || suppliedTotalInner !== null || suppliedTotalCapacity !== null) {
+      return invalid("package_quantity_input");
+    }
+    return Object.freeze({
+      outer_count: outerCount,
+      outer_unit: outerUnit,
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: null,
+      capacity_unit: null,
+      total_inner: null,
+      total_capacity: null,
+      formula: null,
+    });
+  }
+  const totalInner = safeProduct(outerCount, innerPerOuter, "package_quantity_input.total_inner");
+  if (suppliedTotalInner !== null && suppliedTotalInner !== totalInner) {
+    return invalid("package_quantity_input.total_inner");
+  }
+  if (capacityPerInner === null) {
+    if (suppliedTotalCapacity !== null) return invalid("package_quantity_input.total_capacity");
+    return Object.freeze({
+      outer_count: outerCount,
+      outer_unit: outerUnit,
+      inner_per_outer: innerPerOuter,
+      inner_unit: innerUnit,
+      capacity_per_inner: null,
+      capacity_unit: null,
+      total_inner: totalInner,
+      total_capacity: null,
+      formula: `${outerCount}*${innerPerOuter}=${totalInner}`,
+    });
+  }
+  const totalCapacity = safeProduct(totalInner, capacityPerInner, "package_quantity_input.total_capacity");
+  if (suppliedTotalCapacity !== null && suppliedTotalCapacity !== totalCapacity) {
+    return invalid("package_quantity_input.total_capacity");
+  }
+  return Object.freeze({
+    outer_count: outerCount,
+    outer_unit: outerUnit,
+    inner_per_outer: innerPerOuter,
+    inner_unit: innerUnit,
+    capacity_per_inner: capacityPerInner,
+    capacity_unit: capacityUnit,
+    total_inner: totalInner,
+    total_capacity: totalCapacity,
+    formula: `${outerCount}*${innerPerOuter}*${capacityPerInner}=${totalCapacity}`,
+  });
+}
+
+function validatedIdentity(value: unknown, path: string): Readonly<ProductIdentityEvidence> {
+  const cloned = cloneOrdinary(value, path);
+  return validateProductIdentity(cloned, path);
+}
+
+function identityMaterial(identity: Readonly<ProductIdentityEvidence>): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    normalized_name: identity.normalized_name,
+    brand: identity.brand,
+    variant_or_flavor: identity.variant_or_flavor,
+    specification: identity.specification,
+  });
+}
+
+export function productIdentityFingerprint(input: Readonly<ProductIdentityEvidence>): string {
+  const identity = validatedIdentity(input, "product_identity");
+  return createHash("sha256").update(canonicalJson(identityMaterial(identity)), "utf8").digest("hex").toUpperCase();
+}
+
+function identityScore(
+  requested: Readonly<ProductIdentityEvidence>,
+  candidate: Readonly<ProductIdentityEvidence>,
+): number {
+  let score = 0;
+  if (candidate.brand === requested.brand) score += 1;
+  if (candidate.variant_or_flavor === requested.variant_or_flavor) score += 1;
+  if (canonicalJson(candidate.specification) === canonicalJson(requested.specification)) score += 1;
+  return score;
+}
+
+function ordinal(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function resolveProductIdentity(input: Readonly<ProductIdentityResolutionInput>): ProductIdentityResolution {
+  const cloned = cloneOrdinary(input, "product_identity_resolution");
+  const record = exactRecord(cloned, ["requested", "candidates"], "product_identity_resolution");
+  const requested = validateProductIdentity(record.requested, "product_identity_resolution.requested");
+  if (!Array.isArray(record.candidates)) return invalid("product_identity_resolution.candidates");
+  if (record.candidates.length > 256) return invalid("product_identity_resolution.candidates.length");
+  const candidates = record.candidates.map((value, index) => {
+    const candidate = exactRecord(value, ["product_id", "identity"], `product_identity_resolution.candidates.${index}`);
+    return Object.freeze({
+      product_id: text(candidate.product_id, `product_identity_resolution.candidates.${index}.product_id`),
+      identity: validateProductIdentity(candidate.identity, `product_identity_resolution.candidates.${index}.identity`),
+    });
+  });
+  const ids = new Set(candidates.map(({ product_id }) => product_id));
+  if (ids.size !== candidates.length) return invalid("product_identity_resolution.candidates.product_id");
+  const fingerprint = productIdentityFingerprint(requested);
+  const exact = candidates
+    .filter(({ identity }) => productIdentityFingerprint(identity) === fingerprint)
+    .sort((left, right) => ordinal(left.product_id, right.product_id));
+  if (exact.length === 1) return Object.freeze({ status: "reuse_exact", product_id: exact[0]!.product_id });
+  if (exact.length > 1) {
+    return Object.freeze({
+      status: "needs_clarification",
+      candidate_product_ids: Object.freeze(exact.slice(0, 4).map(({ product_id }) => product_id)),
+    });
+  }
+  const sameName = candidates
+    .filter(({ identity }) => identity.normalized_name === requested.normalized_name)
+    .sort((left, right) =>
+      identityScore(requested, right.identity) - identityScore(requested, left.identity) ||
+      ordinal(left.product_id, right.product_id));
+  if (sameName.length >= 2) {
+    return Object.freeze({
+      status: "needs_clarification",
+      candidate_product_ids: Object.freeze(sameName.slice(0, 4).map(({ product_id }) => product_id)),
+    });
+  }
+  return Object.freeze({ status: "new", product_id: `product-${fingerprint.slice(0, 32).toLowerCase()}` });
+}
+
+export function resolveStorageLocation(input: Readonly<LocationRuleInput>): Readonly<StorageLocationEvidence> {
+  const cloned = cloneOrdinary(input, "location_rule");
+  const record = exactRecord(cloned, ["explicit_location", "configured_home_default"], "location_rule");
+  const explicit = nullableText(record.explicit_location, "location_rule.explicit_location");
+  if (explicit !== null) {
+    return Object.freeze({ value: explicit, evidence_kind: "explicit", rule_version: null });
+  }
+  const configured = exactRecord(
+    record.configured_home_default,
+    ["value", "rule_version"],
+    "location_rule.configured_home_default",
+  );
+  return Object.freeze({
+    value: text(configured.value, "location_rule.configured_home_default.value"),
+    evidence_kind: "configured_home_default",
+    rule_version: text(configured.rule_version, "location_rule.configured_home_default.rule_version"),
+  });
+}
+
+export function resolveOpening(input: Readonly<OpeningRuleInput>): Readonly<OpeningEvidence> | null {
+  const cloned = cloneOrdinary(input, "opening_rule");
+  const record = exactRecord(cloned, ["partial_use_explicit", "anchor_at", "rule_version"], "opening_rule");
+  if (typeof record.partial_use_explicit !== "boolean") return invalid("opening_rule.partial_use_explicit");
+  const anchor = assertOffsetIsoTimestamp(record.anchor_at, () => invalid("opening_rule.anchor_at"));
+  enumValue(record.rule_version, ["diet-manager/opening-evidence-v1"], "opening_rule.rule_version");
+  if (!record.partial_use_explicit) return null;
+  return Object.freeze({
+    status: "opened",
+    opened_at: anchor,
+    evidence_kind: "rule",
+    rule_version: "diet-manager/opening-evidence-v1",
+  });
+}
+
+function shanghaiCalendarAdd(anchor: string, durationDays: number, path: string): string {
+  const epoch = Date.parse(anchor);
+  const local = new Date(epoch + 8 * 60 * 60 * 1_000);
+  const calculated = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate() + durationDays,
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  );
+  if (!Number.isFinite(calculated)) return invalid(path);
+  const result = new Date(calculated);
+  const year = result.getUTCFullYear();
+  if (year < 1_000 || year > 9_999) return invalid(path);
+  const pad = (value: number, length = 2) => String(value).padStart(length, "0");
+  return `${pad(year, 4)}-${pad(result.getUTCMonth() + 1)}-${pad(result.getUTCDate())}` +
+    `T${pad(result.getUTCHours())}:${pad(result.getUTCMinutes())}:${pad(result.getUTCSeconds())}` +
+    `.${pad(result.getUTCMilliseconds(), 3)}+08:00`;
+}
+
+export function resolveExpiration(input: Readonly<ExpirationRuleInput>): Readonly<ExpirationEvidence> {
+  const cloned = cloneOrdinary(input, "expiration_rule");
+  const record = exactRecord(cloned, [
+    "reliability", "explicit_at", "duration_days", "anchor_at", "rule_version",
+  ], "expiration_rule");
+  const reliability = enumValue(
+    record.reliability,
+    ["explicit", "reliable_rule", "unreliable"],
+    "expiration_rule.reliability",
+  );
+  const explicitAt = nullableTimestamp(record.explicit_at, "expiration_rule.explicit_at");
+  const duration = record.duration_days === null
+    ? null
+    : positiveSafeInteger(record.duration_days, "expiration_rule.duration_days");
+  const anchor = assertOffsetIsoTimestamp(record.anchor_at, () => invalid("expiration_rule.anchor_at"));
+  const rule = nullableText(record.rule_version, "expiration_rule.rule_version");
+  if (reliability === "unreliable") {
+    if (explicitAt !== null || duration !== null || rule !== null) return invalid("expiration_rule");
+    return Object.freeze({ explicit_at: null, effective_at: null, basis: "unknown", rule_version: null });
+  }
+  if (reliability === "explicit") {
+    if (explicitAt === null || duration !== null || rule !== null) return invalid("expiration_rule");
+    return Object.freeze({ explicit_at: explicitAt, effective_at: explicitAt, basis: "explicit", rule_version: null });
+  }
+  if (explicitAt !== null || duration === null || rule === null) return invalid("expiration_rule");
+  return Object.freeze({
+    explicit_at: null,
+    effective_at: shanghaiCalendarAdd(anchor, duration, "expiration_rule.effective_at"),
+    basis: "rule",
+    rule_version: rule,
+  });
 }

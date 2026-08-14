@@ -9,6 +9,12 @@ import { canonicalJson } from "../../src/authority/canonical-json.js";
 import { digestDomainEnvelope } from "../../src/domain/identity.js";
 import {
   PantryEvidenceAuthorityError,
+  productIdentityFingerprint,
+  resolveExpiration,
+  resolveOpening,
+  resolvePackageQuantity,
+  resolveProductIdentity,
+  resolveStorageLocation,
   validateAndFreezePantryPurchaseEvidence,
 } from "../../src/domain/inventory-service.js";
 import { createDietDomainService } from "../../src/domain/service.js";
@@ -372,5 +378,255 @@ describe("SEL-PANTRY-001 purchase evidence authority", () => {
     } finally {
       runtime.close();
     }
+  });
+});
+
+describe("SEL-PANTRY-001 deterministic purchase rules", () => {
+  it("derives the exact four-quantity package equation with safe integer arithmetic", () => {
+    expect(resolvePackageQuantity({
+      outer_count: 2,
+      outer_unit: "box",
+      inner_per_outer: 12,
+      inner_unit: "carton",
+      capacity_per_inner: 250,
+      capacity_unit: "ml",
+      total_inner: null,
+      total_capacity: null,
+    })).toEqual({
+      outer_count: 2,
+      outer_unit: "box",
+      inner_per_outer: 12,
+      inner_unit: "carton",
+      capacity_per_inner: 250,
+      capacity_unit: "ml",
+      total_inner: 24,
+      total_capacity: 6000,
+      formula: "2*12*250=6000",
+    });
+  });
+
+  it("keeps an outer-only egg bag unknown instead of inventing inner quantities", () => {
+    expect(resolvePackageQuantity({
+      outer_count: 1,
+      outer_unit: "bag",
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: null,
+      capacity_unit: null,
+      total_inner: null,
+      total_capacity: null,
+    })).toEqual({
+      outer_count: 1,
+      outer_unit: "bag",
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: null,
+      capacity_unit: null,
+      total_inner: null,
+      total_capacity: null,
+      formula: null,
+    });
+  });
+
+  it.each([
+    ["zero", { outer_count: 0 }],
+    ["negative", { inner_per_outer: -1 }],
+    ["decimal", { capacity_per_inner: 0.5 }],
+    ["unsafe", { inner_per_outer: Number.MAX_SAFE_INTEGER }],
+    ["conflicting inner total", { total_inner: 25 }],
+    ["conflicting capacity total", { total_capacity: 6001 }],
+    ["invented inner", { inner_per_outer: null, inner_unit: null, total_inner: 24, total_capacity: null }],
+  ] as const)("rejects invalid package arithmetic: %s", (_label, change) => {
+    const input = {
+      outer_count: 2,
+      outer_unit: "box",
+      inner_per_outer: 12,
+      inner_unit: "carton",
+      capacity_per_inner: 250,
+      capacity_unit: "ml",
+      total_inner: null,
+      total_capacity: null,
+      ...change,
+    };
+    expect(() => resolvePackageQuantity(input)).toThrow(PantryEvidenceAuthorityError);
+  });
+
+  it("creates stable exact product fingerprints and changes on every identity field", () => {
+    const identity = {
+      raw_name: "牛奶",
+      normalized_name: "milk",
+      brand: "brand-a",
+      variant_or_flavor: "whole",
+      specification: { value: 250, unit: "ml" },
+      evidence_kind: "explicit" as const,
+    };
+    const fingerprint = productIdentityFingerprint(identity);
+    expect(fingerprint).toMatch(/^[A-F0-9]{64}$/);
+    expect(productIdentityFingerprint(structuredClone(identity))).toBe(fingerprint);
+    expect(productIdentityFingerprint({ ...identity, normalized_name: "fresh milk" })).not.toBe(fingerprint);
+    expect(productIdentityFingerprint({ ...identity, brand: "brand-b" })).not.toBe(fingerprint);
+    expect(productIdentityFingerprint({ ...identity, variant_or_flavor: "low-fat" })).not.toBe(fingerprint);
+    expect(productIdentityFingerprint({ ...identity, specification: { value: 251, unit: "ml" } })).not.toBe(fingerprint);
+  });
+
+  it("reuses one exact historical identity and never auto-selects among same-name variants", () => {
+    const requested = {
+      raw_name: "牛奶",
+      normalized_name: "milk",
+      brand: "brand-a",
+      variant_or_flavor: "whole",
+      specification: { value: 250, unit: "ml" },
+      evidence_kind: "explicit" as const,
+    };
+    expect(resolveProductIdentity({
+      requested,
+      candidates: [{ product_id: "product-exact", identity: structuredClone(requested) }],
+    })).toEqual({ status: "reuse_exact", product_id: "product-exact" });
+
+    const ambiguous = resolveProductIdentity({
+      requested,
+      candidates: [
+        { product_id: "product-z", identity: { ...requested, brand: "brand-z", variant_or_flavor: "whole" } },
+        { product_id: "product-c", identity: { ...requested, brand: "brand-a", variant_or_flavor: "low-fat" } },
+        { product_id: "product-a", identity: { ...requested, brand: "brand-a", variant_or_flavor: null } },
+        { product_id: "product-y", identity: { ...requested, brand: "brand-y", variant_or_flavor: "skim" } },
+        { product_id: "product-x", identity: { ...requested, brand: "brand-x", variant_or_flavor: "skim" } },
+      ],
+    });
+    expect(ambiguous).toEqual({
+      status: "needs_clarification",
+      candidate_product_ids: ["product-a", "product-c", "product-z", "product-x"],
+    });
+    expect(Object.isFrozen(ambiguous)).toBe(true);
+    expect(Object.isFrozen((ambiguous as { candidate_product_ids: readonly string[] }).candidate_product_ids)).toBe(true);
+  });
+
+  it("derives a stable new product id when no same-name identity needs clarification", () => {
+    const requested = {
+      raw_name: "苹果",
+      normalized_name: "apple",
+      brand: null,
+      variant_or_flavor: null,
+      specification: null,
+      evidence_kind: "explicit" as const,
+    };
+    const first = resolveProductIdentity({ requested, candidates: [] });
+    const second = resolveProductIdentity({ requested: structuredClone(requested), candidates: [] });
+    expect(first).toEqual(second);
+    expect(first.status).toBe("new");
+  });
+
+  it("labels configured location inference and keeps explicit locations unlabelled as rules", () => {
+    expect(resolveStorageLocation({
+      explicit_location: null,
+      configured_home_default: {
+        value: "refrigerator",
+        rule_version: "diet-manager/default-location-v1",
+      },
+    })).toEqual({
+      value: "refrigerator",
+      evidence_kind: "configured_home_default",
+      rule_version: "diet-manager/default-location-v1",
+    });
+    expect(resolveStorageLocation({
+      explicit_location: "room_temperature_cabinet",
+      configured_home_default: {
+        value: "refrigerator",
+        rule_version: "diet-manager/default-location-v1",
+      },
+    })).toEqual({
+      value: "room_temperature_cabinet",
+      evidence_kind: "explicit",
+      rule_version: null,
+    });
+    expect(() => resolveStorageLocation({
+      explicit_location: null,
+      configured_home_default: null,
+    })).toThrow(PantryEvidenceAuthorityError);
+  });
+
+  it("turns explicit partial use into versioned opening evidence", () => {
+    expect(resolveOpening({
+      partial_use_explicit: true,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: "diet-manager/opening-evidence-v1",
+    })).toEqual({
+      status: "opened",
+      opened_at: "2026-08-11T08:30:00+08:00",
+      evidence_kind: "rule",
+      rule_version: "diet-manager/opening-evidence-v1",
+    });
+    expect(resolveOpening({
+      partial_use_explicit: false,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: "diet-manager/opening-evidence-v1",
+    })).toBeNull();
+  });
+
+  it("keeps unreliable expiration null and performs safe Shanghai calendar addition", () => {
+    expect(resolveExpiration({
+      reliability: "unreliable",
+      explicit_at: null,
+      duration_days: null,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: null,
+    })).toEqual({ explicit_at: null, effective_at: null, basis: "unknown", rule_version: null });
+
+    expect(resolveExpiration({
+      reliability: "reliable_rule",
+      explicit_at: null,
+      duration_days: 1,
+      anchor_at: "2024-02-28T08:30:00+08:00",
+      rule_version: "diet-manager/shelf-life-v1",
+    })).toEqual({
+      explicit_at: null,
+      effective_at: "2024-02-29T08:30:00.000+08:00",
+      basis: "rule",
+      rule_version: "diet-manager/shelf-life-v1",
+    });
+    expect(resolveExpiration({
+      reliability: "reliable_rule",
+      explicit_at: null,
+      duration_days: 1,
+      anchor_at: "2023-12-31T08:30:00+08:00",
+      rule_version: "diet-manager/shelf-life-v1",
+    }).effective_at).toBe("2024-01-01T08:30:00.000+08:00");
+
+    expect(resolveExpiration({
+      reliability: "explicit",
+      explicit_at: "2026-08-20T08:30:00+08:00",
+      duration_days: null,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: null,
+    })).toEqual({
+      explicit_at: "2026-08-20T08:30:00+08:00",
+      effective_at: "2026-08-20T08:30:00+08:00",
+      basis: "explicit",
+      rule_version: null,
+    });
+  });
+
+  it("rejects invented or unsafe expiration rules", () => {
+    expect(() => resolveExpiration({
+      reliability: "unreliable",
+      explicit_at: null,
+      duration_days: 3,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: null,
+    })).toThrow(PantryEvidenceAuthorityError);
+    expect(() => resolveExpiration({
+      reliability: "reliable_rule",
+      explicit_at: null,
+      duration_days: 0,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: "diet-manager/shelf-life-v1",
+    })).toThrow(PantryEvidenceAuthorityError);
+    expect(() => resolveExpiration({
+      reliability: "reliable_rule",
+      explicit_at: null,
+      duration_days: Number.MAX_SAFE_INTEGER,
+      anchor_at: "2026-08-11T08:30:00+08:00",
+      rule_version: "diet-manager/shelf-life-v1",
+    })).toThrow(PantryEvidenceAuthorityError);
   });
 });
