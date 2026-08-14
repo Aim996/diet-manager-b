@@ -12,11 +12,12 @@
 - contract: `diet-manager/contract-v2` / `2` / `632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E`
 - owner: `Codex /root`
 - reviewer: 一名独立领域/规格复核者与一名独立事务/安全复核者
-- status: `in_progress`
+- status: `completed`
 - blocker: `none`
-- next_action: 先按本简报冻结17个选中案例的机器Oracle和夹具；目录门全绿前不修改生产库存逻辑
+- actual_evidence: `EV-20260814-038`
+- next_action: 已完成；唯一下一 WIP 为 `SEL-NUTR-001`
 
-```json trace-active-task
+```json trace-completed-task
 {
   "task_id": "SEL-PANTRY-001",
   "product_scope": "PRODUCT-0.1 商品、入库、家庭库存与批次切片；不代表完整 PRODUCT-0.1",
@@ -42,7 +43,7 @@
   "acceptance_oracle_case_ids": ["CASE-PURCHASE-001", "CASE-PURCHASE-003", "CASE-PURCHASE-007", "CASE-INVENTORY-001", "CASE-INVENTORY-002", "CASE-INVENTORY-003", "CASE-INVENTORY-005", "CASE-INVENTORY-004", "CASE-INVENTORY-009", "CASE-MEAL-004", "CASE-MEAL-005", "CASE-PURCHASE-002", "CASE-PURCHASE-005", "CASE-PURCHASE-006", "CASE-PURCHASE-008", "CASE-PURCHASE-009", "CASE-PURCHASE-010"],
   "forbidden_oracle_enforced": true,
   "required_evidence_types": ["E-CASE", "E-STOR"],
-  "actual_evidence_ids": [],
+  "actual_evidence_ids": ["EV-20260814-038"],
   "risk_ids": ["RISK-005", "RISK-010", "RISK-011", "RISK-012", "RISK-013", "RISK-016", "RISK-017"],
   "decision_ids": ["DEC-004", "DEC-005", "DEC-009", "DEC-011", "DEC-012", "DEC-023", "DEC-024", "DEC-027", "DEC-028"],
   "change_ids": ["CHG-20260810-001", "CHG-20260811-001", "CHG-20260811-002", "CHG-20260813-001", "CHG-20260813-002"],
@@ -52,11 +53,11 @@
   "official_data_roots": ["E:\\codx\\skill\\饮食管家\\.tmp\\official-manifest-sentinel\\SEL-PANTRY-001"],
   "isolated_test_roots": ["E:\\codx\\skill\\饮食管家\\.tmp\\isolated-test-roots\\SEL-PANTRY-001"],
   "owner": "Codex /root",
-  "reviewer": "待分配独立领域复核",
-  "status": "进行中",
+  "reviewer": "一名独立领域/规格复核者与一名独立事务/安全复核者",
+  "status": "已完成",
   "blocker": "none",
-  "next_action": "先补齐§4.5 brief和实施计划，再做四量、模板库存隔离与并发TDD",
-  "reopen_condition": "规则变化重开"
+  "next_action": "已由EV-20260814-038关闭并解锁SEL-NUTR-001",
+  "reopen_condition": "Pantry规则、Schema、事务或所绑定Oracle变化时重开"
 }
 ```
 

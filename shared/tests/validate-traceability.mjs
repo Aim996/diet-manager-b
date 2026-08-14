@@ -30,7 +30,7 @@ const EXPECTED_COUNTS = Object.freeze({
   debts: 7,
   changes: 7,
   governance: 70,
-  evidence: 37,
+  evidence: 38,
   catalogCases: 59,
 });
 
@@ -941,16 +941,16 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   const planText = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH), 'utf8');
   const catalog = JSON.parse(fs.readFileSync(path.join(projectRoot, CATALOG_RELATIVE_PATH), 'utf8'));
   const baseline = buildTraceability(projectRoot);
-  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 70, evidence: 37 });
+  assert.deepEqual(baseline.summary, { requirements: 74, cases: 153, tasks: 63, governance: 70, evidence: 38 });
   assert.deepEqual(baseline.mirrors.tasks.counts.status, {
-    '未开始': 24,
-    '已完成': 30,
+    '未开始': 23,
+    '已完成': 31,
     '进行中': 1,
     '已取消': 8,
   });
   assert.deepEqual(
     baseline.mirrors.tasks.tasks.filter((task) => task.status === '进行中').map((task) => task.id),
-    ['SEL-PANTRY-001'],
+    ['SEL-NUTR-001'],
   );
   const traceTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SH-TRACE-001');
   assert.equal(traceTask?.status, '已完成');
@@ -962,10 +962,13 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
   assert.equal(coreTask?.status, '已完成');
   assert.deepEqual(coreTask?.actual_evidence_ids, ['EV-20260813-037']);
   const pantryTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SEL-PANTRY-001');
-  assert.equal(pantryTask?.status, '进行中');
-  const closureEvidence = baseline.mirrors.evidence.evidence.find((record) => record.id === 'EV-20260813-037');
+  assert.equal(pantryTask?.status, '已完成');
+  assert.deepEqual(pantryTask?.actual_evidence_ids, ['EV-20260814-038']);
+  const nutritionTask = baseline.mirrors.tasks.tasks.find((task) => task.id === 'SEL-NUTR-001');
+  assert.equal(nutritionTask?.status, '进行中');
+  const closureEvidence = baseline.mirrors.evidence.evidence.find((record) => record.id === 'EV-20260814-038');
   assert.equal(closureEvidence?.file_status, 'present');
-  assert.equal(closureEvidence?.file?.path, 'docs/evidence/EV-20260813-037-sel-core-001.md');
+  assert.equal(closureEvidence?.file?.path, 'docs/evidence/EV-20260814-038-sel-pantry-001.md');
 
   const planBytes = fs.readFileSync(path.join(projectRoot, PLAN_RELATIVE_PATH));
   const historicalPlanPath = '总功能开发计划0.3.md';
@@ -1066,17 +1069,17 @@ export function runSelfTests(projectRoot = PROJECT_ROOT) {
     planText: taskRowMutation(planText, 'SH-TRACE-001', (cells) => { cells[3] += '、`B-NOT-REAL-999`'; }),
   }));
 
-  const pantryBriefPath = path.join(projectRoot, 'docs/work-items/SEL-PANTRY-001-brief.md');
-  const pantryBriefText = fs.readFileSync(pantryBriefPath, 'utf8');
+  const nutritionBriefPath = path.join(projectRoot, 'docs/work-items/SEL-NUTR-001-brief.md');
+  const nutritionBriefText = fs.readFileSync(nutritionBriefPath, 'utf8');
   expectFailure('TRACE_ACTIVE_TASK_BRIEF_FIELD_MISSING', () => buildTraceability(projectRoot, {
     briefTextByTask: {
-      'SEL-PANTRY-001': pantryBriefText.replace('  "owner": "Codex /root",\n', ''),
+      'SEL-NUTR-001': nutritionBriefText.replace('  "owner": "Codex /root",\n', ''),
     },
   }));
 
   expectFailure('TRACE_ACTIVE_TASK_BRIEF_COMMAND_INVALID', () => buildTraceability(projectRoot, {
     briefTextByTask: {
-      'SEL-PANTRY-001': pantryBriefText.replace(
+      'SEL-NUTR-001': nutritionBriefText.replace(
         '    "Set-Location -LiteralPath $pluginRoot",\n',
         '    "Set-Location -LiteralPath $missingPluginRoot",\n',
       ),

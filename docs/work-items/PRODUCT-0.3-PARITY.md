@@ -2,8 +2,8 @@
 
 - 基线日期：2026-08-14
 - 上次冻结基线提交：`5b243a7e38ade42c29c593b0a0e81ed7459cee04`
-- 当前实现基线：`61d11f71af15389a31b6e21b00a1243c21d0b7c0` 之后的
-  SEL-PANTRY Task 9 候选（本文与实现同批复审）
+- 当前实现基线：`36b1c6d30375c7d5369c42f22ce498086d50f25c`
+  （SEL-PANTRY 产品候选；Task 10 仅闭合 source 证据与治理）
 - 正式项目目录：`E:\codx\skill\饮食管家`
 - 产品需求唯一权威：`总功能开发计划0.3.md`
 - 增强参考：`总功能开发计划0.4.md`
@@ -31,35 +31,36 @@
 EffectBundle/EnvelopeFinalize、幂等与故障恢复、本人/否定/时间/上下文解析、饮食事实、
 白水事实、最小库存与营养快照、内部纠正和只读投影，以及 OpenClaw 真实插件入口。
 
-尚未闭合的主链包括：Pantry 最终证据闭环、营养来源、Issue 中心、餐食纠错/撤销、六项进度、
+尚未闭合的主链包括：营养来源、Issue 中心、餐食纠错/撤销、六项进度、
 公开查询、标准回执、完整可靠性矩阵、正式安装运维和全部 PRODUCT-0.2 便利层。
 
 ## 3. 0.3 PRODUCT-0.1 对齐矩阵
 
-状态含义：
+状态只使用目标文件允许的机器值：
 
-- `已实现`：当前公共路径和持久化闭环已经由独立证据覆盖。
-- `部分实现`：存在可靠内部能力或窄切片，但 0.3 用户闭环尚未完成。
-- `未实现`：只有契约/Schema/计划，或当前公共入口明确返回未实现。
+- `completed`：当前公共路径和持久化闭环已经由独立证据覆盖。
+- `partial`：存在可靠内部能力或窄切片，但 0.3 用户闭环尚未完成。
+- `missing`：只有契约/Schema/计划，或当前公共入口明确返回未实现。
+- `deviated`、`excluded_by_0.3`、`canceled_by_valid_decision`：只在存在对应事实或正式裁决时使用。
 
 | 0.3 能力 | 当前状态 | 已有内容 | 仍缺内容 / 下一任务 |
 |---|---|---|---|
-| §5 本人、事实优先、未知保留、非医疗边界 | 已实现 | parser、application 和 domain 已执行本人/非本人、否定、已发生/计划、unknown 非零化规则 | 后续所有新功能必须复用，不得绕开 |
-| §6 日常饮食记录 | 已实现（核心范围） | `record_meal` 支持多项、未知数量、完整 source/time/subject/context 证据，真实 event/items/outbox/finalization | 组合菜品、公开标准回执仍在 RECEIPT/NUTR 范围 |
-| §16 白水记录 | 已实现（核心范围） | `record_water` 独立 WaterEvent、完整时间与容量证据、真实进度贡献、只读回读 | 六项目标和标准回执由 PROGRESS/RECEIPT 补齐 |
-| §20 时间、否定、本人、上下文 | 已实现（核心范围） | 0.4 安全增强后的 parser 覆盖绝对/相对时间、分句否定、谓词归属、混合液体边界 | 继续保持 0.3 语义，不把 0.4 新推理扩大为产品事实 |
-| §7 商品入库 | 已实现（Pantry 核心范围） | 公共 `add_inventory` 已连接 parser→application→FactCommit→effect→finalizer；支持单/多商品、稳定父子 identity、真实 `record_id/record_ids` 和重开重放 | SEL-PANTRY Task 10 仍需冻结最终案例/证据与治理闭环；更丰富交互属于后续 Receipt/Issue |
-| §9 库存匹配与扣减 | 已实现（Pantry 核心范围） | 确定性候选、FEFO/FIFO、全有或全无分配、显式跳过零读取、餐食扣减、补偿事务、陈旧并发和篡改拒绝均有真实测试 | 跨 Pantry/Nutrition 的全产品可靠性汇总由 SEL-FACTEFFECT/RELIABILITY 补齐 |
-| §11 商品/批次/位置/保质期 | 已实现（Pantry 核心范围） | ProductIdentity、InventoryBatch、包装方程、位置/保质期证据、开封规则、过期排除、只读投影，以及追加式位置更正均已落库 | 主动临期提醒、延期和个人位置库属于 PRODUCT-0.2 `SEL-LIFE-001`；Pantry Task 10 尚需闭环 |
-| §12 入库回执 | 已实现（Pantry 核心范围） | 单/多商品结果保留顺序、位置/到期证据、真实 record IDs；位置更正回执明确 previous/current location | 全产品统一标准回执布局和 Issue 快捷项仍属 `SEL-RECEIPT-001` |
-| §13 营养来源与计算 | 部分实现 | NutritionVector、候选选择、不可变 meal snapshot、unknown/估算基础与事务传播 | 缺来源适配器、许可/缓存、Profile、真实 Probe/Doctor、主备降级；SEL-NUTR-001 |
-| §8 Issue 与待补全 | 部分实现（内部 issue 行） | 库存未知/不足等内部 issue 可随事实保存 | 缺统一 Issue 生命周期、公开查询、快捷选项、解决事件和执行前复核；SEL-ISSUE-001 |
-| §15 纠正、撤销、恢复 | 部分实现（库存位置更正已公开） | `correct_record` 已公开执行库存批次位置更正，采用独立 preview v5 身份、追加事实、effect、finalizer、只读投影和故障恢复；既有餐食纠正内部状态机保留 | 餐食/饮水公开纠正、`undo_record`、完整目标定位和快捷交互仍由 `SEL-CORR-001` 闭合 |
-| §17 daily_progress | 部分实现 | daily_progress contribution、并发 reservation、按日存储、饮水/饮食增量基础存在 | 缺 GoalVersion、六项目标、unknown 下界、固定展示和直接公共查询；SEL-PROGRESS-001 |
-| §19 查询与日/周回顾 | 部分实现 | repository 有 meal/water/daily projection，严格只读和 preview identity 验证 | application 对 `query_inventory/query_meals/query_daily_summary` 仍返回 `ACTION_NOT_IMPLEMENTED`；SEL-QUERY-001 |
-| §18 成功回执 | 部分实现 | 内部 receipt/execution result 和黄金回执基础存在 | 公共 outcome 目前只有净化 status/record_id；缺逐菜、证据标签、Issue 快捷项、最终进度块；SEL-RECEIPT-001 |
-| §21 安全、隐私、事务 | 部分实现（核心引擎强） | SQLite、迁移守卫、preview HMAC、FactCommit→effect→finalize、并发/崩溃/响应丢失、官方根零写验证 | 需对新增全部功能重跑完整可靠性矩阵并形成 SEL-RELIABILITY-001 发布证据 |
-| §22 安装、迁移、备份、恢复、导出、卸载 | 未实现 | 当前只有开发插件构建、验证和 runtime 懒加载 | SEL-INSTALL/MIGRATE/BACKUP/EXPORT-BASE/RELEASE 全部未开始 |
+| §5 本人、事实优先、未知保留、非医疗边界 | completed | parser、application 和 domain 已执行本人/非本人、否定、已发生/计划、unknown 非零化规则 | 后续所有新功能必须复用，不得绕开 |
+| §6 日常饮食记录 | partial | `record_meal` 支持多项、未知数量、完整 source/time/subject/context 证据，真实 event/items/outbox/finalization | 组合菜品、公开标准回执仍在 RECEIPT/NUTR 范围 |
+| §16 白水记录 | partial | `record_water` 独立 WaterEvent、完整时间与容量证据、真实进度贡献、只读回读 | 六项目标和标准回执由 PROGRESS/RECEIPT 补齐 |
+| §20 时间、否定、本人、上下文 | completed | 0.4 安全增强后的 parser 覆盖绝对/相对时间、分句否定、谓词归属、混合液体边界 | 继续保持 0.3 语义，不把 0.4 新推理扩大为产品事实 |
+| §7 商品入库 | partial | 源码 `add_inventory` 已连接真实工具注册边界与 parser→application→FactCommit→effect→finalizer；支持单/多商品、稳定父子 identity、真实 `record_id/record_ids` 和重开重放 | 当前正式 `dist` 尚未包含 Pantry；用户可安装使用须由后续唯一正式 build/release 证明；更丰富交互属于 Receipt/Issue |
+| §9 库存匹配与扣减 | partial | 确定性候选、FEFO/FIFO、全有或全无分配、显式跳过零读取、餐食扣减、补偿事务、陈旧并发和篡改拒绝均有真实源码测试 | 当前正式 `dist` 尚未包含 Pantry；跨 Pantry/Nutrition 的全产品可靠性由 SEL-FACTEFFECT/RELIABILITY 补齐 |
+| §11 商品/批次/位置/保质期 | partial | ProductIdentity、InventoryBatch、包装方程、位置/保质期证据、开封规则、过期排除、只读投影，以及追加式位置更正均已在源码候选落库 | 当前正式 `dist` 尚未包含 Pantry；主动临期提醒、延期和个人位置库属于 PRODUCT-0.2 `SEL-LIFE-001` |
+| §12 入库回执 | partial | 单/多商品结果保留顺序、位置/到期证据、真实 record IDs；位置更正回执明确 previous/current location | 全产品统一标准回执布局和 Issue 快捷项仍属 `SEL-RECEIPT-001` |
+| §13 营养来源与计算 | partial | NutritionVector、候选选择、不可变 meal snapshot、unknown/估算基础与事务传播 | 缺来源适配器、许可/缓存、完整 Profile authority、真实 Probe/Doctor、主备降级；SEL-NUTR-001 |
+| §8 Issue 与待补全 | partial | 库存未知/不足等内部 issue 可随事实保存 | 缺统一 Issue 生命周期、公开查询、快捷选项、解决事件和执行前复核；SEL-ISSUE-001 |
+| §15 纠正、撤销、恢复 | partial | `correct_record` 已公开执行库存批次位置更正，采用独立 preview v5 身份、追加事实、effect、finalizer、只读投影和故障恢复；既有餐食纠正内部状态机保留 | 餐食/饮水公开纠正、`undo_record`、完整目标定位和快捷交互仍由 `SEL-CORR-001` 闭合 |
+| §17 daily_progress | partial | daily_progress contribution、并发 reservation、按日存储、饮水/饮食增量基础存在 | 缺 GoalVersion、六项目标、unknown 下界、固定展示和直接公共查询；SEL-PROGRESS-001 |
+| §19 查询与日/周回顾 | partial | repository 有 meal/water/daily projection，严格只读和 preview identity 验证 | application 对 `query_inventory/query_meals/query_daily_summary` 仍返回 `ACTION_NOT_IMPLEMENTED`；SEL-QUERY-001 |
+| §18 成功回执 | partial | 内部 receipt/execution result 和黄金回执基础存在 | 公共 outcome 目前只有净化 status/record_id；缺逐菜、证据标签、Issue 快捷项、最终进度块；SEL-RECEIPT-001 |
+| §21 安全、隐私、事务 | partial | SQLite、迁移守卫、preview HMAC、FactCommit→effect→finalize、并发/崩溃/响应丢失、官方根零写验证 | 需对新增全部功能重跑完整可靠性矩阵并形成 SEL-RELIABILITY-001 发布证据 |
+| §22 安装、迁移、备份、恢复、导出、卸载 | missing | 当前只有开发插件构建、验证和 runtime 懒加载 | SEL-INSTALL/MIGRATE/BACKUP/EXPORT-BASE/RELEASE 全部未开始 |
 
 ## 4. PRODUCT-0.2 对齐矩阵
 
@@ -67,12 +68,12 @@ PRODUCT-0.2 必须建立在已发布且不退化的 PRODUCT-0.1 上；当前不�
 
 | 0.3 PRODUCT-0.2 能力 | 当前状态 | 计划任务 |
 |---|---|---|
-| §14 个人菜品模板与复用 | 未实现（契约基础存在） | `SEL-TEMPLATE-001` |
-| §19 丰富周回顾、快速复用、批量补录 | 未实现 | `SEL-REVIEW-001` |
-| §11 主动临期提醒、延期、库存调整、个人位置 | 未实现 | `SEL-LIFE-001` |
-| Rich CSV/分析/匿名化导出 | 未实现 | `SEL-EXPORT-001` |
-| 0.1→0.2 升级、回滚与兼容 | 未实现 | `SEL-UPGRADE-002` |
-| 0.2 不可变发布 | 未实现 | `SEL-RELEASE-002` |
+| §14 个人菜品模板与复用 | missing | `SEL-TEMPLATE-001` |
+| §19 丰富周回顾、快速复用、批量补录 | missing | `SEL-REVIEW-001` |
+| §11 主动临期提醒、延期、库存调整、个人位置 | missing | `SEL-LIFE-001` |
+| Rich CSV/分析/匿名化导出 | missing | `SEL-EXPORT-001` |
+| 0.1→0.2 升级、回滚与兼容 | missing | `SEL-UPGRADE-002` |
+| 0.2 不可变发布 | missing | `SEL-RELEASE-002` |
 
 0.4 新增的 `SEL-RESEARCH-001` 与 `SEL-NUTR-WATCH-001` 作为后续增强候选保留，
 但不属于 0.3 PRODUCT-0.1/0.2 基础功能，不得阻塞上述任务。
@@ -106,15 +107,14 @@ OpenClaw 契约目前声明八个 action，application 真实执行已有：
 ### 5.3 当前治理状态
 
 - `SEL-CORE-001`：已完成，证据 `EV-20260813-037`。
-- `SEL-PANTRY-001`：进行中；Task1–Task8 已形成公开采购/批次/扣减主链，Task9
-  位置更正候选已通过 926/926 全量测试与 no-emit 类型检查；保质期重算、显式到期日优先、
+- `SEL-PANTRY-001`：已由 `EV-20260814-038` 关闭；Task1–Task8 已形成公开采购/批次/扣减主链，Task9
+  位置更正提交 `36b1c6d` 已通过 926/926 全量测试与 no-emit 类型检查；保质期重算、显式到期日优先、
   纠正后 FEFO、按认证 `base_revision` 串联多次历史纠正、原终态在后续纠正/扣减后精确重放、
   以采购 v4 私有签名为根并覆盖候选读取、扣减写前、首次/后续纠正及已是目标状态判断的
   采购事实、产品/批次关系行、全部同封采购身份→纠正→当前投影完整权威链、活跃与终态 effect 隔离，
-  以及不同幂等键的已是目标状态零写入响应均已有针对性回归，
-  等待最终独立复审和提交；
-  Task10 负责最终 source acceptance、证据与治理闭环。
-- PRODUCT-0.1 其余未开始任务：`SEL-NUTR-001`、`SEL-FACTEFFECT-001`、
+  以及不同幂等键的已是目标状态零写入响应均已有针对性回归。
+- `SEL-NUTR-001`：唯一进行中任务；按 0.3 功能权威实现来源链、Profile/Snapshot、unknown、采用量与公开来源标签，0.4 只增强 Probe/Doctor、缓存和安全配置。
+- PRODUCT-0.1 其余未开始任务：`SEL-FACTEFFECT-001`、
   `SEL-ISSUE-001`、`SEL-CORR-001`、`SEL-PROGRESS-001`、`SEL-QUERY-001`、
   `SEL-RECEIPT-001`、`SEL-RELIABILITY-001`、`SEL-INSTALL-001`、
   `SEL-MIGRATE-001`、`SEL-BACKUP-001`、`SEL-EXPORT-BASE-001`、
@@ -141,7 +141,7 @@ OpenClaw 契约目前声明八个 action，application 真实执行已有：
 
 只有同时满足以下条件，才可把“0.3 功能完成”反馈给用户：
 
-- 本文所有 PRODUCT-0.1 与 PRODUCT-0.2 行均从 `部分实现/未实现` 变为有证据的 `已实现`；
+- 本文所有 PRODUCT-0.1 与 PRODUCT-0.2 行均从 `partial/missing/deviated` 变为有证据的 `completed`，或具有 0.3/正式决策依据的排除状态；
 - 所有公共 action 通过真实 OpenClaw 注册入口可用，不依赖直接调用内部 service；
 - 每项写入都有真实 record/event identity、幂等、事务、只读回读和故障恢复证据；
 - 正式安装、升级、备份、恢复、导出、默认保留卸载和确认删除卸载均通过隔离 E2E；

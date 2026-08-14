@@ -3,8 +3,8 @@
   "generated_from": {
     "plan": {
       "path": "总功能开发计划0.4.md",
-      "length": 323911,
-      "sha256": "EADA08592739297191D44AD991E3A6117AD8C6CF9269E81DE9CF24336263C628"
+      "length": 324487,
+      "sha256": "53D2C58BA790B6DCC74BDCC8E7E10E2C54E398AC425308A942043050D50C4DCF"
     },
     "acceptance_catalog": {
       "path": "shared/acceptance-cases/cases.json",
@@ -13,13 +13,13 @@
     },
     "generator": {
       "path": "shared/tests/validate-traceability.mjs",
-      "length": 54042,
-      "sha256": "92D08203ADA1C0B7ACF0E1528C52A8ABC6C60D839B08E5AE577F601259B00FAD"
+      "length": 54274,
+      "sha256": "634DE6CBE2F9EBBB1E0D25AA180F81A8524F608CED212C5A36FE91BCEDA3645F"
     }
   },
   "counts": {
-    "evidence": 37,
-    "files_present": 35,
+    "evidence": 38,
+    "files_present": 36,
     "historical_registry_only": 2
   },
   "evidence": [
@@ -672,6 +672,25 @@
       "file_status": "present",
       "referenced_by_task_ids": [
         "SEL-CORE-001"
+      ]
+    },
+    {
+      "id": "EV-20260814-038",
+      "scope": "SEL-PANTRY-001 商品、入库、家庭库存与批次切片",
+      "result": "产品候选36b1c6d30375c7d5369c42f22ce498086d50f25c通过17个选中CASE断言路径、926项完整source测试、Pantry/事务/根权威门与两路独立复核；P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭SEL-PANTRY-001并只解锁SEL-NUTR-001；full_case_set=none，不证明完整PRODUCT-0.1、安装、发布或正式dist",
+      "reference_ids": [
+        "SEL-PANTRY-001",
+        "SEL-NUTR-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260814-038-sel-pantry-001.md",
+        "length": 3133,
+        "sha256": "44A742AF5D702DDA5FC463A81DA83A1BE05070A5E90D6054C1A884FB6EE57809"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SEL-PANTRY-001"
       ]
     }
   ]

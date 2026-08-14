@@ -1,6 +1,14 @@
 # SEL-NUTR-001 开发日志
 
-> 状态：设计冻结候选的开发记录模板。产品代码尚未开始修改。
+> 状态：设计与实施计划已冻结；正在关闭前置 Pantry 台账并开启唯一 NUTR WIP。产品代码尚未开始修改。
+
+### Preconditions / 2026-08-14
+
+- 目标：关闭 `SEL-PANTRY-001`，登记 `EV-20260814-038`，创建完整 NUTR active brief。
+- 起始 HEAD：`3f7d4fd`。
+- 真实 RED：trace self-test 报 `TRACE_EVIDENCE_FILE_ORPHAN:EV-20260814-038-sel-pantry-001.md`。
+- 改动范围：只改计划、brief、report/evidence引用、trace validator 与派生镜像；不改产品源码。
+- 测试策略：本批只跑 trace write/normal/self 与 diff-check；产品全量测试延期到营养模块实现完成。
 
 ## 使用规则
 
