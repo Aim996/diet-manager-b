@@ -27,6 +27,23 @@
 - 后续修复索引：无产品运行时缺陷；PowerShell 7 `ConvertFrom-Json -DateKind String` 与 mutation setter 兼容修复已包含在本批。
 - 批次提交：`feat: freeze nutrition contracts`（本段日志与实现同一提交）。
 
+### Batch B1 / 2026-08-14
+
+- 目标：实现可信营养配置、三类来源 adapter、八层顺序 client、统一 deadline 和只读 Doctor。
+- 绑定 REQ：`REQ-NUTR-001/002/003/005`、`REQ-SOURCE-001`。
+- 绑定 CASE：`CASE-NUTR-001/004/005`、`CASE-SOURCE-001/002/003`。
+- 起始 HEAD：`fab7961`。
+- 改动文件：新增 `src/nutrition/{types,config,source-client,doctor}.ts` 与三个 `adapters/*`；扩展 OpenClaw backend-only nutrition config；新增两份 acceptance test。
+- 行为变化：可信配置默认 deadline 2000ms、仅允许 500—5000ms；source entry 按 registry rank/source ID 排序；resolution 使用单一 aggregate AbortSignal，首个较高层可靠证据获胜，超时/错误最终保留 unknown；Doctor 只调用 Probe，不 resolve 用户数据、不打开 DB。
+- 接口/Schema/authority 决策：来源请求只含七个规范化 allowlist 字段；config clone 在数组/反射前拒绝 Proxy、getter 和非普通对象；digest 不含 credential ref 文本，只绑定“是否已配置”；runtime identity 已增加 `source_config_digest` 冲突检查，真正营养 runtime 注入留给下一批 async application 接线。
+- 兼容边界：`nutrition` 是 OpenClaw config 的可选 backend-only 字段；旧配置自动使用空来源、固定 policy 和 2000ms，不改变八个 action 或模型参数。
+- 真实 RED：两份新 Vitest 在收集阶段均以 `src/nutrition/config.js` missing module 失败；首个 Doctor GREEN 运行又暴露同 rank 必须按 source ID 排序，修正测试期望后通过。
+- 定向 smoke：`nutrition-source.test.ts` 3/3、`nutrition-doctor.test.ts` 1/1；总计 4/4，约 1.1 秒。
+- 延期到模块末的测试：插件 config 兼容全集、三个 adapter fixture transport 的扩展矩阵、`tsc --noEmit`、application/full/trace；不 build、不真实联网。
+- 已知风险/假设：adapter 目前只提供安全注入接口，没有实际 FDC/OFF HTTP transport；持久单飞与异步 application 尚未实现；timeout 后迟到 Promise 不取得任何写能力。
+- 后续修复索引：无；后续 Batch B2 将把 config/adapters 注入 v6 claim 与异步 handler。
+- 批次提交：`feat: add nutrition source capability`（本段日志与实现同一提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

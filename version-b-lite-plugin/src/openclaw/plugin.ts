@@ -9,6 +9,8 @@ import { handleCoreRequest } from "../application/command-handler.js";
 import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
+import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import type { NutritionRuntimeConfig } from "../nutrition/types.js";
 import {
   assertDietManagerOutcome,
   dietManagerActions,
@@ -62,6 +64,20 @@ export const dietManagerParameters = Type.Object(
   },
 );
 
+const nutritionSourceConfigSchema = Type.Object({
+  source_id: Type.String(),
+  enabled: Type.Boolean(),
+  backend_id: Type.String(),
+  backend_version: Type.String(),
+}, { additionalProperties: false });
+
+const nutritionConfigSchema = Type.Object({
+  policy_version: Type.String(),
+  resolution_deadline_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 5000 })),
+  sources: Type.Array(nutritionSourceConfigSchema, { maxItems: 32 }),
+  credential_refs: Type.Optional(Type.Record(Type.String(), Type.String())),
+}, { additionalProperties: false });
+
 const coreConfigSchema = Type.Object(
   {
     official_data_root: Type.String({
@@ -70,6 +86,7 @@ const coreConfigSchema = Type.Object(
       "x-diet-manager-root-semantics":
         "backend_owned_existing_absolute_runtime_root",
     }),
+    nutrition: Type.Optional(nutritionConfigSchema),
   },
   {
     additionalProperties: false,
@@ -102,6 +119,7 @@ const CORE_REQUEST_FIELDS = Object.freeze([
 interface PluginRuntimeState {
   runtime?: CoreRuntime;
   physicalRoot?: string;
+  sourceConfigDigest?: string;
   lifecycleRegistered: boolean;
 }
 
@@ -151,11 +169,17 @@ function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
   };
 }
 
-function clonePluginRoot(value: unknown): string {
-  const descriptors = dataDescriptors(value, ["official_data_root"]);
+function clonePluginConfig(value: unknown): Readonly<{
+  root: string;
+  nutrition: Readonly<NutritionRuntimeConfig>;
+}> {
+  const descriptors = dataDescriptors(value, ["official_data_root", "nutrition"], ["official_data_root"]);
   const root = descriptors.official_data_root?.value;
   if (typeof root !== "string") throw new TypeError("OPENCLAW_AUTHORITY_INVALID:config_root");
-  return root;
+  return Object.freeze({
+    root,
+    nutrition: cloneNutritionRuntimeConfig(descriptors.nutrition?.value),
+  });
 }
 
 function safeRequestIdentity(value: unknown): {
@@ -204,6 +228,7 @@ function releasePluginRuntime(runtime: CoreRuntime, api: object): void {
 
 function acquirePluginRuntime(
   root: string,
+  nutrition: Readonly<NutritionRuntimeConfig>,
   context: ToolPluginExecutionContext,
 ): CoreRuntime {
   const physicalRoot = assertPrivateRuntimeRoot(root);
@@ -216,6 +241,9 @@ function acquirePluginRuntime(
       !samePhysicalRoot(state.physicalRoot, physicalRoot)) {
     throw new Error("PLUGIN_CONFIG_CONFLICT");
   }
+  if (state.sourceConfigDigest !== undefined && state.sourceConfigDigest !== nutrition.source_config_digest) {
+    throw new Error("PLUGIN_CONFIG_CONFLICT");
+  }
   const candidate = createCoreRuntime({
     officialDataRoot: physicalRoot,
     now: () => new Date().toISOString(),
@@ -223,6 +251,7 @@ function acquirePluginRuntime(
   if (state.runtime === undefined) {
     state.runtime = candidate;
     state.physicalRoot = physicalRoot;
+    state.sourceConfigDigest = nutrition.source_config_digest;
     let owners = pluginRuntimeOwners.get(candidate);
     if (owners === undefined) {
       owners = new Set<object>();
@@ -244,6 +273,7 @@ function acquirePluginRuntime(
           }
           ownedState.runtime = undefined;
           ownedState.physicalRoot = undefined;
+          ownedState.sourceConfigDigest = undefined;
           pluginRuntimeStates.delete(context.api);
         },
       });
@@ -252,6 +282,7 @@ function acquirePluginRuntime(
       releasePluginRuntime(state.runtime, context.api);
       state.runtime = undefined;
       state.physicalRoot = undefined;
+      state.sourceConfigDigest = undefined;
       pluginRuntimeStates.delete(context.api);
       throw error;
     }
@@ -282,9 +313,9 @@ async function executeDietManager(
       "APPLICATION_AUTHORITY_REQUIRED",
     ));
   }
-  let root: string;
+  let pluginConfig: ReturnType<typeof clonePluginConfig>;
   try {
-    root = clonePluginRoot(configValue);
+    pluginConfig = clonePluginConfig(configValue);
   } catch {
     return validatedJsonOutcome(failedOutcome(
       request.action,
@@ -293,7 +324,7 @@ async function executeDietManager(
     ));
   }
   try {
-    const runtime = acquirePluginRuntime(root, context);
+    const runtime = acquirePluginRuntime(pluginConfig.root, pluginConfig.nutrition, context);
     return validatedJsonOutcome(handleCoreRequest(runtime, request));
   } catch (error) {
     const errorCode = error instanceof Error && error.message === "PLUGIN_CONFIG_CONFLICT"
