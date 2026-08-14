@@ -2,6 +2,7 @@ import { isProxy } from "node:util/types";
 
 import { canonicalSha256 } from "../authority/canonical-json.js";
 import {
+  assertV1NutritionSource,
   freezeNutritionData,
   REGISTERED_SOURCE_TIERS,
   SOURCE_TIER_RANK,
@@ -76,6 +77,7 @@ function cloneSources(value: unknown, refs: Readonly<Record<string, string>>): r
     if (typeof sourceId !== "string" || REGISTERED_SOURCE_TIERS[sourceId] === undefined || seen.has(sourceId)) {
       return invalid(`sources.${index}.source_id`);
     }
+    assertV1NutritionSource(sourceId);
     if (typeof enabled !== "boolean" || typeof backendId !== "string" || backendId.length === 0 || backendId.length > 128 ||
         typeof backendVersion !== "string" || backendVersion.length === 0 || backendVersion.length > 128) {
       return invalid(`sources.${index}:value`);

@@ -1,4 +1,5 @@
 import {
+  assertV1NutritionSource,
   freezeNutritionData,
   SOURCE_TIER_RANK,
   type NutritionRuntimeConfig,
@@ -29,6 +30,7 @@ function orderedAdapters(adapters: readonly NutritionSourceAdapter[]): readonly 
     if (seen.has(capability.source_id) || capability.rank !== SOURCE_TIER_RANK[capability.tier]) {
       throw new TypeError("NUTRITION_SOURCE_INVALID:capability");
     }
+    assertV1NutritionSource(capability.source_id);
     seen.add(capability.source_id);
     return adapter;
   }));
@@ -58,6 +60,7 @@ function acceptedEvidence(
     if (resolution.evidence.source_id !== sourceId) {
       throw new TypeError("NUTRITION_SOURCE_INVALID:evidence_identity");
     }
+    assertV1NutritionSource(sourceId, resolution.evidence.source_type);
     return freezeNutritionData(resolution.evidence);
   }
   return undefined;
@@ -94,14 +97,16 @@ export async function resolveNutrition(
           entry.backend_version !== capability.backend_version)) {
         continue;
       }
+      let resolution: Readonly<SourceResolution> | undefined;
       try {
-        const resolution = await awaitWithAbort(adapter.resolve(request, runtimeContext), controller.signal);
-        if (resolution === undefined) break;
-        const evidence = acceptedEvidence(resolution, capability.source_id, capability.tier);
-        if (evidence !== undefined) return evidence;
+        resolution = await awaitWithAbort(adapter.resolve(request, runtimeContext), controller.signal);
       } catch {
         if (controller.signal.aborted) break;
+        continue;
       }
+      if (resolution === undefined) break;
+      const evidence = acceptedEvidence(resolution, capability.source_id, capability.tier);
+      if (evidence !== undefined) return evidence;
     }
     return unknownNutritionEvidence();
   } finally {

@@ -40,15 +40,16 @@
 
 **Files:**
 - Modify: `version-b-lite-plugin/src/nutrition/config.ts`
-- Modify: `version-b-lite-plugin/src/nutrition/nutrition-service.ts`
+- Modify: `version-b-lite-plugin/src/nutrition/types.ts`
+- Modify: `version-b-lite-plugin/src/nutrition/source-client.ts`
 - Test: `version-b-lite-plugin/tests/acceptance/nutrition-source.test.ts`
 
 **Interfaces:**
 - Produces: `assertV1NutritionSource(source_id, source_type)` used before a resolved value becomes a meal fact.
 
-- [ ] Add one test that supplies `local.generic_estimate` numeric evidence and expects `NUTRITION_SOURCE_NOT_ALLOWED` before FactCommit.
-- [ ] Allow only authoritative public database, user-authored library, and confirmed product-label evidence; keep `unknown` as the terminal fallback.
-- [ ] Run the focused source test and `tsc --noEmit`, record and commit.
+- [x] Add one test that supplies `local.generic_estimate` numeric evidence and expects `NUTRITION_SOURCE_NOT_ALLOWED` before FactCommit.
+- [x] Allow only authoritative public database, user-authored library, and confirmed product-label evidence; keep `unknown` as the terminal fallback.
+- [x] Run the focused source test and `tsc --noEmit`, record and commit.
 
 ### Task 3: Make unique inventory deduction atomic with the 0.1.0 meal fact
 

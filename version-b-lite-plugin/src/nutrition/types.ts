@@ -99,6 +99,25 @@ export interface ResolvedNutritionEvidence {
   readonly formula: string;
 }
 
+const V1_ALLOWED_NUTRITION_SOURCE_TYPES: Readonly<Record<string, ResolvedNutritionEvidence["source_type"]>> =
+  Object.freeze({
+    "local.current_exact_label": "product_label",
+    "local.personal_template": "personal_template",
+    "public.usda_fooddata_central": "authoritative_public_database",
+    "public.china_cdc_phscience_food_composition": "authoritative_public_database",
+    "terminal.unknown": "unknown",
+  });
+
+export function assertV1NutritionSource(
+  sourceId: string,
+  sourceType?: ResolvedNutritionEvidence["source_type"],
+): void {
+  const expectedType = V1_ALLOWED_NUTRITION_SOURCE_TYPES[sourceId];
+  if (expectedType === undefined || (sourceType !== undefined && sourceType !== expectedType)) {
+    throw new TypeError(`NUTRITION_SOURCE_NOT_ALLOWED:${sourceId}`);
+  }
+}
+
 const NUTRITION_EVIDENCE_FIELDS = [
   "adopted_amount", "adopted_unit", "amount_range", "basis_amount", "basis_kind", "basis_unit",
   "coverage_status", "field_evidence", "formula", "nutrient_values", "source_id", "source_ref",

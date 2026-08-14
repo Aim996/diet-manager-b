@@ -61,7 +61,10 @@ function adapter(
 
 const capability = (source_id: string, rank: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): SourceCapability => ({
   source_id,
-  tier: rank === 1 ? "current_exact_label" : rank === 2 ? "manufacturer_or_exact_product" : "generic_estimate",
+  tier: source_id === "local.current_exact_label" ? "current_exact_label"
+    : source_id === "public.usda_fooddata_central" ? "authoritative_public_database"
+      : source_id === "local.personal_template" ? "versioned_common_dish_template"
+        : "generic_estimate",
   rank,
   backend_id: source_id,
   backend_version: "v1",
@@ -70,6 +73,25 @@ const capability = (source_id: string, rank: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): Sou
 });
 
 describe("nutrition source authority", () => {
+  it("rejects a generic numeric source before calling its adapter", async () => {
+    const calls: string[] = [];
+    const sourceId = "local.generic_estimate";
+    const context: SourceContext = {
+      signal: new AbortController().signal,
+      deadline_at: new Date(Date.now() + 5_000).toISOString(),
+      now: () => new Date().toISOString(),
+      credential: () => undefined,
+    };
+    await expect(resolveNutrition(request, context, {
+      adapters: [adapter(capability(sourceId, 7), calls, {
+        status: "ok", source_id: sourceId, tier: "generic_estimate",
+        source_record_id: "record-1", source_version: "v1", retained_fields_sha256: "A".repeat(64),
+        evidence: { ...evidence(sourceId), source_type: "generic_estimate" }, reason: null,
+      })],
+    })).rejects.toThrow("NUTRITION_SOURCE_NOT_ALLOWED:local.generic_estimate");
+    expect(calls).toEqual([]);
+  });
+
   it("clones hostile config trap-free and hashes no credential reference", () => {
     let traps = 0;
     const hostile = new Proxy({}, { get: () => { traps += 1; throw new Error("trap"); } });
@@ -98,15 +120,15 @@ describe("nutrition source authority", () => {
 
   it("traverses exact rank order and stops before lower-tier preemption", async () => {
     const calls: string[] = [];
-    const noResult = (sourceId: string, rank: 1 | 2): SourceResolution => ({
+    const noResult = (sourceId: string, tier: SourceCapability["tier"]): SourceResolution => ({
       status: "no_results", source_id: sourceId,
-      tier: rank === 1 ? "current_exact_label" : "manufacturer_or_exact_product",
+      tier,
       source_record_id: null, source_version: null, retained_fields_sha256: null,
       evidence: null, reason: "no_match",
     });
-    const winnerId = "conditional.manufacturer_exact";
+    const winnerId = "public.usda_fooddata_central";
     const winner: SourceResolution = {
-      status: "ok", source_id: winnerId, tier: "manufacturer_or_exact_product",
+      status: "ok", source_id: winnerId, tier: "authoritative_public_database",
       source_record_id: "record-1", source_version: "v1", retained_fields_sha256: "A".repeat(64),
       evidence: evidence(winnerId), reason: null,
     };
@@ -118,9 +140,11 @@ describe("nutrition source authority", () => {
     };
     const resolved = await resolveNutrition(request, context, {
       adapters: [
-        adapter(capability("local.generic_estimate", 7), calls, noResult("local.generic_estimate", 2)),
-        adapter(capability(winnerId, 2), calls, winner),
-        adapter(capability("local.current_exact_label", 1), calls, noResult("local.current_exact_label", 1)),
+        adapter(capability("local.personal_template", 6), calls,
+          noResult("local.personal_template", "versioned_common_dish_template")),
+        adapter(capability(winnerId, 4), calls, winner),
+        adapter(capability("local.current_exact_label", 1), calls,
+          noResult("local.current_exact_label", "current_exact_label")),
       ],
     });
     expect(calls).toEqual(["local.current_exact_label", winnerId]);

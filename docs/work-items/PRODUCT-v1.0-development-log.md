@@ -38,3 +38,42 @@ GREEN：
 ### 下一步
 
 Batch V1-B：在营养 evidence 进入 FactCommit 前实施 v1.0 来源白名单，拒绝通用估算、常见菜模板和其他未授权数值来源。
+
+## Batch V1-B：营养来源白名单
+
+- 日期：2026-08-14
+- 目标：任何数值 evidence 在进入应用映射和 FactCommit 前，必须先通过 v1.0 来源白名单。
+
+### 生产改动
+
+- 新增 `assertV1NutritionSource(sourceId, sourceType)`，以稳定错误 `NUTRITION_SOURCE_NOT_ALLOWED:<source_id>` 拒绝越权来源。
+- 配置加载时即拒绝未授权 source ID；运行适配器前再次检查 capability，适配器返回后再检查 evidence 类型与 source ID 的固定映射。
+- 当前允许映射：
+  - `public.usda_fooddata_central` / `public.china_cdc_phscience_food_composition` → 权威公共数据库；
+  - `local.personal_template` → 用户自建库接口；
+  - `local.current_exact_label` → 已确认的当前包装标签接口；
+  - `terminal.unknown` → 无数值终端降级。
+- 制造商查询、历史复用、普通网页、常见菜模板和通用估算均不在 0.1.0 白名单内。
+
+### TDD 记录
+
+RED：
+
+- 命令：`vitest run tests/acceptance/nutrition-source.test.ts -t "rejects a generic numeric source" --maxWorkers=1 --minWorkers=1`
+- 结果：1 failed；旧实现接受 `local.generic_estimate` 并返回完整数值 evidence。
+
+GREEN：
+
+- 完整 `nutrition-source.test.ts`：4 passed。
+- 拒绝测试同时断言适配器调用次数为 0，证明拒绝发生在来源调用和 FactCommit 之前。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- `git diff --check`：exit 0。
+
+### 本批未声明
+
+- 尚未实现 USDA/CFCT 的真实网络适配器与凭据接线；允许的是接口身份，不代表数据源已经可用。
+- 未运行完整 Vitest；统一门禁仍留在 Batch V1-F。
+
+### 下一步
+
+Batch V1-C：核实现有餐食事实与库存扣减事务边界，并用一个技术故障测试证明“唯一库存扣减失败时，餐食事实和扣减一起回滚”。
