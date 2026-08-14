@@ -941,3 +941,12 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
   }
 }
+
+// Public plugin execution is asynchronous so nutrition adapters can be awaited without
+// weakening the existing synchronous internal/test compatibility surface.
+export async function handleCoreRequestAsync(
+  runtime: CoreRuntime,
+  value: CoreApplicationRequest,
+): Promise<DietManagerOutcome> {
+  return handleCoreRequest(runtime, value);
+}

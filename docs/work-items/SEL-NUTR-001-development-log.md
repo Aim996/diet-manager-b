@@ -44,6 +44,23 @@
 - 后续修复索引：无；后续 Batch B2 将把 config/adapters 注入 v6 claim 与异步 handler。
 - 批次提交：`feat: add nutrition source capability`（本段日志与实现同一提交）。
 
+### Batch B2 / 2026-08-14
+
+- 目标：在 migration-v1 现有两表上建立受 HMAC 保护的营养 resolution claim、lease takeover 与动态证据赢家复用。
+- 绑定 REQ：`REQ-NUTR-001/002/005`、`REQ-SOURCE-001`。
+- 绑定 CASE：`CASE-NUTR-001/004/005`、`CASE-SOURCE-001/002/003` 的并发/降级前置权威。
+- 起始 HEAD：`5085823`。
+- 改动文件：新增 `src/nutrition/resolution-claim.ts` 与 `nutrition-resolution.test.ts`；增加 `handleCoreRequestAsync` 兼容入口，OpenClaw execute 改为 await；保留内部同步入口供 0.3 既有调用兼容。
+- 行为变化：`command_envelopes + idempotency_records` 可保存 `nutrition_resolving` pending authority；同 key/base 的活跃 lease 返回 pending，过期 generation CAS takeover；完成后两表原子切换 `preview_ready`；迟到 owner 读取认证后的赢家 material，不比较自己的动态数值。
+- 接口/Schema/authority 决策：pending HMAC 绑定 base/config/owner/generation/lease/operation/message/conversation；final v6 HMAC 绑定 base/evidence digest/config/meal/effect identities；不同 base 在认证既有行后稳定 conflict；不新增 migration/表。
+- 兼容边界：旧同步 `handleCoreRequest` 未删除；新增 async wrapper 供 OpenClaw 和后续 nutrition await 使用，因此 0.3 现有测试调用无需在本批整体改写。
+- 真实 RED：`nutrition-resolution.test.ts` 先因缺少 `resolution-claim.js` 在收集阶段失败；修复测试自身 Node SQLite 导入方式后，生产模块仍 missing，再进入 GREEN。
+- 定向 smoke：resolution 2/2；覆盖 owner/pending/final reuse、changed base conflict、lease takeover、late-owner CAS loser。
+- 延期到模块末的测试：真实两个 request 的 adapter barrier、单次网络调用、meal/Profile/Snapshot exactly-once、v6 与 server preview/domain execute 接线、tamper/full/noEmit。
+- 已知风险/假设：当前是持久 claim 底座，不等于营养业务闭环；`nutrition_resolving` 行只能由后续 Task 5 application orchestration 创建/完成；未集成前不会被旧同步路径触发。
+- 后续修复索引：Task 5 必须在签 v6 前解析来源，并在赢家完成后走既有 FactCommit→EffectBundle→Finalize；Task 7 再统一验证跨进程并发/崩溃。
+- 批次提交：`feat: serialize nutrition resolution`（本段日志与实现同一提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

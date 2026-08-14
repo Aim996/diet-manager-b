@@ -5,7 +5,7 @@ import {
 } from "openclaw/plugin-sdk/tool-plugin";
 import { Type } from "typebox";
 
-import { handleCoreRequest } from "../application/command-handler.js";
+import { handleCoreRequestAsync } from "../application/command-handler.js";
 import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
@@ -325,7 +325,7 @@ async function executeDietManager(
   }
   try {
     const runtime = acquirePluginRuntime(pluginConfig.root, pluginConfig.nutrition, context);
-    return validatedJsonOutcome(handleCoreRequest(runtime, request));
+    return validatedJsonOutcome(await handleCoreRequestAsync(runtime, request));
   } catch (error) {
     const errorCode = error instanceof Error && error.message === "PLUGIN_CONFIG_CONFLICT"
       ? "PLUGIN_CONFIG_CONFLICT"
