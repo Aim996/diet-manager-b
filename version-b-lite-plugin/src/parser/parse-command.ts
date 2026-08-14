@@ -511,5 +511,17 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
     });
   }
 
+  if (
+    waterResolution.self_unquantified_count > 0 &&
+    retainedMeal.length === 0
+  ) {
+    return detachedFrozen({
+      disposition: "needs_clarification",
+      action: "record_water",
+      reason_code: "amount_ambiguous",
+      question: "请说明实际喝了多少毫升白水。",
+    });
+  }
+
   return mealCandidate(input, completion, occurredTime, meal, retainedMeal);
 }

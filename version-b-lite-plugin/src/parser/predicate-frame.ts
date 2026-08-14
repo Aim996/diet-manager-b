@@ -29,7 +29,7 @@ interface PredicateAnchor {
 
 const EAT_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|汤|茶|面)/u;
 const DRINK_OBJECT_START = /^(?:了|过|完|的|[0-9]|一|两|二|三|四|五|六|七|八|九|十|白水|水|牛奶|豆浆|汤|咖啡|茶)/u;
-const OWNED_OBJECT_ATOM = String.raw`(?:(?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|碗|块|盘|ml|mL|ML)\s*)?(?:鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包))`;
+const OWNED_OBJECT_ATOM = String.raw`(?:(?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|碗|块|盘|ml|mL|ML|毫升)\s*)?(?:鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包))`;
 const OWNED_OBJECT_PREFIX = new RegExp(
   String.raw`^\s*(?:了|过|完)?\s*(?:昨天\s*买\s*的\s*)?${OWNED_OBJECT_ATOM}(?:\s*(?:和|与|、)\s*${OWNED_OBJECT_ATOM})*`,
   "u",

@@ -400,7 +400,7 @@ export default defineToolPlugin({
     tool({
       name: "diet_manager",
       description:
-        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. If committed is false, report that nothing was recorded and do not write a note, memory, or fallback record. Use only returned nutrition data and never estimate nutrition values yourself.",
+        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Use only returned nutrition data and never estimate nutrition values yourself.",
       parameters: dietManagerParameters,
       execute: executeDietManager,
     }),

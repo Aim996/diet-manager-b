@@ -152,6 +152,9 @@ describe("diet manager B core plugin boundary", () => {
     expect(tool?.description).toContain("current OpenClaw message/session metadata");
     expect(tool?.description).toContain("do not write a note, memory, or fallback record");
     expect(tool?.description).toContain("never estimate nutrition values yourself");
+    expect(tool?.description).toContain("at most once for one inbound message");
+    expect(tool?.description).toContain("do not retry, inspect files, run commands");
+    expect(tool?.description).toContain("only create a reminder when the user explicitly asks");
     for (const field of [
       "source_text",
       "received_at",

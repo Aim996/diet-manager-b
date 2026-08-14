@@ -1486,6 +1486,73 @@ describe("core parser quality boundaries", () => {
     }
   });
 
+  it("treats a lunch-time omitted subject as the current user", () => {
+    const command = requiredMeal(variant("午饭吃了米饭和鸡胸肉。"));
+
+    expect(command.subject).toMatchObject({
+      kind: "self",
+      resolution_basis: "omitted_subject_default",
+    });
+    expect(command.items.map((item) => item.normalized_name)).toEqual([
+      "rice",
+      "chicken",
+    ]);
+  });
+
+  it("records an explicit Chinese-milliliter plain-water amount", () => {
+    const command = requiredCandidate(variant("我刚刚喝了500毫升白水。"));
+
+    expect(command).toMatchObject({
+      action: "record_water",
+      plain_water_ml_milli: 500_000,
+      amount_evidence: {
+        quantity: 500,
+        unit: "ml",
+        estimated: false,
+      },
+    });
+  });
+
+  it("preserves a Chinese-milliliter nutritious-drink amount", () => {
+    const command = requiredMeal(variant("我中午喝了250毫升豆浆。"));
+
+    expect(command.items).toEqual([{
+      order: 0,
+      kind: "nutritious_drink",
+      normalized_name: "soy_milk",
+      quantity: 250,
+      unit: "ml",
+      estimated: false,
+    }]);
+  });
+
+  it("asks for a cup volume instead of rejecting an unquantified water action", () => {
+    expect(variant("刚刚喝了两杯水。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "record_water",
+      reason_code: "amount_ambiguous",
+    });
+  });
+
+  it("accepts an explicit-self prefix on the frozen packaged-milk purchase", () => {
+    const command = requiredCandidate(
+      variant("我买了两箱牛奶，每箱12盒，每盒250ml。"),
+    );
+
+    expect(command).toMatchObject({
+      action: "add_inventory",
+      items: [{
+        normalized_name: "milk",
+        package_quantity: {
+          outer_count: 2,
+          inner_per_outer: 12,
+          total_inner: 24,
+          total_capacity: 6000,
+        },
+      }],
+    });
+  });
+
   it("fails closed instead of truncating a mixed plain-water and milk input", () => {
     expect(variant("我喝了500ml白水和250ml牛奶。")).toMatchObject({
       disposition: "needs_clarification",

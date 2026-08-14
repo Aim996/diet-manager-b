@@ -91,7 +91,7 @@ export function resolvePantryCommand(
       rule_version: "diet-manager/location-correction/v1",
     });
   }
-  if (/^买了两箱牛奶[，,]每箱12盒[，,]每盒250ml[。.]?$/u.test(source)) {
+  if (/^(?:我\s*)?买了两箱牛奶[，,]每箱12盒[，,]每盒250ml[。.]?$/u.test(source)) {
     return purchase(input, [item({
       order: 0,
       raw_name: "牛奶",

@@ -15,9 +15,10 @@ export interface PlainWaterMatch {
   readonly quantity_ml: number;
 }
 
-const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*(?:([0-9]+)\s*ml\s*)?(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
+const DIRECT_OR_COORDINATED_WATER = /(?:^|和|与|、)\s*(?:([0-9]+)\s*(?:ml|毫升)\s*)?(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
+const NATURAL_UNIT_WATER = /(?:^|和|与|、)\s*(?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:杯|口|瓶)\s*(?:白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢时"'”’」』》】）)\]}])/gu;
 const ADJUNCT_START = /(?:时|后)?(?:看见|看到|拿着|放着|旁边|桌上|还有|使用|用了)/u;
-const PUNCTUATED_WATER_CONTINUATION = /^\s*[，,]\s*([0-9]+)\s*ml\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
+const PUNCTUATED_WATER_CONTINUATION = /^\s*[，,]\s*([0-9]+)\s*(?:ml|毫升)\s*(白水|水)(?=$|[\s,，。；;！!？?、和与又吗么嘛呢"'”’」』》】）)\]}])/u;
 const MAX_WATER_OCCURRENCES = 256;
 
 function frozenRecord<T extends object>(entries: T): Readonly<T> {
@@ -105,6 +106,11 @@ export function resolveWaterFrames(sourceText: string): Readonly<WaterFrameScan>
         occurrenceLimitExceeded = true;
       } else if (subject.disposition === "non_self") {
         nonSelfDirectCount += 1;
+      }
+    }
+    if (subject.disposition === "resolved") {
+      for (const _naturalUnit of directText.matchAll(NATURAL_UNIT_WATER)) {
+        selfUnquantifiedCount += 1;
       }
     }
     if (subject.disposition !== "resolved") continue;
