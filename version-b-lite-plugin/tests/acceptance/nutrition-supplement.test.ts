@@ -156,8 +156,36 @@ it("appends a nutrition supplement fact and preserves the original unknown snaps
     expect(replay).toEqual(supplement);
     expect(resolveCalls).toBe(2);
 
+    const beforeNoopDatabase = openDietDatabase({ privateRuntimeRoot: root });
+    const beforeNoop = beforeNoopDatabase.database.prepare(`SELECT
+      (SELECT COUNT(*) FROM command_envelopes) AS envelopes,
+      (SELECT COUNT(*) FROM idempotency_records) AS idempotency,
+      (SELECT COUNT(*) FROM event_records) AS events,
+      (SELECT COUNT(*) FROM correction_events) AS corrections,
+      (SELECT COUNT(*) FROM nutrition_profiles) AS profiles,
+      (SELECT COUNT(*) FROM nutrition_snapshots) AS snapshots`).get();
+    beforeNoopDatabase.close();
+    const alreadyCurrent = await handleCoreRequestAsync(runtime, {
+      ...supplementRequest,
+      operation_id: "operation-nutrition-supplement-003",
+      source_message_id: "message-nutrition-supplement-003",
+    });
+    expect(alreadyCurrent).toMatchObject({
+      status: "ignored",
+      committed: false,
+      reason_code: "nutrition_already_current",
+    });
+    expect(resolveCalls).toBe(2);
+
     const stored = openDietDatabase({ privateRuntimeRoot: root });
     try {
+      expect(stored.database.prepare(`SELECT
+        (SELECT COUNT(*) FROM command_envelopes) AS envelopes,
+        (SELECT COUNT(*) FROM idempotency_records) AS idempotency,
+        (SELECT COUNT(*) FROM event_records) AS events,
+        (SELECT COUNT(*) FROM correction_events) AS corrections,
+        (SELECT COUNT(*) FROM nutrition_profiles) AS profiles,
+        (SELECT COUNT(*) FROM nutrition_snapshots) AS snapshots`).get()).toEqual(beforeNoop);
       expect(stored.database.prepare(
         "SELECT event_type FROM event_records WHERE event_id = ?",
       ).get(supplement.record_id)).toEqual({ event_type: "nutrition_supplemented" });

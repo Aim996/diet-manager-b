@@ -192,6 +192,20 @@
 - 后续修复索引：下一小批只实现 new-key already-current no-write，再进入代表性 fault/tamper 与模块统一 Gate。
 - 批次提交：`feat: persist nutrition evidence atomically`（本段记录随实现提交）。
 
+### Batch C5e / 2026-08-14
+
+- 目标：已具备有效营养 Snapshot 的餐食收到新 operation key 补充请求时，明确返回无需变更并保持零新增写入。
+- 绑定 REQ：`REQ-NUTR-006`。
+- 绑定 CASE：`CASE-NUTR-005` 的恢复后/重复补全边界。
+- 起始 HEAD：`8bc927f`。
+- 改动文件：`application/core-runtime.ts`、`nutrition-supplement.test.ts`。
+- 行为变化：无同键既有 correction 且最新 domain/v2 Snapshot 已非 unknown 时，在联网、claim 和领域 preview 之前返回 `ignored/nutrition_already_current`；原 operation key 的终态 replay 仍走原始认证链并返回相同 record ID。
+- 真实 RED：新 key 对已补全餐食继续解析来源并最终返回 failed；加入前置 no-change 判定后转 GREEN。
+- 定向 smoke：`nutrition-supplement.test.ts` 2/2 PASS；断言来源调用不增加，envelope/idempotency/event/correction/Profile/Snapshot 六类行计数完全不变；`tsc --noEmit` 与 `git diff --check` PASS。
+- 延期到模块末的测试：代表性 after-Fact、v1.1 tamper、并发和完整 Nutrition CASE。
+- 后续修复索引：进入一组精简 fault/tamper 验证，然后统一模块 Gate。
+- 批次提交：`feat: ignore redundant nutrition supplements`（本段记录随实现提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

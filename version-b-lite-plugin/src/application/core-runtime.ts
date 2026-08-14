@@ -1062,6 +1062,7 @@ interface NutritionSupplementTarget {
   readonly amount: Readonly<KnownStructuredAmount>;
   readonly previous_snapshot_id: string;
   readonly base_revision: number;
+  readonly already_current: boolean;
 }
 
 function resolveNutritionSupplementTarget(
@@ -1107,10 +1108,14 @@ function resolveNutritionSupplementTarget(
     (known.evidence !== "explicit" && known.evidence !== "estimated_upper_bound")
   ) throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:amount");
   const snapshots = database.prepare(
-    `SELECT snapshot_id, payload_json FROM nutrition_snapshots
+    `SELECT snapshot_id, source_ref, payload_json FROM nutrition_snapshots
      WHERE meal_event_id = ? AND intake_item_id = ? AND schema_version = 'domain/v2'
      ORDER BY rowid`,
-  ).all(targetEventId, row.item_id) as Array<{ snapshot_id: string; payload_json: string }>;
+  ).all(targetEventId, row.item_id) as Array<{
+    snapshot_id: string;
+    source_ref: string;
+    payload_json: string;
+  }>;
   if (snapshots.length === 0) throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:snapshot");
   const existing = database.prepare(
     `SELECT c.correction_id, c.target_event_id, c.base_revision, c.operation,
@@ -1176,6 +1181,7 @@ function resolveNutritionSupplementTarget(
     amount: Object.freeze({ ...known }),
     previous_snapshot_id: previousSnapshotId,
     base_revision: revision,
+    already_current: existing === undefined && snapshots.at(-1)!.source_ref !== "unknown",
   });
 }
 
@@ -1314,6 +1320,14 @@ async function handleNutritionSupplement(
       command.target_record_id,
       command.operation_id,
     );
+    if (target.already_current) {
+      return nonWritingOutcome(
+        request.action,
+        request.operation_id,
+        "ignored",
+        "nutrition_already_current",
+      );
+    }
     const resolutionCommand: NutritionResolutionCommand = Object.freeze({
       operation_id: command.operation_id,
       items: Object.freeze([Object.freeze({
