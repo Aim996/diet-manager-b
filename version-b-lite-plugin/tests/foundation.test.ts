@@ -155,6 +155,8 @@ describe("diet manager B core plugin boundary", () => {
     expect(tool?.description).toContain("at most once for one inbound message");
     expect(tool?.description).toContain("do not retry, inspect files, run commands");
     expect(tool?.description).toContain("only create a reminder when the user explicitly asks");
+    expect(tool?.description).toContain("Never say recorded, noted, saved, or updated when committed=false");
+    expect(tool?.description).toContain("Do not add encouragement, onboarding, capability offers, or reminder suggestions");
     for (const field of [
       "source_text",
       "received_at",
