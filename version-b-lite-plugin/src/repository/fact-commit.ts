@@ -195,6 +195,7 @@ export interface FactCommitFailureEntry {
 export interface FactCommitOptions {
   fault?: FactCommitFault;
   failureSink?: (entry: FactCommitFailureEntry) => void;
+  beforeCommit?: () => void;
 }
 
 export interface FactCommitResult {
@@ -365,7 +366,7 @@ function exactOptions(value: FactCommitOptions | undefined): Readonly<FactCommit
   const keys = Reflect.ownKeys(value);
   if (keys.some((key) => typeof key !== "string")) return requestInvalid("options");
   for (const key of keys as string[]) {
-    if (key !== "fault" && key !== "failureSink") return requestInvalid("options");
+    if (key !== "fault" && key !== "failureSink" && key !== "beforeCommit") return requestInvalid("options");
     const descriptor = descriptors[key];
     if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
       return requestInvalid("options");
@@ -391,9 +392,14 @@ function exactOptions(value: FactCommitOptions | undefined): Readonly<FactCommit
   if (failureSink !== undefined && typeof failureSink !== "function") {
     return requestInvalid("failure_sink");
   }
+  const beforeCommit = descriptors.beforeCommit?.value;
+  if (beforeCommit !== undefined && typeof beforeCommit !== "function") {
+    return requestInvalid("before_commit");
+  }
   return Object.freeze({
     ...(fault === undefined ? {} : { fault }),
     ...(failureSink === undefined ? {} : { failureSink }),
+    ...(beforeCommit === undefined ? {} : { beforeCommit }),
   });
 }
 
@@ -1326,6 +1332,7 @@ export function appendPreparedOperationFact(
       );
     }
     injectFault(frozenOptions, "after_effects");
+    frozenOptions.beforeCommit?.();
     insertOperationCheckpoint(frozen, authority.binding.preview_id);
     injectFault(frozenOptions, "before_commit");
     frozen.database.exec("COMMIT");

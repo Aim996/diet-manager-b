@@ -48,6 +48,7 @@ import { computeRepositoryDataRevision } from "../repository/revision.js";
 import { assertStoredPurchaseFactMatchesExpected } from "../storage/inventory-repository.js";
 import {
   applyMealEffects,
+  applyRequiredMealInventoryInTransaction,
   applyWaterEffects,
   assertStoredWaterFactMatchesExpected,
   markWaterEffectsRetryable,
@@ -776,9 +777,11 @@ function appendFactWithFailure(
   input: Parameters<typeof appendPreparedOperationFact>[0],
   sink: CreateDietDomainServiceInput["failureSink"],
   fault?: "after_event" | "after_effects",
+  beforeCommit?: () => void,
 ): ReturnType<typeof appendPreparedOperationFact> {
   return appendPreparedOperationFact(input, {
     ...(fault === undefined ? {} : { fault }),
+    ...(beforeCommit === undefined ? {} : { beforeCommit }),
     failureSink: (entry) => emitFailure(sink, {
       stage: "FactCommit",
       error_code: entry.error_code,
@@ -2284,7 +2287,24 @@ export function createDietDomainService(
           throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
         }
         if (authority.envelope_state === "received") {
-          appendFactWithFailure(preparedMeal.fact, options.failureSink);
+          appendFactWithFailure(
+            preparedMeal.fact,
+            options.failureSink,
+            undefined,
+            () => applyRequiredMealInventoryInTransaction({
+              database: options.database,
+              authoritySecret: options.secret,
+              envelopeId: envelope.envelope_id,
+              operationId: operation.operation_id,
+              operationSequence: 0,
+              idempotencyKey: envelope.idempotency_key,
+              now: committedAt,
+              location: operation.location,
+              ...(options.fault === "after_meal_first_inventory_allocation"
+                ? { fault: "after_first_inventory_allocation" as const }
+                : {}),
+            }),
+          );
         }
         let mealResult: MealOperationResult;
         if (authority.envelope_state === "effects_stable") {

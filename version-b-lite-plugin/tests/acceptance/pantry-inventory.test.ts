@@ -576,6 +576,9 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
         fault: "after_meal_first_inventory_allocation",
       });
       const preview = failing.preview(envelope);
+      const factCountBefore = runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records",
+      ).get();
       const before = runtime.database.prepare(
         "SELECT batch_id, payload_json FROM inventory_batch_projections ORDER BY batch_id",
       ).all();
@@ -591,6 +594,9 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
       expect(runtime.database.prepare(
         "SELECT COUNT(*) AS count FROM inventory_transactions WHERE direction = 'out'",
       ).get()).toEqual({ count: 0 });
+      expect(runtime.database.prepare(
+        "SELECT COUNT(*) AS count FROM event_records",
+      ).get()).toEqual(factCountBefore);
 
       expect(healthy.execute({
         envelope,

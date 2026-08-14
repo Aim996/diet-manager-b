@@ -57,15 +57,16 @@
 - Modify: `version-b-lite-plugin/src/repository/fact-commit.ts`
 - Modify: `version-b-lite-plugin/src/domain/effect-bundle.ts`
 - Modify: `version-b-lite-plugin/src/domain/service.ts`
-- Test: `version-b-lite-plugin/tests/acceptance/product-v1-meal.test.ts`
+- Modify: `version-b-lite-plugin/src/storage/inventory-repository.ts`
+- Test: `version-b-lite-plugin/tests/acceptance/pantry-inventory.test.ts`
 
 **Interfaces:**
 - Produces: one meal transaction that either commits the fact plus a proven unique deduction, or commits a fact with `skipped_inventory` when no safe candidate exists.
 
-- [ ] Add one technical-failure test proving a unique deduction failure leaves neither the new meal fact nor deduction.
-- [ ] Add one business-skip test proving multiple candidates commit the meal fact, create no deduction, and return `skipped_inventory`.
-- [ ] Move only the unique-deduction write into the meal FactCommit transaction; leave nutrition/progress non-essential.
-- [ ] Run the two focused tests and `tsc --noEmit`, record and commit.
+- [x] Add one technical-failure test proving a unique deduction failure leaves neither the new meal fact nor deduction.
+- [x] Add one business-skip test proving multiple candidates commit the meal fact, create no deduction, and return `skipped_inventory`.
+- [x] Move only the unique-deduction write into the meal FactCommit transaction; leave nutrition/progress non-essential.
+- [x] Run the two focused tests and `tsc --noEmit`, record and commit.
 
 ### Task 4: Return the 0.1.0 receipt from committed authority
 

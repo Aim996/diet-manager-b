@@ -77,3 +77,39 @@ GREEN：
 ### 下一步
 
 Batch V1-C：核实现有餐食事实与库存扣减事务边界，并用一个技术故障测试证明“唯一库存扣减失败时，餐食事实和扣减一起回滚”。
+
+## Batch V1-C：餐食事实与唯一库存扣减原子提交
+
+- 日期：2026-08-14
+- 目标：满足 I-7；安全且唯一的库存扣减是餐食事实的必要效果，二者必须同事务成功或回滚。
+
+### 生产改动
+
+- FactCommit 新增内部 `beforeCommit` 必要效果钩子；它在事件、餐食项和 outbox 写入后、checkpoint 计算与 SQLite commit 前执行。
+- 0.1.0 的普通 `record_meal` 路径在该钩子中只执行已冻结 `inventory_plan` 的库存分配。
+- 库存事务支持严格幂等 readback：后续 EffectBundle 读取并核对同一库存流水，不重复扣减。
+- 营养快照、问题投影和当日进度仍由后续 EffectBundle 处理，不被升级为 FactCommit 的必要部分。
+- 冻结的“购买+餐食”混合路径未改，不计入 0.1.0 声明。
+
+### TDD 记录
+
+RED：
+
+- 命令：`vitest run tests/acceptance/pantry-inventory.test.ts -t "rolls back every staged allocation" --maxWorkers=1 --minWorkers=1`
+- 结果：1 failed；库存投影与流水已回滚，但 `event_records` 从 2 增为 3，证明餐食事实曾被单独提交。
+
+GREEN：
+
+- 同一故障测试：1 passed，21 skipped；故障后事件数量、库存投影和扣减流水均保持原样，健康重试只扣一次。
+- 歧义业务降级测试：1 passed，21 skipped；两个商品身份时提交餐食事实，库存扣减 0，问题码为 `inventory_multiple_candidates`。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- `git diff --check`：exit 0。
+
+### 本批未声明
+
+- 没有把营养或进度加入必要事务；它们失败时仍允许餐食事实存在。
+- 未运行完整 Vitest；统一门禁仍留在 Batch V1-F。
+
+### 下一步
+
+Batch V1-D：从已提交并读回的事实、营养状态与库存效果构建 0.1.0 回执，不在展示层重算业务数据。

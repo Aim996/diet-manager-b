@@ -1925,6 +1925,51 @@ export interface ApplyMealEffectsInput {
     | "after_progress_contribution_prepared";
 }
 
+export function applyRequiredMealInventoryInTransaction(input: ApplyMealEffectsInput): void {
+  const event = input.database.prepare(
+    `SELECT event_id,envelope_id,operation_id,source_message_id,conversation_id,
+            received_at,committed_at,occurred_at_text,payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(input.envelopeId, input.operationId) as MealEventRow | undefined;
+  if (!event || event.operation_id !== input.operationId) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:required_inventory_event");
+  }
+  const eventPayload = validatedMealFactPayload(
+    parseCanonical(event.payload_json, "required_inventory_event"),
+    event.occurred_at_text,
+    "required_inventory_event",
+  );
+  if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" || eventPayload.location !== input.location) {
+    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:required_inventory_event");
+  }
+  const items = input.database.prepare(
+    `SELECT item_id,item_order,normalized_name,payload_json
+     FROM meal_items WHERE event_id = ? ORDER BY item_order`,
+  ).all(event.event_id) as unknown as StoredMealItem[];
+  for (const item of items) {
+    const payload = parseCanonical(item.payload_json, "required_inventory_item");
+    if (!Object.hasOwn(payload, "inventory_plan")) continue;
+    const plan = parseInventoryAllocationPlan(payload.inventory_plan);
+    applyPantryAllocationsInTransaction({
+      database: input.database,
+      authority_secret: input.authoritySecret,
+      event_id: event.event_id,
+      source_message_id: event.source_message_id,
+      conversation_id: event.conversation_id,
+      received_at: event.received_at,
+      committed_at: input.now,
+      occurred_at: event.occurred_at_text,
+      effect_id: mealEffectId(input.idempotencyKey, item.item_order, 0),
+      plan,
+      ...(input.fault === "after_first_inventory_allocation"
+        ? { afterAllocation: (index: number) => {
+            if (index === 0) throw new Error("MEAL_EFFECT_FAILED:after_first_inventory_allocation");
+          } }
+        : {}),
+    });
+  }
+}
+
 /**
  * The stable-envelope recovery path reads only terminal, already-applied meal
  * effects.  It intentionally excludes the clock and fault injection fields

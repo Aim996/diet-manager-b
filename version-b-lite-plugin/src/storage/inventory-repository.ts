@@ -896,6 +896,47 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
   if (plan.status !== "matched") return Object.freeze([]);
   const occurredEpoch = Date.parse(input.occurred_at);
   if (!Number.isFinite(occurredEpoch)) return invalid("inventory_allocation_time");
+  const existing = input.database.prepare(
+    `SELECT transaction_id,event_id,product_id,batch_id,idempotency_key,schema_version,
+            direction,reason_code,unit,related_event_id,related_transaction_id,
+            source_message_id,conversation_id,received_at,committed_at,result_status,
+            lifecycle_status,payload_json
+     FROM inventory_transactions
+     WHERE event_id = ? AND idempotency_key = ? AND direction = 'out'`,
+  ).all(input.event_id, input.effect_id) as Array<{
+    transaction_id: string; event_id: string; product_id: string; batch_id: string;
+    idempotency_key: string; schema_version: string; direction: string; reason_code: string;
+    unit: string; related_event_id: string | null; related_transaction_id: string | null;
+    source_message_id: string; conversation_id: string; received_at: string; committed_at: string;
+    result_status: string; lifecycle_status: string; payload_json: string;
+  }>;
+  if (existing.length !== 0) {
+    if (existing.length !== plan.allocations.length) return invalid("inventory_allocation_replay");
+    const byId = new Map(existing.map((row) => [row.transaction_id, row]));
+    const replayed = plan.allocations.map((allocation, index) => {
+      const transactionId = deriveDomainId("transaction", input.effect_id, index);
+      const row = byId.get(transactionId);
+      const expectedPayload = canonicalJson({
+        allocation_index: index,
+        authority_kind: "diet-manager/inventory-transaction/v2",
+        quantity_after_microunits: allocation.after_microunits,
+        quantity_delta_microunits: -allocation.deducted_microunits,
+        selection_basis: allocation.selection_basis,
+        unit: allocation.unit,
+      });
+      if (!row || row.event_id !== input.event_id || row.product_id !== allocation.product_id ||
+        row.batch_id !== allocation.batch_id || row.idempotency_key !== input.effect_id ||
+        row.schema_version !== "domain/v2" || row.direction !== "out" ||
+        row.reason_code !== "meal_consumption" || row.unit !== allocation.unit ||
+        row.related_event_id !== null || row.related_transaction_id !== null ||
+        row.source_message_id !== input.source_message_id || row.conversation_id !== input.conversation_id ||
+        row.received_at !== input.received_at || row.committed_at !== input.committed_at ||
+        row.result_status !== "applied" || row.lifecycle_status !== "active" ||
+        row.payload_json !== expectedPayload) return invalid("inventory_allocation_replay");
+      return Object.freeze({ transaction_id: transactionId, ...allocation });
+    });
+    return Object.freeze(replayed);
+  }
   const pendingCorrectionBatches = pendingLocationCorrectionBatchIds(input.database);
   if (plan.allocations.some((allocation) => pendingCorrectionBatches.has(allocation.batch_id))) {
     return invalid("pending_location_correction");
