@@ -5,7 +5,7 @@ import { resolveInventoryDirective } from "./inventory-directive.js";
 import { classifyMealLiquid, resolveWaterFrames, } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
-import { resolvePantryCommand } from "./purchase.js";
+import { resolvePantryClarification, resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 const PARSER_VERSION = "diet-manager/core-parser-v1";
 const HEALTH_ACTUAL_CLAUSE = /^(?:(?:我\s*(?:需要|想要)|能\s*给我|可以\s*给我|请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?:\s*(?:或|和|与)\s*(?:医疗\s*诊断|减重\s*建议))*\s*(?:吗|么|嘛)?$/u;
@@ -258,6 +258,9 @@ export function parseCoreCommand(value) {
     if (nutritionSupplement !== null) {
         return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
     }
+    const pantryClarification = resolvePantryClarification(input);
+    if (pantryClarification !== null)
+        return detachedFrozen(pantryClarification);
     const pantry = resolvePantryCommand(input);
     if (pantry !== null) {
         return detachedFrozen({ disposition: "candidate", command: pantry });

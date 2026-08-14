@@ -61,6 +61,8 @@ function sourceLabel(sourceType) {
     }
 }
 export function adoptNutritionAmount(item, evidence) {
+    if (evidence.source_type === "unknown")
+        return evidence;
     if (evidence.adopted_amount !== null || item.quantity === null || item.unit === null)
         return evidence;
     if (!Number.isFinite(item.quantity) || item.quantity <= 0)
