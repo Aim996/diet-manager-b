@@ -23,6 +23,9 @@ import {
   type CoreApplicationRequest,
   type DietManagerAction,
   type DietManagerOutcome,
+  type MealReceipt,
+  type MealReceiptInventoryStatus,
+  type NutritionOutcomeItem,
   type ProductIdentityClarification,
 } from "../contracts.js";
 import {
@@ -1304,6 +1307,74 @@ function storedMealItems(database: DatabaseSync, eventId: string): readonly Read
     }>);
 }
 
+function storedMealReceipt(
+  database: DatabaseSync,
+  eventId: string,
+  nutritionItems: readonly Readonly<NutritionOutcomeItem>[],
+): Readonly<MealReceipt> {
+  const row = database.prepare(
+    `SELECT e.envelope_id,e.payload_json,f.payload_json AS finalization_payload
+     FROM event_records e JOIN envelope_finalizations f ON f.envelope_id = e.envelope_id
+     WHERE e.event_id = ? AND e.event_type = 'diet_meal'`,
+  ).get(eventId) as { envelope_id: string; payload_json: string; finalization_payload: string } | undefined;
+  if (row === undefined) throw new Error("CORE_APPLICATION_RECEIPT_INVALID:missing");
+  let eventPayload: unknown;
+  let finalization: unknown;
+  try {
+    eventPayload = JSON.parse(row.payload_json);
+    finalization = JSON.parse(row.finalization_payload);
+  } catch {
+    throw new Error("CORE_APPLICATION_RECEIPT_INVALID:json");
+  }
+  if (canonicalJson(eventPayload) !== row.payload_json || canonicalJson(finalization) !== row.finalization_payload ||
+      typeof eventPayload !== "object" || eventPayload === null || Array.isArray(eventPayload) ||
+      typeof (eventPayload as Record<string, unknown>).source_text !== "string" ||
+      typeof finalization !== "object" || finalization === null || Array.isArray(finalization)) {
+    throw new Error("CORE_APPLICATION_RECEIPT_INVALID:authority");
+  }
+  const executionPayload = (finalization as Record<string, unknown>).payload;
+  const receiptData = typeof executionPayload === "object" && executionPayload !== null && !Array.isArray(executionPayload)
+    ? (executionPayload as Record<string, unknown>).receipt_data
+    : undefined;
+  const blocks = typeof receiptData === "object" && receiptData !== null && !Array.isArray(receiptData)
+    ? (receiptData as Record<string, unknown>).blocks
+    : undefined;
+  if (!Array.isArray(blocks)) throw new Error("CORE_APPLICATION_RECEIPT_INVALID:blocks");
+  const itemBlocks = blocks.filter((block) => typeof block === "object" && block !== null && !Array.isArray(block) &&
+    (block as Record<string, unknown>).kind === "item") as Array<Record<string, unknown>>;
+  const storedItems = storedMealItems(database, eventId);
+  if (itemBlocks.length !== storedItems.length || nutritionItems.length !== storedItems.length) {
+    throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_count");
+  }
+  const items = storedItems.map((stored, index) => {
+    const block = itemBlocks[index]!;
+    const amount = block.amount as Record<string, unknown> | undefined;
+    const inventory = block.inventory_effect as Record<string, unknown> | undefined;
+    const nutrition = nutritionItems[index]!;
+    const observed = amount?.observed_microunits;
+    if (block.item_order !== index || block.name !== stored.normalized_name ||
+        (observed !== null && (!Number.isSafeInteger(observed) || Number(observed) <= 0)) ||
+        typeof amount?.unit !== "string" ||
+        !["explicit", "estimated", "unknown"].includes(String(amount.evidence)) ||
+        typeof inventory?.status !== "string" || nutrition.item_id !== stored.item_id) {
+      throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item");
+    }
+    return Object.freeze({
+      item_id: stored.item_id,
+      name: stored.normalized_name,
+      quantity: observed === null ? null : Number(observed) / 1_000_000,
+      unit: observed === null ? null : amount.unit,
+      derived: amount.evidence === "estimated",
+      nutrition: Object.freeze({ status: nutrition.coverage_status, source: nutrition.source_label }),
+      inventory: Object.freeze({ status: inventory.status as MealReceiptInventoryStatus }),
+    });
+  });
+  return Object.freeze({
+    raw_text: (eventPayload as Record<string, unknown>).source_text as string,
+    items: Object.freeze(items),
+  });
+}
+
 async function handleNutritionSupplement(
   runtime: CoreRuntime,
   request: Readonly<CoreApplicationRequest>,
@@ -1471,9 +1542,13 @@ export async function handleCoreRequestAsync(
       return committedOutcome(request.action, request.operation_id, "committed_with_issues", outcome.record_id,
         "record_ids" in outcome ? outcome.record_ids : undefined);
     }
+    const nutritionItems = records.map((record, index) =>
+      nutritionOutcomeItem(storedItems[index]!.normalized_name, record));
+    const receipt = storedMealReceipt(session.database, outcome.record_id, nutritionItems);
     return committedOutcome(request.action, request.operation_id, outcome.status, outcome.record_id,
       "record_ids" in outcome ? outcome.record_ids : undefined,
-      records.map((record, index) => nutritionOutcomeItem(storedItems[index]!.normalized_name, record)));
+      nutritionItems,
+      receipt);
   } catch (error) {
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
   }

@@ -4,6 +4,7 @@ import type {
   FailedOutcome,
   NonWritingOutcome,
   ProductIdentityClarification,
+  MealReceipt,
   NutritionOutcomeItem,
 } from "../contracts.js";
 
@@ -61,6 +62,7 @@ export function committedOutcome(
   recordId: string,
   recordIds?: readonly string[],
   nutritionItems?: readonly Readonly<NutritionOutcomeItem>[],
+  receipt?: Readonly<MealReceipt>,
 ): CommittedOutcome {
   return Object.freeze({
     action,
@@ -70,5 +72,17 @@ export function committedOutcome(
     record_id: recordId,
     ...(recordIds === undefined ? {} : { record_ids: Object.freeze([...recordIds]) }),
     ...(nutritionItems === undefined ? {} : { nutrition_items: Object.freeze(nutritionItems.map(freezeNutritionItem)) }),
+    ...(receipt === undefined ? {} : { receipt: Object.freeze({
+      raw_text: receipt.raw_text,
+      items: Object.freeze(receipt.items.map((item) => Object.freeze({
+        item_id: item.item_id,
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        derived: item.derived,
+        nutrition: Object.freeze({ ...item.nutrition }),
+        inventory: Object.freeze({ ...item.inventory }),
+      }))),
+    }) }),
   });
 }

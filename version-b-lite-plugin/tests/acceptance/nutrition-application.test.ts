@@ -8,6 +8,7 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 import { handleCoreRequestAsync } from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
+import { assertDietManagerOutcome } from "../../src/contracts.js";
 import {
   adoptNutritionAmount,
   buildNutritionRecords,
@@ -197,6 +198,8 @@ it("returns persisted nutrition evidence through the real asynchronous meal path
         source_label: "public_reference",
       }],
     });
+    expect(assertDietManagerOutcome(outcome)).toBe(outcome);
+    expect(Object.isFrozen(outcome.receipt?.items[0]?.nutrition)).toBe(true);
     const stored = openDietDatabase({ privateRuntimeRoot: root });
     try {
       const itemPayload = JSON.parse((stored.database.prepare(
@@ -242,6 +245,17 @@ it("stores unknown nutrition when no allowlisted source is configured", async ()
     });
     expect(outcome.committed, JSON.stringify(outcome)).toBe(true);
     expect(outcome).toMatchObject({
+      receipt: {
+        raw_text: "喝了250ml牛奶。",
+        items: [{
+          name: "milk",
+          quantity: 250,
+          unit: "ml",
+          derived: false,
+          nutrition: { status: "unknown", source: "unknown" },
+          inventory: { status: "skipped_insufficient" },
+        }],
+      },
       nutrition_items: [{
         name: "milk",
         adopted_amount: null,

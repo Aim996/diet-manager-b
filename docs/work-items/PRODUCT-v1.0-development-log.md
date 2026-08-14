@@ -113,3 +113,42 @@ GREEN：
 ### 下一步
 
 Batch V1-D：从已提交并读回的事实、营养状态与库存效果构建 0.1.0 回执，不在展示层重算业务数据。
+
+## Batch V1-D：公开餐食回执
+
+- 日期：2026-08-14
+- 目标：SLICE-4；餐食提交后返回“原话 + 解析结果 + 附加效果状态”。
+
+### 生产改动
+
+- `CommittedOutcome` 新增仅用于 `record_meal` 的可选 `receipt`。
+- 回执逐项返回：稳定 item ID、规范名称、解析数量/单位、是否推导、营养覆盖状态/来源标签、库存效果状态。
+- 原话从已提交 `event_records.payload_json.source_text` 读取。
+- 数量与库存状态从已提交 `envelope_finalizations.payload_json` 的 receipt block 读取。
+- 营养状态与来源从已持久化并校验的 Nutrition Profile/Snapshot readback 读取。
+- 公开 contract 对回执做 exact-key、枚举、数量配对和 action/status 校验；outcome 对所有嵌套对象递归冻结。
+
+### TDD 记录
+
+RED：
+
+- 命令：`vitest run tests/acceptance/nutrition-application.test.ts -t "stores unknown nutrition" --maxWorkers=1 --minWorkers=1`
+- 结果：餐食与 unknown 营养均成功，但公开 outcome 不含 `receipt`。
+- Windows 运行说明：该测试依赖私钥 ACL helper，命令需保留系统 Windows PowerShell module path；未设置时会稳定 fail-closed 为 `CORE_RUNTIME_SECRET_INVALID`，不是产品断言结果。
+
+GREEN：
+
+- 同一测试：1 passed，4 skipped。
+- 精确场景：原话 `喝了250ml牛奶。`；解析为 `250 ml`、非推导；营养 `unknown`；库存 `skipped_insufficient`。
+- `assertDietManagerOutcome(outcome)` 通过，嵌套 nutrition block 已冻结。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- `git diff --check`：exit 0。
+
+### 本批未声明
+
+- 回执只公开餐食 0.1.0 主链；购买、纠正等冻结功能未扩展同一 public receipt。
+- 未运行完整 Vitest；统一门禁仍留在 Batch V1-F。
+
+### 下一步
+
+Batch V1-E：将只读 `query_daily_summary` 接到现有事实/效果 read model，返回当日餐食、营养和库存处理进度且保证零写入。

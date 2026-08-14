@@ -112,6 +112,33 @@ export interface NutritionOutcomeItem {
   readonly estimated_fields: readonly string[];
 }
 
+export type MealReceiptInventoryStatus =
+  | "matched"
+  | "skipped_outside"
+  | "skipped_by_user"
+  | "skipped_ambiguous"
+  | "skipped_insufficient"
+  | "skipped_unit_incompatible"
+  | "skipped_amount_unknown";
+
+export interface MealReceiptItem {
+  readonly item_id: string;
+  readonly name: string;
+  readonly quantity: number | null;
+  readonly unit: string | null;
+  readonly derived: boolean;
+  readonly nutrition: Readonly<{
+    readonly status: NutritionOutcomeItem["coverage_status"];
+    readonly source: NutritionOutcomeItem["source_label"];
+  }>;
+  readonly inventory: Readonly<{ readonly status: MealReceiptInventoryStatus }>;
+}
+
+export interface MealReceipt {
+  readonly raw_text: string;
+  readonly items: readonly MealReceiptItem[];
+}
+
 export interface CommittedOutcome {
   action: DietManagerAction;
   status: "committed" | "committed_with_issues";
@@ -120,6 +147,7 @@ export interface CommittedOutcome {
   record_id: string;
   record_ids?: readonly string[];
   nutrition_items?: readonly NutritionOutcomeItem[];
+  receipt?: Readonly<MealReceipt>;
 }
 
 export type DietManagerOutcome =
@@ -227,6 +255,42 @@ function assertNutritionItem(value: unknown): asserts value is NutritionOutcomeI
   if (knownFields.some((field) => missingFields.includes(field))) return invalidOutcome("nutrition_field_overlap");
 }
 
+function assertMealReceipt(value: unknown): asserts value is MealReceipt {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("receipt");
+  const receipt = value as Record<string, unknown>;
+  if (Object.keys(receipt).sort().join("\0") !== "items\0raw_text" ||
+      typeof receipt.raw_text !== "string" || receipt.raw_text.length === 0 || receipt.raw_text.length > 4_096 ||
+      !Array.isArray(receipt.items) || receipt.items.length === 0 || receipt.items.length > 64) {
+    return invalidOutcome("receipt");
+  }
+  const inventoryStatuses = [
+    "matched", "skipped_outside", "skipped_by_user", "skipped_ambiguous",
+    "skipped_insufficient", "skipped_unit_incompatible", "skipped_amount_unknown",
+  ];
+  for (const value of receipt.items) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("receipt_item");
+    const item = value as Record<string, unknown>;
+    if (Object.keys(item).sort().join("\0") !== "derived\0inventory\0item_id\0name\0nutrition\0quantity\0unit" ||
+        typeof item.item_id !== "string" || item.item_id.length === 0 ||
+        typeof item.name !== "string" || item.name.length === 0 ||
+        typeof item.derived !== "boolean" ||
+        (item.quantity !== null && (!Number.isFinite(item.quantity) || Number(item.quantity) <= 0)) ||
+        (item.unit !== null && (typeof item.unit !== "string" || item.unit.length === 0)) ||
+        (item.quantity === null) !== (item.unit === null)) return invalidOutcome("receipt_item");
+    const nutrition = item.nutrition as Record<string, unknown> | null;
+    const inventory = item.inventory as Record<string, unknown> | null;
+    if (typeof nutrition !== "object" || nutrition === null || Array.isArray(nutrition) ||
+        Object.keys(nutrition).sort().join("\0") !== "source\0status" ||
+        !["complete", "partial", "unknown"].includes(String(nutrition.status)) ||
+        !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "unknown"]
+          .includes(String(nutrition.source)) ||
+        typeof inventory !== "object" || inventory === null || Array.isArray(inventory) ||
+        Object.keys(inventory).join("\0") !== "status" || !inventoryStatuses.includes(String(inventory.status))) {
+      return invalidOutcome("receipt_item_effects");
+    }
+  }
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -287,7 +351,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification"]);
   } else {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt"]);
   }
   if (candidate.clarification !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
@@ -308,6 +372,10 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     if (new Set(candidate.nutrition_items.map((item) => (item as NutritionOutcomeItem).item_id)).size !== candidate.nutrition_items.length) {
       return invalidOutcome("nutrition_items_duplicate");
     }
+  }
+  if (candidate.receipt !== undefined) {
+    if (!hasCommittedStatus || candidate.action !== "record_meal") return invalidOutcome("receipt_status");
+    assertMealReceipt(candidate.receipt);
   }
 
   return candidate as unknown as DietManagerOutcome;

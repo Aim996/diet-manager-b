@@ -74,14 +74,14 @@
 - Modify: `version-b-lite-plugin/src/contracts.ts`
 - Modify: `version-b-lite-plugin/src/application/outcome.ts`
 - Modify: `version-b-lite-plugin/src/application/core-runtime.ts`
-- Test: `version-b-lite-plugin/tests/acceptance/product-v1-receipt.test.ts`
+- Test: `version-b-lite-plugin/tests/acceptance/nutrition-application.test.ts`
 
 **Interfaces:**
 - Produces: a frozen receipt containing exact raw text, parsed items, nutrition status/source labels, and inventory effect status.
 
-- [ ] Add one exact receipt test for a meal with unknown nutrition and skipped inventory.
-- [ ] Build the receipt only from committed/read-back rows; do not recompute values in the renderer.
-- [ ] Run the focused receipt test and `tsc --noEmit`, record and commit.
+- [x] Add one exact receipt test for a meal with unknown nutrition and skipped inventory.
+- [x] Build the receipt only from committed/read-back rows; do not recompute values in the renderer.
+- [x] Run the focused receipt test and `tsc --noEmit`, record and commit.
 
 ### Task 5: Expose read-only daily progress
 
