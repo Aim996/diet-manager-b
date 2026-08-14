@@ -1,6 +1,7 @@
 import type {
   CommittedOutcome,
   DietManagerAction,
+  DailyProgressView,
   FailedOutcome,
   NonWritingOutcome,
   ProductIdentityClarification,
@@ -44,6 +45,7 @@ export function nonWritingOutcome(
   status: "ignored" | "needs_clarification",
   reasonCode: string,
   clarification?: Readonly<ProductIdentityClarification>,
+  dailyProgress?: Readonly<DailyProgressView>,
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -52,6 +54,19 @@ export function nonWritingOutcome(
     operation_id: operationId,
     reason_code: reasonCode,
     ...(clarification === undefined ? {} : { clarification }),
+    ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
+      date: dailyProgress.date,
+      timezone: dailyProgress.timezone,
+      meals: Object.freeze({ ...dailyProgress.meals }),
+      water: Object.freeze({ ...dailyProgress.water }),
+      nutrition: Object.freeze({
+        coverage_status: dailyProgress.nutrition.coverage_status,
+        nutrients: Object.freeze({ ...dailyProgress.nutrition.nutrients }),
+      }),
+      inventory: Object.freeze({ ...dailyProgress.inventory }),
+      purchases: Object.freeze({ ...dailyProgress.purchases }),
+      corrections: Object.freeze({ ...dailyProgress.corrections }),
+    }) }),
   });
 }
 

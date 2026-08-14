@@ -86,17 +86,18 @@
 ### Task 5: Expose read-only daily progress
 
 **Files:**
+- Modify: `version-b-lite-plugin/src/contracts.ts`
+- Modify: `version-b-lite-plugin/src/application/outcome.ts`
 - Modify: `version-b-lite-plugin/src/application/core-runtime.ts`
-- Modify: `version-b-lite-plugin/src/openclaw/plugin.ts`
-- Test: `version-b-lite-plugin/tests/acceptance/product-v1-progress.test.ts`
+- Test: `version-b-lite-plugin/tests/acceptance/core-application.test.ts`
 
 **Interfaces:**
-- Produces: public `query_meals` daily progress readback that recomputes from facts/effects and never writes a fact row.
+- Produces: public `query_daily_summary` six-area readback that recomputes from facts/effects and never writes a fact row.
 
-- [ ] Add one test recording a meal then querying the same natural day.
-- [ ] Implement the public query using existing repository read models, returning unknown fields as unknown and preserving raw text.
-- [ ] Assert database business-row counts are unchanged by the query.
-- [ ] Run the focused query test and `tsc --noEmit`, record and commit.
+- [x] Add one test recording a meal then querying the same natural day.
+- [x] Implement the public query using existing repository read models, returning unknown fields as unknown.
+- [x] Assert the complete database business snapshot is unchanged by the query.
+- [x] Run the focused query test and `tsc --noEmit`, record and commit.
 
 ### Task 6: 0.1.0 unified gate and closure
 

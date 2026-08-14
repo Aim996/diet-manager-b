@@ -21,6 +21,7 @@ import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import {
   dietManagerActions,
   type CoreApplicationRequest,
+  type DailyProgressView,
   type DietManagerAction,
   type DietManagerOutcome,
   type MealReceipt,
@@ -32,7 +33,7 @@ import {
   resolveProductIdentity,
   resolveExpiration,
 } from "../domain/inventory-service.js";
-import { deriveDomainId } from "../domain/identity.js";
+import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
 import { createDietDomainService, type DietDomainService } from "../domain/service.js";
 import type {
   DomainEnvelopeInput,
@@ -56,6 +57,7 @@ import {
   parseProductPayloadJson,
   parseProjectionPayloadJson,
 } from "../storage/inventory-repository.js";
+import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
 import {
   mapResolvedNutritionAmountMicrounits,
   mapResolvedNutritionEvidenceToDomainSource,
@@ -940,10 +942,94 @@ function executeCandidate(
   });
 }
 
+function readDailyProgress(
+  session: CoreRuntimeSession,
+  request: Readonly<CoreApplicationRequest>,
+): Readonly<DailyProgressView> {
+  const date = toNaturalDate(new Date(request.received_at).toISOString(), "Asia/Shanghai");
+  const summary = session.service.query(Object.freeze({
+    kind: "query_daily_summary" as const,
+    operation_id: request.operation_id,
+    date,
+    timezone: "Asia/Shanghai" as const,
+  }));
+  const meals = session.service.query(Object.freeze({
+    kind: "query_meals" as const,
+    operation_id: request.operation_id,
+    date,
+    timezone: "Asia/Shanghai" as const,
+  }));
+  if (summary.kind !== "daily_summary" || meals.kind !== "meals") {
+    throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+  }
+  const water = listWaterEvents({
+    database: session.database,
+    authoritySecret: session.authoritySecret,
+    date,
+    timezone: "Asia/Shanghai",
+  });
+  // Authenticate every current Pantry lineage before exposing aggregate inventory counters.
+  listInventoryProjection({ database: session.database, authoritySecret: session.authoritySecret });
+  const start = new Date(`${date}T00:00:00.000+08:00`).toISOString();
+  const end = new Date(Date.parse(start) + 86_400_000).toISOString();
+  const count = (sql: string): number => {
+    const row = session.database.prepare(sql).get(start, end) as { count: number };
+    if (!Number.isSafeInteger(row.count) || row.count < 0) throw new Error("CORE_APPLICATION_QUERY_INVALID:count");
+    return row.count;
+  };
+  const deductionCount = count(
+    `SELECT COUNT(*) AS count FROM inventory_transactions t
+     JOIN event_records e ON e.event_id = t.event_id
+     WHERE t.direction = 'out' AND t.reason_code = 'meal_consumption'
+       AND e.lifecycle_status = 'active' AND e.occurred_at_text >= ? AND e.occurred_at_text < ?`,
+  );
+  const purchaseCount = count(
+    `SELECT COUNT(*) AS count FROM event_records
+     WHERE event_type = 'inventory_stock' AND lifecycle_status = 'active'
+       AND COALESCE(occurred_at_text, received_at) >= ? AND COALESCE(occurred_at_text, received_at) < ?`,
+  );
+  const correctionCount = count(
+    `SELECT COUNT(*) AS count FROM event_records
+     WHERE event_type IN ('diet_correction','nutrition_supplemented','inventory_adjusted')
+       AND lifecycle_status = 'active'
+       AND COALESCE(occurred_at_text, received_at) >= ? AND COALESCE(occurred_at_text, received_at) < ?`,
+  );
+  const waterTotal = water.reduce((sum, item) => sum + item.plain_water_ml_milli, 0);
+  if (!Number.isSafeInteger(waterTotal)) throw new Error("CORE_APPLICATION_QUERY_INVALID:water_sum");
+  return Object.freeze({
+    date,
+    timezone: "Asia/Shanghai" as const,
+    meals: Object.freeze({ count: meals.meals.length }),
+    water: Object.freeze({ count: water.length, plain_water_ml_milli: waterTotal }),
+    nutrition: Object.freeze({
+      coverage_status: summary.coverage_status,
+      nutrients: Object.freeze({ ...summary.nutrients }),
+    }),
+    inventory: Object.freeze({ deduction_count: deductionCount }),
+    purchases: Object.freeze({ count: purchaseCount }),
+    corrections: Object.freeze({ count: correctionCount }),
+  });
+}
+
 export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRequest): DietManagerOutcome {
   let request: Readonly<CoreApplicationRequest>;
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
+  }
+  if (request.action === "query_daily_summary") {
+    try {
+      const progress = readDailyProgress(acquireSession(runtime), request);
+      return nonWritingOutcome(
+        request.action,
+        request.operation_id,
+        "ignored",
+        "read_only_result",
+        undefined,
+        progress,
+      );
+    } catch (error) {
+      return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+    }
   }
   if (!["record_meal", "record_water", "add_inventory", "correct_record"].includes(request.action)) {
     return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");

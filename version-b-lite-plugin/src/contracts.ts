@@ -74,8 +74,30 @@ export interface NonWritingOutcome {
   operation_id?: string;
   reason_code: string;
   clarification?: ProductIdentityClarification;
+  daily_progress?: Readonly<DailyProgressView>;
   record_id?: never;
   record_ids?: never;
+}
+
+export interface DailyProgressView {
+  readonly date: string;
+  readonly timezone: "Asia/Shanghai";
+  readonly meals: Readonly<{ readonly count: number }>;
+  readonly water: Readonly<{ readonly count: number; readonly plain_water_ml_milli: number }>;
+  readonly nutrition: Readonly<{
+    readonly coverage_status: "complete" | "partial" | "unknown";
+    readonly nutrients: Readonly<{
+      readonly energy_kcal_milli: number | null;
+      readonly protein_mg: number | null;
+      readonly fat_mg: number | null;
+      readonly carbohydrate_mg: number | null;
+      readonly fiber_mg: number | null;
+      readonly water_ml_milli: number | null;
+    }>;
+  }>;
+  readonly inventory: Readonly<{ readonly deduction_count: number }>;
+  readonly purchases: Readonly<{ readonly count: number }>;
+  readonly corrections: Readonly<{ readonly count: number }>;
 }
 
 export interface ProductIdentityClarificationOption {
@@ -291,6 +313,52 @@ function assertMealReceipt(value: unknown): asserts value is MealReceipt {
   }
 }
 
+function assertDailyProgress(value: unknown): asserts value is DailyProgressView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("daily_progress");
+  const progress = value as Record<string, unknown>;
+  if (Object.keys(progress).sort().join("\0") !==
+      "corrections\0date\0inventory\0meals\0nutrition\0purchases\0timezone\0water" ||
+      typeof progress.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(progress.date) ||
+      progress.timezone !== "Asia/Shanghai") return invalidOutcome("daily_progress");
+  const exactCount = (entry: unknown, key: "count" | "deduction_count"): number => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return invalidOutcome("daily_progress_count");
+    const record = entry as Record<string, unknown>;
+    if (Object.keys(record).join("\0") !== key || !Number.isSafeInteger(record[key]) || Number(record[key]) < 0) {
+      return invalidOutcome("daily_progress_count");
+    }
+    return Number(record[key]);
+  };
+  exactCount(progress.meals, "count");
+  exactCount(progress.purchases, "count");
+  exactCount(progress.corrections, "count");
+  exactCount(progress.inventory, "deduction_count");
+  if (typeof progress.water !== "object" || progress.water === null || Array.isArray(progress.water)) {
+    return invalidOutcome("daily_progress_water");
+  }
+  const water = progress.water as Record<string, unknown>;
+  if (Object.keys(water).sort().join("\0") !== "count\0plain_water_ml_milli" ||
+      !Number.isSafeInteger(water.count) || Number(water.count) < 0 ||
+      !Number.isSafeInteger(water.plain_water_ml_milli) || Number(water.plain_water_ml_milli) < 0) {
+    return invalidOutcome("daily_progress_water");
+  }
+  if (typeof progress.nutrition !== "object" || progress.nutrition === null || Array.isArray(progress.nutrition)) {
+    return invalidOutcome("daily_progress_nutrition");
+  }
+  const nutrition = progress.nutrition as Record<string, unknown>;
+  if (Object.keys(nutrition).sort().join("\0") !== "coverage_status\0nutrients" ||
+      !["complete", "partial", "unknown"].includes(String(nutrition.coverage_status)) ||
+      typeof nutrition.nutrients !== "object" || nutrition.nutrients === null || Array.isArray(nutrition.nutrients)) {
+    return invalidOutcome("daily_progress_nutrition");
+  }
+  const nutrients = nutrition.nutrients as Record<string, unknown>;
+  const fields = ["carbohydrate_mg", "energy_kcal_milli", "fat_mg", "fiber_mg", "protein_mg", "water_ml_milli"];
+  if (Object.keys(nutrients).sort().join("\0") !== fields.join("\0") ||
+      fields.some((field) => nutrients[field] !== null &&
+        (!Number.isSafeInteger(nutrients[field]) || Number(nutrients[field]) < 0))) {
+    return invalidOutcome("daily_progress_nutrients");
+  }
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -349,7 +417,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.status === "failed") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification", "daily_progress"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt"]);
   }
@@ -376,6 +444,11 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.receipt !== undefined) {
     if (!hasCommittedStatus || candidate.action !== "record_meal") return invalidOutcome("receipt_status");
     assertMealReceipt(candidate.receipt);
+  }
+  if (candidate.daily_progress !== undefined) {
+    if (candidate.action !== "query_daily_summary" || candidate.status !== "ignored" ||
+        candidate.reason_code !== "read_only_result") return invalidOutcome("daily_progress_status");
+    assertDailyProgress(candidate.daily_progress);
   }
 
   return candidate as unknown as DietManagerOutcome;

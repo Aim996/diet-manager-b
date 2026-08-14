@@ -24,7 +24,7 @@ import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.j
 import { handleCoreRequest } from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
 import { canonicalJson, canonicalSha256 } from "../../src/authority/canonical-json.js";
-import type { CoreApplicationRequest, DietManagerAction } from "../../src/contracts.js";
+import { assertDietManagerOutcome, type CoreApplicationRequest, type DietManagerAction } from "../../src/contracts.js";
 import { createDietDomainService } from "../../src/domain/service.js";
 import { digestDomainEnvelope } from "../../src/domain/identity.js";
 import type { DomainEnvelopeInput } from "../../src/domain/types.js";
@@ -1511,7 +1511,44 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
     }
   });
 
-  it.each(["query_inventory", "query_meals", "query_daily_summary", "undo_record"] as const)(
+  it("returns a six-area daily progress view without writing", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-progress-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      const mealRequest = applicationRequest("CASE-MEAL-021", "record_meal");
+      expect(handleCoreRequest(runtime, mealRequest).committed).toBe(true);
+      const before = storedBusinessSnapshot(root);
+      const query = { ...mealRequest, action: "query_daily_summary" as const,
+        operation_id: "operation-progress-001" };
+      const outcome = handleCoreRequest(runtime, query);
+      expect(outcome, JSON.stringify(outcome)).toMatchObject({
+        action: "query_daily_summary",
+        status: "ignored",
+        committed: false,
+        operation_id: "operation-progress-001",
+        reason_code: "read_only_result",
+        daily_progress: {
+          date: "2026-08-11",
+          timezone: "Asia/Shanghai",
+          meals: { count: 1 },
+          water: { count: 0, plain_water_ml_milli: 0 },
+          nutrition: { coverage_status: "partial", nutrients: allNullNutrition() },
+          inventory: { deduction_count: 0 },
+          purchases: { count: 0 },
+          corrections: { count: 0 },
+        },
+      });
+      expect(assertDietManagerOutcome(outcome)).toBe(outcome);
+      expect(Object.isFrozen(outcome.daily_progress?.nutrition.nutrients)).toBe(true);
+      expect(storedBusinessSnapshot(root)).toBe(before);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it.each(["query_inventory", "query_meals", "undo_record"] as const)(
     "returns frozen no-write not-implemented for %s",
     (action: DietManagerAction) => {
       const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));
