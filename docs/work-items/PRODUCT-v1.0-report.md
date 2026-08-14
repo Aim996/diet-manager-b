@@ -12,7 +12,8 @@
 4. 唯一库存候选与餐食事实同事务扣减；多候选/无候选提交事实但不猜测扣减。
 5. 餐食提交回执返回原话、解析数量、营养状态/来源及库存处理状态，全部来自提交后读回。
 6. `query_daily_summary` 返回餐食、白水、营养、库存扣减、购买、纠正六域只读进度，不写事实。
-7. 既有白水、购买、位置纠正功能保持可用。
+7. `query_meals` 与 `query_inventory` 已公开只读接线，结果来自认证 read model 且查询零写入。
+8. 既有白水、购买、位置纠正功能保持可用。
 
 ## 用户测试 FDC
 
@@ -54,11 +55,11 @@ API key 不要写入聊天、插件 JSON 或仓库。没有 key 或 USDA 不可�
 - 两个旧预期修正后直接覆盖：2 files / 70 tests PASS；未重复跑完整套件。
 - FDC + OpenClaw focused：2 files / 26 tests PASS。
 - 最新 TypeScript `--noEmit`：PASS。
+- 餐食/库存公开查询 smoke：1/1 PASS。
 
 ## 尚未完成
 
 - 用户真实 USDA key/网络环境的在线验收。
-- 公开 `query_meals`、`query_inventory` 接线。
 - 一键安装、备份、恢复及恢复后 I-1..I-8 检查。
 - 最终 dist 构建与安装包验证。本轮按约束没有 emit/build。
 

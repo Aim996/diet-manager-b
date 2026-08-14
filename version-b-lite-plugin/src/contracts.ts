@@ -75,8 +75,43 @@ export interface NonWritingOutcome {
   reason_code: string;
   clarification?: ProductIdentityClarification;
   daily_progress?: Readonly<DailyProgressView>;
+  meal_history?: Readonly<MealHistoryView>;
+  inventory_view?: Readonly<InventoryView>;
   record_id?: never;
   record_ids?: never;
+}
+
+export interface MealHistoryView {
+  readonly date: string;
+  readonly timezone: "Asia/Shanghai";
+  readonly meals: readonly Readonly<{
+    readonly occurred_at: string;
+    readonly meal_slot: string;
+    readonly location: "home" | "outside";
+    readonly items: readonly Readonly<{
+      readonly item_order: number;
+      readonly item_type: string;
+      readonly name: string;
+      readonly quantity_microunits: number | null;
+      readonly unit: string;
+      readonly quantity_evidence: "explicit" | "estimated_upper_bound" | "unknown";
+    }>[];
+  }>[];
+}
+
+export interface InventoryView {
+  readonly batches: readonly Readonly<{
+    readonly batch_id: string;
+    readonly product_id: string;
+    readonly name: string;
+    readonly product_type: string;
+    readonly quantity_microunits: number | null;
+    readonly unit: string;
+    readonly quantity_status: "available" | "empty" | "unknown";
+    readonly effective_status: "active" | "empty";
+    readonly expiration_at: string | null;
+    readonly location: string;
+  }>[];
 }
 
 export interface DailyProgressView {
@@ -359,6 +394,80 @@ function assertDailyProgress(value: unknown): asserts value is DailyProgressView
   }
 }
 
+function boundedText(value: unknown, reason: string, max = 512): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > max ||
+      /[\u0000-\u001F\u007F]/u.test(value)) return invalidOutcome(reason);
+  return value;
+}
+
+function assertMealHistory(value: unknown): asserts value is MealHistoryView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("meal_history");
+  const view = value as Record<string, unknown>;
+  if (Object.keys(view).sort().join("\0") !== "date\0meals\0timezone" ||
+      typeof view.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(view.date) ||
+      view.timezone !== "Asia/Shanghai" || !Array.isArray(view.meals) || view.meals.length > 512) {
+    return invalidOutcome("meal_history");
+  }
+  for (const mealValue of view.meals) {
+    if (typeof mealValue !== "object" || mealValue === null || Array.isArray(mealValue)) {
+      return invalidOutcome("meal_history_meal");
+    }
+    const meal = mealValue as Record<string, unknown>;
+    if (Object.keys(meal).sort().join("\0") !== "items\0location\0meal_slot\0occurred_at" ||
+        !Number.isFinite(Date.parse(String(meal.occurred_at))) ||
+        !["home", "outside"].includes(String(meal.location)) ||
+        !Array.isArray(meal.items) || meal.items.length > 64) return invalidOutcome("meal_history_meal");
+    boundedText(meal.meal_slot, "meal_history_slot", 64);
+    for (const [index, itemValue] of meal.items.entries()) {
+      if (typeof itemValue !== "object" || itemValue === null || Array.isArray(itemValue)) {
+        return invalidOutcome("meal_history_item");
+      }
+      const item = itemValue as Record<string, unknown>;
+      if (Object.keys(item).sort().join("\0") !==
+          "item_order\0item_type\0name\0quantity_evidence\0quantity_microunits\0unit" ||
+          item.item_order !== index ||
+          (item.quantity_microunits !== null &&
+            (!Number.isSafeInteger(item.quantity_microunits) || Number(item.quantity_microunits) <= 0)) ||
+          !["explicit", "estimated_upper_bound", "unknown"].includes(String(item.quantity_evidence)) ||
+          (item.quantity_microunits === null) !== (item.quantity_evidence === "unknown")) {
+        return invalidOutcome("meal_history_item");
+      }
+      boundedText(item.item_type, "meal_history_item_type", 64);
+      boundedText(item.name, "meal_history_item_name", 256);
+      boundedText(item.unit, "meal_history_item_unit", 64);
+    }
+  }
+}
+
+function assertInventoryView(value: unknown): asserts value is InventoryView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("inventory_view");
+  const view = value as Record<string, unknown>;
+  if (Object.keys(view).join("\0") !== "batches" || !Array.isArray(view.batches) || view.batches.length > 2_048) {
+    return invalidOutcome("inventory_view");
+  }
+  for (const batchValue of view.batches) {
+    if (typeof batchValue !== "object" || batchValue === null || Array.isArray(batchValue)) {
+      return invalidOutcome("inventory_batch");
+    }
+    const batch = batchValue as Record<string, unknown>;
+    if (Object.keys(batch).sort().join("\0") !==
+        "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit" ||
+        (batch.quantity_microunits !== null &&
+          (!Number.isSafeInteger(batch.quantity_microunits) || Number(batch.quantity_microunits) < 0)) ||
+        !["available", "empty", "unknown"].includes(String(batch.quantity_status)) ||
+        !["active", "empty"].includes(String(batch.effective_status)) ||
+        (batch.expiration_at !== null && !Number.isFinite(Date.parse(String(batch.expiration_at))))) {
+      return invalidOutcome("inventory_batch");
+    }
+    boundedText(batch.batch_id, "inventory_batch_id", 128);
+    boundedText(batch.product_id, "inventory_product_id", 128);
+    boundedText(batch.name, "inventory_name", 256);
+    boundedText(batch.product_type, "inventory_product_type", 64);
+    boundedText(batch.unit, "inventory_unit", 64);
+    boundedText(batch.location, "inventory_location", 128);
+  }
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -417,7 +526,8 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.status === "failed") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification", "daily_progress"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
+      ["operation_id", "clarification", "daily_progress", "meal_history", "inventory_view"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt"]);
   }
@@ -449,6 +559,18 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     if (candidate.action !== "query_daily_summary" || candidate.status !== "ignored" ||
         candidate.reason_code !== "read_only_result") return invalidOutcome("daily_progress_status");
     assertDailyProgress(candidate.daily_progress);
+  }
+  if (candidate.meal_history !== undefined) {
+    if (candidate.action !== "query_meals" || candidate.status !== "ignored" ||
+        candidate.reason_code !== "read_only_result" || candidate.inventory_view !== undefined ||
+        candidate.daily_progress !== undefined) return invalidOutcome("meal_history_status");
+    assertMealHistory(candidate.meal_history);
+  }
+  if (candidate.inventory_view !== undefined) {
+    if (candidate.action !== "query_inventory" || candidate.status !== "ignored" ||
+        candidate.reason_code !== "read_only_result" || candidate.meal_history !== undefined ||
+        candidate.daily_progress !== undefined) return invalidOutcome("inventory_view_status");
+    assertInventoryView(candidate.inventory_view);
   }
 
   return candidate as unknown as DietManagerOutcome;

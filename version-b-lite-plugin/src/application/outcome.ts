@@ -2,6 +2,8 @@ import type {
   CommittedOutcome,
   DietManagerAction,
   DailyProgressView,
+  InventoryView,
+  MealHistoryView,
   FailedOutcome,
   NonWritingOutcome,
   ProductIdentityClarification,
@@ -46,6 +48,8 @@ export function nonWritingOutcome(
   reasonCode: string,
   clarification?: Readonly<ProductIdentityClarification>,
   dailyProgress?: Readonly<DailyProgressView>,
+  mealHistory?: Readonly<MealHistoryView>,
+  inventoryView?: Readonly<InventoryView>,
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -66,6 +70,19 @@ export function nonWritingOutcome(
       inventory: Object.freeze({ ...dailyProgress.inventory }),
       purchases: Object.freeze({ ...dailyProgress.purchases }),
       corrections: Object.freeze({ ...dailyProgress.corrections }),
+    }) }),
+    ...(mealHistory === undefined ? {} : { meal_history: Object.freeze({
+      date: mealHistory.date,
+      timezone: mealHistory.timezone,
+      meals: Object.freeze(mealHistory.meals.map((meal) => Object.freeze({
+        occurred_at: meal.occurred_at,
+        meal_slot: meal.meal_slot,
+        location: meal.location,
+        items: Object.freeze(meal.items.map((item) => Object.freeze({ ...item }))),
+      }))),
+    }) }),
+    ...(inventoryView === undefined ? {} : { inventory_view: Object.freeze({
+      batches: Object.freeze(inventoryView.batches.map((batch) => Object.freeze({ ...batch }))),
     }) }),
   });
 }

@@ -6,6 +6,8 @@ export type {
   DietManagerOutcome,
   DietManagerRequest,
   DietManagerStatus,
+  InventoryView,
+  MealHistoryView,
   NonWritingOutcome,
   NutritionOutcomeAmountRange,
   NutritionOutcomeItem,

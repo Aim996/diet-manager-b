@@ -1548,9 +1548,72 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
     }
   });
 
-  it.each(["query_inventory", "query_meals", "undo_record"] as const)(
-    "returns frozen no-write not-implemented for %s",
-    (action: DietManagerAction) => {
+  it("returns authenticated meal history and inventory views without writing", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-read-views-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      const mealRequest = applicationRequest("CASE-MEAL-001", "record_meal");
+      const purchaseRequest = applicationRequest("CASE-PURCHASE-001", "add_inventory");
+      expect(handleCoreRequest(runtime, mealRequest).committed).toBe(true);
+      expect(handleCoreRequest(runtime, purchaseRequest).committed).toBe(true);
+      const before = storedBusinessSnapshot(root);
+
+      const meals = handleCoreRequest(runtime, {
+        ...mealRequest,
+        action: "query_meals",
+        operation_id: "operation-query-meals-001",
+      });
+      expect(meals).toMatchObject({
+        action: "query_meals",
+        status: "ignored",
+        committed: false,
+        reason_code: "read_only_result",
+        meal_history: {
+          date: "2026-08-11",
+          timezone: "Asia/Shanghai",
+          meals: [{
+            meal_slot: "早餐",
+            location: "home",
+            items: [
+              { item_order: 0, name: "egg", quantity_microunits: 2_000_000, unit: "piece", quantity_evidence: "explicit" },
+              { item_order: 1, name: "bread", quantity_microunits: 2_000_000, unit: "slice", quantity_evidence: "explicit" },
+              { item_order: 2, name: "milk", quantity_microunits: 250_000_000, unit: "ml", quantity_evidence: "explicit" },
+            ],
+          }],
+        },
+      });
+      const inventory = handleCoreRequest(runtime, {
+        ...purchaseRequest,
+        action: "query_inventory",
+        operation_id: "operation-query-inventory-001",
+      });
+      expect(inventory).toMatchObject({
+        action: "query_inventory",
+        status: "ignored",
+        committed: false,
+        reason_code: "read_only_result",
+        inventory_view: { batches: [{
+          name: "milk",
+          quantity_microunits: 24_000_000,
+          unit: "carton",
+          quantity_status: "available",
+          effective_status: "active",
+        }] },
+      });
+      expect(assertDietManagerOutcome(meals)).toBe(meals);
+      expect(assertDietManagerOutcome(inventory)).toBe(inventory);
+      expect(Object.isFrozen(meals.meal_history?.meals[0]?.items)).toBe(true);
+      expect(Object.isFrozen(inventory.inventory_view?.batches[0])).toBe(true);
+      expect(storedBusinessSnapshot(root)).toBe(before);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("returns frozen no-write not-implemented for undo_record", () => {
+      const action: DietManagerAction = "undo_record";
       const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));
       const runtime = createCoreRuntime({ officialDataRoot: root,
         now: () => "2026-08-11T00:30:01.000Z" });
@@ -1565,8 +1628,7 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
         runtime.close();
         rmSync(root, { recursive: true, force: false });
       }
-    },
-  );
+  });
 
   it("rejects a correction action whose source parses as a meal without writing", () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));

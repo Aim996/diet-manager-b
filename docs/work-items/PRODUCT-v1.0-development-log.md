@@ -250,3 +250,22 @@ Batch V1-F：只进行一次统一 focused/full/noEmit/OpenClaw 元数据验证�
 
 - 测试没有请求真实 USDA 服务，也没有读取用户真实 key；真实联网由部署者/用户验收。
 - 没有生成 dist，没有再次运行完整 Vitest。
+
+## Batch V1-H：公开餐食与库存只读查询
+
+- 日期：2026-08-14
+- 目标：REQ-QUERY-001 的首批公开 read model，并让既有库存只读模型可从 OpenClaw action 使用。
+
+### 生产改动
+
+- `query_meals` 返回上海自然日、餐次时间/位置/餐槽，以及每项名称、单位、微单位数量和数量证据。
+- `query_inventory` 返回已认证批次、商品、可用数量、单位、状态、位置与到期时间。
+- 两者沿用 `status: ignored` + `reason_code: read_only_result`，明确表示只读成功而不是伪造提交。
+- 查询复用既有 HMAC/事实/库存 lineage read model；公开 mapper 不重新解释历史事实。
+- 新增 exact contract 校验与递归冻结；两个 query 前后完整业务快照相同。
+
+### 小门验证
+
+- 新增合并 smoke：先提交餐食和购买，再分别查询；1/1 PASS（同文件其余 54 skipped）。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- 未重复完整 Vitest。

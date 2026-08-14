@@ -128,3 +128,18 @@
 - [x] Map only fixed nutrient IDs and preserve the FDC source URL/record/version.
 - [x] Prove with fixture transport and registered OpenClaw tool tests that the key is absent from public request/result bytes.
 - [x] Run the two focused files and `tsc --noEmit`; do not make a real network call.
+
+### Task 8: Expose authenticated meal and inventory read models
+
+**Files:**
+- Modify: `version-b-lite-plugin/src/contracts.ts`
+- Modify: `version-b-lite-plugin/src/application/outcome.ts`
+- Modify: `version-b-lite-plugin/src/application/core-runtime.ts`
+- Modify: `version-b-lite-plugin/src/index.ts`
+- Test: `version-b-lite-plugin/tests/acceptance/core-application.test.ts`
+
+- [x] Return natural-day meal history through `query_meals`.
+- [x] Return current authenticated batches through `query_inventory`.
+- [x] Preserve the existing five public statuses and label both as `read_only_result`.
+- [x] Assert exact public shapes, recursive freeze, and an unchanged business snapshot.
+- [x] Run one combined smoke and `tsc --noEmit`; do not rerun full.

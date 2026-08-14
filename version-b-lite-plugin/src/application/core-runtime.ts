@@ -24,6 +24,8 @@ import {
   type DailyProgressView,
   type DietManagerAction,
   type DietManagerOutcome,
+  type InventoryView,
+  type MealHistoryView,
   type MealReceipt,
   type MealReceiptInventoryStatus,
   type NutritionOutcomeItem,
@@ -1011,14 +1013,86 @@ function readDailyProgress(
   });
 }
 
+function readMealHistory(
+  session: CoreRuntimeSession,
+  request: Readonly<CoreApplicationRequest>,
+): Readonly<MealHistoryView> {
+  const date = toNaturalDate(new Date(request.received_at).toISOString(), "Asia/Shanghai");
+  const result = session.service.query(Object.freeze({
+    kind: "query_meals" as const,
+    operation_id: request.operation_id,
+    date,
+    timezone: "Asia/Shanghai" as const,
+  }));
+  if (result.kind !== "meals") throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+  return Object.freeze({
+    date,
+    timezone: "Asia/Shanghai" as const,
+    meals: Object.freeze(result.meals.map((meal) => Object.freeze({
+      occurred_at: meal.occurred_at,
+      meal_slot: meal.meal_slot,
+      location: meal.location,
+      items: Object.freeze(meal.items.map((item) => {
+        const amount = item.amount;
+        const observed = amount.observed_microunits;
+        const unit = amount.unit;
+        const evidence = amount.evidence;
+        if ((observed !== null && (!Number.isSafeInteger(observed) || Number(observed) <= 0)) ||
+            typeof unit !== "string" ||
+            !["explicit", "estimated_upper_bound", "unknown"].includes(String(evidence)) ||
+            (observed === null) !== (evidence === "unknown")) {
+          throw new Error("CORE_APPLICATION_QUERY_INVALID:meal_amount");
+        }
+        return Object.freeze({
+          item_order: item.item_order,
+          item_type: item.item_type,
+          name: item.normalized_name,
+          quantity_microunits: observed as number | null,
+          unit,
+          quantity_evidence: evidence as "explicit" | "estimated_upper_bound" | "unknown",
+        });
+      })),
+    }))),
+  });
+}
+
+function readInventoryView(
+  session: CoreRuntimeSession,
+  request: Readonly<CoreApplicationRequest>,
+): Readonly<InventoryView> {
+  const result = session.service.query(Object.freeze({
+    kind: "query_inventory" as const,
+    operation_id: request.operation_id,
+  }));
+  if (result.kind !== "inventory") throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+  return Object.freeze({
+    batches: Object.freeze(result.batches.map((batch) => Object.freeze({
+      batch_id: batch.batch_id,
+      product_id: batch.product_id,
+      name: batch.normalized_name,
+      product_type: batch.product_type,
+      quantity_microunits: batch.quantity_microunits,
+      unit: batch.unit,
+      quantity_status: batch.quantity_status,
+      effective_status: batch.effective_status,
+      expiration_at: batch.effective_expiration_at ?? null,
+      location: batch.pantry_evidence?.location.value ?? "unknown",
+    }))),
+  });
+}
+
 export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRequest): DietManagerOutcome {
   let request: Readonly<CoreApplicationRequest>;
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
-  if (request.action === "query_daily_summary") {
+  if (request.action === "query_daily_summary" || request.action === "query_meals" ||
+      request.action === "query_inventory") {
     try {
-      const progress = readDailyProgress(acquireSession(runtime), request);
+      const session = acquireSession(runtime);
+      const progress = request.action === "query_daily_summary" ? readDailyProgress(session, request) : undefined;
+      const meals = request.action === "query_meals" ? readMealHistory(session, request) : undefined;
+      const inventory = request.action === "query_inventory" ? readInventoryView(session, request) : undefined;
       return nonWritingOutcome(
         request.action,
         request.operation_id,
@@ -1026,6 +1100,8 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         "read_only_result",
         undefined,
         progress,
+        meals,
+        inventory,
       );
     } catch (error) {
       return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
