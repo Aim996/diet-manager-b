@@ -6,9 +6,11 @@ import { resolveExpiration } from "../domain/inventory-service.js";
 import type {
   DomainEnvelopeInput,
   DomainOperation,
+  NutritionSourceCandidate,
   PantryPurchaseEvidence,
   ProductIdentityEvidence,
 } from "../domain/types.js";
+import type { ResolvedNutritionEvidence } from "../nutrition/types.js";
 import type {
   CoreCommandCandidate,
   CoreInventoryCommandCandidate,
@@ -52,7 +54,54 @@ function location(command: CoreMealCommandCandidate): "home" | "outside" {
     ? "outside" : "home";
 }
 
-function mealOrWaterOperation(command: CoreCommandCandidate): DomainOperation {
+function decimalMicrounits(value: string, scale: bigint, field: string): number {
+  const match = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/u.exec(value);
+  if (match === null) throw new TypeError(`CORE_APPLICATION_MAPPING_INVALID:${field}`);
+  const fraction = match[2] ?? "";
+  const denominator = 10n ** BigInt(fraction.length);
+  const numerator = BigInt(`${match[1]}${fraction}`) * scale;
+  let rounded = numerator / denominator;
+  if ((numerator % denominator) * 2n >= denominator) rounded += 1n;
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new TypeError(`CORE_APPLICATION_MAPPING_INVALID:${field}`);
+  }
+  return Number(rounded);
+}
+
+function domainNutritionSource(
+  evidence: Readonly<ResolvedNutritionEvidence>,
+): Readonly<NutritionSourceCandidate> | null {
+  if (evidence.source_type === "unknown") return null;
+  const nutrient = (field: keyof ResolvedNutritionEvidence["nutrient_values"], scale: bigint) => {
+    const value = evidence.nutrient_values[field];
+    return value === null ? null : decimalMicrounits(value, scale, `nutrient.${field}`);
+  };
+  const versionHex = createHash("sha256")
+    .update(`${evidence.source_id}\0${evidence.source_ref}\0${evidence.source_version}`, "utf8")
+    .digest("hex").slice(0, 12);
+  return Object.freeze({
+    source_type: "public_fixture" as const,
+    source_ref: evidence.source_ref,
+    profile_version: Number.parseInt(versionHex, 16) + 1,
+    applicable_product_id: null,
+    basis_kind: evidence.basis_kind,
+    basis_microunits: decimalMicrounits(evidence.basis_amount, 1_000_000n, "basis_amount"),
+    basis_unit: evidence.basis_unit,
+    nutrients: Object.freeze({
+      energy_kcal_milli: nutrient("energy_kcal", 1_000n),
+      protein_mg: nutrient("protein_g", 1_000n),
+      fat_mg: nutrient("fat_g", 1_000n),
+      carbohydrate_mg: nutrient("carbohydrate_g", 1_000n),
+      fiber_mg: nutrient("fiber_g", 1_000n),
+      water_ml_milli: nutrient("water_ml", 1_000n),
+    }),
+  });
+}
+
+function mealOrWaterOperation(
+  command: CoreCommandCandidate,
+  nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
+): DomainOperation {
   if (command.action === "record_water") return {
     kind: "record_water", operation_id: command.operation_id,
     occurred_time: command.occurred_time, source_text: command.source_text,
@@ -61,6 +110,9 @@ function mealOrWaterOperation(command: CoreCommandCandidate): DomainOperation {
   };
   if (command.action !== "record_meal" || command.occurred_time.resolved_start === null) {
     throw new Error("CORE_APPLICATION_MAPPING_INVALID:command");
+  }
+  if (nutritionEvidence.length !== 0 && nutritionEvidence.length !== command.items.length) {
+    throw new Error("CORE_APPLICATION_MAPPING_INVALID:nutrition_evidence_count");
   }
   return {
     kind: "record_meal", operation_id: command.operation_id,
@@ -71,7 +123,13 @@ function mealOrWaterOperation(command: CoreCommandCandidate): DomainOperation {
       missing_candidate_behavior: "skip_insufficient",
       rule_version: "diet-manager/pantry-allocation-v1",
     },
-    items: command.items.map((item) => ({
+    items: command.items.map((item, index) => {
+      const evidence = nutritionEvidence[index];
+      const source = evidence === undefined ? null : domainNutritionSource(evidence);
+      const adoptedMicrounits = evidence?.adopted_amount === null || evidence === undefined
+        ? null
+        : decimalMicrounits(evidence.adopted_amount, 1_000_000n, "adopted_amount");
+      return ({
       normalized_name: item.normalized_name,
       item_type: item.kind === "food" ? "food" : "nutrition_drink",
       ...(command.inventory_directive === undefined
@@ -80,14 +138,14 @@ function mealOrWaterOperation(command: CoreCommandCandidate): DomainOperation {
       amount: {
         unit: item.unit ?? "unknown",
         observed_microunits: item.quantity === null ? null : item.quantity * 1_000_000,
-        nutrition_adoption_microunits: null,
+        nutrition_adoption_microunits: adoptedMicrounits,
         inventory_deduction_microunits: item.quantity === null ? null : item.quantity * 1_000_000,
         template_reference_microunits: null,
         evidence: item.quantity === null ? "unknown"
           : item.estimated === false ? "explicit" : "estimated_upper_bound",
       },
-      nutrition_sources: [],
-    })),
+      nutrition_sources: source === null ? [] : [source],
+    }); }),
     source_text: command.source_text, occurred_time: command.occurred_time,
     subject: command.subject,
     ...(command.context === undefined ? {} : { context: command.context }),
@@ -294,6 +352,7 @@ export function mapCoreCandidateToEnvelope(
   command: CoreCommandCandidate,
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
   correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
+  nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): Readonly<DomainEnvelopeInput> {
   const digest = identity(request);
   if (command.action === "correct_record" && !("correction_kind" in command)) {
@@ -303,7 +362,7 @@ export function mapCoreCandidateToEnvelope(
     ? purchaseOperations(request, command, purchaseResolutions)
     : command.action === "correct_record"
       ? Object.freeze([locationCorrectionOperation(command, correctionResolution)])
-      : Object.freeze([mealOrWaterOperation(command)]);
+      : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
   const envelope = JSON.parse(canonicalJson({
     envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
     idempotency_key: `core-${digest}`, command_type: request.action,

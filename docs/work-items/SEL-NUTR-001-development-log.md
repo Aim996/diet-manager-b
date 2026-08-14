@@ -143,6 +143,22 @@
 - 后续修复索引：C5b 从一条真实 unknown meal + exact record ID RED 开始，先固定事件/修订身份，再接 effect。
 - 批次提交：`feat: parse nutrition supplement targets`。
 
+### Batch C5b / 2026-08-14
+
+- 目标：修复 v6 已解析营养证据在进入既有 meal EffectBundle 前被丢弃的问题，为 supplementation 的 progress delta 提供可信初始值。
+- 绑定 REQ：`REQ-NUTR-002/004/005/006`。
+- 绑定 CASE：代表性覆盖 250ml milk 已知值的事务内 Snapshot；完整选中案例仍延期到统一 Gate。
+- 起始 HEAD：`7f0928b`。
+- 改动文件：`application/mapping.ts`、`application/core-runtime.ts`、`nutrition-application.test.ts`。
+- 行为变化：异步入口把已签 v6 evidence 映射为既有 domain nutrition source，并直接执行带证据的 envelope；EffectBundle 现在原子写已知 `domain/v2` Profile/Snapshot 和 daily progress，而不是写 unknown 后再由应用层掩盖。同步入口保持原行为。
+- 接口/Schema/authority 决策：字符串十进制通过 BigInt half-up 转为现有整数 authority；能量转 kcal-milli，蛋白质/脂肪/碳水/纤维转 mg，水转 ml-milli；source/profile version 由 source ID/ref/version 确定性派生。v1.1 公开记录继续保留更丰富的原始 source 类型与字段证据。
+- 真实 RED：公开 outcome 已是 250ml/field_inference，但事务内 `domain/v2` Snapshot 的 `source_ref` 仍为 `unknown`；接线后 source_ref、64kcal/100ml 与 250ml 换算值精确转 GREEN。
+- 定向 smoke：milk 单测 1/1 PASS（其余 4 条收集但跳过）；`tsc --noEmit` PASS。
+- 延期到模块末的测试：多项/范围量的 domain-v2 换算、atomic fault rollback、terminal replay/tamper、full/trace。
+- 已知风险/假设：这一步复用了 0.3 的六字段整数进度 authority；十字段 v1.1 Profile/Snapshot 目前仍由 C1 的 finalize 后 savepoint 写入，因此 Task 5 的“v1.1 + progress 同事务”尚未完全关闭。
+- 后续修复索引：supplement 先以 domain-v2 effective progress 为基线追加 correction；模块收口前再把 v1.1 row 纳入同一 effect 或明确双模型的事务权威。
+- 批次提交：`feat: bind resolved nutrition to meal effects`。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

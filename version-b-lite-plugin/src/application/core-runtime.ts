@@ -896,9 +896,16 @@ function executeCandidate(
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
   existingSession?: CoreRuntimeSession,
   correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
+  nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): { readonly status: "committed" | "committed_with_issues";
     readonly record_id: string; readonly record_ids?: readonly string[] } {
-  const envelope = mapCoreCandidateToEnvelope(request, command, purchaseResolutions, correctionResolution);
+  const envelope = mapCoreCandidateToEnvelope(
+    request,
+    command,
+    purchaseResolutions,
+    correctionResolution,
+    nutritionEvidence,
+  );
   const session = existingSession ?? acquireSession(runtime);
   const preview = session.service.preview(envelope);
   const result = session.service.execute({ envelope, token: preview.token,
@@ -1170,7 +1177,22 @@ export async function handleCoreRequestAsync(
     if (material.nutrition_evidence.length !== parsed.command.items.length) {
       throw new Error("NUTRITION_RESOLUTION_AUTHORITY_INVALID:item_count");
     }
-    const outcome = handleCoreRequest(runtime, value);
+    const execution = executeCandidate(
+      runtime,
+      request,
+      parsed.command,
+      Object.freeze([]),
+      session,
+      undefined,
+      material.nutrition_evidence,
+    );
+    const outcome = committedOutcome(
+      request.action,
+      request.operation_id,
+      execution.status,
+      execution.record_id,
+      execution.record_ids,
+    );
     if (!outcome.committed) return outcome;
     const event = session.database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?")
       .get(outcome.record_id) as { committed_at: string } | undefined;

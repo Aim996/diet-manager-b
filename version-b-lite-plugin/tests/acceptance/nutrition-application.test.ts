@@ -243,6 +243,19 @@ it("uses the versioned offline fallback for explicit core amounts", async () => 
         coverage_status: "partial",
       }],
     });
+    const stored = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const row = stored.database.prepare(
+        "SELECT source_ref, payload_json FROM nutrition_snapshots WHERE schema_version = 'domain/v2'",
+      ).get() as { source_ref: string; payload_json: string };
+      expect(row.source_ref).toBe("diet-manager/builtin-common-food/milk/v1");
+      expect(JSON.parse(row.payload_json)).toMatchObject({
+        nutrients: { energy_kcal_milli: 160_000, protein_mg: 8_000 },
+        source_nutrients: { energy_kcal_milli: 64_000, protein_mg: 3_200 },
+      });
+    } finally {
+      stored.close();
+    }
   } finally {
     runtime.close();
     rmSync(root, { recursive: true, force: false });
