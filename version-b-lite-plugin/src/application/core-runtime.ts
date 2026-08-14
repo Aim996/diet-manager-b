@@ -59,6 +59,7 @@ import {
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { createBuiltinNutritionAdapters } from "../nutrition/builtin.js";
 import { resolveNutrition } from "../nutrition/source-client.js";
 import {
   claimNutritionResolution,
@@ -67,6 +68,7 @@ import {
 } from "../nutrition/resolution-claim.js";
 import {
   buildNutritionRecords,
+  adoptNutritionAmount,
   nutritionOutcomeItem,
   type NutritionRecords,
 } from "../nutrition/nutrition-service.js";
@@ -524,7 +526,7 @@ function exactOptions(value: unknown): CreateCoreRuntimeOptions {
       typeof (nutritionConfig as NutritionRuntimeConfig).source_config_digest !== "string" ||
       !/^[A-F0-9]{64}$/u.test((nutritionConfig as NutritionRuntimeConfig).source_config_digest) ||
       !Array.isArray((nutritionConfig as NutritionRuntimeConfig).sources)) return runtimeInvalid("nutrition_config");
-  const adaptersValue = descriptors.nutritionAdapters?.value ?? [];
+  const adaptersValue = descriptors.nutritionAdapters?.value ?? createBuiltinNutritionAdapters();
   if (typeof adaptersValue !== "object" || adaptersValue === null || isProxy(adaptersValue) || !Array.isArray(adaptersValue) ||
       adaptersValue.some((adapter) => typeof adapter !== "object" || adapter === null || isProxy(adapter) ||
         typeof (adapter as NutritionSourceAdapter).describe !== "function" ||
@@ -1088,10 +1090,11 @@ async function resolveNutritionMaterial(
       });
       const values: Readonly<ResolvedNutritionEvidence>[] = [];
       for (const item of command.items) {
-        values.push(await resolveNutrition(nutritionSourceRequest(item), context, {
+        const resolved = await resolveNutrition(nutritionSourceRequest(item), context, {
           adapters: state.nutritionAdapters,
           config: state.nutritionConfig,
-        }));
+        });
+        values.push(adoptNutritionAmount(item, resolved));
       }
       evidence = Object.freeze(values);
     } finally {

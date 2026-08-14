@@ -80,6 +80,12 @@ export interface NutritionRecords {
   readonly amount_range: ResolvedNutritionEvidence["amount_range"];
 }
 
+export interface NutritionAmountCandidate {
+  readonly quantity: number | null;
+  readonly unit: string | null;
+  readonly estimated: boolean | null;
+}
+
 function invalid(reason: string): never {
   throw new TypeError(`NUTRITION_RECORD_INVALID:${reason}`);
 }
@@ -137,6 +143,29 @@ function sourceLabel(sourceType: ResolvedNutritionEvidence["source_type"]): Nutr
     case "generic_estimate": return "field_inference";
     case "unknown": return "unknown";
   }
+}
+
+export function adoptNutritionAmount(
+  item: Readonly<NutritionAmountCandidate>,
+  evidence: Readonly<ResolvedNutritionEvidence>,
+): Readonly<ResolvedNutritionEvidence> {
+  if (evidence.adopted_amount !== null || item.quantity === null || item.unit === null) return evidence;
+  const compatible =
+    (evidence.basis_kind === "per_100g" && item.unit === "g") ||
+    (evidence.basis_kind === "per_100ml" && item.unit === "ml") ||
+    (evidence.basis_kind === "per_item" && ["item", "piece", "个", "枚"].includes(item.unit)) ||
+    (evidence.basis_kind === "per_serving" && ["serving", "份"].includes(item.unit)) ||
+    (evidence.basis_kind === "per_package" && ["package", "包"].includes(item.unit));
+  if (!compatible) return evidence;
+  if (!Number.isFinite(item.quantity) || item.quantity <= 0) return invalid("item_quantity");
+  const adopted = String(item.quantity);
+  parseDecimal(adopted, "item_quantity");
+  return freezeNutritionData({
+    ...evidence,
+    adopted_amount: adopted,
+    adopted_unit: item.unit,
+    amount_range: null,
+  }) as Readonly<ResolvedNutritionEvidence>;
 }
 
 export function buildNutritionRecords(

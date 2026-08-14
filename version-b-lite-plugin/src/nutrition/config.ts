@@ -99,15 +99,15 @@ function cloneSources(value: unknown, refs: Readonly<Record<string, string>>): r
 
 export function cloneNutritionRuntimeConfig(value: unknown): Readonly<NutritionRuntimeConfig> {
   if (value === undefined) {
-    return freezeNutritionData({
+    return cloneNutritionRuntimeConfig({
       policy_version: DEFAULT_POLICY_VERSION,
       resolution_deadline_ms: DEFAULT_DEADLINE_MS,
-      source_config_digest: canonicalSha256({
-        policy_version: DEFAULT_POLICY_VERSION,
-        resolution_deadline_ms: DEFAULT_DEADLINE_MS,
-        sources: [],
-      }),
-      sources: [],
+      sources: [{
+        source_id: "local.generic_estimate",
+        enabled: true,
+        backend_id: "diet-manager-builtin-nutrition",
+        backend_version: "2026-08-14.1",
+      }],
     });
   }
   if (isProxy(value)) return invalid("proxy");

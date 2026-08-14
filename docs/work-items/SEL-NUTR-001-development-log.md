@@ -78,6 +78,23 @@
 - 后续修复索引：C2 接 exact progress contribution、terminal replay 与同事务 rollback；Task 6 再实现 append-only `nutrition_supplemented`。
 - 批次提交：`feat: connect nutrition application results`（阶段性 C1；Task 5 尚未关闭）。
 
+### Batch C2 / 2026-08-14
+
+- 目标：让未配置网络/密钥的真实插件也具备最小可用营养能力，而不是永远落到 unknown。
+- 绑定 REQ：`REQ-NUTR-002/004/005/006`、`REQ-SOURCE-001`。
+- 绑定 CASE：代表性覆盖 `CASE-WATER-003` 的 250ml 营养饮品路径；完整常用食物/模板矩阵延期到模块最终 Gate。
+- 起始 HEAD：`dd3198c`。
+- 改动文件：新增 `src/nutrition/builtin.ts`；修改默认 nutrition config、runtime 默认 adapter、明确数量采用逻辑与应用 acceptance。
+- 行为变化：默认启用版本化 `local.generic_estimate`，当前只含 milk 的 per-100ml 部分字段；明确 250ml 由 parser quantity authority 合并到来源证据并稳定换算，公开标签为 `field_inference`。没有可靠条目时仍按 tier 8 unknown 提交事实。
+- 接口/Schema/authority 决策：内置表是本地、无网络、版本化、partial coverage；不声称当前包装标签或政府数据库。数量只在 basis/unit 可证明兼容时采用，禁止 bottle 被当作 ml、bowl 被当作 g。
+- 兼容边界：显式可信配置可关闭/替换默认来源；旧同步入口不触发营养解析；没有新增 credential、网络 origin、migration 或正式 build。
+- 真实 RED：真实 async 入口已提交 milk meal，但营养结果为 `adopted=null/source=unknown`；实现默认本地 adapter 和单位兼容采用后转 GREEN。
+- 定向 smoke：`nutrition-application + nutrition-source` 2 files / 7 tests PASS；`tsc --noEmit` PASS。其余测试延期。
+- 延期到模块末的测试：egg/rice/apple/orange/chicken、common dish、unknown combo、插件 full、fault/tamper/concurrency/trace。
+- 已知风险/假设：内置表当前只有 milk，且仍通过 C1 的 post-finalize Snapshot 写路径；常用食物扩表和同一 EffectBundle 原子化仍待后续批次。
+- 后续修复索引：下一批先补 0.3 核心常用食物与半碗/可食部范围，再集中接 atomic effect/replay。
+- 批次提交：`feat: add offline nutrition fallback`。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

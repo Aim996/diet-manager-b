@@ -211,3 +211,38 @@ it("returns persisted nutrition evidence through the real asynchronous meal path
     rmSync(root, { recursive: true, force: false });
   }
 });
+
+it("uses the versioned offline fallback for an explicit milk amount", async () => {
+  const root = mkdtempSync(join(tmpdir(), `diet-manager-nutrition-default-${randomUUID()}-`));
+  const runtime = createCoreRuntime({
+    officialDataRoot: root,
+    now: () => "2026-08-11T04:00:01.000Z",
+  });
+  try {
+    const outcome = await handleCoreRequestAsync(runtime, {
+      action: "record_meal",
+      source_text: "喝了250ml牛奶。",
+      received_at: "2026-08-11T12:00:00.000+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-nutrition-default-001",
+      source_message_id: "message-nutrition-default-001",
+      conversation_id: "conversation-nutrition-default-001",
+      prior_context: [],
+    });
+    expect(outcome.committed, JSON.stringify(outcome)).toBe(true);
+    expect(outcome).toMatchObject({
+      nutrition_items: [{
+        name: "milk",
+        adopted_amount: "250",
+        adopted_unit: "ml",
+        amount_range: null,
+        quantity_evidence: "explicit",
+        source_label: "field_inference",
+        coverage_status: "partial",
+      }],
+    });
+  } finally {
+    runtime.close();
+    rmSync(root, { recursive: true, force: false });
+  }
+});
