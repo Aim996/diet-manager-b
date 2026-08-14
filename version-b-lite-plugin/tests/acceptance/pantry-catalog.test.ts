@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -17,9 +17,23 @@ const expectedIdsFromBrief = [
 
 type CatalogCase = { id: string; stage: string; [key: string]: unknown };
 
+const POWERSHELL_EXE = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+
 function testIdentity(file: string): string {
   const stats = lstatSync(file, { bigint: true });
   return `${stats.dev}:${stats.ino}`;
+}
+
+function waitForProcessExit(pid: number, timeoutMs = 2_000): void {
+  const probe = `try { Get-Process -Id ${pid} -ErrorAction Stop | Out-Null; exit 1 } catch { exit 0 }`;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      execFileSync(POWERSHELL_EXE, ["-NoProfile", "-NonInteractive", "-Command", probe], { stdio: "ignore" });
+      return;
+    } catch { /* still alive */ }
+  }
+  throw new Error(`native helper process ${pid} was not reaped`);
 }
 
 function deepFreeze<T>(value: T): T {
@@ -174,4 +188,182 @@ describe("SEL-PANTRY-001 verification-root authority", () => {
       renameSync(displaced, isolatedRoot);
     }
   });
+
+  it("rejects a transient official-root decoy at the enumeration seam", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { beforeOfficialReadDir: (paths: { directory: string }) => void }) => Promise<void>;
+    };
+    const displaced = join(dirname(officialRoot), `.test-decoy-displaced-${randomUUID()}`);
+    let originalIdentity = "";
+    let swapped = false;
+
+    mkdirSync(officialRoot, { recursive: true });
+    mkdirSync(isolatedRoot, { recursive: true });
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+    try {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        beforeOfficialReadDir: ({ directory }) => {
+          if (directory !== officialRoot || swapped) return;
+          originalIdentity = testIdentity(officialRoot);
+          renameSync(officialRoot, displaced);
+          mkdirSync(officialRoot);
+          readdirSync(officialRoot);
+          rmdirSync(officialRoot);
+          renameSync(displaced, officialRoot);
+          swapped = true;
+        },
+      })).rejects.toThrow("SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED");
+      expect(swapped).toBe(true);
+    } finally {
+      if (swapped) expect(testIdentity(officialRoot)).toBe(originalIdentity);
+      if (readdirSync(isolatedRoot).length) throw new Error("isolated residue after official decoy");
+    }
+  });
+
+  it("rejects a transient official ancestor decoy at the enumeration seam", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const officialParent = dirname(officialRoot);
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: {
+        beforeOfficialReadDir: (paths: { directory: string }) => void;
+        onNativeGuardStarted: (value: { watchSpecs: ReadonlyArray<{ kind: string; directory: string; target?: string }> }) => void;
+      }) => Promise<void>;
+    };
+    const displaced = join(dirname(officialParent), `.test-ancestor-decoy-${randomUUID()}`);
+    let originalIdentity = "";
+    let swapped = false;
+    let watchSpecs: ReadonlyArray<{ kind: string; directory: string; target?: string }> = [];
+
+    expect(readdirSync(officialRoot)).toEqual([]);
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+    try {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        onNativeGuardStarted: (value) => { watchSpecs = value.watchSpecs; },
+        beforeOfficialReadDir: ({ directory }) => {
+          if (directory !== officialRoot || swapped) return;
+          originalIdentity = testIdentity(officialParent);
+          renameSync(officialParent, displaced);
+          mkdirSync(officialParent);
+          mkdirSync(officialRoot);
+          readdirSync(officialRoot);
+          rmdirSync(officialRoot);
+          rmdirSync(officialParent);
+          renameSync(displaced, officialParent);
+          swapped = true;
+        },
+      })).rejects.toThrow();
+      expect(watchSpecs).toContainEqual(expect.objectContaining({
+        kind: "official-ancestor",
+        directory: dirname(officialParent),
+        target: officialParent.split(/[\\/]/).at(-1),
+      }));
+    } finally {
+      if (swapped) expect(testIdentity(officialParent)).toBe(originalIdentity);
+      expect(readdirSync(officialRoot)).toEqual([]);
+      expect(readdirSync(isolatedRoot)).toEqual([]);
+    }
+  });
+
+  it("rejects native test seams that try to override root authority", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { nativeGuardEnv: Record<string, string> }) => Promise<void>;
+    };
+
+    await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+      nativeGuardEnv: { SEL_PANTRY_NATIVE_ROOT: dirname(officialRoot) },
+    })).rejects.toThrow("SEL_PANTRY_ROOT_NATIVE_GUARD_ENV");
+    expect(readdirSync(officialRoot)).toEqual([]);
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+  });
+
+  it("rejects and restores official directory metadata changes", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { afterSnapshot: () => void }) => Promise<void>;
+    };
+    const before = lstatSync(officialRoot);
+
+    try {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        afterSnapshot: () => {
+          utimesSync(officialRoot, before.atime, new Date(before.mtimeMs + 2_000));
+          utimesSync(officialRoot, before.atime, before.mtime);
+        },
+      })).rejects.toThrow("SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED");
+    } finally {
+      utimesSync(officialRoot, before.atime, before.mtime);
+      expect(readdirSync(officialRoot)).toEqual([]);
+      expect(readdirSync(isolatedRoot)).toEqual([]);
+    }
+  });
+
+  it("rejects a transient isolated-base decoy at the enumeration seam", async () => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: { beforeIsolatedReadDir: () => void }) => Promise<void>;
+    };
+    const displaced = join(dirname(isolatedRoot), `.test-isolated-decoy-${randomUUID()}`);
+    let originalIdentity = "";
+    let swapped = false;
+
+    mkdirSync(officialRoot, { recursive: true });
+    mkdirSync(isolatedRoot, { recursive: true });
+    try {
+      await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+        beforeIsolatedReadDir: () => {
+          originalIdentity = testIdentity(isolatedRoot);
+          renameSync(isolatedRoot, displaced);
+          mkdirSync(isolatedRoot);
+          readdirSync(isolatedRoot);
+          rmdirSync(isolatedRoot);
+          renameSync(displaced, isolatedRoot);
+          swapped = true;
+        },
+      })).rejects.toThrow("SEL_PANTRY_ROOT_ISOLATED_NATIVE_CHANGED");
+    } finally {
+      if (swapped) expect(testIdentity(isolatedRoot)).toBe(originalIdentity);
+    }
+  });
+
+  it.each([
+    ["early exit", "SEL_PANTRY_NATIVE_EXIT_AFTER_READY", "SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT"],
+    ["post-ready overflow", "SEL_PANTRY_NATIVE_OUTPUT_OVERFLOW", "SEL_PANTRY_ROOT_NATIVE_GUARD_OVERFLOW"],
+    ["stop nonresponse", "SEL_PANTRY_NATIVE_STOP_HANG", "SEL_PANTRY_ROOT_NATIVE_GUARD_STOP_TIMEOUT"],
+  ])("fails closed and reaps helper on %s", async (_label, envName, expected) => {
+    const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const officialRoot = join(projectRoot, ".tmp", "official-manifest-sentinel", "SEL-PANTRY-001");
+    const isolatedRoot = join(projectRoot, ".tmp", "isolated-test-roots", "SEL-PANTRY-001");
+    const validator = join(projectRoot, "shared", "tests", "validate-sel-pantry-roots.mjs");
+    const { validateRoots } = await import(pathToFileURL(validator).href) as {
+      validateRoots: (options: { officialRoot: string; isolatedBase: string }, hooks: {
+        nativeGuardEnv: Record<string, string>;
+        onNativeGuardStarted: (value: { pid: number }) => void;
+      }) => Promise<void>;
+    };
+    let helperPid = 0;
+    await expect(validateRoots({ officialRoot, isolatedBase: isolatedRoot }, {
+      nativeGuardEnv: { [envName]: "1" },
+      onNativeGuardStarted: ({ pid }) => { helperPid = pid; },
+    })).rejects.toThrow(expected);
+    expect(helperPid).toBeGreaterThan(0);
+    waitForProcessExit(helperPid);
+    expect(readdirSync(isolatedRoot)).toEqual([]);
+  }, 5_000);
 });

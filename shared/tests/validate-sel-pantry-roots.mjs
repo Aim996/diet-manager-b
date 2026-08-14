@@ -15,8 +15,16 @@ const FORBIDDEN_OFFICIAL_LEAVES = new Set([
   'secret', 'secret.json', 'secrets', 'state', 'state.json',
 ]);
 const NATIVE_POWERSHELL = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-const NATIVE_TIMEOUT_MS = 10_000;
+const NATIVE_TIMEOUT_MS = 20_000;
+const NATIVE_STOP_TIMEOUT_MS = 1_000;
 const NATIVE_MAX_BYTES = 64 * 1024;
+const NATIVE_GUARD_HOOK_KEYS = new Set([
+  'SEL_PANTRY_NATIVE_EXIT_AFTER_READY',
+  'SEL_PANTRY_NATIVE_OUTPUT_OVERFLOW',
+  'SEL_PANTRY_NATIVE_STOP_HANG',
+  'SEL_PANTRY_NATIVE_FORCE_ERROR',
+  'SEL_PANTRY_NATIVE_FORCE_OVERFLOW',
+]);
 
 function fail(code) {
   throw new Error(`SEL_PANTRY_ROOT_${code}`);
@@ -58,21 +66,27 @@ function spawnNative(script, env, label, stdin = 'STOP\n') {
     });
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error(`SEL_PANTRY_ROOT_NATIVE_TIMEOUT:${label}`)); }, NATIVE_TIMEOUT_MS);
+    let terminal;
+    const terminate = (code) => {
+      if (!terminal) terminal = new Error(`SEL_PANTRY_ROOT_NATIVE_${code}:${label}`);
+      child.kill();
+    };
+    const timer = setTimeout(() => terminate('TIMEOUT'), NATIVE_TIMEOUT_MS);
     const append = (target, chunk) => {
       const value = target + chunk.toString('utf8');
       if (Buffer.byteLength(value, 'utf8') > NATIVE_MAX_BYTES) {
-        child.kill();
-        reject(new Error(`SEL_PANTRY_ROOT_NATIVE_MAX_BUFFER:${label}`));
+        terminate('MAX_BUFFER');
+        return target;
       }
       return value;
     };
     child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
     child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
-    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.once('error', () => { clearTimeout(timer); reject(new Error(`SEL_PANTRY_ROOT_NATIVE_SPAWN:${label}`)); });
     child.once('exit', (code) => {
       clearTimeout(timer);
-      if (code !== 0) reject(new Error(`SEL_PANTRY_ROOT_NATIVE_EXIT:${label}:${code}:${stderr.trim()}`));
+      if (terminal) reject(terminal);
+      else if (code !== 0) reject(new Error(`SEL_PANTRY_ROOT_NATIVE_EXIT:${label}`));
       else resolve(stdout.trim());
     });
     child.stdin.end(stdin);
@@ -90,61 +104,220 @@ async function nativeIdentity(file) {
   return match[1];
 }
 
-async function nativeCleanup({ base, child, marker, baseId, childId, markerId }) {
+async function nativeCleanup({ base, child, marker, baseId, childId, markerId, deleteKind }) {
   const output = await spawnNative(nativeScript([
     '$ErrorActionPreference="Stop"', NATIVE_TYPES,
     '$base=[IntPtr]::Zero; $child=[IntPtr]::Zero; $marker=[IntPtr]::Zero',
     'try {',
     '$base=OpenNative $env:SEL_PANTRY_NATIVE_BASE $false; if((NativeId $base) -ne $env:SEL_PANTRY_NATIVE_BASE_ID){throw "MISMATCH_BASE"}',
     '$child=OpenNative $env:SEL_PANTRY_NATIVE_CHILD $true; if((NativeId $child) -ne $env:SEL_PANTRY_NATIVE_CHILD_ID){throw "MISMATCH_CHILD"}',
-    '$marker=OpenNative $env:SEL_PANTRY_NATIVE_MARKER $true; if((NativeId $marker) -ne $env:SEL_PANTRY_NATIVE_MARKER_ID){throw "MISMATCH_MARKER"}',
-    '$d=New-Object PantryNative+DISPOSITION; $d.DeleteFile=1; if(-not [PantryNative]::SetFileInformationByHandle($marker,4,[ref]$d,1)){throw ("DELETE_MARKER="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; [PantryNative]::CloseHandle($marker)|Out-Null; $marker=[IntPtr]::Zero;',
-    'if(-not [PantryNative]::SetFileInformationByHandle($child,4,[ref]$d,1)){throw ("DELETE_CHILD="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())}; [PantryNative]::CloseHandle($child)|Out-Null; $child=[IntPtr]::Zero; [Console]::Out.WriteLine("CLEANUP|PASS")',
+    '$d=New-Object PantryNative+DISPOSITION; $d.DeleteFile=1;',
+    'if($env:SEL_PANTRY_NATIVE_DELETE_KIND -eq "marker"){$marker=OpenNative $env:SEL_PANTRY_NATIVE_MARKER $true;if((NativeId $marker) -ne $env:SEL_PANTRY_NATIVE_MARKER_ID){throw "MISMATCH_MARKER"};if(-not [PantryNative]::SetFileInformationByHandle($marker,4,[ref]$d,1)){throw ("DELETE_MARKER="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())};[PantryNative]::CloseHandle($marker)|Out-Null;$marker=[IntPtr]::Zero}',
+    'elseif($env:SEL_PANTRY_NATIVE_DELETE_KIND -eq "child"){if(-not [PantryNative]::SetFileInformationByHandle($child,4,[ref]$d,1)){throw ("DELETE_CHILD="+[Runtime.InteropServices.Marshal]::GetLastWin32Error())};[PantryNative]::CloseHandle($child)|Out-Null;$child=[IntPtr]::Zero}',
+    'else{throw "DELETE_KIND"};[Console]::Out.WriteLine("CLEANUP|PASS")',
     '} catch { [Console]::Out.WriteLine("CLEANUP|FAIL|$($_.Exception.Message)"); exit 0 } finally { if($marker -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($marker)|Out-Null}; if($child -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($child)|Out-Null}; if($base -ne [IntPtr]::Zero){[PantryNative]::CloseHandle($base)|Out-Null} }',
   ]), {
     SEL_PANTRY_NATIVE_BASE: base, SEL_PANTRY_NATIVE_CHILD: child, SEL_PANTRY_NATIVE_MARKER: marker,
-    SEL_PANTRY_NATIVE_BASE_ID: baseId, SEL_PANTRY_NATIVE_CHILD_ID: childId, SEL_PANTRY_NATIVE_MARKER_ID: markerId,
+    SEL_PANTRY_NATIVE_BASE_ID: baseId, SEL_PANTRY_NATIVE_CHILD_ID: childId,
+    SEL_PANTRY_NATIVE_MARKER_ID: markerId ?? '', SEL_PANTRY_NATIVE_DELETE_KIND: deleteKind,
   }, 'cleanup', '');
-  if (output !== 'CLEANUP|PASS') fail(`ISOLATED_NATIVE_CLEANUP:${output}`);
+  if (output !== 'CLEANUP|PASS') fail('ISOLATED_NATIVE_CLEANUP');
 }
 
-async function startOfficialGuard(root, hookEnv = {}) {
+function decodeNativeEventName(encoded) {
+  if (typeof encoded !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    fail('NATIVE_GUARD_STATUS');
+  }
+  const value = Buffer.from(encoded, 'base64');
+  if (value.toString('base64') !== encoded) fail('NATIVE_GUARD_STATUS');
+  return value.toString('utf8');
+}
+
+function classifyNativeEvents(serialized, watchSpecs, isolatedBase, childName, markerName) {
+  const tokens = serialized === 'QUIET' ? [] : serialized.split(';');
+  const events = [];
+  let nativeError = false;
+  for (const token of tokens) {
+    if (token === 'ERROR') {
+      nativeError = true;
+      continue;
+    }
+    const match = token.match(/^(\d+)@([1-5])@(.+)$/);
+    if (!match) fail('NATIVE_GUARD_STATUS');
+    const watch = Number(match[1]);
+    if (!Number.isSafeInteger(watch) || !watchSpecs[watch]) fail('NATIVE_GUARD_STATUS');
+    events.push({ watch, action: Number(match[2]), name: decodeNativeEventName(match[3]) });
+  }
+
+  let officialChanged = false;
+  const expectedChild = childName.toLowerCase();
+  const expectedMarker = `${childName}\\${markerName}`.toLowerCase();
+  let childCreated = false;
+  let markerCreated = false;
+  let markerRemoved = false;
+  let childRemoved = false;
+  let isolatedChanged = false;
+
+  for (const event of events) {
+    const spec = watchSpecs[event.watch];
+    const name = event.name.replaceAll('/', '\\').toLowerCase();
+    if (spec.kind === 'official-content') {
+      officialChanged = true;
+      continue;
+    }
+    if (spec.kind === 'official-ancestor') {
+      if (name === spec.target.toLowerCase()) officialChanged = true;
+      continue;
+    }
+    if (spec.kind === 'isolated-ancestor') {
+      if (name === spec.target.toLowerCase() && !(spec.direct && event.action === 3)) isolatedChanged = true;
+      continue;
+    }
+    if (spec.kind !== 'isolated-content') fail('NATIVE_GUARD_STATUS');
+    if (name !== expectedChild && name !== expectedMarker) {
+      isolatedChanged = true;
+      continue;
+    }
+    if (name === expectedChild) {
+      if (event.action === 1 && !childCreated && !markerCreated && !childRemoved) childCreated = true;
+      else if (event.action === 3 && childCreated && !childRemoved) { /* owned directory metadata */ }
+      else if (event.action === 2 && childCreated && markerRemoved && !childRemoved) childRemoved = true;
+      else isolatedChanged = true;
+      continue;
+    }
+    if (event.action === 1 && childCreated && !markerCreated && !childRemoved) markerCreated = true;
+    else if (event.action === 3 && markerCreated && !markerRemoved) { /* owned marker write */ }
+    else if (event.action === 2 && markerCreated && !markerRemoved) markerRemoved = true;
+    else isolatedChanged = true;
+  }
+  if (!childCreated || !markerCreated || !markerRemoved || !childRemoved) isolatedChanged = true;
+  return { officialChanged, isolatedChanged, nativeError };
+}
+
+function nativeWatchSpecs(official, isolated) {
+  const specs = [
+    { kind: 'official-content', directory: official.root, subtree: true },
+    { kind: 'isolated-content', directory: isolated.root, subtree: true },
+  ];
+  for (const authority of [official, isolated]) {
+    for (const record of authority.ancestors) {
+      const parent = path.dirname(record.file);
+      if (path.resolve(parent).toLowerCase() === path.resolve(record.file).toLowerCase()) continue;
+      specs.push({
+        kind: authority.role === 'OFFICIAL' ? 'official-ancestor' : 'isolated-ancestor',
+        directory: parent,
+        subtree: false,
+        target: path.basename(record.file),
+        direct: path.resolve(record.file).toLowerCase() === path.resolve(authority.root).toLowerCase(),
+      });
+    }
+  }
+  if (specs.length > 63) fail('NATIVE_WATCH_CAP');
+  return specs;
+}
+
+function guardHookEnvironment(hookEnv) {
+  if (hookEnv === undefined) return {};
+  if (hookEnv === null || typeof hookEnv !== 'object' || Array.isArray(hookEnv) || Object.getPrototypeOf(hookEnv) !== Object.prototype) {
+    fail('NATIVE_GUARD_ENV');
+  }
+  const result = {};
+  for (const key of Reflect.ownKeys(hookEnv)) {
+    if (typeof key !== 'string' || !NATIVE_GUARD_HOOK_KEYS.has(key)) fail('NATIVE_GUARD_ENV');
+    const descriptor = Object.getOwnPropertyDescriptor(hookEnv, key);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.value !== '1') fail('NATIVE_GUARD_ENV');
+    result[key] = descriptor.value;
+  }
+  return result;
+}
+
+async function startOfficialGuard(official, isolated, childName, markerName, hookEnv = {}) {
+  const watchSpecs = nativeWatchSpecs(official, isolated);
+  const safeHookEnv = guardHookEnvironment(hookEnv);
+  const encodedWatchSpecs = Buffer.from(JSON.stringify(watchSpecs.map(({ directory, subtree }) => ({ directory, subtree }))), 'utf8').toString('base64');
   const script = nativeScript([
-    '$ErrorActionPreference="Stop"', NATIVE_TYPES,
-    '$root=$env:SEL_PANTRY_NATIVE_ROOT; $paths=@(); $p=[IO.Path]::GetFullPath($root); while($true){if(Test-Path -LiteralPath $p){$paths+=,$p};$parent=[IO.Directory]::GetParent($p);if($null -eq $parent){break};$p=$parent.FullName}; [array]::Reverse($paths); $handles=@(); $ids=@(); $watcher=$null',
-    'try { foreach($entry in $paths){$h=OpenNative $entry $false;$handles+=,$h;$ids+=,(NativeId $h)}; $watcher=New-Object IO.FileSystemWatcher $root; $watcher.IncludeSubdirectories=$true; $watcher.NotifyFilter=[IO.NotifyFilters]::FileName -bor [IO.NotifyFilters]::DirectoryName -bor [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size -bor [IO.NotifyFilters]::Security; $watcher.EnableRaisingEvents=$true; foreach($kind in @("Changed","Created","Deleted","Renamed","Error")){Register-ObjectEvent -InputObject $watcher -EventName $kind -SourceIdentifier ("sel-pantry-native-"+$kind)|Out-Null}; [Console]::Out.WriteLine("READY|$($ids -join ",")"); [Console]::Out.Flush(); $null=[Console]::In.ReadLine(); Start-Sleep -Milliseconds 100; $events=@(Get-Event|Where-Object{$_.SourceIdentifier -like "sel-pantry-native-*"}); $errs=@($events|Where-Object{$_.SourceIdentifier -eq "sel-pantry-native-Error"}); $after=@();foreach($h in $handles){$after+=,(NativeId $h)}; $forced=($env:SEL_PANTRY_NATIVE_FORCE_ERROR -eq "1") -or ($env:SEL_PANTRY_NATIVE_FORCE_OVERFLOW -eq "1"); $changed=($events.Count -gt 0) -or $forced; $hasError=($errs.Count -gt 0) -or $forced; [Console]::Out.WriteLine("STATUS|changed=$changed|error=$hasError|ids_exact=$([string]($ids -join ",") -eq [string]($after -join ","))"); [Console]::Out.Flush() } catch { [Console]::Out.WriteLine("STATUS|changed=true|error=true|ids_exact=false|message=$($_.Exception.Message)"); [Console]::Out.Flush() } finally { if($watcher){$watcher.EnableRaisingEvents=$false;$watcher.Dispose()};foreach($h in $handles){[PantryNative]::CloseHandle($h)|Out-Null} }',
+    '$ErrorActionPreference="Stop"',
+    'Add-Type -TypeDefinition @"',
+    'using System; using System.Runtime.InteropServices; public static class PantryRdcw { [StructLayout(LayoutKind.Sequential)] public struct OVERLAPPED { public IntPtr Internal; public IntPtr InternalHigh; public uint Offset; public uint OffsetHigh; public IntPtr hEvent; } [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern IntPtr CreateFileW(string n,uint a,uint s,IntPtr sec,uint d,uint f,IntPtr t); [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool ReadDirectoryChangesW(IntPtr h,IntPtr b,uint l,[MarshalAs(UnmanagedType.Bool)] bool subtree,uint filter,out uint bytes,IntPtr ov,IntPtr cb); [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool GetOverlappedResult(IntPtr h,IntPtr ov,out uint bytes,[MarshalAs(UnmanagedType.Bool)] bool wait); [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool CancelIoEx(IntPtr h,IntPtr ov); [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr CreateEventW(IntPtr a,[MarshalAs(UnmanagedType.Bool)] bool m,[MarshalAs(UnmanagedType.Bool)] bool i,string n); [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool ResetEvent(IntPtr h); [DllImport("kernel32.dll",SetLastError=true)] public static extern uint WaitForMultipleObjects(uint count,IntPtr[] handles,[MarshalAs(UnmanagedType.Bool)] bool waitAll,uint milliseconds); [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr GetStdHandle(int id); [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] public static extern bool CloseHandle(IntPtr h); }',
+    '"@',
+    '$list=[uint32]1;$attr=[uint32]0x80;$share=[uint32]7;$open=[uint32]3;$flags=[uint32]0x42200000;$invalid=[IntPtr](-1);$filter=[uint32]0x1f;$aborted=[uint32]995;$infinite=[uint32]::MaxValue',
+    'function ResetOv($w){if(-not [PantryRdcw]::ResetEvent($w.e)){throw "RESET"};[Runtime.InteropServices.Marshal]::StructureToPtr((New-Object PantryRdcw+OVERLAPPED -Property @{hEvent=$w.e}),$w.ov,$false)}',
+    'function BeginRead($w){ResetOv $w;$x=[uint32]0;if(-not [PantryRdcw]::ReadDirectoryChangesW($w.h,$w.b,65536,$w.sub,$filter,[ref]$x,$w.ov,[IntPtr]::Zero)){throw "ARM"}}',
+    'function OpenWatch($p,$sub){$h=[PantryRdcw]::CreateFileW($p,$list -bor $attr,$share,[IntPtr]::Zero,$open,$flags,[IntPtr]::Zero);if($h -eq $invalid){throw "OPEN"};$e=[PantryRdcw]::CreateEventW([IntPtr]::Zero,$true,$false,$null);if($e -eq [IntPtr]::Zero){throw "EVENT"};$ov=[Runtime.InteropServices.Marshal]::AllocHGlobal(32);$b=[Runtime.InteropServices.Marshal]::AllocHGlobal(65536);$w=[PSCustomObject]@{h=$h;e=$e;ov=$ov;b=$b;sub=$sub};BeginRead $w;return $w}',
+    'function ParseEvents($watch,$buffer,$count){$result=@();$offset=0;while($offset -lt $count){$next=[Runtime.InteropServices.Marshal]::ReadInt32($buffer,$offset);$action=[Runtime.InteropServices.Marshal]::ReadInt32($buffer,$offset+4);$length=[Runtime.InteropServices.Marshal]::ReadInt32($buffer,$offset+8);if($length -lt 0 -or (($length % 2) -ne 0) -or ($offset+12+$length -gt $count)){throw "RECORD"};$name=[Runtime.InteropServices.Marshal]::PtrToStringUni([IntPtr]::Add($buffer,$offset+12),[int]($length/2));$encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($name));$result+=("$watch@$action@$encoded");if($next -eq 0){break};if($next -lt 12 -or ($offset+$next -ge $count)){throw "RECORD"};$offset+=$next};return $result}',
+    'function CompleteAndRearm($w,$watch){$n=[uint32]0;if(-not [PantryRdcw]::GetOverlappedResult($w.h,$w.ov,[ref]$n,$false)){throw "COMPLETE"};if($n -eq 0){throw "OVERFLOW"};$events=ParseEvents $watch $w.b $n;BeginRead $w;return $events}',
+    'function FinishWatch($w,$watch){[PantryRdcw]::CancelIoEx($w.h,$w.ov)|Out-Null;$n=[uint32]0;if([PantryRdcw]::GetOverlappedResult($w.h,$w.ov,[ref]$n,$true)){if($n -eq 0){throw "ZERO"};return (ParseEvents $watch $w.b $n)};if([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq $aborted){return @()};throw "CANCEL"}',
+    'function Quiesce($w){if(-not $w.h -or -not $w.ov){return $false};if([PantryRdcw]::CancelIoEx($w.h,$w.ov)){$n=[uint32]0;if([PantryRdcw]::GetOverlappedResult($w.h,$w.ov,[ref]$n,$true)){return $true};return ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq $aborted)};return ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1168)}',
+    '$w=@();$events=@();$nativeError=$false;$sync=0;try{$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:SEL_PANTRY_NATIVE_WATCHES));$parsed=$json|ConvertFrom-Json;$specs=@();foreach($spec in $parsed){$specs+=$spec};if($specs.Count -lt 2 -or $specs.Count -gt 63){throw "WATCH_COUNT"};foreach($spec in $specs){$w+=OpenWatch ([string]$spec.directory) ([bool]$spec.subtree)};$inputHandle=[PantryRdcw]::GetStdHandle(-10);$watchHandles=[IntPtr[]]@($w|ForEach-Object{$_.e});$handles=[IntPtr[]](@($watchHandles)+@($inputHandle));$inputIndex=$w.Count;[Console]::Out.WriteLine("READY");[Console]::Out.Flush();if($env:SEL_PANTRY_NATIVE_EXIT_AFTER_READY -eq "1"){exit 9};if($env:SEL_PANTRY_NATIVE_OUTPUT_OVERFLOW -eq "1"){[Console]::Out.WriteLine("X"*70000);[Console]::Out.Flush()};while($true){$wait=[PantryRdcw]::WaitForMultipleObjects([uint32]$handles.Length,$handles,$false,$infinite);if($wait -eq 0xffffffff){throw "WAIT"};$index=[int]$wait;if($index -eq $inputIndex){$command=[Console]::In.ReadLine();if($command -eq "SYNC"){while($true){$pending=[PantryRdcw]::WaitForMultipleObjects([uint32]$watchHandles.Length,$watchHandles,$false,0);if($pending -eq 258){break};if($pending -ge $w.Count){throw "SYNC_WAIT"};$events+=CompleteAndRearm $w[[int]$pending] ([int]$pending);if($events.Count -gt 256){throw "EVENT_CAP"}};$sync++;[Console]::Out.WriteLine("SYNC|$sync");[Console]::Out.Flush();continue};if($command -ne "STOP"){throw "COMMAND"};if($env:SEL_PANTRY_NATIVE_STOP_HANG -eq "1"){Start-Sleep -Seconds 30};break};if($index -lt 0 -or $index -ge $w.Count){throw "WAIT_INDEX"};$events+=CompleteAndRearm $w[$index] $index;if($events.Count -gt 256){throw "EVENT_CAP"}};for($index=$w.Count-1;$index -ge 0;$index--){$events+=FinishWatch $w[$index] $index};if(($env:SEL_PANTRY_NATIVE_FORCE_ERROR -eq "1") -or ($env:SEL_PANTRY_NATIVE_FORCE_OVERFLOW -eq "1")){$nativeError=$true};if($events.Count -eq 0 -and -not $nativeError){$serialized="QUIET"}else{$serialized=($events -join ";");if($nativeError){if($serialized){$serialized+=";ERROR"}else{$serialized="ERROR"}}};[Console]::Out.WriteLine("STATUS|"+$serialized);[Console]::Out.Flush()}catch{[Console]::Out.WriteLine("STATUS|ERROR");[Console]::Out.Flush()}finally{$safe=@();foreach($x in $w){$safe+=,(Quiesce $x)};foreach($x in $w){if($x.h){[PantryRdcw]::CloseHandle($x.h)|Out-Null};if($x.e){[PantryRdcw]::CloseHandle($x.e)|Out-Null}};for($index=0;$index -lt $w.Count;$index++){if($safe[$index]){if($w[$index].ov){[Runtime.InteropServices.Marshal]::FreeHGlobal($w[$index].ov)};if($w[$index].b){[Runtime.InteropServices.Marshal]::FreeHGlobal($w[$index].b)}}}}',
   ]);
   if (process.platform !== 'win32') fail(`NATIVE_PLATFORM:${process.platform}`);
   const child = spawn(NATIVE_POWERSHELL, ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeNative(script)], {
-    shell: false, windowsHide: true, env: { ...process.env, SEL_PANTRY_NATIVE_ROOT: root, ...hookEnv }, stdio: ['pipe', 'pipe', 'pipe'],
+    shell: false, windowsHide: true, env: { ...process.env, ...safeHookEnv, SEL_PANTRY_NATIVE_WATCHES: encodedWatchSpecs }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
   let resolved = false;
+  let terminal;
+  let exited = false;
+  let stopPromise;
+  let nextSync = 0;
+  const syncWaiters = new Map();
+  const terminalError = (code) => { if (!terminal) terminal = new Error(`SEL_PANTRY_ROOT_${code}`); };
+  const rejectSyncWaiters = (error) => {
+    for (const { timer, reject } of syncWaiters.values()) { clearTimeout(timer); reject(error); }
+    syncWaiters.clear();
+  };
   const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { child.kill(); reject(new Error('SEL_PANTRY_ROOT_NATIVE_READY_TIMEOUT')); }, NATIVE_TIMEOUT_MS);
+    const timer = setTimeout(() => { terminalError('NATIVE_READY_TIMEOUT'); child.kill(); }, NATIVE_TIMEOUT_MS);
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString('utf8');
-      if (Buffer.byteLength(stdout, 'utf8') > NATIVE_MAX_BYTES) { child.kill(); reject(new Error('SEL_PANTRY_ROOT_NATIVE_MAX_BUFFER:guard')); }
-      if (!resolved && stdout.includes('READY|')) { resolved = true; clearTimeout(timer); resolve(); }
+      if (Buffer.byteLength(stdout, 'utf8') > NATIVE_MAX_BYTES) { terminalError('NATIVE_GUARD_OVERFLOW'); child.kill(); }
+      if (!resolved && stdout.includes('READY')) { resolved = true; clearTimeout(timer); resolve(); }
+      for (const match of stdout.matchAll(/SYNC\|(\d+)\r?\n/g)) {
+        const sequence = Number(match[1]);
+        const waiter = syncWaiters.get(sequence);
+        if (waiter) { clearTimeout(waiter.timer); syncWaiters.delete(sequence); waiter.resolve(); }
+      }
     });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-    child.once('error', reject);
-    child.once('exit', (code) => { if (!resolved) reject(new Error(`SEL_PANTRY_ROOT_NATIVE_READY_EXIT:${code}:${stderr.trim()}`)); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); if (Buffer.byteLength(stderr, 'utf8') > NATIVE_MAX_BYTES) { terminalError('NATIVE_GUARD_OVERFLOW'); child.kill(); } });
+    child.once('error', () => { clearTimeout(timer); terminalError('NATIVE_GUARD_EXIT'); if (!resolved) reject(terminal); });
+    child.once('exit', (code) => { clearTimeout(timer); exited = true; if (!terminal && code !== 0) terminalError('NATIVE_GUARD_EXIT'); rejectSyncWaiters(terminal ?? new Error('SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT')); if (!resolved) reject(terminal ?? new Error('SEL_PANTRY_ROOT_NATIVE_READY_EXIT')); });
   });
   await ready;
   return {
-    async stop() {
+    checkpoint() {
+      if (terminal || exited) return Promise.reject(terminal ?? new Error('SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT'));
+      const sequence = ++nextSync;
       return new Promise((resolve, reject) => {
-        child.once('exit', (code) => {
-          if (code !== 0) { reject(new Error(`SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT:${code}:${stderr.trim()}`)); return; }
-          const status = stdout.match(/STATUS\|changed=(True|False)\|error=(True|False)\|ids_exact=(True|False)/);
-          if (!status) { reject(new Error(`SEL_PANTRY_ROOT_NATIVE_GUARD_STATUS:${stdout.trim()}`)); return; }
-          resolve({ changed: status[1] === 'True', error: status[2] === 'True', idsExact: status[3] === 'True' });
+        const timer = setTimeout(() => { syncWaiters.delete(sequence); terminalError('NATIVE_GUARD_SYNC_TIMEOUT'); child.kill(); reject(terminal); }, NATIVE_STOP_TIMEOUT_MS);
+        syncWaiters.set(sequence, { timer, resolve, reject });
+        child.stdin.write('SYNC\n', (error) => {
+          if (!error) return;
+          clearTimeout(timer);
+          syncWaiters.delete(sequence);
+          terminalError('NATIVE_GUARD_EXIT');
+          reject(terminal);
         });
-        child.stdin.end('STOP\n');
       });
     },
+    async stop() {
+      if (stopPromise) return stopPromise;
+      stopPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { terminalError('NATIVE_GUARD_STOP_TIMEOUT'); child.kill(); }, NATIVE_STOP_TIMEOUT_MS);
+        child.once('exit', (code) => {
+          clearTimeout(timer);
+          if (terminal || code !== 0) { reject(terminal ?? new Error('SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT')); return; }
+          const status = stdout.match(/STATUS\|(.+)$/m);
+          if (!status) { reject(new Error('SEL_PANTRY_ROOT_NATIVE_GUARD_STATUS')); return; }
+          resolve(classifyNativeEvents(status[1], watchSpecs, isolated.root, childName, markerName));
+        });
+        if (exited) { clearTimeout(timer); reject(terminal ?? new Error('SEL_PANTRY_ROOT_NATIVE_GUARD_EXIT')); return; }
+        child.stdin.end('STOP\n');
+      });
+      return stopPromise;
+    },
+    pid: child.pid,
+    watchSpecs: Object.freeze(watchSpecs.map((spec) => Object.freeze({ ...spec }))),
   };
 }
 
@@ -244,12 +417,13 @@ function readBoundFile(file, expected) {
   }
 }
 
-function snapshotOfficial(root, authority) {
+function snapshotOfficial(root, authority, hooks = {}) {
   const files = [];
   function visit(directory, relative = '') {
     assertAuthority(authority);
     const before = lstatOrdinary(directory, 'OFFICIAL_DIRECTORY');
     if (!before.isDirectory()) fail('OFFICIAL_DIRECTORY_REPLACED');
+    hooks.beforeOfficialReadDir?.({ directory });
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       const relativePath = relative ? path.posix.join(relative, entry.name) : entry.name;
@@ -304,10 +478,12 @@ export async function validateRoots({ officialRoot, isolatedBase }, hooks = {}) 
   const isolated = captureRoot('ISOLATED', isolatedBase, ISOLATED_SUFFIX);
   assertBothAuthorities(official, isolated);
   assertEmptyIsolatedBase(isolatedBase);
-  const guard = await startOfficialGuard(officialRoot, hooks.nativeGuardEnv);
+  const childName = crypto.randomUUID();
+  const markerName = '.sel-pantry-root-marker';
+  const child = path.join(isolatedBase, childName);
+  const marker = path.join(child, markerName);
+  const guard = await startOfficialGuard(official, isolated, childName, markerName, hooks.nativeGuardEnv);
   let isolatedNativeId;
-  const child = path.join(isolatedBase, crypto.randomUUID());
-  const marker = path.join(child, '.sel-pantry-root-marker');
   let ownedChild;
   let ownedMarker;
   let nativeChildId;
@@ -315,14 +491,16 @@ export async function validateRoots({ officialRoot, isolatedBase }, hooks = {}) 
   let failure;
   let before;
   try {
+    hooks.onNativeGuardStarted?.({ pid: guard.pid, watchSpecs: guard.watchSpecs });
     isolatedNativeId = await nativeIdentity(isolatedBase);
-    before = snapshotOfficial(officialRoot, official);
+    before = snapshotOfficial(officialRoot, official, hooks);
     hooks.afterSnapshot?.({ officialRoot, isolatedBase });
     assertBothAuthorities(official, isolated);
     fs.mkdirSync(child);
     ownedChild = lstatOrdinary(child, 'ISOLATED_CHILD');
     if (!ownedChild.isDirectory()) fail('ISOLATED_CHILD_NOT_DIRECTORY');
     nativeChildId = await nativeIdentity(child);
+    await guard.checkpoint();
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     const markerValue = `SEL-PANTRY-001:${path.basename(child)}`;
@@ -330,6 +508,7 @@ export async function validateRoots({ officialRoot, isolatedBase }, hooks = {}) 
     ownedMarker = lstatOrdinary(marker, 'ISOLATED_MARKER');
     if (!ownedMarker.isFile()) fail('ISOLATED_MARKER_REPLACED');
     nativeMarkerId = await nativeIdentity(marker);
+    await guard.checkpoint();
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     assertOwnedMarker(marker, ownedMarker);
@@ -338,31 +517,49 @@ export async function validateRoots({ officialRoot, isolatedBase }, hooks = {}) 
     assertOwnedChild(child, ownedChild);
     assertOwnedMarker(marker, ownedMarker);
     hooks.afterMarker?.({ child, marker });
+    await guard.checkpoint();
     assertBothAuthorities(official, isolated);
     assertOwnedChild(child, ownedChild);
     assertOwnedMarker(marker, ownedMarker);
-    await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId });
-    ownedChild = undefined;
+    await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId, deleteKind: 'marker' });
     ownedMarker = undefined;
+    await guard.checkpoint();
+    await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, deleteKind: 'child' });
+    ownedChild = undefined;
+    await guard.checkpoint();
 
     assertBothAuthorities(official, isolated);
-    if (JSON.stringify(before) !== JSON.stringify(snapshotOfficial(officialRoot, official))) fail('OFFICIAL_DELTA');
+    if (JSON.stringify(before) !== JSON.stringify(snapshotOfficial(officialRoot, official, hooks))) fail('OFFICIAL_DELTA');
     assertBothAuthorities(official, isolated);
+    hooks.beforeIsolatedReadDir?.({ isolatedBase });
     assertEmptyIsolatedBase(isolatedBase);
   } catch (error) {
     failure = error;
   } finally {
     if (ownedChild) {
       try {
-        await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId });
+        if (ownedMarker) {
+          await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, markerId: nativeMarkerId, deleteKind: 'marker' });
+          ownedMarker = undefined;
+          await guard.checkpoint();
+        }
+        await nativeCleanup({ base: isolatedBase, child, marker, baseId: isolatedNativeId, childId: nativeChildId, deleteKind: 'child' });
+        ownedChild = undefined;
+        await guard.checkpoint();
       } catch (cleanupError) {
         if (!failure) failure = cleanupError;
       }
     }
     try {
       const status = await guard.stop();
-      if (status.changed || status.error || !status.idsExact) {
-        if (!failure) failure = new Error('SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED');
+      if (status.nativeError && !failure) failure = new Error('SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED');
+      else if (status.officialChanged && !failure) failure = new Error('SEL_PANTRY_ROOT_OFFICIAL_NATIVE_CHANGED');
+      else if (status.isolatedChanged && !failure) failure = new Error('SEL_PANTRY_ROOT_ISOLATED_NATIVE_CHANGED');
+      if (!failure) {
+        assertBothAuthorities(official, isolated);
+        if (JSON.stringify(before) !== JSON.stringify(snapshotOfficial(officialRoot, official))) fail('OFFICIAL_DELTA');
+        assertBothAuthorities(official, isolated);
+        assertEmptyIsolatedBase(isolatedBase);
       }
     } catch (guardError) {
       if (!failure) failure = guardError;
