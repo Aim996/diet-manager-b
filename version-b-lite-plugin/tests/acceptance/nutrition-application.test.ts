@@ -9,9 +9,11 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { handleCoreRequestAsync } from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
 import {
+  adoptNutritionAmount,
   buildNutritionRecords,
   nutritionOutcomeItem,
 } from "../../src/nutrition/nutrition-service.js";
+import { createBuiltinNutritionAdapters } from "../../src/nutrition/builtin.js";
 import { persistNutritionRecords, readNutritionRecordsForMeal } from "../../src/nutrition/nutrition-repository.js";
 import { cloneNutritionRuntimeConfig } from "../../src/nutrition/config.js";
 import type { NutritionSourceAdapter, ResolvedNutritionEvidence } from "../../src/nutrition/types.js";
@@ -212,7 +214,7 @@ it("returns persisted nutrition evidence through the real asynchronous meal path
   }
 });
 
-it("uses the versioned offline fallback for an explicit milk amount", async () => {
+it("uses the versioned offline fallback for explicit core amounts", async () => {
   const root = mkdtempSync(join(tmpdir(), `diet-manager-nutrition-default-${randomUUID()}-`));
   const runtime = createCoreRuntime({
     officialDataRoot: root,
@@ -245,4 +247,48 @@ it("uses the versioned offline fallback for an explicit milk amount", async () =
     runtime.close();
     rmSync(root, { recursive: true, force: false });
   }
+});
+
+it("resolves the offline core food table and adopts compatible gram amounts", async () => {
+  const adapter = createBuiltinNutritionAdapters()[0]!;
+  const controller = new AbortController();
+  const context = Object.freeze({
+    signal: controller.signal,
+    deadline_at: "2026-08-14T12:00:02.000Z",
+    now: () => "2026-08-14T12:00:00.000Z",
+    credential: () => undefined,
+  });
+  for (const [normalizedName, amount] of [["rice", 200], ["chicken_breast", 150]] as const) {
+    const resolution = await adapter.resolve(Object.freeze({
+      normalized_food_name: normalizedName,
+      brand: null,
+      variant: null,
+      package_specification: null,
+      processing_state: null,
+      minimum_food_category: "food",
+      locale: "zh-CN" as const,
+    }), context);
+    expect(resolution.status).toBe("partial");
+    expect(resolution.evidence).not.toBeNull();
+    const adopted = adoptNutritionAmount({
+      normalized_name: normalizedName, quantity: amount, unit: "g", estimated: false,
+    }, resolution.evidence!);
+    expect(adopted).toMatchObject({
+      source_type: "generic_estimate",
+      basis_kind: "per_100g",
+      adopted_amount: String(amount),
+      adopted_unit: "g",
+    });
+  }
+  const rice = await adapter.resolve(Object.freeze({
+    normalized_food_name: "rice", brand: null, variant: null, package_specification: null,
+    processing_state: null, minimum_food_category: "food", locale: "zh-CN" as const,
+  }), context);
+  expect(adoptNutritionAmount({
+    normalized_name: "rice", quantity: 0.5, unit: "bowl", estimated: true,
+  }, rice.evidence!)).toMatchObject({
+    adopted_amount: "150",
+    adopted_unit: "g",
+    amount_range: { min: "100", max: "150", adopted: "150", rule_version: "portion-rice-bowl-v1" },
+  });
 });

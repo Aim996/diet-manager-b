@@ -23,6 +23,46 @@ const COMMON_FOODS: Readonly<Record<string, Readonly<{
       energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
     },
   },
+  rice: {
+    basis_kind: "per_100g",
+    basis_unit: "g",
+    nutrient_values: {
+      energy_kcal: "116", protein_g: "2.6", fat_g: "0.3", carbohydrate_g: "25.9", fiber_g: "0.4",
+      energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+  },
+  chicken_breast: {
+    basis_kind: "per_100g",
+    basis_unit: "g",
+    nutrient_values: {
+      energy_kcal: "165", protein_g: "31", fat_g: "3.6", carbohydrate_g: "0", fiber_g: "0",
+      energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+  },
+  egg: {
+    basis_kind: "per_100g",
+    basis_unit: "g",
+    nutrient_values: {
+      energy_kcal: "143", protein_g: "12.6", fat_g: "9.5", carbohydrate_g: "0.7", fiber_g: "0",
+      energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+  },
+  apple: {
+    basis_kind: "per_100g",
+    basis_unit: "g",
+    nutrient_values: {
+      energy_kcal: "52", protein_g: "0.3", fat_g: "0.2", carbohydrate_g: "13.8", fiber_g: "2.4",
+      energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+  },
+  orange: {
+    basis_kind: "per_100g",
+    basis_unit: "g",
+    nutrient_values: {
+      energy_kcal: "47", protein_g: "0.9", fat_g: "0.1", carbohydrate_g: "11.8", fiber_g: "2.4",
+      energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+  },
 });
 
 function resolveBuiltin(request: Readonly<SourceRequest>): Readonly<SourceResolution> {
@@ -78,4 +118,3 @@ export function createBuiltinNutritionAdapters(): readonly NutritionSourceAdapte
     resolve: resolveBuiltin,
   })]);
 }
-

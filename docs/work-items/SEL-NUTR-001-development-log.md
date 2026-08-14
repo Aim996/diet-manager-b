@@ -95,6 +95,22 @@
 - 后续修复索引：下一批先补 0.3 核心常用食物与半碗/可食部范围，再集中接 atomic effect/replay。
 - 批次提交：`feat: add offline nutrition fallback`。
 
+### Batch C3 / 2026-08-14
+
+- 目标：补齐 0.3 核心常用食物的离线营养底座和最小份量推断，不依赖网络可用性。
+- 绑定 REQ：`REQ-NUTR-002/004/005/006/010/011`。
+- 绑定 CASE：`CASE-MEAL-003/006`、`CASE-NUTR-002/008/009` 的来源/份量基础；公开 parser 未承诺的自由文本不作为本批 acceptance。
+- 起始 HEAD：`b4d776b`。
+- 改动文件：扩展 `nutrition/builtin.ts`、`nutrition-service.ts` 和单一 application 表驱动测试。
+- 行为变化：内置版本表新增 cooked rice、chicken breast、egg、apple、orange；明确 g/ml 直接采用；半碗米饭采用 100—150g 范围的上界 150g；apple/orange/egg 的自然单位规则已实现但留待最终案例矩阵统一验证。
+- 接口/Schema/authority 决策：全部仍标记 `generic_estimate/field_inference`，不冒充精确标签或公共数据库；每个范围保留 rule_version；单位不兼容继续 unknown。
+- 真实 RED：内置 adapter 对 rice/chicken 返回 `no_results`；扩表后同一 test 转 GREEN。曾尝试用两种未冻结自由文本走公开 parser，均在 subject/amount authority 前被拒，已停止猜测并改在来源/采用边界测试，避免把 parser 扩权混入营养任务。
+- 定向 smoke：offline core food table 1/1 PASS；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 延期到模块末的测试：自然单位三案完整 Oracle、common dish、unknown combo、插件/full/fault/trace。
+- 已知风险/假设：通用数值是版本化估算，仅用于无更高优先级证据时；本批没有引入网络、缓存或产品精确身份。
+- 后续修复索引：下一批处理 common dish/unknown combo，再进入 supplementation 或 atomic effect 收口。
+- 批次提交：`feat: extend offline nutrition rules`。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

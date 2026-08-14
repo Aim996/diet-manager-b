@@ -81,6 +81,7 @@ export interface NutritionRecords {
 }
 
 export interface NutritionAmountCandidate {
+  readonly normalized_name: string;
   readonly quantity: number | null;
   readonly unit: string | null;
   readonly estimated: boolean | null;
@@ -150,6 +151,30 @@ export function adoptNutritionAmount(
   evidence: Readonly<ResolvedNutritionEvidence>,
 ): Readonly<ResolvedNutritionEvidence> {
   if (evidence.adopted_amount !== null || item.quantity === null || item.unit === null) return evidence;
+  const naturalUnit = ["item", "piece", "个", "枚"].includes(item.unit);
+  const range = evidence.basis_kind === "per_100g"
+    ? item.normalized_name === "rice" && ["bowl", "碗"].includes(item.unit) && item.quantity === 0.5
+      ? { min: "100", max: "150", adopted: "150", unit: "g", rule_version: "portion-rice-bowl-v1" }
+      : item.normalized_name === "orange" && naturalUnit && item.quantity === 1
+        ? { min: "120", max: "150", adopted: "150", unit: "g", rule_version: "edible-orange-v1" }
+        : item.normalized_name === "apple" && naturalUnit && item.quantity === 1
+          ? { min: "150", max: "200", adopted: "200", unit: "g", rule_version: "edible-apple-v1" }
+          : item.normalized_name === "egg" && naturalUnit && Number.isSafeInteger(item.quantity)
+            ? {
+                min: String(item.quantity * 45),
+                max: String(item.quantity * 55),
+                adopted: String(item.quantity * 55),
+                unit: "g",
+                rule_version: "edible-egg-v1",
+              }
+            : null
+    : null;
+  if (range !== null) return freezeNutritionData({
+    ...evidence,
+    adopted_amount: range.adopted,
+    adopted_unit: range.unit,
+    amount_range: range,
+  }) as Readonly<ResolvedNutritionEvidence>;
   const compatible =
     (evidence.basis_kind === "per_100g" && item.unit === "g") ||
     (evidence.basis_kind === "per_100ml" && item.unit === "ml") ||
