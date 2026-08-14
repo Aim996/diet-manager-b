@@ -6,6 +6,7 @@ const EXPLICIT_CORRECTION_PATTERNS = Object.freeze([
     /^\s*(?:改成|改为)/u,
 ]);
 const INVENTORY_DISAMBIGUATION_PATTERN = /(?:公司[^。！？!?]*(?:还是|或者|或)[^。！？!?]*回家|回家[^。！？!?]*(?:还是|或者|或)[^。！？!?]*公司)/u;
+const EXPLICIT_COMPANY_PATTERN = /(?:^|[，,。；;！？!?\s])在公司(?=吃|喝)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 function offsetMinutes(zone) {
     if (zone === "Z")
@@ -96,6 +97,9 @@ export function resolveMealContext(input) {
     if (receivedEpoch === null)
         throw new Error("CORE_CONTEXT_INVALID:received_at");
     const inventoryRead = INVENTORY_DISAMBIGUATION_PATTERN.test(input.source_text);
+    const explicitScene = EXPLICIT_COMPANY_PATTERN.test(input.source_text)
+        ? "company"
+        : null;
     const corrected = isExplicitCorrection(input.source_text);
     const latestRevisionBySource = new Map();
     for (const entry of input.prior_context) {
@@ -150,7 +154,7 @@ export function resolveMealContext(input) {
     const accepted = candidates[0]?.entry;
     const copied = accepted === undefined ? null : copyContext(accepted);
     return Object.freeze({
-        scene: copied?.scene ?? "unknown",
+        scene: explicitScene ?? copied?.scene ?? "unknown",
         expired_context_ids: Object.freeze([...new Set(expiredContextIds)]),
         inventory_read: inventoryRead,
         accepted_context: copied,

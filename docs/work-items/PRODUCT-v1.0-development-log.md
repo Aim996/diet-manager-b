@@ -293,3 +293,24 @@ Batch V1-F：只进行一次统一 focused/full/noEmit/OpenClaw 元数据验证�
 
 - 当前是“同一已初始化私有根”的数据库恢复；这样可以保留验证历史 HMAC 所需的 secret。
 - 尚未提供跨机器加密导出 authority secret；不允许把裸 secret 放进普通备份包。
+
+## Batch V1-J：本地安装交接
+
+- 日期：2026-08-14
+- 目标：把已完成的 0.1.0 主链交给用户直接安装和体验测试。
+
+### 生产改动
+
+- 新增 `scripts/install-local.ps1`：单次构建后依次执行 OpenClaw metadata check、plugin validate 与官方 `plugins install --link` 本地链接安装。
+- 新增 `npm run install:local` 入口；`-ValidateOnly` 可只构建和验证，不修改 OpenClaw 安装状态。
+- 安装脚本不接收、不读取、不生成业务数据根或 FDC key，也不使用 `--force` 覆盖已有安装。
+
+### 交接门结果
+
+- 唯一 emit build：`tsc -p tsconfig.json`，exit 0；未二次构建。
+- source/dist 模块数量：66/66。
+- OpenClaw 2026.7.1 metadata generation：成功，更新 `openclaw.plugin.json`。
+- `openclaw plugins build --check`：`Plugin metadata is up to date.`
+- `openclaw plugins validate`：`Plugin diet-manager-b is valid.`
+- 安装脚本 PowerShell AST、`package.json` parse、`git diff --check`：PASS。
+- 未重复 full Vitest，未执行真实网络请求，未安装到用户 OpenClaw 配置，未打开业务数据根。

@@ -4,9 +4,16 @@ import { processInventoryEffect, } from "../repository/inventory-effects.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import { createReplacementProgressReservation, reservationFromEventPayload, } from "../repository/progress-reservation.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { applyPantryAllocationsInTransaction, assertCurrentInventoryLocationCorrectionLineage, createPantryProjectionPayload, listPantryAllocationCandidates, pendingLocationCorrectionBatchIds, pendingMealInventoryAllocationBatchIds, parseProjectionPayloadJson, parseInventoryAllocationPlan, preparePantryPurchase, } from "../storage/inventory-repository.js";
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
+import { resolveInventoryAllocation } from "./inventory-service.js";
+import { validateAndFreezeInventoryLocationCorrectionFactPayload, validateAndFreezePantryPurchaseEvidence, } from "./inventory-service.js";
+import { buildInventoryLocationCorrectionReceiptItem, buildPantryPurchaseReceiptItem, } from "./receipt.js";
+import { buildNutritionRecords, } from "../nutrition/nutrition-service.js";
+import { assertNutritionRecordsPersisted, persistNutritionRecords, } from "../nutrition/nutrition-repository.js";
+import { validateAndFreezeResolvedNutritionEvidence, } from "../nutrition/types.js";
 import { addNutritionVectors, resolveInventoryMatch, scaleNutritionVector, selectNutritionSource, } from "./rules.js";
 function freezeJson(value) {
     if (Array.isArray(value)) {
@@ -52,6 +59,9 @@ function readEffectiveMealState(database, targetEventId) {
             normalized_name: item.normalized_name,
             amount: storedStructuredAmount(payload.amount, "effective_meal_amount"),
             nutrition_sources: payload.nutrition_sources,
+            ...(payload.nutrition_evidence === undefined
+                ? {}
+                : { nutrition_evidence: validateAndFreezeResolvedNutritionEvidence(payload.nutrition_evidence) }),
         };
     });
     let snapshot = freezeJson({
@@ -63,9 +73,10 @@ function readEffectiveMealState(database, targetEventId) {
         items,
     });
     let revision = 1;
-    const corrections = database.prepare(`SELECT c.base_revision, c.payload_json, b.effect_state, b.result_status
+    const corrections = database.prepare(`SELECT c.base_revision, c.payload_json, e.event_type, b.effect_state, b.result_status
      FROM correction_events c
-     JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type IN ('diet_correction','nutrition_supplemented')
      JOIN effect_bundle_commits b
        ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
      WHERE c.target_event_id = ? ORDER BY c.base_revision`).all(targetEventId);
@@ -79,7 +90,7 @@ function readEffectiveMealState(database, targetEventId) {
             throw new Error("CORRECTION_TARGET_INVALID:chain_state");
         }
         const payload = parseCanonical(correction.payload_json, "correction_chain");
-        reservationFromEventPayload(payload, "diet_correction");
+        reservationFromEventPayload(payload, correction.event_type);
         if (correction.base_revision !== revision || payload.base_revision !== revision ||
             payload.target_event_id !== targetEventId ||
             payload.authority_kind !== "diet-manager/correction-fact/v1" ||
@@ -116,13 +127,35 @@ export function prepareCorrectionOperation(input) {
         if (!Number.isSafeInteger(itemOrder) || itemOrder < 0 || itemOrder >= current.snapshot.items.length) {
             throw new Error("CORRECTION_TARGET_INVALID:item_order");
         }
-        afterSnapshot = freezeJson({
-            ...current.snapshot,
-            items: current.snapshot.items.map((item, index) => index === itemOrder
-                ? { ...item, amount: operation.replacement_amount }
-                : item),
-        });
-        operationKind = "change_amount";
+        if ("correction_kind" in operation) {
+            const previous = input.database.prepare(`SELECT snapshot_id FROM nutrition_snapshots
+         WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+         ORDER BY rowid DESC LIMIT 1`).get(current.snapshot.items[itemOrder].item_id);
+            if (!previous || previous.snapshot_id !== operation.previous_snapshot_id) {
+                throw new Error("CORRECTION_TARGET_INVALID:nutrition_snapshot");
+            }
+            afterSnapshot = freezeJson({
+                ...current.snapshot,
+                items: current.snapshot.items.map((item, index) => index === itemOrder
+                    ? {
+                        ...item,
+                        amount: operation.replacement_amount,
+                        nutrition_sources: [operation.replacement_nutrition_source],
+                        nutrition_evidence: operation.replacement_nutrition_evidence,
+                    }
+                    : item),
+            });
+            operationKind = "change_nutrition_source";
+        }
+        else {
+            afterSnapshot = freezeJson({
+                ...current.snapshot,
+                items: current.snapshot.items.map((item, index) => index === itemOrder
+                    ? { ...item, amount: operation.replacement_amount }
+                    : item),
+            });
+            operationKind = "change_amount";
+        }
     }
     else {
         afterSnapshot = freezeJson({
@@ -134,12 +167,14 @@ export function prepareCorrectionOperation(input) {
     if (canonicalJson(afterSnapshot) === canonicalJson(current.snapshot)) {
         throw new Error("CORRECTION_TARGET_INVALID:no_change");
     }
-    const affectedItemOrders = operationKind === "change_amount"
+    const affectedItemOrders = operationKind === "change_amount" || operationKind === "change_nutrition_source"
         ? [itemOrder]
         : current.snapshot.items.map((item) => item.item_order);
     const beforeAmount = current.snapshot.items[itemOrder].amount;
     const afterAmount = afterSnapshot.items[itemOrder].amount;
-    const progressPreflight = preflightCorrectionNutrition(input.database, current.snapshot, afterSnapshot, affectedItemOrders);
+    const progressPreflight = operationKind === "change_nutrition_source"
+        ? preflightNutritionSupplement(input.database, current.snapshot, afterSnapshot, itemOrder)
+        : preflightCorrectionNutrition(input.database, current.snapshot, afterSnapshot, affectedItemOrders);
     const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
     const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
     const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
@@ -177,8 +212,17 @@ export function prepareCorrectionOperation(input) {
         authority_kind: "diet-manager/correction-fact/v1",
         base_revision: current.revision,
         before_snapshot: current.snapshot,
-        change_set: operationKind === "change_amount"
-            ? [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
+        change_set: operationKind === "change_amount" || operationKind === "change_nutrition_source"
+            ? operationKind === "change_nutrition_source"
+                ? [
+                    {
+                        after: afterSnapshot.items[itemOrder].nutrition_sources,
+                        before: current.snapshot.items[itemOrder].nutrition_sources,
+                        path: `/items/${itemOrder}/nutrition_sources`,
+                    },
+                    { after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` },
+                ]
+                : [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
             : [{
                     after: afterSnapshot.active,
                     before: current.snapshot.active,
@@ -233,7 +277,9 @@ export function prepareCorrectionOperation(input) {
                 eventId,
                 operationId: operation.operation_id,
                 schemaVersion: "domain/v2",
-                eventType: "diet_correction",
+                eventType: operationKind === "change_nutrition_source"
+                    ? "nutrition_supplemented"
+                    : "diet_correction",
                 factKind: "correction",
                 sourceMessageId: input.sourceMessageId,
                 conversationId: input.conversationId,
@@ -279,9 +325,16 @@ export function preparePurchaseOperation(input) {
     const effectIdentitySequence = input.effectIdentityKey === undefined ? input.sequence : 0;
     if (operation.kind !== "add_inventory")
         return invalid("operation_kind");
-    if (operation.amount.evidence !== "explicit")
+    if (operation.amount.evidence !== "explicit" &&
+        !(operation.pantry_evidence !== undefined && operation.amount.evidence === "unknown"))
         return invalid("amount_evidence");
-    const quantity = positive(operation.amount.observed_microunits, "observed_microunits");
+    const quantity = operation.amount.observed_microunits === null
+        ? null
+        : positive(operation.amount.observed_microunits, "observed_microunits");
+    if (quantity === null &&
+        (operation.pantry_evidence === undefined || operation.amount.evidence !== "unknown" ||
+            operation.amount.unit !== "unknown"))
+        return invalid("observed_microunits");
     if (operation.amount.inventory_deduction_microunits !== null ||
         operation.amount.nutrition_adoption_microunits !== null) {
         return invalid("purchase_amount_role");
@@ -295,6 +348,17 @@ export function preparePurchaseOperation(input) {
     const outboxId = deriveDomainId("outbox", effectIdentityKey, effectIdentitySequence);
     const transactionId = deriveDomainId("transaction", effectIdentityKey, effectIdentitySequence);
     const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
+    const pantry = operation.pantry_evidence === undefined
+        ? undefined
+        : preparePantryPurchase({
+            evidence: operation.pantry_evidence,
+            product_id: operation.product.product_id,
+            normalized_name: operation.product.normalized_name,
+            batch_id: operation.batch_id,
+            quantity_microunits: quantity,
+            unit: operation.amount.unit,
+            template_reference_microunits: operation.amount.template_reference_microunits,
+        });
     const effectInput = Object.freeze({
         kind: "inventory_add",
         transaction_id: transactionId,
@@ -307,7 +371,9 @@ export function preparePurchaseOperation(input) {
             normalized_name: operation.product.normalized_name,
             product_type: operation.product.product_type,
             payload: Object.freeze({
-                authority_kind: "diet-manager/product/v1",
+                ...(pantry === undefined
+                    ? { authority_kind: "diet-manager/product/v1" }
+                    : pantry.product_payload),
             }),
         }),
         nutrition_profile: profileId === null
@@ -326,12 +392,16 @@ export function preparePurchaseOperation(input) {
         batch: Object.freeze({
             batch_id: operation.batch_id,
             schema_version: "domain/v2",
-            stocked_at: input.receivedAt,
-            explicit_expiration_at: null,
+            stocked_at: new Date(input.receivedAt).toISOString(),
+            explicit_expiration_at: pantry?.explicit_expiration_at ?? null,
             quantity_unit: operation.amount.unit,
             payload: Object.freeze({
-                authority_kind: "diet-manager/inventory-batch/v1",
-                template_reference_microunits: operation.amount.template_reference_microunits,
+                ...(pantry === undefined
+                    ? {
+                        authority_kind: "diet-manager/inventory-batch/v1",
+                        template_reference_microunits: operation.amount.template_reference_microunits,
+                    }
+                    : pantry.batch_payload),
             }),
         }),
     });
@@ -345,6 +415,16 @@ export function preparePurchaseOperation(input) {
         inventory_quantity_microunits: quantity,
         unit: operation.amount.unit,
         nutrition_profile_id: profileId,
+        ...(pantry === undefined ? {} : {
+            pantry_evidence: pantry.evidence,
+            receipt_item: buildPantryPurchaseReceiptItem({
+                product_id: operation.product.product_id,
+                batch_id: operation.batch_id,
+                name: operation.product.normalized_name,
+                stocked_at: input.receivedAt,
+                evidence: pantry.evidence,
+            }),
+        }),
     });
     return Object.freeze({
         fact: Object.freeze({
@@ -372,7 +452,10 @@ export function preparePurchaseOperation(input) {
                 mealId: null,
                 mealSlot: null,
                 payload: Object.freeze({
-                    authority_kind: "diet-manager/purchase-fact/v1",
+                    authority_kind: pantry === undefined
+                        ? "diet-manager/purchase-fact/v1"
+                        : "diet-manager/purchase-fact/v2",
+                    ...(pantry === undefined ? {} : { pantry_evidence: pantry.evidence }),
                     effect_inputs: Object.freeze({ [effectId]: effectInput }),
                     ...(input.progressReservation === undefined
                         ? {}
@@ -398,6 +481,156 @@ export function preparePurchaseOperation(input) {
         result,
     });
 }
+export function prepareInventoryLocationCorrectionOperation(input) {
+    const operation = input.operation;
+    if (input.commandType !== "correct_record" || operation.correction_kind !== "inventory_location") {
+        return invalid("inventory_location_correction_operation");
+    }
+    try {
+        if (pendingMealInventoryAllocationBatchIds(input.database).has(operation.batch_id)) {
+            throw new Error("pending");
+        }
+    }
+    catch {
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_inventory_effect");
+    }
+    try {
+        if (pendingLocationCorrectionBatchIds(input.database).has(operation.batch_id)) {
+            throw new Error("pending");
+        }
+    }
+    catch {
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_revision");
+    }
+    const row = input.database.prepare(`SELECT i.*, b.product_id, b.explicit_expiration_at, b.quantity_unit
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     WHERE i.batch_id = ?`).get(operation.batch_id);
+    if (!row)
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:batch");
+    const projection = parseProjectionPayloadJson(row.payload_json);
+    if (projection.version !== 2 || projection.pantry_evidence === null) {
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:projection_version");
+    }
+    let revision;
+    try {
+        revision = assertCurrentInventoryLocationCorrectionLineage(input.database, input.secret, operation.batch_id, projection.pantry_evidence);
+    }
+    catch (error) {
+        if (error instanceof Error &&
+            error.message === "PANTRY_REPOSITORY_AUTHORITY_INVALID:pending_location_correction") {
+            throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_revision");
+        }
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:lineage_authority");
+    }
+    if (operation.base_revision !== revision) {
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:stale_revision");
+    }
+    if (canonicalJson(projection.pantry_evidence.location) !== canonicalJson(operation.previous_location) ||
+        canonicalJson(projection.pantry_evidence.expiration) !== canonicalJson(operation.previous_expiration) ||
+        row.effective_expiration_at !== operation.previous_expiration.effective_at)
+        throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:previous_projection");
+    const nextEvidenceSource = JSON.parse(canonicalJson(projection.pantry_evidence));
+    nextEvidenceSource.location = operation.next_location;
+    nextEvidenceSource.expiration = operation.expected_expiration;
+    const nextEvidence = validateAndFreezePantryPurchaseEvidence(nextEvidenceSource);
+    const nextProjectionJson = canonicalJson(createPantryProjectionPayload({
+        batch_id: projection.batch_id,
+        product_id: projection.product_id,
+        quantity_microunits: projection.quantity_microunits,
+        unit: projection.unit,
+        pantry_evidence: nextEvidence,
+    }));
+    const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
+    const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
+    const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
+    const result = Object.freeze({
+        sequence: input.sequence,
+        operation_id: operation.operation_id,
+        status: "committed",
+        error_code: null,
+        batch_id: operation.batch_id,
+        adjustment_kind: "location_correction",
+        previous_location: operation.previous_location,
+        current_location: operation.next_location,
+        expiration: operation.expected_expiration,
+        receipt_item: buildInventoryLocationCorrectionReceiptItem({
+            batch_id: operation.batch_id,
+            previous_location: operation.previous_location,
+            current_location: operation.next_location,
+            expiration: operation.expected_expiration,
+        }),
+    });
+    const intent = Object.freeze({
+        kind: "inventory_location_correction",
+        batch_id: operation.batch_id,
+        base_revision: operation.base_revision,
+        previous_last_event_id: row.last_event_id,
+        previous_last_changed_at: row.last_changed_at,
+        previous_projection_json: row.payload_json,
+        next_projection_json: nextProjectionJson,
+    });
+    const payload = validateAndFreezeInventoryLocationCorrectionFactPayload({
+        authority_kind: "diet-manager/inventory-location-correction-fact/v1",
+        adjustment_kind: "location_correction",
+        batch_id: operation.batch_id,
+        base_revision: operation.base_revision,
+        previous_last_event_id: row.last_event_id,
+        previous_last_changed_at: row.last_changed_at,
+        previous_projection_json: row.payload_json,
+        next_projection_json: nextProjectionJson,
+        previous_location: operation.previous_location,
+        next_location: operation.next_location,
+        previous_expiration: projection.pantry_evidence.expiration,
+        next_expiration: operation.expected_expiration,
+        source_text: operation.source_text,
+        matched_span: operation.matched_span,
+        rule_version: operation.rule_version,
+        effect_inputs: Object.freeze({ [effectId]: intent }),
+        result,
+    });
+    return Object.freeze({
+        event_id: eventId,
+        outbox_id: outboxId,
+        payload,
+        result,
+        fact: Object.freeze({
+            database: input.database,
+            secret: Uint8Array.from(input.secret),
+            token: input.token,
+            inputDigest: input.inputDigest,
+            subjectScope: input.subjectScope,
+            commandType: input.commandType,
+            dataRevision: input.dataRevision,
+            traceId: deriveDomainId("trace", input.idempotencyKey, 0),
+            sequence: input.sequence,
+            operationId: operation.operation_id,
+            event: Object.freeze({
+                eventId,
+                operationId: operation.operation_id,
+                schemaVersion: "domain/v2",
+                eventType: "inventory_adjusted",
+                factKind: "inventory",
+                sourceMessageId: input.sourceMessageId,
+                conversationId: input.conversationId,
+                receivedAt: input.receivedAt,
+                committedAt: input.committedAt,
+                occurredAtText: input.receivedAt,
+                mealId: null,
+                mealSlot: null,
+                payload,
+            }),
+            items: Object.freeze([]),
+            effects: Object.freeze([Object.freeze({
+                    outboxId,
+                    effectId,
+                    effectKind: "inventory_location_correction",
+                    previousState: row.last_event_id,
+                    reason: null,
+                })]),
+        }),
+    });
+}
 export function applyPurchaseEffect(database, outboxId, now, fault) {
     return processInventoryEffect({ database, outboxId, now }, {
         deferEnvelopeStability: true,
@@ -413,6 +646,10 @@ export function prepareMealOperation(input) {
     if (operation.kind !== "record_meal" || operation.items.length === 0) {
         return invalid("meal_operation");
     }
+    if (input.inventoryPlans !== undefined && input.inventoryPlans.length !== operation.items.length) {
+        return invalid("inventory_plans");
+    }
+    const inventoryPlans = input.inventoryPlans?.map((plan) => plan === null ? null : parseInventoryAllocationPlan(plan));
     const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
     const mealId = deriveDomainId("meal", input.idempotencyKey, input.sequence);
     const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
@@ -501,6 +738,13 @@ export function prepareMealOperation(input) {
                 payload: Object.freeze({
                     amount: item.amount,
                     authority_kind: "diet-manager/meal-item/v1",
+                    ...(item.inventory_directive === undefined ? {} : { inventory_directive: item.inventory_directive }),
+                    ...(inventoryPlans?.[itemOrder] === undefined || inventoryPlans[itemOrder] === null
+                        ? {}
+                        : { inventory_plan: inventoryPlans[itemOrder] }),
+                    ...(item.nutrition_evidence === undefined
+                        ? {}
+                        : { nutrition_evidence: item.nutrition_evidence }),
                     nutrition_sources: item.nutrition_sources,
                 }),
             }))),
@@ -592,6 +836,18 @@ export function preflightWaterOperation(operation) {
             water_ml_milli: operation.plain_water_ml_milli,
         }),
     });
+}
+function v11NutritionRecords(operationId, eventId, committedAt, item, evidenceValue) {
+    const evidence = validateAndFreezeResolvedNutritionEvidence(evidenceValue);
+    return buildNutritionRecords({
+        operation_id: operationId,
+        meal_event_id: eventId,
+        intake_item_id: item.item_id,
+        item_name: item.normalized_name,
+        subject_type: evidence.source_type === "product_label" ? "product" : "food",
+        subject_id: item.normalized_name,
+        created_at: committedAt,
+    }, evidence);
 }
 function parseCanonical(value, label) {
     let parsed;
@@ -793,6 +1049,71 @@ function inventoryCandidates(database, normalizedName) {
         });
     }));
 }
+/**
+ * Builds immutable Pantry-v2 allocation authority before FactCommit. Legacy
+ * v1 inventory keeps its byte-exact single-candidate path by returning null.
+ * Outside and unknown-amount skips also retain their existing zero-read fact
+ * shape until an explicit inventory directive is supplied by the parser.
+ */
+export function prepareMealInventoryPlans(database, authoritySecret, operation, envelopeId) {
+    if (envelopeId !== undefined) {
+        const stored = database.prepare(`SELECT i.payload_json FROM meal_items i
+       JOIN event_records e ON e.event_id = i.event_id
+       WHERE e.envelope_id = ? AND e.operation_id = ?
+       ORDER BY i.item_order`).all(envelopeId, operation.operation_id);
+        if (stored.length > 0) {
+            if (stored.length !== operation.items.length) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:stored_inventory_plans");
+            }
+            return Object.freeze(stored.map(({ payload_json }) => {
+                const payload = parseCanonical(payload_json, "stored_inventory_plan");
+                return Object.hasOwn(payload, "inventory_plan")
+                    ? parseInventoryAllocationPlan(payload.inventory_plan)
+                    : null;
+            }));
+        }
+    }
+    return Object.freeze(operation.items.map((item) => {
+        if (item.inventory_directive !== undefined) {
+            return resolveInventoryAllocation({
+                location: operation.location,
+                explicit_skip: true,
+                requested_microunits: item.amount.inventory_deduction_microunits,
+                unit: item.amount.unit,
+                specified_batch_id: null,
+                candidates: Object.freeze([]),
+            });
+        }
+        if (operation.location === "outside" || item.amount.inventory_deduction_microunits === null) {
+            return null;
+        }
+        const read = listPantryAllocationCandidates(database, authoritySecret, item.normalized_name, operation.occurred_at);
+        if (read === null && operation.inventory_policy === undefined)
+            return null;
+        return resolveInventoryAllocation({
+            location: operation.location,
+            explicit_skip: false,
+            requested_microunits: item.amount.inventory_deduction_microunits,
+            unit: item.amount.unit,
+            specified_batch_id: null,
+            candidates: read?.candidates ?? Object.freeze([]),
+        });
+    }));
+}
+function allocationDecision(plan) {
+    const first = plan.allocations[0];
+    const issueCode = plan.issue_code === "inventory_unit_conversion_unproven"
+        ? "inventory_unit_incompatible"
+        : plan.issue_code;
+    return Object.freeze({
+        status: plan.status === "skipped_by_user" ? "skipped_outside" : plan.status,
+        batch_id: first?.batch_id ?? null,
+        product_id: first?.product_id ?? null,
+        deduction_microunits: plan.status === "matched" ? plan.requested_microunits ?? 0 : 0,
+        unit: plan.unit,
+        issue_code: issueCode,
+    });
+}
 function selectMealNutrition(item, decision) {
     if (!Array.isArray(item.nutrition_sources)) {
         throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:nutrition_sources");
@@ -805,21 +1126,29 @@ function selectMealNutrition(item, decision) {
     const productId = decision.product_id ?? (uniqueLabelProducts.length === 1 ? uniqueLabelProducts[0] : null);
     return selectNutritionSource(sources, productId);
 }
-export function preflightMealOperation(database, operation, precedingCandidates = new Map()) {
+export function preflightMealOperation(database, authoritySecret, operation, precedingCandidates = new Map()) {
     let preflightMealProgress = zeroNutrition();
-    for (const item of operation.items) {
-        const candidates = operation.location === "outside"
+    const pantryPlans = precedingCandidates.size === 0
+        ? prepareMealInventoryPlans(database, authoritySecret, operation)
+        : Object.freeze(operation.items.map(() => null));
+    for (let itemOrder = 0; itemOrder < operation.items.length; itemOrder += 1) {
+        const item = operation.items[itemOrder];
+        const pantryPlan = pantryPlans[itemOrder];
+        const candidates = pantryPlan !== null && pantryPlan !== undefined ||
+            operation.location === "outside" || item.amount.inventory_deduction_microunits === null
             ? []
             : [...inventoryCandidates(database, item.normalized_name), ...(precedingCandidates.get(item.normalized_name) ?? [])];
-        const decision = resolveInventoryMatch({
-            location: operation.location,
-            requested_unit: item.amount.unit,
-            observed_microunits: item.amount.observed_microunits,
-            nutrition_adoption_microunits: item.amount.nutrition_adoption_microunits,
-            inventory_deduction_microunits: item.amount.inventory_deduction_microunits,
-            template_reference_microunits: item.amount.template_reference_microunits,
-            candidates,
-        });
+        const decision = pantryPlan === null || pantryPlan === undefined
+            ? resolveInventoryMatch({
+                location: operation.location,
+                requested_unit: item.amount.unit,
+                observed_microunits: item.amount.observed_microunits,
+                nutrition_adoption_microunits: item.amount.nutrition_adoption_microunits,
+                inventory_deduction_microunits: item.amount.inventory_deduction_microunits,
+                template_reference_microunits: item.amount.template_reference_microunits,
+                candidates,
+            })
+            : allocationDecision(pantryPlan);
         const selection = selectMealNutrition({ nutrition_sources: item.nutrition_sources }, decision);
         const scaled = item.amount.nutrition_adoption_microunits === null
             ? Object.freeze({
@@ -868,13 +1197,14 @@ function writeMealNutritionProfile(database, idempotencyKey, itemOrder, normaliz
         },
     });
     const previous = database.prepare(`SELECT nutrition_profile_id FROM nutrition_profiles
-     WHERE subject_type = ? AND subject_id = ? AND CAST(profile_version AS INTEGER) < ?
+     WHERE schema_version = 'domain/v2' AND subject_type = ? AND subject_id = ?
+       AND CAST(profile_version AS INTEGER) < ?
      ORDER BY CAST(profile_version AS INTEGER) DESC LIMIT 1`).get(subjectType, subjectId, selection.profile_version);
     const supersedesProfileId = previous?.nutrition_profile_id ?? null;
     const existing = database.prepare(`SELECT nutrition_profile_id, source_type, source_ref, coverage_status,
             supersedes_profile_id, payload_json
      FROM nutrition_profiles
-     WHERE subject_type = ? AND subject_id = ? AND profile_version = ?`).get(subjectType, subjectId, String(selection.profile_version));
+     WHERE schema_version = 'domain/v2' AND subject_type = ? AND subject_id = ? AND profile_version = ?`).get(subjectType, subjectId, String(selection.profile_version));
     if (existing) {
         const legacyExisting = existing.payload_json === legacyPayloadJson;
         if (existing.nutrition_profile_id !== profileId || existing.source_type !== selection.source_type ||
@@ -1005,6 +1335,44 @@ function claimMealOutboxes(database, input) {
         if (changed(database) !== Number(row.count)) {
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:claim_compare_and_set");
         }
+    }
+}
+export function applyRequiredMealInventoryInTransaction(input) {
+    const event = input.database.prepare(`SELECT event_id,envelope_id,operation_id,source_message_id,conversation_id,
+            received_at,committed_at,occurred_at_text,payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`).get(input.envelopeId, input.operationId);
+    if (!event || event.operation_id !== input.operationId) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:required_inventory_event");
+    }
+    const eventPayload = validatedMealFactPayload(parseCanonical(event.payload_json, "required_inventory_event"), event.occurred_at_text, "required_inventory_event");
+    if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" || eventPayload.location !== input.location) {
+        throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:required_inventory_event");
+    }
+    const items = input.database.prepare(`SELECT item_id,item_order,normalized_name,payload_json
+     FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(event.event_id);
+    for (const item of items) {
+        const payload = parseCanonical(item.payload_json, "required_inventory_item");
+        if (!Object.hasOwn(payload, "inventory_plan"))
+            continue;
+        const plan = parseInventoryAllocationPlan(payload.inventory_plan);
+        applyPantryAllocationsInTransaction({
+            database: input.database,
+            authority_secret: input.authoritySecret,
+            event_id: event.event_id,
+            source_message_id: event.source_message_id,
+            conversation_id: event.conversation_id,
+            received_at: event.received_at,
+            committed_at: input.now,
+            occurred_at: event.occurred_at_text,
+            effect_id: mealEffectId(input.idempotencyKey, item.item_order, 0),
+            plan,
+            ...(input.fault === "after_first_inventory_allocation"
+                ? { afterAllocation: (index) => {
+                        if (index === 0)
+                            throw new Error("MEAL_EFFECT_FAILED:after_first_inventory_allocation");
+                    } }
+                : {}),
+        });
     }
 }
 function assertExpectedMealFactInput(input) {
@@ -1205,8 +1573,11 @@ function readAppliedMealResultInTransaction(input, checkpoint) {
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_item");
         }
         const amount = storedStructuredAmount(itemPayload.amount, "terminal_item_amount");
+        const pantryPlan = Object.hasOwn(itemPayload, "inventory_plan")
+            ? parseInventoryAllocationPlan(itemPayload.inventory_plan)
+            : null;
         const snapshots = input.database.prepare(`SELECT source_type, profile_version, payload_json FROM nutrition_snapshots
-       WHERE intake_item_id = ? ORDER BY snapshot_id`).all(item.item_id);
+       WHERE intake_item_id = ? AND schema_version = 'domain/v2' ORDER BY snapshot_id`).all(item.item_id);
         if (snapshots.length !== 1) {
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
         }
@@ -1224,28 +1595,65 @@ function readAppliedMealResultInTransaction(input, checkpoint) {
         if (issues.length > 1)
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_issues");
         const issueCodes = Object.freeze(issues.map((issue) => issue.issue_code));
-        const transactions = input.database.prepare(`SELECT transaction_id FROM inventory_transactions
-       WHERE event_id = ? AND idempotency_key = ? ORDER BY transaction_id`).all(event.event_id, mealEffectId(input.idempotencyKey, item.item_order, 0));
-        if (transactions.length > 1) {
-            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+        if (pantryPlan !== null &&
+            canonicalJson(issueCodes) !== canonicalJson(pantryPlan.issue_code === null ? [] : [pantryPlan.issue_code]))
+            throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_issues");
+        const transactions = input.database.prepare(`SELECT transaction_id, product_id, batch_id, direction, reason_code, unit,
+              result_status, lifecycle_status, payload_json
+       FROM inventory_transactions
+       WHERE event_id = ? AND idempotency_key = ? ORDER BY rowid`).all(event.event_id, mealEffectId(input.idempotencyKey, item.item_order, 0));
+        let terminalAllocations = null;
+        if (pantryPlan === null) {
+            if (transactions.length > 1) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+            }
+        }
+        else {
+            if (transactions.length !== pantryPlan.allocations.length) {
+                throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+            }
+            terminalAllocations = Object.freeze(pantryPlan.allocations.map((allocation, index) => {
+                const transaction = transactions[index];
+                const expectedTransactionId = deriveDomainId("transaction", mealEffectId(input.idempotencyKey, item.item_order, 0), index);
+                const expectedPayload = canonicalJson({
+                    allocation_index: index,
+                    authority_kind: "diet-manager/inventory-transaction/v2",
+                    quantity_after_microunits: allocation.after_microunits,
+                    quantity_delta_microunits: -allocation.deducted_microunits,
+                    selection_basis: allocation.selection_basis,
+                    unit: allocation.unit,
+                });
+                if (!transaction || transaction.transaction_id !== expectedTransactionId ||
+                    transaction.product_id !== allocation.product_id || transaction.batch_id !== allocation.batch_id ||
+                    transaction.direction !== "out" || transaction.reason_code !== "meal_consumption" ||
+                    transaction.unit !== allocation.unit || transaction.result_status !== "applied" ||
+                    transaction.lifecycle_status !== "active" || transaction.payload_json !== expectedPayload)
+                    throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_transaction");
+                return Object.freeze({ transaction_id: transaction.transaction_id, ...allocation });
+            }));
         }
         const transactionId = transactions[0]?.transaction_id ?? null;
-        const inventoryMatch = transactionId !== null
-            ? "matched"
-            : issueCodes[0] === "inventory_amount_unknown"
-                ? "skipped_amount_unknown"
-                : input.location === "outside"
-                    ? "skipped_outside"
-                    : issueCodes[0] === "inventory_multiple_candidates"
-                        ? "skipped_ambiguous"
-                        : issueCodes[0] === "inventory_insufficient"
-                            ? "skipped_insufficient"
-                            : issueCodes[0] === "inventory_unit_incompatible"
-                                ? "skipped_unit_incompatible"
-                                : (() => { throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_inventory"); })();
+        const inventoryMatch = pantryPlan !== null
+            ? pantryPlan.status
+            : transactionId !== null
+                ? "matched"
+                : issueCodes[0] === "inventory_amount_unknown"
+                    ? "skipped_amount_unknown"
+                    : input.location === "outside"
+                        ? "skipped_outside"
+                        : issueCodes[0] === "inventory_multiple_candidates"
+                            ? "skipped_ambiguous"
+                            : issueCodes[0] === "inventory_insufficient"
+                                ? "skipped_insufficient"
+                                : issueCodes[0] === "inventory_unit_incompatible"
+                                    ? "skipped_unit_incompatible"
+                                    : (() => { throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_inventory"); })();
         const profileVersion = Number(snapshot.profile_version);
         if (!Number.isSafeInteger(profileVersion) || profileVersion < 1) {
             throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
+        }
+        if (Object.hasOwn(itemPayload, "nutrition_evidence")) {
+            assertNutritionRecordsPersisted(input.database, [v11NutritionRecords(event.operation_id, event.event_id, event.committed_at, item, itemPayload.nutrition_evidence)]);
         }
         const adoption = amount.nutrition_adoption_microunits;
         const deduction = amount.inventory_deduction_microunits;
@@ -1255,6 +1663,10 @@ function readAppliedMealResultInTransaction(input, checkpoint) {
             unit: String(amount.unit),
             inventory_match: inventoryMatch,
             inventory_transaction_id: transactionId,
+            ...(terminalAllocations === null ? {} : {
+                inventory_transaction_ids: Object.freeze(terminalAllocations.map(({ transaction_id }) => transaction_id)),
+                inventory_allocations: terminalAllocations,
+            }),
             issue_codes: issueCodes,
             observed_microunits: amount.observed_microunits,
             ...(amount.observed_microunits === null
@@ -1400,20 +1812,27 @@ export function applyMealEffects(input) {
                 throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:item_payload");
             }
             const amount = storedStructuredAmount(payload.amount, "item_amount");
-            const candidates = input.location === "outside" ? [] : inventoryCandidates(input.database, item.normalized_name);
             const adoptionValue = amount.nutrition_adoption_microunits;
             const deductionValue = amount.inventory_deduction_microunits;
             const adoptedMicrounits = adoptionValue;
             const deductionMicrounits = deductionValue;
-            const decision = resolveInventoryMatch({
-                location: input.location,
-                requested_unit: amount.unit,
-                observed_microunits: amount.observed_microunits,
-                nutrition_adoption_microunits: adoptedMicrounits,
-                inventory_deduction_microunits: deductionMicrounits,
-                template_reference_microunits: amount.template_reference_microunits,
-                candidates,
-            });
+            const pantryPlan = Object.hasOwn(payload, "inventory_plan")
+                ? parseInventoryAllocationPlan(payload.inventory_plan)
+                : null;
+            const candidates = pantryPlan !== null || input.location === "outside" || deductionMicrounits === null
+                ? []
+                : inventoryCandidates(input.database, item.normalized_name);
+            const decision = pantryPlan === null
+                ? resolveInventoryMatch({
+                    location: input.location,
+                    requested_unit: amount.unit,
+                    observed_microunits: amount.observed_microunits,
+                    nutrition_adoption_microunits: adoptedMicrounits,
+                    inventory_deduction_microunits: deductionMicrounits,
+                    template_reference_microunits: amount.template_reference_microunits,
+                    candidates,
+                })
+                : allocationDecision(pantryPlan);
             const selection = selectMealNutrition(payload, decision);
             const scaledNutrients = adoptedMicrounits === null
                 ? Object.freeze({
@@ -1425,11 +1844,39 @@ export function applyMealEffects(input) {
                     : scaleNutritionVector(selection.nutrients, adoptedMicrounits, selection.basis_microunits);
             const profileId = writeMealNutritionProfile(input.database, input.idempotencyKey, item.item_order, item.normalized_name, selection, generatedAt);
             writeMealNutritionSnapshot(input.database, input, event, item, payload, selection, scaledNutrients, profileId, generatedAt);
+            if (Object.hasOwn(payload, "nutrition_evidence")) {
+                const records = v11NutritionRecords(event.operation_id, event.event_id, event.committed_at, item, payload.nutrition_evidence);
+                persistNutritionRecords(input.database, [records]);
+                assertNutritionRecordsPersisted(input.database, [records]);
+            }
             if (input.fault === "after_nutrition") {
                 throw new Error("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
             }
-            const transactionId = writeMealDeduction(input.database, input, event, item, decision);
-            writeMealIssue(input.database, input, event, item, decision);
+            const allocations = pantryPlan === null
+                ? Object.freeze([])
+                : applyPantryAllocationsInTransaction({
+                    database: input.database,
+                    authority_secret: input.authoritySecret,
+                    event_id: event.event_id,
+                    source_message_id: event.source_message_id,
+                    conversation_id: event.conversation_id,
+                    received_at: event.received_at,
+                    committed_at: input.now,
+                    occurred_at: event.occurred_at_text,
+                    effect_id: mealEffectId(input.idempotencyKey, item.item_order, 0),
+                    plan: pantryPlan,
+                    ...(input.fault === "after_first_inventory_allocation"
+                        ? { afterAllocation: (index) => {
+                                if (index === 0)
+                                    throw new Error("MEAL_EFFECT_FAILED:after_first_inventory_allocation");
+                            } }
+                        : {}),
+                });
+            const transactionId = pantryPlan === null
+                ? writeMealDeduction(input.database, input, event, item, decision)
+                : allocations[0]?.transaction_id ?? null;
+            writeMealIssue(input.database, input, event, item, pantryPlan ?? decision);
+            const issueCode = pantryPlan?.issue_code ?? decision.issue_code;
             if (input.fault === "after_issue_write") {
                 throw new Error("MEAL_EFFECT_FAILED:after_issue_write");
             }
@@ -1438,9 +1885,13 @@ export function applyMealEffects(input) {
                 item_order: item.item_order,
                 normalized_name: item.normalized_name,
                 unit: amount.unit,
-                inventory_match: decision.status,
+                inventory_match: pantryPlan?.status ?? decision.status,
                 inventory_transaction_id: transactionId,
-                issue_codes: Object.freeze(decision.issue_code ? [decision.issue_code] : []),
+                ...(pantryPlan === null ? {} : {
+                    inventory_transaction_ids: Object.freeze(allocations.map(({ transaction_id }) => transaction_id)),
+                    inventory_allocations: allocations,
+                }),
+                issue_codes: Object.freeze(issueCode === null ? [] : [issueCode]),
                 observed_microunits: amount.observed_microunits,
                 ...(amount.observed_microunits === null
                     ? { amount_evidence: "unknown" }
@@ -1810,6 +2261,32 @@ function preflightCorrectionNutrition(database, beforeSnapshot, afterSnapshot, a
         after: Object.freeze(afterNutrients),
     });
 }
+function preflightNutritionSupplement(database, beforeSnapshot, afterSnapshot, itemOrder) {
+    const item = beforeSnapshot.items[itemOrder];
+    const previous = database.prepare(`SELECT payload_json FROM nutrition_snapshots
+     WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+     ORDER BY rowid DESC LIMIT 1`).get(item.item_id);
+    if (!previous)
+        throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
+    const previousPayload = parseCanonical(previous.payload_json, "nutrition_supplement_previous");
+    if (typeof previousPayload.nutrients !== "object" || previousPayload.nutrients === null) {
+        throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
+    }
+    const selection = selectNutritionSource(afterSnapshot.items[itemOrder].nutrition_sources, null);
+    const adopted = afterSnapshot.items[itemOrder].amount.nutrition_adoption_microunits;
+    const next = adopted === null
+        ? Object.freeze({
+            energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+            carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+        })
+        : selection.basis_microunits === null
+            ? selection.nutrients
+            : scaleNutritionVector(selection.nutrients, adopted, selection.basis_microunits);
+    return Object.freeze({
+        before: Object.freeze(previousPayload.nutrients),
+        after: Object.freeze(next),
+    });
+}
 export function replaceDailyProgress(previous, before, after) {
     const nutrients = {};
     for (const field of Object.keys(previous.nutrients)) {
@@ -1938,15 +2415,15 @@ export function applyCorrectionEffects(input) {
         if (input.fault === "after_claim") {
             throw new Error("CORRECTION_EFFECT_FAILED:after_claim");
         }
-        const correctionEvent = input.database.prepare(`SELECT event_id, source_message_id, conversation_id, received_at
+        const correctionEvent = input.database.prepare(`SELECT event_id, event_type, source_message_id, conversation_id, received_at, committed_at
        FROM event_records WHERE envelope_id = ? AND operation_id = ?
-         AND event_type = 'diet_correction'`).get(input.envelopeId, input.operationId);
+         AND event_type IN ('diet_correction','nutrition_supplemented')`).get(input.envelopeId, input.operationId);
         const correction = input.database.prepare(`SELECT correction_id, target_event_id, base_revision, operation, payload_json
        FROM correction_events WHERE request_id = ?`).get(input.operationId);
         if (!correctionEvent || !correction)
             throw new Error("CORRECTION_EFFECT_INVALID:fact");
         const payload = parseCanonical(correction.payload_json, "correction_fact");
-        reservationFromEventPayload(payload, "diet_correction");
+        reservationFromEventPayload(payload, correctionEvent.event_type);
         if (payload.correction_id !== correction.correction_id ||
             payload.target_event_id !== correction.target_event_id ||
             payload.base_revision !== correction.base_revision ||
@@ -1971,7 +2448,8 @@ export function applyCorrectionEffects(input) {
             throw new Error("CORRECTION_EFFECT_INVALID:intents");
         const inventoryIntents = inventoryIntent.items;
         const nutritionIntents = nutritionDelta.items;
-        const expectedItemCount = correction.operation === "change_amount"
+        const expectedItemCount = correction.operation === "change_amount" ||
+            correction.operation === "change_nutrition_source"
             ? 1
             : beforeSnapshot.items.length;
         if (inventoryIntents.length !== expectedItemCount) {
@@ -2010,7 +2488,8 @@ export function applyCorrectionEffects(input) {
             if (!Number.isSafeInteger(itemOrder) || itemOrder < 0 ||
                 itemOrder >= beforeSnapshot.items.length || itemOrder >= afterSnapshot.items.length ||
                 currentNutritionIntent.item_order !== itemOrder ||
-                (correction.operation !== "change_amount" && itemOrder !== intentIndex))
+                (correction.operation !== "change_amount" &&
+                    correction.operation !== "change_nutrition_source" && itemOrder !== intentIndex))
                 throw new Error("CORRECTION_EFFECT_INVALID:item_order");
             const beforeAmount = beforeSnapshot.items[itemOrder].amount;
             const afterAmount = afterSnapshot.items[itemOrder].amount;
@@ -2143,7 +2622,9 @@ export function applyCorrectionEffects(input) {
             const item = beforeSnapshot.items[itemOrder];
             const previousNutrition = input.database.prepare(`SELECT snapshot_id, meal_event_id, intake_item_id, nutrition_profile_id,
                 profile_version, source_type, source_ref, payload_json
-         FROM nutrition_snapshots WHERE intake_item_id = ? ORDER BY rowid DESC LIMIT 1`).get(item.item_id);
+         FROM nutrition_snapshots
+         WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+         ORDER BY rowid DESC LIMIT 1`).get(item.item_id);
             if (!previousNutrition)
                 throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
             const previousNutritionPayload = parseCanonical(previousNutrition.payload_json, "correction_nutrition");
@@ -2152,17 +2633,43 @@ export function applyCorrectionEffects(input) {
                 throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
             }
             const itemBeforeNutrients = previousNutritionPayload.nutrients;
-            const itemAfterNutrients = correctedNutrition(previousNutritionPayload, afterSnapshot.active ? afterAmount.nutrition_adoption_microunits : 0, afterSnapshot.active);
+            const supplementSelection = correction.operation === "change_nutrition_source"
+                ? selectNutritionSource(afterSnapshot.items[itemOrder].nutrition_sources, null)
+                : null;
+            const itemAfterNutrients = supplementSelection === null
+                ? correctedNutrition(previousNutritionPayload, afterSnapshot.active ? afterAmount.nutrition_adoption_microunits : 0, afterSnapshot.active)
+                : afterAmount.nutrition_adoption_microunits === null
+                    ? Object.freeze({
+                        energy_kcal_milli: null, protein_mg: null, fat_mg: null,
+                        carbohydrate_mg: null, fiber_mg: null, water_ml_milli: null,
+                    })
+                    : supplementSelection.basis_microunits === null
+                        ? supplementSelection.nutrients
+                        : scaleNutritionVector(supplementSelection.nutrients, afterAmount.nutrition_adoption_microunits, supplementSelection.basis_microunits);
+            const nextProfileId = supplementSelection === null
+                ? previousNutrition.nutrition_profile_id
+                : writeMealNutritionProfile(input.database, input.idempotencyKey, itemOrder, item.normalized_name, supplementSelection, input.now);
+            const nextProfileVersion = supplementSelection?.profile_version ?? previousNutrition.profile_version;
+            const nextSourceType = supplementSelection?.source_type ?? previousNutrition.source_type;
+            const nextSourceRef = supplementSelection?.source_ref ?? previousNutrition.source_ref;
+            const nextBasis = supplementSelection === null
+                ? previousNutritionPayload.basis
+                : {
+                    kind: supplementSelection.basis_kind,
+                    microunits: supplementSelection.basis_microunits,
+                    unit: supplementSelection.basis_unit,
+                };
+            const nextSourceNutrients = supplementSelection?.nutrients ?? previousNutritionPayload.source_nutrients;
             beforeNutrients = addNutritionVectors(beforeNutrients, itemBeforeNutrients);
             afterNutrients = addNutritionVectors(afterNutrients, itemAfterNutrients);
             input.database.prepare(`INSERT INTO nutrition_snapshots(
           snapshot_id, schema_version, meal_event_id, intake_item_id,
           nutrition_profile_id, profile_version, source_type, source_ref,
           coverage_status, created_at, payload_json
-        ) VALUES (?, 'domain/v2', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(deriveDomainId("snapshot", input.idempotencyKey, itemOrder), correction.target_event_id, item.item_id, previousNutrition.nutrition_profile_id, previousNutrition.profile_version, previousNutrition.source_type, previousNutrition.source_ref, Object.values(itemAfterNutrients).every((value) => value !== null) ? "complete" : "partial", input.now, canonicalJson({
+        ) VALUES (?, 'domain/v2', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(deriveDomainId("snapshot", input.idempotencyKey, itemOrder), correction.target_event_id, item.item_id, nextProfileId, nextProfileVersion, nextSourceType, nextSourceRef, Object.values(itemAfterNutrients).every((value) => value !== null) ? "complete" : "partial", input.now, canonicalJson({
                 amount: afterAmount,
                 authority_kind: "diet-manager/nutrition-snapshot/v1",
-                basis: previousNutritionPayload.basis,
+                basis: nextBasis,
                 conversion: afterSnapshot.active && afterAmount.nutrition_adoption_microunits !== null
                     ? {
                         adopted_microunits: afterAmount.nutrition_adoption_microunits,
@@ -2171,8 +2678,17 @@ export function applyCorrectionEffects(input) {
                     : null,
                 correction_id: correction.correction_id,
                 nutrients: itemAfterNutrients,
-                source_nutrients: previousNutritionPayload.source_nutrients,
+                source_nutrients: nextSourceNutrients,
             }));
+            if (correction.operation === "change_nutrition_source") {
+                const nutritionEvidence = afterSnapshot.items[itemOrder]?.nutrition_evidence;
+                if (nutritionEvidence === undefined) {
+                    throw new Error("CORRECTION_EFFECT_INVALID:nutrition_evidence");
+                }
+                const records = v11NutritionRecords(input.operationId, correction.target_event_id, correctionEvent.committed_at, item, nutritionEvidence);
+                persistNutritionRecords(input.database, [records]);
+                assertNutritionRecordsPersisted(input.database, [records]);
+            }
         }
         const date = String(payload.affected_dates[0]);
         const progressRow = input.database.prepare(`SELECT coverage_status, payload_json FROM daily_progress_snapshots
@@ -2333,9 +2849,10 @@ export function readAppliedCorrectionResult(input) {
         !Array.isArray(bundle.effects))
         return correctionAuthorityInvalid("terminal_bundle");
     const correctionRows = input.database.prepare(`SELECT c.correction_id, c.target_event_id, c.base_revision, c.request_id,
-            c.operation, c.payload_json, e.event_id
+            c.operation, c.payload_json, e.event_id, e.event_type, e.committed_at
      FROM correction_events c
-     JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type IN ('diet_correction','nutrition_supplemented')
      WHERE c.request_id = ? AND e.envelope_id = ?`).all(input.operationId, input.envelopeId);
     if (correctionRows.length !== 1)
         return correctionAuthorityInvalid("terminal_fact");
@@ -2356,7 +2873,7 @@ export function readAppliedCorrectionResult(input) {
         "request_id",
         "target_event_id",
     ], "terminal_fact");
-    reservationFromEventPayload(fact, "diet_correction");
+    reservationFromEventPayload(fact, correction.event_type);
     if (fact.authority_kind !== "diet-manager/correction-fact/v1" ||
         fact.correction_id !== correction.correction_id ||
         fact.target_event_id !== correction.target_event_id ||
@@ -2367,6 +2884,34 @@ export function readAppliedCorrectionResult(input) {
     const inventoryIntent = exactCorrectionRecord(fact.inventory_compensation_intent, ["items"], "terminal_fact");
     if (!Array.isArray(inventoryIntent.items) || inventoryIntent.items.length === 0) {
         return correctionAuthorityInvalid("terminal_fact");
+    }
+    if (correction.operation === "change_nutrition_source") {
+        if (inventoryIntent.items.length !== 1)
+            return correctionAuthorityInvalid("terminal_nutrition");
+        const intent = exactCorrectionRecord(inventoryIntent.items[0], ["from_microunits", "item_order", "to_microunits"], "terminal_nutrition");
+        if (!Number.isSafeInteger(intent.item_order) || intent.item_order < 0) {
+            return correctionAuthorityInvalid("terminal_nutrition");
+        }
+        const itemOrder = intent.item_order;
+        const afterSnapshot = exactCorrectionRecord(fact.after_snapshot, ["active", "items", "location", "meal_slot", "occurred_at", "timezone"], "terminal_nutrition");
+        if (!Array.isArray(afterSnapshot.items))
+            return correctionAuthorityInvalid("terminal_nutrition");
+        const afterItem = afterSnapshot.items[itemOrder];
+        if (typeof afterItem !== "object" || afterItem === null || Array.isArray(afterItem)) {
+            return correctionAuthorityInvalid("terminal_nutrition");
+        }
+        const evidence = afterItem.nutrition_evidence;
+        if (evidence === undefined)
+            return correctionAuthorityInvalid("terminal_nutrition");
+        const storedItem = input.database.prepare(`SELECT item_id, normalized_name FROM meal_items WHERE event_id = ? AND item_order = ?`).get(correction.target_event_id, itemOrder);
+        if (storedItem === undefined)
+            return correctionAuthorityInvalid("terminal_nutrition");
+        try {
+            assertNutritionRecordsPersisted(input.database, [v11NutritionRecords(input.operationId, correction.target_event_id, correction.committed_at, storedItem, evidence)]);
+        }
+        catch {
+            return correctionAuthorityInvalid("terminal_nutrition");
+        }
     }
     const outboxes = input.database.prepare(`SELECT effect_id, effect_kind, state FROM effect_outbox
      WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`).all(input.envelopeId, input.operationId);

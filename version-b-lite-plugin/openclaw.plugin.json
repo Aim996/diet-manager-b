@@ -16,62 +16,62 @@
       },
       "nutrition": {
         "type": "object",
+        "required": [
+          "policy_version",
+          "sources"
+        ],
         "properties": {
           "policy_version": {
             "type": "string"
           },
           "resolution_deadline_ms": {
+            "type": "integer",
             "minimum": 500,
-            "maximum": 5000,
-            "type": "integer"
+            "maximum": 5000
           },
           "sources": {
-            "maxItems": 32,
             "type": "array",
             "items": {
               "type": "object",
-              "properties": {
-                "source_id": {
-                  "const": "public.usda_fooddata_central",
-                  "type": "string"
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "backend_id": {
-                  "const": "fooddata-central",
-                  "type": "string"
-                },
-                "backend_version": {
-                  "const": "api-v1",
-                  "type": "string"
-                }
-              },
               "required": [
                 "source_id",
                 "enabled",
                 "backend_id",
                 "backend_version"
               ],
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "const": "public.usda_fooddata_central"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "backend_id": {
+                  "type": "string",
+                  "const": "fooddata-central"
+                },
+                "backend_version": {
+                  "type": "string",
+                  "const": "api-v1"
+                }
+              },
               "additionalProperties": false
-            }
+            },
+            "maxItems": 32
           },
           "credential_refs": {
             "type": "object",
             "properties": {
               "public.usda_fooddata_central": {
+                "type": "string",
                 "const": "env:FDC_API_KEY",
-                "description": "Private backend reference. The API key is read only from the FDC_API_KEY environment variable.",
-                "type": "string"
+                "description": "Private backend reference. The API key is read only from the FDC_API_KEY environment variable."
               }
             },
             "additionalProperties": false
           }
         },
-        "required": [
-          "policy_version",
-          "sources"
-        ],
         "additionalProperties": false
       }
     },

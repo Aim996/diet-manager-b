@@ -2,7 +2,7 @@
 
 日期：2026-08-14  
 权威需求：仓库根 `饮食管家-开发约束与需求-v1.0.md`  
-状态：0.1.0 主链已实现，等待用户真实环境验收；完整 0.1 尚未全部交付。
+状态：0.1.0 主链、构建产物和本地安装入口已完成，等待用户真实环境验收；完整 0.1 尚未全部交付。
 
 ## 已实现
 
@@ -49,6 +49,24 @@ $env:FDC_API_KEY = "你的 USDA / data.gov API key"
 
 API key 不要写入聊天、插件 JSON 或仓库。没有 key 或 USDA 不可用时，餐食仍会提交，营养返回 `unknown`。
 
+## 本地安装
+
+先安装依赖，再从插件目录执行一键脚本：
+
+```powershell
+cd E:\codx\skill\饮食管家\version-b-lite-plugin
+pnpm install --frozen-lockfile --ignore-scripts
+npm run install:local
+```
+
+脚本会构建、校验，并通过 OpenClaw 官方的 `plugins install --link` 方式注册和启用当前目录。若只想检查而不安装：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-local.ps1 -ValidateOnly
+```
+
+脚本不会配置或打开业务数据根，也不会读取 `FDC_API_KEY`。如果同 ID 插件已经从其他来源安装，OpenClaw 会拒绝覆盖；脚本不会自动使用 `--force`。
+
 ## 用户测试备份/恢复
 
 先停止插件 runtime 再执行恢复。备份可以在 runtime 工作时创建。
@@ -69,12 +87,14 @@ node dist/admin/cli.js restore "E:\你的私有数据目录" "E:\备份\diet-man
 - 最新 TypeScript `--noEmit`：PASS。
 - 餐食/库存公开查询 smoke：1/1 PASS。
 - 备份/恢复 smoke：1/1 PASS。
+- 唯一正式 emit build：PASS；source/dist 模块 66/66。
+- OpenClaw 2026.7.1 metadata check / plugin validate：PASS。
 
 ## 尚未完成
 
 - 用户真实 USDA key/网络环境的在线验收。
-- 一键安装与跨机器加密灾备；当前恢复限定同一私有根。
-- 最终 dist 构建与安装包验证。本轮按约束没有 emit/build。
+- 跨机器加密灾备；当前恢复限定同一私有根。
+- 用户机器上的 `plugins install --link`、真实 OpenClaw Gateway 体验及真实 USDA 网络验收；仓库只提供并验证安装脚本，不主动修改用户配置。
 
 ## 测试策略
 

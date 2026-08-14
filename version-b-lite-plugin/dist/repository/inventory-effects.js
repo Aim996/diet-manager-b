@@ -1,6 +1,8 @@
 import { canonicalJson } from "../authority/canonical-json.js";
 import { assertEffectTransition, assertEnvelopeTransition, } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { createPantryProjectionPayload, parseBatchPayload, parseProjectionPayload, parseProductPayload, } from "../storage/inventory-repository.js";
+import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
 import { parseInventoryProjectionRow, } from "./query.js";
 import { computeRepositoryDataRevision } from "./revision.js";
 import { reservationFromEventPayload } from "./progress-reservation.js";
@@ -23,6 +25,10 @@ const DEDUCT_FIELDS = [
     "reason_code",
     "transaction_id",
     "unit",
+];
+const LOCATION_CORRECTION_FIELDS = [
+    "kind", "batch_id", "base_revision", "previous_last_event_id", "previous_last_changed_at",
+    "previous_projection_json", "next_projection_json",
 ];
 const PRODUCT_FIELDS = [
     "normalized_name",
@@ -144,6 +150,11 @@ function positiveMicrounits(value) {
     }
     return value;
 }
+function nullablePurchaseMicrounits(value, version) {
+    if (value === null && version === 2)
+        return null;
+    return positiveMicrounits(value);
+}
 function nullableNutrient(value, field) {
     if (value === null)
         return null;
@@ -256,21 +267,49 @@ function parseAdd(value) {
     const product = exactJsonObject(source.product, PRODUCT_FIELDS);
     const batch = exactJsonObject(source.batch, BATCH_FIELDS);
     const productId = ascii(product.product_id, "product_id");
+    let parsedProduct;
+    let parsedBatch;
+    try {
+        parsedProduct = parseProductPayload(product.payload);
+        parsedBatch = parseBatchPayload(batch.payload);
+    }
+    catch {
+        return authorityInvalid("pantry_payload");
+    }
+    if (parsedProduct.version !== parsedBatch.version)
+        return authorityInvalid("pantry_payload_version");
+    if (parsedProduct.version === 2) {
+        if (parsedProduct.identity === null || parsedBatch.pantry_evidence === null ||
+            canonicalJson(parsedProduct.identity) !== canonicalJson(parsedBatch.pantry_evidence.product_identity) ||
+            parsedProduct.identity.normalized_name !== product.normalized_name)
+            return authorityInvalid("pantry_identity");
+    }
     const explicitExpirationAt = batch.explicit_expiration_at === null
         ? null
         : timestamp(batch.explicit_expiration_at, "explicit_expiration_at");
+    if (parsedBatch.pantry_evidence !== null &&
+        explicitExpirationAt !== parsedBatch.pantry_evidence.expiration.explicit_at)
+        return authorityInvalid("explicit_expiration_at");
+    const quantityMicrounits = nullablePurchaseMicrounits(source.quantity_microunits, parsedProduct.version);
+    if (quantityMicrounits === null &&
+        (parsedBatch.pantry_evidence === null || source.unit !== "unknown" ||
+            parsedBatch.pantry_evidence.package_quantity.total_inner !== null ||
+            parsedBatch.pantry_evidence.package_quantity.total_capacity !== null))
+        return authorityInvalid("quantity_microunits");
     return Object.freeze({
         kind: "inventory_add",
         transactionId: ascii(source.transaction_id, "transaction_id"),
         reasonCode: ascii(source.reason_code, "reason_code", 128),
-        quantityMicrounits: positiveMicrounits(source.quantity_microunits),
+        quantityMicrounits,
         unit: ascii(source.unit, "unit", 128),
         product: Object.freeze({
             productId,
             schemaVersion: ascii(product.schema_version, "product_schema_version", 128),
             normalizedName: text(product.normalized_name, "normalized_name"),
             productType: ascii(product.product_type, "product_type", 128),
-            payloadJson: canonicalJson(product.payload),
+            payloadJson: parsedProduct.canonical_json,
+            payloadVersion: parsedProduct.version,
+            brand: parsedProduct.identity?.brand ?? null,
         }),
         batch: Object.freeze({
             batchId: ascii(batch.batch_id, "batch_id"),
@@ -278,7 +317,9 @@ function parseAdd(value) {
             stockedAt: timestamp(batch.stocked_at, "stocked_at"),
             explicitExpirationAt,
             quantityUnit: ascii(batch.quantity_unit, "quantity_unit", 128),
-            payloadJson: canonicalJson(batch.payload),
+            payloadJson: parsedBatch.canonical_json,
+            pantryEvidence: parsedBatch.pantry_evidence,
+            effectiveExpirationAt: parsedBatch.pantry_evidence?.expiration.effective_at ?? null,
         }),
         nutritionProfile: Object.hasOwn(sourceRecord, "nutrition_profile")
             ? parsePreparedNutritionProfile(source.nutrition_profile, productId)
@@ -299,13 +340,74 @@ function parseDeduct(value) {
         unit: ascii(source.unit, "unit", 128),
     });
 }
+function parseLocationCorrection(value) {
+    const source = exactJsonObject(value, LOCATION_CORRECTION_FIELDS);
+    if (source.kind !== "inventory_location_correction")
+        return authorityInvalid("effect_kind");
+    if (!Number.isSafeInteger(source.base_revision) || source.base_revision < 1) {
+        return authorityInvalid("base_revision");
+    }
+    const previousProjectionJson = text(source.previous_projection_json, "previous_projection_json", 65_536);
+    const nextProjectionJson = text(source.next_projection_json, "next_projection_json", 65_536);
+    let previousProjection;
+    let nextProjection;
+    try {
+        previousProjection = JSON.parse(previousProjectionJson);
+        nextProjection = JSON.parse(nextProjectionJson);
+    }
+    catch {
+        return authorityInvalid("projection_payload");
+    }
+    if (canonicalJson(previousProjection) !== previousProjectionJson ||
+        canonicalJson(nextProjection) !== nextProjectionJson)
+        return authorityInvalid("projection_payload");
+    const previous = parseProjectionPayload(previousProjection);
+    const next = parseProjectionPayload(nextProjection);
+    if (previous.version !== 2 || next.version !== 2 || previous.pantry_evidence === null ||
+        next.pantry_evidence === null || previous.batch_id !== next.batch_id ||
+        previous.product_id !== next.product_id || previous.quantity_microunits !== next.quantity_microunits ||
+        previous.unit !== next.unit || previous.batch_id !== source.batch_id ||
+        canonicalJson(previous.pantry_evidence.product_identity) !== canonicalJson(next.pantry_evidence.product_identity) ||
+        canonicalJson(previous.pantry_evidence.package_quantity) !== canonicalJson(next.pantry_evidence.package_quantity) ||
+        canonicalJson(previous.pantry_evidence.opening) !== canonicalJson(next.pantry_evidence.opening) ||
+        (canonicalJson(previous.pantry_evidence.expiration) === canonicalJson(next.pantry_evidence.expiration) &&
+            previous.pantry_evidence.expiration.basis !== "explicit") ||
+        previous.pantry_evidence.location.value === next.pantry_evidence.location.value ||
+        next.pantry_evidence.location.evidence_kind !== "corrected_explicit")
+        return authorityInvalid("projection_transition");
+    return Object.freeze({
+        kind: "inventory_location_correction",
+        batchId: ascii(source.batch_id, "batch_id"),
+        baseRevision: source.base_revision,
+        previousLastEventId: ascii(source.previous_last_event_id, "previous_last_event_id"),
+        previousLastChangedAt: timestamp(source.previous_last_changed_at, "previous_last_changed_at"),
+        previousProjectionJson,
+        nextProjectionJson,
+    });
+}
 function parseIntent(row) {
     const value = effectValue(row);
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
         return authorityInvalid("effect_input");
     }
     const kind = value.kind;
-    const intent = kind === "inventory_add" ? parseAdd(value) : parseDeduct(value);
+    if (kind === "inventory_location_correction") {
+        if (row.event_type !== "inventory_adjusted")
+            return authorityInvalid("event_type");
+        let eventPayload;
+        try {
+            eventPayload = JSON.parse(row.event_payload_json);
+            validateAndFreezeInventoryLocationCorrectionFactPayload(eventPayload);
+        }
+        catch {
+            return authorityInvalid("location_correction_fact");
+        }
+    }
+    const intent = kind === "inventory_add"
+        ? parseAdd(value)
+        : kind === "inventory_location_correction"
+            ? parseLocationCorrection(value)
+            : parseDeduct(value);
     if (row.effect_kind !== intent.kind)
         return authorityInvalid("outbox_effect_kind");
     return intent;
@@ -402,18 +504,30 @@ function writeNutritionProfile(database, intent, profile, now) {
       ) VALUES (?, 'domain/v2', 'product', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(profile.nutritionProfileId, intent.product.productId, String(profile.profileVersion), profile.sourceType, profile.sourceRef, String(profile.profileVersion), now, profile.coverageStatus, now, supersedesProfileId, profile.payloadJson);
 }
-function projectionPayload(batchId, productId, quantityMicrounits, unit) {
-    return canonicalJson({
-        authority_kind: "diet-manager/inventory-projection/v1",
-        batch_id: batchId,
-        product_id: productId,
-        quantity_microunits: quantityMicrounits,
-        unit,
-    });
+function projectionPayload(batchId, productId, quantityMicrounits, unit, pantryEvidence) {
+    if (pantryEvidence === null && quantityMicrounits === null)
+        return authorityInvalid("projection_quantity");
+    return canonicalJson(pantryEvidence === null
+        ? {
+            authority_kind: "diet-manager/inventory-projection/v1",
+            batch_id: batchId,
+            product_id: productId,
+            quantity_microunits: quantityMicrounits,
+            unit,
+        }
+        : createPantryProjectionPayload({
+            batch_id: batchId,
+            product_id: productId,
+            quantity_microunits: quantityMicrounits,
+            unit,
+            pantry_evidence: pantryEvidence,
+        }));
 }
 function transactionPayload(deltaMicrounits, quantityAfterMicrounits, unit) {
     return canonicalJson({
-        authority_kind: "diet-manager/inventory-transaction/v1",
+        authority_kind: deltaMicrounits === null
+            ? "diet-manager/inventory-transaction/v2"
+            : "diet-manager/inventory-transaction/v1",
         quantity_after_microunits: quantityAfterMicrounits,
         quantity_delta_microunits: deltaMicrounits,
         unit,
@@ -429,14 +543,17 @@ function insertTransaction(database, row, intent, productId, batchId, direction,
       ) VALUES (?, ?, ?, ?, ?, 'domain/v2', ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 'applied', 'active', ?)`)
         .run(intent.transactionId, row.event_id, productId, batchId, row.effect_id, direction, intent.reasonCode, intent.unit, row.source_message_id, row.conversation_id, row.received_at, now, transactionPayload(deltaMicrounits, quantityAfterMicrounits, intent.unit));
 }
-function writeProjection(database, batchId, productId, eventId, now, quantityMicrounits, unit, explicitExpirationAt) {
+function writeProjection(database, batchId, productId, eventId, now, quantityMicrounits, unit, explicitExpirationAt, effectiveExpirationAt, pantryEvidence) {
     const empty = quantityMicrounits === 0;
+    const unknown = quantityMicrounits === null;
+    const sealStatus = pantryEvidence?.opening?.status ?? "unknown";
+    const expiryStatus = effectiveExpirationAt === null ? "unknown" : "known";
     database
         .prepare(`INSERT INTO inventory_batch_projections(
         batch_id, last_event_id, last_changed_at, last_verified_at,
         quantity_status, seal_status, expiry_status, effective_status,
         effective_expiration_at, payload_json
-      ) VALUES (?, ?, ?, NULL, ?, 'unknown', 'unknown', ?, ?, ?)
+      ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(batch_id) DO UPDATE SET
         last_event_id = excluded.last_event_id,
         last_changed_at = excluded.last_changed_at,
@@ -444,7 +561,7 @@ function writeProjection(database, batchId, productId, eventId, now, quantityMic
         effective_status = excluded.effective_status,
         effective_expiration_at = excluded.effective_expiration_at,
         payload_json = excluded.payload_json`)
-        .run(batchId, eventId, now, empty ? "empty" : "available", empty ? "empty" : "active", explicitExpirationAt, projectionPayload(batchId, productId, quantityMicrounits, unit));
+        .run(batchId, eventId, now, unknown ? "unknown" : empty ? "empty" : "available", sealStatus, expiryStatus, empty ? "empty" : "active", effectiveExpirationAt ?? explicitExpirationAt, projectionPayload(batchId, productId, quantityMicrounits, unit, pantryEvidence));
 }
 function applyAdd(database, row, intent, now) {
     if (intent.batch.quantityUnit !== intent.unit)
@@ -456,10 +573,11 @@ function applyAdd(database, row, intent, now) {
         if (product.schema_version !== intent.product.schemaVersion ||
             product.normalized_name !== intent.product.normalizedName ||
             product.product_type !== intent.product.productType ||
-            product.brand !== null ||
+            product.brand !== intent.product.brand ||
             product.manufacturer !== null ||
             product.barcode !== null ||
-            product.sku !== null) {
+            product.sku !== null ||
+            (intent.product.payloadVersion === 2 && product.payload_json !== intent.product.payloadJson)) {
             return authorityInvalid("product_conflict");
         }
     }
@@ -468,8 +586,8 @@ function applyAdd(database, row, intent, now) {
             .prepare(`INSERT INTO products(
           product_id, schema_version, normalized_name, product_type,
           brand, manufacturer, barcode, sku, payload_json
-        ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`)
-            .run(intent.product.productId, intent.product.schemaVersion, intent.product.normalizedName, intent.product.productType, intent.product.payloadJson);
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`)
+            .run(intent.product.productId, intent.product.schemaVersion, intent.product.normalizedName, intent.product.productType, intent.product.brand, intent.product.payloadJson);
     }
     writeNutritionProfile(database, intent, intent.nutritionProfile, now);
     const existingBatch = database
@@ -484,7 +602,7 @@ function applyAdd(database, row, intent, now) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(intent.batch.batchId, intent.product.productId, row.event_id, intent.batch.schemaVersion, now, intent.batch.stockedAt, intent.batch.explicitExpirationAt, intent.batch.quantityUnit, intent.batch.payloadJson);
     insertTransaction(database, row, intent, intent.product.productId, intent.batch.batchId, "in", intent.quantityMicrounits, intent.quantityMicrounits, now);
-    writeProjection(database, intent.batch.batchId, intent.product.productId, row.event_id, now, intent.quantityMicrounits, intent.unit, intent.batch.explicitExpirationAt);
+    writeProjection(database, intent.batch.batchId, intent.product.productId, row.event_id, now, intent.quantityMicrounits, intent.unit, intent.batch.explicitExpirationAt, intent.batch.effectiveExpirationAt, intent.batch.pantryEvidence);
     return Object.freeze({
         outbox_id: row.outbox_id,
         effect_id: row.effect_id,
@@ -525,6 +643,8 @@ function applyDeduct(database, row, intent, now) {
     if (projection.product_id !== intent.productId || projection.unit !== intent.unit) {
         return authorityInvalid("projection_identity");
     }
+    if (projection.quantity_microunits === null)
+        return authorityInvalid("projection_quantity_unknown");
     if (projection.quantity_microunits < intent.quantityMicrounits) {
         return Object.freeze({
             outbox_id: row.outbox_id,
@@ -542,7 +662,7 @@ function applyDeduct(database, row, intent, now) {
         return authorityInvalid("negative_quantity");
     }
     insertTransaction(database, row, intent, intent.productId, intent.batchId, "out", -intent.quantityMicrounits, remaining, now);
-    writeProjection(database, intent.batchId, intent.productId, row.event_id, now, remaining, intent.unit, batch.explicit_expiration_at);
+    writeProjection(database, intent.batchId, intent.productId, row.event_id, now, remaining, intent.unit, batch.explicit_expiration_at, projection.effective_expiration_at ?? batch.explicit_expiration_at, projection.pantry_evidence ?? null);
     return Object.freeze({
         outbox_id: row.outbox_id,
         effect_id: row.effect_id,
@@ -552,6 +672,44 @@ function applyDeduct(database, row, intent, now) {
         transaction_id: intent.transactionId,
         quantity_microunits: remaining,
         unit: intent.unit,
+    });
+}
+function applyLocationCorrection(database, row, intent, now) {
+    const current = database.prepare(`SELECT i.*, b.product_id, b.quantity_unit, b.explicit_expiration_at
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     WHERE i.batch_id = ?`).get(intent.batchId);
+    if (!current)
+        return authorityInvalid("projection_missing");
+    if (current.last_event_id !== intent.previousLastEventId ||
+        current.last_changed_at !== intent.previousLastChangedAt ||
+        current.payload_json !== intent.previousProjectionJson)
+        return authorityInvalid("projection_compare_and_set");
+    const previous = parseProjectionPayload(JSON.parse(intent.previousProjectionJson));
+    const next = parseProjectionPayload(JSON.parse(intent.nextProjectionJson));
+    if (previous.version !== 2 || next.version !== 2 || next.pantry_evidence === null ||
+        current.product_id !== next.product_id || current.quantity_unit !== next.unit)
+        return authorityInvalid("projection_identity");
+    const effectiveExpiration = next.pantry_evidence.expiration.effective_at ??
+        next.pantry_evidence.expiration.explicit_at;
+    const sealStatus = next.pantry_evidence.opening?.status ?? "unknown";
+    const expiryStatus = effectiveExpiration === null ? "unknown" : "known";
+    database.prepare(`UPDATE inventory_batch_projections
+     SET last_event_id = ?, last_changed_at = ?, seal_status = ?, expiry_status = ?,
+         effective_expiration_at = ?, payload_json = ?
+     WHERE batch_id = ? AND last_event_id = ? AND last_changed_at = ? AND payload_json = ?`).run(row.event_id, now, sealStatus, expiryStatus, effectiveExpiration, intent.nextProjectionJson, intent.batchId, intent.previousLastEventId, intent.previousLastChangedAt, intent.previousProjectionJson);
+    const changes = database.prepare("SELECT changes() AS count").get();
+    if (changes.count !== 1)
+        return authorityInvalid("projection_compare_and_set");
+    return Object.freeze({
+        outbox_id: row.outbox_id,
+        effect_id: row.effect_id,
+        effect_state: "succeeded",
+        result_status: "applied",
+        batch_id: intent.batchId,
+        transaction_id: null,
+        quantity_microunits: next.quantity_microunits,
+        unit: next.unit,
     });
 }
 function updateOutbox(database, result, now) {
@@ -766,10 +924,13 @@ function transactionResult(row, transaction) {
         "quantity_delta_microunits",
         "unit",
     ]);
-    if (payload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
-        !Number.isSafeInteger(payload.quantity_after_microunits) ||
-        payload.quantity_after_microunits < 0 ||
-        payload.unit !== transaction.unit) {
+    const unknown = payload.authority_kind === "diet-manager/inventory-transaction/v2";
+    if (payload.unit !== transaction.unit || (unknown
+        ? payload.quantity_after_microunits !== null || payload.quantity_delta_microunits !== null
+        : payload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
+            !Number.isSafeInteger(payload.quantity_after_microunits) ||
+            payload.quantity_after_microunits < 0 ||
+            !Number.isSafeInteger(payload.quantity_delta_microunits))) {
         return authorityInvalid("transaction_payload_authority");
     }
     return Object.freeze({
@@ -779,17 +940,34 @@ function transactionResult(row, transaction) {
         result_status: "applied",
         batch_id: transaction.batch_id,
         transaction_id: transaction.transaction_id,
-        quantity_microunits: payload.quantity_after_microunits,
+        quantity_microunits: unknown ? null : payload.quantity_after_microunits,
         unit: transaction.unit,
     });
 }
 function replayResult(database, row) {
     if (row.state === "succeeded") {
+        const intent = parseIntent(row);
+        if (intent.kind === "inventory_location_correction") {
+            const projection = database.prepare("SELECT last_event_id, last_changed_at, payload_json FROM inventory_batch_projections WHERE batch_id = ?").get(intent.batchId);
+            if (!projection || projection.last_event_id !== row.event_id ||
+                projection.last_changed_at !== row.committed_at || projection.payload_json !== intent.nextProjectionJson)
+                return authorityInvalid("location_correction_replay");
+            const parsed = parseProjectionPayload(JSON.parse(intent.nextProjectionJson));
+            return Object.freeze({
+                outbox_id: row.outbox_id,
+                effect_id: row.effect_id,
+                effect_state: "succeeded",
+                result_status: "applied",
+                batch_id: intent.batchId,
+                transaction_id: null,
+                quantity_microunits: parsed.quantity_microunits,
+                unit: parsed.unit,
+            });
+        }
         const transaction = database
             .prepare("SELECT * FROM inventory_transactions WHERE transaction_id = ?")
             .get(row.effect_id);
         if (!transaction) {
-            const intent = parseIntent(row);
             const byIntent = database
                 .prepare("SELECT * FROM inventory_transactions WHERE transaction_id = ?")
                 .get(intent.transactionId);
@@ -811,6 +989,8 @@ function replayResult(database, row) {
     }
     const reason = exactJsonObject(parsed, ["code", "quantity_microunits", "unit"]);
     const intent = parseIntent(row);
+    if (intent.kind === "inventory_location_correction")
+        return authorityInvalid("skip_reason");
     if (reason.code !== "INSUFFICIENT_INVENTORY" ||
         !Number.isSafeInteger(reason.quantity_microunits) ||
         reason.quantity_microunits < 0 ||
@@ -846,12 +1026,13 @@ export function listPendingInventoryEffects(input) {
         state, attempt_count, created_at, updated_at
        FROM effect_outbox
        WHERE state IN ('pending', 'retryable_failed')
-         AND effect_kind IN ('inventory_add', 'inventory_deduct')
+          AND effect_kind IN ('inventory_add', 'inventory_deduct', 'inventory_location_correction')
        ORDER BY created_at, outbox_id
        LIMIT ?`)
         .all(fields.limit.value);
     for (const row of rows) {
-        if ((row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct") ||
+        if ((row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct" &&
+            row.effect_kind !== "inventory_location_correction") ||
             (row.state !== "pending" && row.state !== "retryable_failed") ||
             !Number.isSafeInteger(row.attempt_count) ||
             row.attempt_count < 0) {
@@ -897,7 +1078,9 @@ export function processInventoryEffect(input, options) {
         const intent = parseIntent(row);
         const result = intent.kind === "inventory_add"
             ? applyAdd(frozen.database, row, intent, frozen.now)
-            : applyDeduct(frozen.database, row, intent, frozen.now);
+            : intent.kind === "inventory_location_correction"
+                ? applyLocationCorrection(frozen.database, row, intent, frozen.now)
+                : applyDeduct(frozen.database, row, intent, frozen.now);
         injectFault(frozenOptions, "after_business_writes");
         updateOutbox(frozen.database, result, frozen.now);
         injectFault(frozenOptions, "after_outbox");

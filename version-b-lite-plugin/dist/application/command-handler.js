@@ -1,1 +1,1 @@
-export { handleCoreRequest } from "./core-runtime.js";
+export { handleCoreRequest, handleCoreRequestAsync } from "./core-runtime.js";

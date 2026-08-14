@@ -1,9 +1,11 @@
 import { classifyCompletion } from "./completion.js";
 import { resolveMealContext } from "./context.js";
 import { cloneCoreParseInput } from "./input-authority.js";
+import { resolveInventoryDirective } from "./inventory-directive.js";
 import { classifyMealLiquid, resolveWaterFrames, } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
+import { resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 const PARSER_VERSION = "diet-manager/core-parser-v1";
 const HEALTH_ACTUAL_CLAUSE = /^(?:(?:我\s*(?:需要|想要)|能\s*给我|可以\s*给我|请\s*(?:给我\s*)?|帮我\s*|给我\s*)(?:(?:做|提供|进行)\s*)?)(?:医疗\s*诊断|减重\s*建议)(?:\s*(?:或|和|与)\s*(?:医疗\s*诊断|减重\s*建议))*\s*(?:吗|么|嘛)?$/u;
@@ -12,6 +14,29 @@ const PURCHASE_WITHOUT_EXPIRY = /昨天买的鲜牛奶没有标到期日/u;
 const PURCHASED_YESTERDAY = /(昨天买的)(?=牛奶)/u;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 const MAX_CORE_OCCURRENCES = 256;
+const NUTRITION_SUPPLEMENT_TARGET = /^补充营养记录\s+(event-[0-9a-f]{32})[。.]?$/u;
+function nutritionSupplementCandidate(input) {
+    const match = NUTRITION_SUPPLEMENT_TARGET.exec(input.source_text.trim());
+    if (match === null || match[1] === undefined)
+        return null;
+    return detachedFrozen({
+        action: "correct_record",
+        operation_id: input.operation_id,
+        parser_version: PARSER_VERSION,
+        kind: "nutrition_supplement",
+        target_record_id: match[1],
+        target_date_text: null,
+        target_item_text: null,
+        source_text: input.source_text,
+        subject: {
+            kind: "self",
+            resolution_basis: "omitted_subject_default",
+            subject_entity_created: false,
+            matched_span: null,
+            rule_version: "diet-manager/subject-v1",
+        },
+    });
+}
 function classifyHealthIntent(sourceText) {
     let explanation = false;
     for (const rawClause of sourceText.split(/(?:[，,。；;！？!?\r\n]+|然后|同时)/u)) {
@@ -173,6 +198,7 @@ function mealCandidate(input, completion, occurredTime, meal, retained) {
     const purchaseReferenceDate = purchase === null
         ? null
         : shanghaiCalendarDate(input.received_at, -1);
+    const inventoryDirective = resolveInventoryDirective(input.source_text);
     const command = {
         action: "record_meal",
         operation_id: input.operation_id,
@@ -207,7 +233,8 @@ function mealCandidate(input, completion, occurredTime, meal, retained) {
                     matched_span: meal.group_amount_evidence.matched_span,
                     rule_version: meal.group_amount_evidence.rule_version,
                 } }),
-        ...(context.accepted_context === null &&
+        ...(context.scene === "unknown" &&
+            context.accepted_context === null &&
             context.expired_context_ids.length === 0 &&
             !context.inventory_read
             ? {}
@@ -220,12 +247,21 @@ function mealCandidate(input, completion, occurredTime, meal, retained) {
                     affects_ingestion_date: false,
                 } }),
         ...(liquid === null ? {} : { liquid_classification: liquid }),
+        ...(inventoryDirective === undefined ? {} : { inventory_directive: inventoryDirective }),
     };
     return detachedFrozen({ disposition: "candidate", command });
 }
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value) {
     const input = cloneCoreParseInput(value);
+    const nutritionSupplement = nutritionSupplementCandidate(input);
+    if (nutritionSupplement !== null) {
+        return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
+    }
+    const pantry = resolvePantryCommand(input);
+    if (pantry !== null) {
+        return detachedFrozen({ disposition: "candidate", command: pantry });
+    }
     const meal = resolveMealFrames(input.source_text);
     const waterResolution = resolveWaterFrames(input.source_text);
     const healthIntent = classifyHealthIntent(input.source_text);

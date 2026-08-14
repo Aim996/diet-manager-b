@@ -1,8 +1,10 @@
 import { canonicalJson } from "../authority/canonical-json.js";
+import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
 import { dietManagerActions, } from "../contracts.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
 import { assertProgressReservationFinalizerAuthority } from "./progress-reservation.js";
+import { assertAppliedInventoryLocationCorrectionAuthority } from "./inventory-location-correction-authority.js";
 import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
 import { freezeQuickPrompt, rebaseReceiptProgress, } from "../domain/receipt.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
@@ -385,6 +387,56 @@ function freezeCorrectionDailyProgress(input, envelopeId, idempotencyKey) {
         execution.input_digest !== input.inputDigest ||
         execution.status !== input.resultStatus)
         return authorityInvalid("correction_progress_execution");
+    if (input.commandType === "correct_record" &&
+        typeof execution.payload === "object" && execution.payload !== null &&
+        !Array.isArray(execution.payload) &&
+        Object.hasOwn(execution.payload, "inventory_location_correction")) {
+        const domainPayload = plainRecord(execution.payload, ["authority_kind", "inventory_location_correction"], "location_correction_payload");
+        if (domainPayload.authority_kind !== "diet-manager/domain-execution/v1") {
+            return authorityInvalid("location_correction_payload");
+        }
+        if (!Array.isArray(execution.items) || execution.items.length !== 1) {
+            return authorityInvalid("location_correction_items");
+        }
+        const eventRows = input.database.prepare(`SELECT event_id, operation_id, event_type, fact_kind, payload_json
+       FROM event_records WHERE envelope_id = ?`).all(envelopeId);
+        const event = eventRows[0];
+        if (eventRows.length !== 1 || !event || event.event_type !== "inventory_adjusted" ||
+            event.fact_kind !== "inventory")
+            return authorityInvalid("location_correction_event");
+        let fact;
+        try {
+            const parsed = JSON.parse(event.payload_json);
+            if (canonicalJson(parsed) !== event.payload_json)
+                throw new Error("canonical");
+            fact = validateAndFreezeInventoryLocationCorrectionFactPayload(parsed);
+        }
+        catch {
+            return authorityInvalid("location_correction_event");
+        }
+        if (fact.result.operation_id !== event.operation_id ||
+            canonicalJson(execution.items[0]) !== canonicalJson(fact.result) ||
+            canonicalJson(domainPayload.inventory_location_correction) !== canonicalJson({
+                batch_id: fact.batch_id,
+                previous_location: fact.previous_location,
+                current_location: fact.next_location,
+                expiration: fact.next_expiration,
+            }))
+            return authorityInvalid("location_correction_result");
+        const outboxes = input.database.prepare(`SELECT effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?`).all(envelopeId, event.operation_id);
+        const projection = input.database.prepare(`SELECT last_event_id, payload_json FROM inventory_batch_projections WHERE batch_id = ?`).get(fact.batch_id);
+        if (outboxes.length !== 1 || outboxes[0]?.effect_kind !== "inventory_location_correction" ||
+            outboxes[0]?.state !== "succeeded" || !projection || projection.last_event_id !== event.event_id ||
+            projection.payload_json !== fact.next_projection_json)
+            return authorityInvalid("location_correction_effect");
+        try {
+            assertAppliedInventoryLocationCorrectionAuthority(input.database, envelopeId, event.operation_id, event.event_id);
+        }
+        catch {
+            return authorityInvalid("location_correction_effect");
+        }
+        return input;
+    }
     const domainPayload = plainRecord(execution.payload, ["authority_kind", "daily_progress", "daily_progress_by_date"], "correction_progress_payload");
     if (domainPayload.authority_kind !== "diet-manager/domain-execution/v1") {
         return authorityInvalid("correction_progress_payload");
@@ -693,6 +745,27 @@ function assertMixedReplayRows(input, envelopeId) {
         throw new Error("IDEMPOTENCY_CONFLICT:mixed_items");
     }
 }
+function assertInventoryLocationCorrectionTerminalAuthority(input, envelopeId) {
+    if (input.commandType !== "correct_record" ||
+        typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload))
+        return;
+    const execution = input.payload;
+    if (typeof execution.payload !== "object" || execution.payload === null ||
+        Array.isArray(execution.payload) ||
+        !Object.hasOwn(execution.payload, "inventory_location_correction"))
+        return;
+    const events = input.database.prepare(`SELECT event_id, operation_id FROM event_records
+     WHERE envelope_id = ? AND event_type = 'inventory_adjusted' AND fact_kind = 'inventory'`).all(envelopeId);
+    const event = events[0];
+    if (events.length !== 1 || !event)
+        return authorityInvalid("location_correction_event");
+    try {
+        assertAppliedInventoryLocationCorrectionAuthority(input.database, envelopeId, event.operation_id, event.event_id, { requireCurrentProjection: false });
+    }
+    catch {
+        return authorityInvalid("location_correction_effect");
+    }
+}
 function assertReplay(input, envelopeId, idempotencyKey) {
     const row = readFinalization(input.database, envelopeId);
     const expected = resultFor(input, envelopeId, idempotencyKey);
@@ -736,6 +809,7 @@ export function finalizeEnvelope(input, options) {
             dataRevision: frozen.dataRevision,
         });
         if (authority.envelope_state === "finalized") {
+            assertInventoryLocationCorrectionTerminalAuthority(frozen, authority.binding.preview_id);
             const replay = assertReplay(frozen, authority.binding.preview_id, authority.idempotency_key);
             frozen.database.exec("ROLLBACK");
             transactionOpen = false;

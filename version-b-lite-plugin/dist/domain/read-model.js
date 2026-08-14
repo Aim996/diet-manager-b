@@ -3,7 +3,7 @@ export function queryDomainReadModel(database, authoritySecret, operation) {
     if (operation.kind === "query_inventory") {
         return Object.freeze({
             kind: "inventory",
-            batches: listInventoryProjection({ database }),
+            batches: listInventoryProjection({ authoritySecret, database }),
         });
     }
     if (operation.kind === "query_meals") {

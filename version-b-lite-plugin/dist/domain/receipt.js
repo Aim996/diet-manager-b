@@ -36,6 +36,43 @@ function freezeProgress(value) {
         nutrients: Object.freeze({ ...value.nutrients }),
     });
 }
+export function buildPantryPurchaseReceiptItem(input) {
+    const productId = safeText(input.product_id, "pantry_product_id", 256);
+    const batchId = safeText(input.batch_id, "pantry_batch_id", 256);
+    const name = safeText(input.name, "pantry_name", 256);
+    const stockedAt = safeText(input.stocked_at, "pantry_stocked_at", 64);
+    if (!Number.isFinite(Date.parse(stockedAt)))
+        return invalid("pantry_stocked_at");
+    const inferred = [];
+    if (input.evidence.location.evidence_kind !== "explicit")
+        inferred.push("location");
+    if (input.evidence.opening?.evidence_kind === "rule")
+        inferred.push("opening");
+    if (input.evidence.expiration.basis === "rule")
+        inferred.push("expiration");
+    return Object.freeze({
+        product_id: productId,
+        batch_id: batchId,
+        name,
+        stocked_at: stockedAt,
+        location: Object.freeze({
+            value: input.evidence.location.value,
+            evidence_kind: input.evidence.location.evidence_kind,
+        }),
+        opening: input.evidence.opening,
+        expiration: input.evidence.expiration,
+        inferred_fields: Object.freeze(inferred),
+    });
+}
+export function buildInventoryLocationCorrectionReceiptItem(input) {
+    return Object.freeze({
+        batch_id: safeText(input.batch_id, "location_correction_batch_id", 256),
+        changed_fields: Object.freeze(["location"]),
+        previous_location: Object.freeze({ ...input.previous_location }),
+        current_location: Object.freeze({ ...input.current_location }),
+        expiration: Object.freeze({ ...input.expiration }),
+    });
+}
 export function buildQuickPrompt(input) {
     const issueId = safeText(input.issue_id, "issue_id", 128);
     if (!/^issue-[a-f0-9]{32}$/.test(issueId))
@@ -50,6 +87,7 @@ export function buildQuickPrompt(input) {
         "inventory_multiple_candidates",
         "inventory_insufficient",
         "inventory_unit_incompatible",
+        "inventory_unit_conversion_unproven",
         "inventory_amount_unknown",
     ]);
     if (!allowedCodes.has(input.issue_code))

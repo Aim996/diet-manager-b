@@ -110,9 +110,9 @@
 
 - [x] Run the v1.0 focused acceptance files once.
 - [x] Run the full plugin Vitest suite once and `tsc --noEmit` once; record the two legacy expectation failures and their focused GREEN without rerunning full.
-- [ ] Run OpenClaw metadata validation without building or emitting dist.
-- [ ] Record exact commands/counts/commit SHA, unresolved DEBT/RISK, and the nonclaims for full 0.1.
-- [ ] Commit the closure documents without modifying source after the final gate.
+- [x] Run OpenClaw metadata validation after the single authorized emit build.
+- [x] Record exact commands/counts, unresolved DEBT/RISK, and the nonclaims for full 0.1.
+- [ ] Commit the closure documents and generated dist without modifying source after the final gate.
 
 ### Task 7: Connect one real allowlisted authoritative nutrition backend
 
@@ -158,3 +158,16 @@
 - [x] Restore only into the same initialized private root, preserve its private authority secret, and roll back on validation failure.
 - [x] Add admin CLI entry points without exposing them as model actions.
 - [x] Run one end-to-end backup/restore smoke and `tsc --noEmit`; do not emit dist.
+
+### Task 10: Build and local OpenClaw installation handoff
+
+**Files:**
+- Create: `version-b-lite-plugin/scripts/install-local.ps1`
+- Modify: `version-b-lite-plugin/package.json`
+- Modify: `docs/work-items/PRODUCT-v1.0-development-log.md`
+- Modify: `docs/work-items/PRODUCT-v1.0-report.md`
+
+- [x] Add a one-command local developer install using OpenClaw's documented `plugins install --link` flow.
+- [x] Keep validation separate from installation through `-ValidateOnly`; never overwrite an existing install with `--force`.
+- [x] Run the sole emit build, OpenClaw metadata check, and plugin validation.
+- [x] Record the resulting install and user-test commands without touching the user's private data root.

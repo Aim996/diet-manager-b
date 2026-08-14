@@ -4,16 +4,12 @@ import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/w
 import { validateAndFreezeMealFactPayload, validateAndFreezeOccurredTimeEvidence, } from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { assertAuthenticatedPantryPurchaseRoot, parseBatchPayloadJson, parseProductPayloadJson, parseProjectionPayloadJson, parsePurchaseFactPayloadJson, } from "../storage/inventory-repository.js";
+import { assertAppliedInventoryLocationCorrectionAuthority, assertAuthenticatedInventoryLocationCorrectionFactAuthority, } from "./inventory-location-correction-authority.js";
+import { assertAuthenticatedPurchaseEventAuthority } from "./purchase-event-authority.js";
 const QUERY_FIELDS = ["batchId", "database"];
-const LIST_QUERY_FIELDS = ["database"];
+const LIST_QUERY_FIELDS = ["authoritySecret", "database"];
 const DATE_QUERY_FIELDS = ["authoritySecret", "database", "date", "timezone"];
-const PROJECTION_PAYLOAD_FIELDS = [
-    "authority_kind",
-    "batch_id",
-    "product_id",
-    "quantity_microunits",
-    "unit",
-];
 function invalid(reason) {
     throw new Error(`INVENTORY_PROJECTION_INVALID:${reason}`);
 }
@@ -38,40 +34,31 @@ function exactDataProperties(value, fields) {
         return invalid("prototype");
     return descriptors;
 }
-function ordinaryJsonObject(value, fields) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        return invalid("payload_shape");
-    }
-    const record = value;
-    if (Object.keys(record).sort().join("\u0000") !== [...fields].sort().join("\u0000")) {
-        return invalid("payload_shape");
-    }
-    return record;
-}
 function parseProjection(row) {
-    let parsed;
+    let payload;
     try {
-        parsed = JSON.parse(row.payload_json);
+        payload = parseProjectionPayloadJson(row.payload_json);
     }
     catch {
         return invalid("payload_json");
     }
-    if (canonicalJson(parsed) !== row.payload_json)
-        return invalid("payload_canonical");
-    const payload = ordinaryJsonObject(parsed, PROJECTION_PAYLOAD_FIELDS);
-    if (payload.authority_kind !== "diet-manager/inventory-projection/v1" ||
-        payload.batch_id !== row.batch_id ||
-        typeof payload.product_id !== "string" ||
-        typeof payload.unit !== "string" ||
-        !Number.isSafeInteger(payload.quantity_microunits) ||
-        payload.quantity_microunits < 0) {
+    if (payload.batch_id !== row.batch_id ||
+        typeof payload.product_id !== "string" || typeof payload.unit !== "string") {
         return invalid("payload_authority");
     }
     const quantityMicrounits = payload.quantity_microunits;
     const empty = quantityMicrounits === 0;
-    if (row.quantity_status !== (empty ? "empty" : "available") ||
+    const unknown = quantityMicrounits === null;
+    if (row.quantity_status !== (unknown ? "unknown" : empty ? "empty" : "available") ||
         row.effective_status !== (empty ? "empty" : "active")) {
         return invalid("status");
+    }
+    if (payload.pantry_evidence !== null) {
+        const expectedSeal = payload.pantry_evidence.opening?.status ?? "unknown";
+        const expectedExpiry = payload.pantry_evidence.expiration.effective_at === null ? "unknown" : "known";
+        if (row.seal_status !== expectedSeal || row.expiry_status !== expectedExpiry ||
+            row.effective_expiration_at !== (payload.pantry_evidence.expiration.effective_at ?? payload.pantry_evidence.expiration.explicit_at))
+            return invalid("pantry_status");
     }
     return Object.freeze({
         batch_id: row.batch_id,
@@ -82,6 +69,10 @@ function parseProjection(row) {
         effective_status: row.effective_status,
         last_event_id: row.last_event_id,
         last_changed_at: row.last_changed_at,
+        ...(payload.pantry_evidence === null ? {} : {
+            effective_expiration_at: row.effective_expiration_at,
+            pantry_evidence: payload.pantry_evidence,
+        }),
     });
 }
 export function getInventoryProjection(input) {
@@ -231,8 +222,11 @@ export function listMealProjection(input) {
                 if (binding.preview_id !== row.envelope_id ||
                     binding.input_digest !== row.input_digest)
                     return invalid("meal_event_identity");
-                if (previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2") {
-                    const material = previewAuthority.meal_fact_preview_material;
+                if (previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2" ||
+                    previewAuthority.preview_authority_kind === "diet-manager/server-preview/v4") {
+                    const material = previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2"
+                        ? previewAuthority.meal_fact_preview_material
+                        : previewAuthority.purchase_fact_preview_material;
                     if (material === undefined || material.input_digest !== row.input_digest) {
                         return invalid("meal_event_identity");
                     }
@@ -286,7 +280,8 @@ export function listMealProjection(input) {
             }
             const latestCorrection = query.database.prepare(`SELECT c.base_revision, c.payload_json
          FROM correction_events c
-         JOIN event_records e ON e.operation_id = c.request_id AND e.event_type = 'diet_correction'
+         JOIN event_records e ON e.operation_id = c.request_id
+           AND e.event_type IN ('diet_correction','nutrition_supplemented')
          JOIN effect_bundle_commits b
            ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
          WHERE c.target_event_id = ? AND (
@@ -487,12 +482,91 @@ export function summarizeDailyProgress(input) {
         });
     });
 }
+function validateLocationCorrectionChain(database, authoritySecret, row, initialEvidence, projection) {
+    const corrections = database.prepare(`SELECT e.event_id, e.envelope_id, e.operation_id, e.schema_version,
+            e.event_type, e.fact_kind, e.source_message_id, e.conversation_id,
+            e.received_at, e.committed_at, e.occurred_at_text, e.meal_id, e.meal_slot,
+            e.payload_json, c.payload_json AS preview_payload_json,
+            c.input_digest AS envelope_input_digest,
+             o.effect_kind, o.state AS outbox_state,
+             b.effect_state, b.result_status, b.completed_at
+     FROM event_records e
+     JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+     LEFT JOIN effect_outbox o ON o.envelope_id = e.envelope_id AND o.operation_id = e.operation_id
+     LEFT JOIN effect_bundle_commits b ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+     WHERE e.event_type = 'inventory_adjusted' AND e.fact_kind = 'inventory'
+     ORDER BY e.committed_at, e.event_id`).all();
+    const authenticatedCorrections = corrections.map((correction) => {
+        try {
+            return Object.freeze({
+                correction,
+                payload: assertAuthenticatedInventoryLocationCorrectionFactAuthority(database, authoritySecret, correction.envelope_id, correction.operation_id, correction.event_id),
+            });
+        }
+        catch {
+            return invalid("location_correction_event_identity");
+        }
+    }).sort((left, right) => left.payload.base_revision !== right.payload.base_revision
+        ? left.payload.base_revision - right.payload.base_revision
+        : left.correction.event_id < right.correction.event_id
+            ? -1
+            : left.correction.event_id > right.correction.event_id
+                ? 1
+                : 0);
+    let evidence = initialEvidence;
+    let revision = 1;
+    let matched = 0;
+    for (const { correction, payload } of authenticatedCorrections) {
+        try {
+            assertAppliedInventoryLocationCorrectionAuthority(database, correction.envelope_id, correction.operation_id, correction.event_id, { requireCurrentProjection: false });
+        }
+        catch {
+            return invalid("location_correction_effect");
+        }
+        if (payload.batch_id !== row.batch_id)
+            continue;
+        const previousProjection = parseProjectionPayloadJson(payload.previous_projection_json);
+        const nextProjection = parseProjectionPayloadJson(payload.next_projection_json);
+        const nextEvidence = JSON.parse(canonicalJson(evidence));
+        nextEvidence.location = payload.next_location;
+        nextEvidence.expiration = payload.next_expiration;
+        const previousEvent = database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?").get(payload.previous_last_event_id);
+        if (payload.base_revision !== revision || !previousEvent ||
+            previousEvent.committed_at !== payload.previous_last_changed_at ||
+            previousProjection.version !== 2 || nextProjection.version !== 2 ||
+            previousProjection.pantry_evidence === null || nextProjection.pantry_evidence === null ||
+            previousProjection.batch_id !== row.batch_id || nextProjection.batch_id !== row.batch_id ||
+            previousProjection.product_id !== row.product_id || nextProjection.product_id !== row.product_id ||
+            previousProjection.unit !== nextProjection.unit ||
+            previousProjection.quantity_microunits !== nextProjection.quantity_microunits ||
+            canonicalJson(previousProjection.pantry_evidence) !== canonicalJson(evidence) ||
+            canonicalJson(nextProjection.pantry_evidence) !== canonicalJson(nextEvidence) ||
+            canonicalJson(payload.previous_location) !== canonicalJson(evidence.location) ||
+            canonicalJson(payload.previous_expiration) !== canonicalJson(evidence.expiration) ||
+            correction.effect_kind !== "inventory_location_correction" ||
+            correction.outbox_state !== "succeeded" || correction.effect_state !== "succeeded" ||
+            correction.result_status !== "applied" || correction.completed_at !== correction.committed_at)
+            return invalid("location_correction_chain");
+        evidence = Object.freeze(nextEvidence);
+        revision += 1;
+        matched += 1;
+    }
+    if (matched === 0)
+        return invalid("purchase_event_evidence");
+    const currentEvent = database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?").get(row.last_event_id);
+    if (!currentEvent || currentEvent.committed_at !== row.last_changed_at ||
+        canonicalJson(projection.pantry_evidence) !== canonicalJson(evidence))
+        return invalid("location_correction_projection");
+}
 export function listInventoryProjection(input) {
     const fields = exactDataProperties(input, LIST_QUERY_FIELDS);
     if (typeof fields.database.value !== "object" || fields.database.value === null) {
         return invalid("database");
     }
+    if (!(fields.authoritySecret.value instanceof Uint8Array))
+        return invalid("authority_secret");
     const database = fields.database.value;
+    const authoritySecret = Uint8Array.from(fields.authoritySecret.value);
     let transactionOpen = false;
     try {
         database.exec("BEGIN DEFERRED");
@@ -503,17 +577,70 @@ export function listInventoryProjection(input) {
           p.product_id, p.normalized_name, p.product_type,
           p.payload_json AS product_payload_json,
           b.payload_json AS batch_payload_json,
+          b.stock_event_id,
+          e.event_type AS stock_event_type,
+          e.fact_kind AS stock_fact_kind,
+          e.payload_json AS stock_event_payload_json,
+          e.envelope_id AS stock_envelope_id,
+          e.operation_id AS stock_operation_id,
+          e.schema_version AS stock_schema_version,
+          e.source_message_id AS stock_source_message_id,
+          e.conversation_id AS stock_conversation_id,
+          e.received_at AS stock_received_at,
+          e.committed_at AS stock_committed_at,
+          e.occurred_at_text AS stock_occurred_at_text,
+          c.payload_json AS preview_payload_json,
+          c.input_digest AS envelope_input_digest,
           i.*
          FROM inventory_batch_projections i
          JOIN inventory_batches b ON b.batch_id = i.batch_id
-         JOIN products p ON p.product_id = b.product_id`)
+         JOIN products p ON p.product_id = b.product_id
+         JOIN event_records e ON e.event_id = b.stock_event_id
+         JOIN command_envelopes c ON c.envelope_id = e.envelope_id`)
             .all();
         const items = rows.map((row) => {
-            assertCanonicalObject(row.product_payload_json, "product_payload");
-            assertCanonicalObject(row.batch_payload_json, "batch_payload");
+            let productPayload;
+            let batchPayload;
+            let purchaseFactPayload;
+            try {
+                productPayload = parseProductPayloadJson(row.product_payload_json);
+                batchPayload = parseBatchPayloadJson(row.batch_payload_json);
+                purchaseFactPayload = parsePurchaseFactPayloadJson(row.stock_event_payload_json);
+            }
+            catch {
+                return invalid("pantry_payload");
+            }
             const projection = parseProjection(row);
             if (projection.product_id !== row.product_id)
                 return invalid("product_identity");
+            if (productPayload.version !== batchPayload.version ||
+                productPayload.version !== (projection.pantry_evidence === undefined ? 1 : 2) ||
+                productPayload.version !== purchaseFactPayload.version ||
+                row.stock_event_type !== "inventory_stock" || row.stock_fact_kind !== "inventory")
+                return invalid("pantry_payload_version");
+            if (productPayload.version === 2) {
+                if (productPayload.identity === null || batchPayload.pantry_evidence === null ||
+                    purchaseFactPayload.pantry_evidence === null ||
+                    canonicalJson(productPayload.identity) !== canonicalJson(batchPayload.pantry_evidence.product_identity) ||
+                    canonicalJson(batchPayload.pantry_evidence) !== canonicalJson(purchaseFactPayload.pantry_evidence))
+                    return invalid("purchase_event_evidence");
+                try {
+                    const authenticated = assertAuthenticatedPurchaseEventAuthority(database, authoritySecret, row.stock_event_id);
+                    if (authenticated.envelope_id !== row.stock_envelope_id ||
+                        authenticated.operation_id !== row.stock_operation_id ||
+                        authenticated.payload_json !== row.stock_event_payload_json)
+                        return invalid("purchase_event_identity");
+                    assertAuthenticatedPantryPurchaseRoot(database, authoritySecret, row.batch_id);
+                }
+                catch (error) {
+                    if (error instanceof Error && error.message.startsWith("INVENTORY_PROJECTION_INVALID:"))
+                        throw error;
+                    return invalid("purchase_event_identity");
+                }
+                if (canonicalJson(batchPayload.pantry_evidence) !== canonicalJson(projection.pantry_evidence)) {
+                    validateLocationCorrectionChain(database, authoritySecret, row, batchPayload.pantry_evidence, projection);
+                }
+            }
             return Object.freeze({
                 ...projection,
                 normalized_name: row.normalized_name,

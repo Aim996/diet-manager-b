@@ -3,6 +3,8 @@ import { dietManagerActions, } from "../contracts.js";
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import { parseMealFactPreviewMaterial, } from "../authority/meal-fact-identity.js";
 import { parseWaterFactPreviewMaterial, } from "../authority/water-fact-identity.js";
+import { parsePurchaseFactPreviewMaterial, } from "../authority/purchase-fact-identity.js";
+import { parseInventoryAdjustmentFactPreviewMaterial, } from "../authority/inventory-adjustment-fact-identity.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { freezePreviewBinding, issuePreviewToken, verifyPreviewToken, } from "./token.js";
 const CREATE_FIELDS = [
@@ -115,6 +117,8 @@ function freezeCreateInput(value) {
     const previewHash = canonicalSha256(previewMaterial);
     let previewMaterialV2;
     let previewMaterialV3;
+    let previewMaterialV4;
+    let previewMaterialV5;
     if (typeof previewMaterial === "object" && previewMaterial !== null &&
         !Array.isArray(previewMaterial) &&
         previewMaterial.authority_kind ===
@@ -128,6 +132,18 @@ function freezeCreateInput(value) {
         previewMaterial.authority_kind === "diet-manager/domain-preview/v3") {
         previewMaterialV3 = parseWaterFactPreviewMaterial(previewMaterial);
         if (previewMaterialV3.input_digest !== inputDigest)
+            return requestInvalid("preview_material_input_digest");
+    }
+    if (typeof previewMaterial === "object" && previewMaterial !== null && !Array.isArray(previewMaterial) &&
+        previewMaterial.authority_kind === "diet-manager/domain-preview/v4") {
+        previewMaterialV4 = parsePurchaseFactPreviewMaterial(previewMaterial);
+        if (previewMaterialV4.input_digest !== inputDigest)
+            return requestInvalid("preview_material_input_digest");
+    }
+    if (typeof previewMaterial === "object" && previewMaterial !== null && !Array.isArray(previewMaterial) &&
+        previewMaterial.authority_kind === "diet-manager/domain-preview/v5") {
+        previewMaterialV5 = parseInventoryAdjustmentFactPreviewMaterial(previewMaterial);
+        if (previewMaterialV5.input_digest !== inputDigest)
             return requestInvalid("preview_material_input_digest");
     }
     return Object.freeze({
@@ -144,6 +160,8 @@ function freezeCreateInput(value) {
         previewHash,
         ...(previewMaterialV2 === undefined ? {} : { previewMaterialV2 }),
         ...(previewMaterialV3 === undefined ? {} : { previewMaterialV3 }),
+        ...(previewMaterialV4 === undefined ? {} : { previewMaterialV4 }),
+        ...(previewMaterialV5 === undefined ? {} : { previewMaterialV5 }),
         now: isoTimestamp(fields.now.value),
     });
 }
@@ -174,7 +192,24 @@ function freezeReuseInput(value) {
         previewHash: canonicalSha256(fields.previewMaterial.value),
     });
 }
-function authorityPayload(binding, authoritySecret, material, materialV3) {
+function authorityPayload(binding, authoritySecret, material, materialV3, materialV4, materialV5) {
+    if (materialV5 !== undefined)
+        return canonicalJson({
+            authority_kind: "diet-manager/server-preview/v5",
+            binding,
+            input_digest: materialV5.input_digest,
+            inventory_adjustment_fact_identities: materialV5.inventory_adjustment_fact_identities,
+            fact_identity_mac: inventoryAdjustmentFactIdentityMac(binding, materialV5, authoritySecret),
+        });
+    if (materialV4 !== undefined)
+        return canonicalJson({
+            authority_kind: "diet-manager/server-preview/v4", binding,
+            committed_at_base: materialV4.committed_at_base,
+            input_digest: materialV4.input_digest,
+            meal_fact_identities: materialV4.meal_fact_identities,
+            purchase_fact_identities: materialV4.purchase_fact_identities,
+            fact_identity_mac: purchaseFactIdentityMac(binding, materialV4, authoritySecret),
+        });
     if (materialV3 !== undefined)
         return canonicalJson({
             authority_kind: "diet-manager/server-preview/v3", binding, input_digest: materialV3.input_digest,
@@ -193,6 +228,31 @@ function authorityPayload(binding, authoritySecret, material, materialV3) {
             meal_fact_identities: material.meal_fact_identities,
             meal_fact_identity_mac: mealFactIdentityMac(binding, material, authoritySecret),
         });
+}
+function inventoryAdjustmentFactIdentityMac(binding, material, authoritySecret) {
+    return createHmac("sha256", secret(authoritySecret))
+        .update("diet-manager/fact-preview-authority/v5\n", "ascii")
+        .update(canonicalJson({
+        authority_kind: "diet-manager/server-preview/v5",
+        binding,
+        input_digest: material.input_digest,
+        inventory_adjustment_fact_identities: material.inventory_adjustment_fact_identities,
+    }), "utf8")
+        .digest("hex")
+        .toUpperCase();
+}
+function purchaseFactIdentityMac(binding, material, authoritySecret) {
+    return createHmac("sha256", secret(authoritySecret))
+        .update("diet-manager/fact-preview-authority/v4\n", "ascii")
+        .update(canonicalJson({
+        authority_kind: "diet-manager/server-preview/v4",
+        binding,
+        committed_at_base: material.committed_at_base,
+        input_digest: material.input_digest,
+        meal_fact_identities: material.meal_fact_identities,
+        purchase_fact_identities: material.purchase_fact_identities,
+    }), "utf8")
+        .digest("hex").toUpperCase();
 }
 function waterFactIdentityMac(binding, material, authoritySecret) {
     return createHmac("sha256", secret(authoritySecret))
@@ -236,11 +296,60 @@ function storedPreviewAuthority(payloadJson, authoritySecret) {
             "authority_kind\u0000binding\u0000input_digest\u0000meal_fact_identities\u0000meal_fact_identity_mac";
     const v3 = candidate.authority_kind === "diet-manager/server-preview/v3" && keys ===
         "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000water_fact_identities";
-    if (!v1 && !v2 && !v3) {
+    const v4 = candidate.authority_kind === "diet-manager/server-preview/v4" && keys ===
+        "authority_kind\u0000binding\u0000committed_at_base\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000purchase_fact_identities";
+    const v5 = candidate.authority_kind === "diet-manager/server-preview/v5" && keys ===
+        "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000inventory_adjustment_fact_identities";
+    if (!v1 && !v2 && !v3 && !v4 && !v5) {
         return authorityInvalid("binding");
     }
     try {
         const binding = freezePreviewBinding(candidate.binding);
+        if (v5) {
+            const material = parseInventoryAdjustmentFactPreviewMaterial({
+                authority_kind: "diet-manager/domain-preview/v5",
+                input_digest: candidate.input_digest,
+                inventory_adjustment_fact_identities: candidate.inventory_adjustment_fact_identities,
+            });
+            if (binding.input_digest !== material.input_digest ||
+                binding.preview_hash !== canonicalSha256(material) ||
+                typeof candidate.fact_identity_mac !== "string" ||
+                !/^[A-F0-9]{64}$/.test(candidate.fact_identity_mac))
+                return authorityInvalid("fact_identity_mac");
+            const supplied = Buffer.from(candidate.fact_identity_mac, "hex");
+            const expected = Buffer.from(inventoryAdjustmentFactIdentityMac(binding, material, authoritySecret), "hex");
+            if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+                return authorityInvalid("fact_identity_mac");
+            }
+            return Object.freeze({
+                binding,
+                preview_authority_kind: "diet-manager/server-preview/v5",
+                inventory_adjustment_fact_preview_material: material,
+            });
+        }
+        if (v4) {
+            const material = parsePurchaseFactPreviewMaterial({
+                authority_kind: "diet-manager/domain-preview/v4",
+                committed_at_base: candidate.committed_at_base,
+                input_digest: candidate.input_digest,
+                meal_fact_identities: candidate.meal_fact_identities,
+                purchase_fact_identities: candidate.purchase_fact_identities,
+            });
+            if (binding.input_digest !== material.input_digest || binding.preview_hash !== canonicalSha256(material) ||
+                typeof candidate.fact_identity_mac !== "string" || !/^[A-F0-9]{64}$/.test(candidate.fact_identity_mac)) {
+                return authorityInvalid("fact_identity_mac");
+            }
+            const supplied = Buffer.from(candidate.fact_identity_mac, "hex");
+            const expected = Buffer.from(purchaseFactIdentityMac(binding, material, authoritySecret), "hex");
+            if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+                return authorityInvalid("fact_identity_mac");
+            }
+            return Object.freeze({
+                binding,
+                preview_authority_kind: "diet-manager/server-preview/v4",
+                purchase_fact_preview_material: material,
+            });
+        }
         if (v3) {
             const material = parseWaterFactPreviewMaterial({ authority_kind: "diet-manager/domain-preview/v3",
                 input_digest: candidate.input_digest, meal_fact_identities: candidate.meal_fact_identities,
@@ -455,6 +564,14 @@ function assertRepositoryAuthorityRow(row, authoritySecret, expectedBinding) {
         ...(previewAuthority.water_fact_preview_material === undefined
             ? {}
             : { water_fact_preview_material: previewAuthority.water_fact_preview_material }),
+        ...(previewAuthority.purchase_fact_preview_material === undefined
+            ? {}
+            : { purchase_fact_preview_material: previewAuthority.purchase_fact_preview_material }),
+        ...(previewAuthority.inventory_adjustment_fact_preview_material === undefined
+            ? {}
+            : {
+                inventory_adjustment_fact_preview_material: previewAuthority.inventory_adjustment_fact_preview_material,
+            }),
         envelope_state: previewReady
             ? "received"
             : finalized
@@ -571,7 +688,7 @@ export function createServerPreview(input, fault) {
           envelope_id, idempotency_key, input_digest, source_message_id,
           conversation_id, state, result_status, received_at, committed_at, payload_json
         ) VALUES (?, ?, ?, ?, ?, 'received', 'preview_ready', ?, NULL, ?)`)
-            .run(candidateBinding.preview_id, frozen.idempotencyKey, frozen.inputDigest, frozen.sourceMessageId, frozen.conversationId, frozen.now, authorityPayload(candidateBinding, frozen.secret, frozen.previewMaterialV2, frozen.previewMaterialV3));
+            .run(candidateBinding.preview_id, frozen.idempotencyKey, frozen.inputDigest, frozen.sourceMessageId, frozen.conversationId, frozen.now, authorityPayload(candidateBinding, frozen.secret, frozen.previewMaterialV2, frozen.previewMaterialV3, frozen.previewMaterialV4, frozen.previewMaterialV5));
         if (fault === "after_envelope") {
             throw new Error("PREVIEW_STORE_FAILED:after_envelope");
         }
@@ -660,6 +777,14 @@ export function authorizeRepositoryPreview(input) {
         ...(authority.water_fact_preview_material === undefined
             ? {}
             : { water_fact_preview_material: authority.water_fact_preview_material }),
+        ...(authority.purchase_fact_preview_material === undefined
+            ? {}
+            : { purchase_fact_preview_material: authority.purchase_fact_preview_material }),
+        ...(authority.inventory_adjustment_fact_preview_material === undefined
+            ? {}
+            : {
+                inventory_adjustment_fact_preview_material: authority.inventory_adjustment_fact_preview_material,
+            }),
         envelope_state: authority.envelope_state,
         result_status: authority.result_status,
     });
