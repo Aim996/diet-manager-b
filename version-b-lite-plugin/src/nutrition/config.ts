@@ -102,20 +102,7 @@ export function cloneNutritionRuntimeConfig(value: unknown): Readonly<NutritionR
     return cloneNutritionRuntimeConfig({
       policy_version: DEFAULT_POLICY_VERSION,
       resolution_deadline_ms: DEFAULT_DEADLINE_MS,
-      sources: [
-        {
-          source_id: "local.versioned_common_dish_template",
-          enabled: true,
-          backend_id: "diet-manager-common-dish-template",
-          backend_version: "2026-08-14.1",
-        },
-        {
-          source_id: "local.generic_estimate",
-          enabled: true,
-          backend_id: "diet-manager-builtin-nutrition",
-          backend_version: "2026-08-14.1",
-        },
-      ],
+      sources: [],
     });
   }
   if (isProxy(value)) return invalid("proxy");

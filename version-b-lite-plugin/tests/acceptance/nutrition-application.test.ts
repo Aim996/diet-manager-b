@@ -223,7 +223,7 @@ it("returns persisted nutrition evidence through the real asynchronous meal path
   }
 });
 
-it("uses the versioned offline fallback for explicit core amounts", async () => {
+it("stores unknown nutrition when no allowlisted source is configured", async () => {
   const root = mkdtempSync(join(tmpdir(), `diet-manager-nutrition-default-${randomUUID()}-`));
   const runtime = createCoreRuntime({
     officialDataRoot: root,
@@ -244,12 +244,12 @@ it("uses the versioned offline fallback for explicit core amounts", async () => 
     expect(outcome).toMatchObject({
       nutrition_items: [{
         name: "milk",
-        adopted_amount: "250",
-        adopted_unit: "ml",
+        adopted_amount: null,
+        adopted_unit: null,
         amount_range: null,
-        quantity_evidence: "explicit",
-        source_label: "field_inference",
-        coverage_status: "partial",
+        quantity_evidence: "unknown",
+        source_label: "unknown",
+        coverage_status: "unknown",
       }],
     });
     const stored = openDietDatabase({ privateRuntimeRoot: root });
@@ -257,10 +257,10 @@ it("uses the versioned offline fallback for explicit core amounts", async () => 
       const row = stored.database.prepare(
         "SELECT source_ref, payload_json FROM nutrition_snapshots WHERE schema_version = 'domain/v2'",
       ).get() as { source_ref: string; payload_json: string };
-      expect(row.source_ref).toBe("diet-manager/builtin-common-food/milk/v1");
+      expect(row.source_ref).toBe("unknown");
       expect(JSON.parse(row.payload_json)).toMatchObject({
-        nutrients: { energy_kcal_milli: 160_000, protein_mg: 8_000 },
-        source_nutrients: { energy_kcal_milli: 64_000, protein_mg: 3_200 },
+        nutrients: { energy_kcal_milli: null, protein_mg: null },
+        source_nutrients: { energy_kcal_milli: null, protein_mg: null },
       });
     } finally {
       stored.close();

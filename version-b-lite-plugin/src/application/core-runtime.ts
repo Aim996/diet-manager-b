@@ -63,7 +63,6 @@ import {
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
-import { createBuiltinNutritionAdapters } from "../nutrition/builtin.js";
 import { resolveNutrition } from "../nutrition/source-client.js";
 import {
   claimNutritionResolution,
@@ -530,7 +529,7 @@ function exactOptions(value: unknown): CreateCoreRuntimeOptions {
       typeof (nutritionConfig as NutritionRuntimeConfig).source_config_digest !== "string" ||
       !/^[A-F0-9]{64}$/u.test((nutritionConfig as NutritionRuntimeConfig).source_config_digest) ||
       !Array.isArray((nutritionConfig as NutritionRuntimeConfig).sources)) return runtimeInvalid("nutrition_config");
-  const adaptersValue = descriptors.nutritionAdapters?.value ?? createBuiltinNutritionAdapters();
+  const adaptersValue = descriptors.nutritionAdapters?.value ?? Object.freeze([]);
   if (typeof adaptersValue !== "object" || adaptersValue === null || isProxy(adaptersValue) || !Array.isArray(adaptersValue) ||
       adaptersValue.some((adapter) => typeof adapter !== "object" || adapter === null || isProxy(adapter) ||
         typeof (adapter as NutritionSourceAdapter).describe !== "function" ||
