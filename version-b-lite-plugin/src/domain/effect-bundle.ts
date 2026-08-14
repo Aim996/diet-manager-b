@@ -614,7 +614,7 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
     batch: Object.freeze({
       batch_id: operation.batch_id,
       schema_version: "domain/v2",
-      stocked_at: input.receivedAt,
+      stocked_at: new Date(input.receivedAt).toISOString(),
       explicit_expiration_at: pantry?.explicit_expiration_at ?? null,
       quantity_unit: operation.amount.unit,
       payload: Object.freeze({
@@ -1267,14 +1267,14 @@ export function prepareMealInventoryPlans(
       return null;
     }
     const read = listPantryAllocationCandidates(database, item.normalized_name, operation.occurred_at);
-    if (read === null) return null;
+    if (read === null && operation.inventory_policy === undefined) return null;
     return resolveInventoryAllocation({
       location: operation.location,
       explicit_skip: false,
       requested_microunits: item.amount.inventory_deduction_microunits,
       unit: item.amount.unit,
       specified_batch_id: null,
-      candidates: read.candidates,
+      candidates: read?.candidates ?? Object.freeze([]),
     });
   }));
 }

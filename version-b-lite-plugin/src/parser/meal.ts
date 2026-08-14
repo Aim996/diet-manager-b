@@ -19,7 +19,7 @@ interface Lexeme {
   readonly allowed_next: RegExp;
 }
 
-const ITEM_PREVIOUS = /[吃喝了过的个片瓶碗块盘、和与\s0-9lL]/u;
+const ITEM_PREVIOUS = /[吃喝了过的个片瓶盒碗块盘、和与\s0-9lL]/u;
 const ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不]/u;
 const DRINK_ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不时]/u;
 
@@ -135,8 +135,10 @@ function amountForOccurrence(
   item: Lexeme,
   relativePosition: number,
 ): Readonly<OccurrenceAmount> {
-  const before = frame.object_span.raw.slice(0, relativePosition);
-  const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|碗|块|盘|ml|mL|ML)\s*$/u.exec(before);
+  const before = frame.object_span.raw
+    .slice(0, relativePosition)
+    .replace(/(?:这个|这瓶|这种)\s*$/u, "");
+  const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|ml|mL|ML)\s*$/u.exec(before);
   if (match !== null) {
     const quantityText = match[1] ?? "";
     const rawUnit = match[2] ?? "";
@@ -147,7 +149,7 @@ function amountForOccurrence(
       banana: frozenRecord({ 个: "piece" }),
       chicken: frozenRecord({ 块: "piece" }),
       bread: frozenRecord({ 片: "slice" }),
-      milk: frozenRecord({ 瓶: "bottle", ml: "ml", mL: "ml", ML: "ml" }),
+      milk: frozenRecord({ 瓶: "bottle", 盒: "carton", ml: "ml", mL: "ml", ML: "ml" }),
       rice: frozenRecord({ 碗: "bowl" }),
       fried_rice: frozenRecord({ 盘: "plate" }),
       soup: frozenRecord({ ml: "ml", mL: "ml", ML: "ml" }),

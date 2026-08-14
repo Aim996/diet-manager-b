@@ -1084,7 +1084,7 @@ Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
     }
   });
 
-  it("does not initialize storage for the not-yet-connected inventory candidate", () => {
+  it("connects the legacy inventory candidate without expanding the public outcome", () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-runtime-${randomUUID()}-`));
     try {
       const runtime = createCoreRuntime({
@@ -1092,17 +1092,24 @@ Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
         now: () => "2026-08-11T00:30:01.000Z",
       });
       try {
-        expect(handleCoreRequest(
+        const outcome = handleCoreRequest(
           runtime,
           applicationRequest("CASE-PURCHASE-004", "add_inventory"),
-        )).toEqual({
+        );
+        expect(outcome).toMatchObject({
           action: "add_inventory",
-          status: "failed",
-          committed: false,
+          status: "committed",
+          committed: true,
           operation_id: "operation-case-purchase-004",
-          error_code: "ACTION_NOT_IMPLEMENTED",
+          record_id: expect.stringMatching(/^event-[a-f0-9]{32}$/u),
         });
-        expect(readdirSync(root)).toEqual([]);
+        expect(outcome).not.toHaveProperty("record_ids");
+        expect(readdirSync(root).sort()).toEqual([
+          APPLICATION_SECRET_FILENAME,
+          "diet-manager-b.sqlite3",
+          "diet-manager-b.sqlite3-shm",
+          "diet-manager-b.sqlite3-wal",
+        ].sort());
       } finally {
         runtime.close();
       }

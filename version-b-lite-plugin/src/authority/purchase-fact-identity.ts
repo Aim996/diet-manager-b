@@ -133,7 +133,8 @@ export function parsePurchaseFactPreviewMaterial(value: unknown): PurchaseFactPr
     record.authority_kind !== "diet-manager/domain-preview/v4" ||
     typeof record.input_digest !== "string" || !DIGEST.test(record.input_digest) ||
     !Array.isArray(record.meal_fact_identities) || record.meal_fact_identities.length > 1 ||
-    !Array.isArray(record.purchase_fact_identities) || record.purchase_fact_identities.length !== 1
+    !Array.isArray(record.purchase_fact_identities) || record.purchase_fact_identities.length === 0 ||
+    record.purchase_fact_identities.length > 64
   ) return invalid("material");
   const meals = record.meal_fact_identities.length === 0
     ? Object.freeze([]) as readonly MealFactIdentity[]
@@ -142,10 +143,16 @@ export function parsePurchaseFactPreviewMaterial(value: unknown): PurchaseFactPr
         input_digest: record.input_digest,
         meal_fact_identities: record.meal_fact_identities,
       }).meal_fact_identities;
+  const purchases = record.purchase_fact_identities.map(parseIdentity);
+  if (
+    purchases.some((identity, index) => identity.sequence !== index) ||
+    new Set(purchases.map((identity) => identity.event_id)).size !== purchases.length ||
+    new Set(purchases.map((identity) => identity.operation_id)).size !== purchases.length
+  ) return invalid("purchase_fact_identities");
   return Object.freeze({
     authority_kind: "diet-manager/domain-preview/v4",
     input_digest: record.input_digest,
     meal_fact_identities: meals,
-    purchase_fact_identities: Object.freeze([parseIdentity(record.purchase_fact_identities[0])]),
+    purchase_fact_identities: Object.freeze(purchases),
   });
 }

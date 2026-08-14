@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -23,15 +23,31 @@ import {
   type CoreApplicationRequest,
   type DietManagerAction,
   type DietManagerOutcome,
+  type ProductIdentityClarification,
 } from "../contracts.js";
+import { resolveProductIdentity } from "../domain/inventory-service.js";
+import { deriveDomainId } from "../domain/identity.js";
 import { createDietDomainService, type DietDomainService } from "../domain/service.js";
-import type { DomainEnvelopeInput, DomainOperation } from "../domain/types.js";
+import type {
+  DomainEnvelopeInput,
+  DomainOperation,
+  ProductIdentityEvidence,
+} from "../domain/types.js";
 import { cloneCoreParseInput } from "../parser/input-authority.js";
 import { parseCoreCommand } from "../parser/parse-command.js";
-import type { CoreCommandCandidate } from "../parser/types.js";
+import type {
+  CoreCommandCandidate,
+  CoreInventoryCommandCandidate,
+  CorePurchaseCommandCandidate,
+  CorePurchaseItemCandidate,
+} from "../parser/types.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { openDietDatabase, type DietDatabaseRuntime } from "../storage/database.js";
-import { mapCoreCandidateToEnvelope } from "./mapping.js";
+import { parseProductPayloadJson } from "../storage/inventory-repository.js";
+import {
+  mapCoreCandidateToEnvelope,
+  type ResolvedCorePurchaseItem,
+} from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 
 export const CORE_RUNTIME_SECRET_FILENAME = ".diet-manager-b.authority-secret";
@@ -557,6 +573,164 @@ function sanitizedCode(error: unknown): string {
   return /^[A-Z][A-Z0-9_]*$/u.test(code) ? code : "CORE_APPLICATION_FAILED";
 }
 
+interface PurchaseReference {
+  readonly order: number;
+  readonly raw_name: string;
+  readonly normalized_name: string;
+  readonly identity_reference: "explicit" | "same_attributes" | "deictic";
+  readonly specification: Readonly<{ readonly value: number; readonly unit: string }> | null;
+}
+
+interface StoredProductIdentity {
+  readonly product_id: string;
+  readonly identity: Readonly<ProductIdentityEvidence>;
+}
+
+type PurchaseResolution =
+  | Readonly<{ readonly status: "resolved"; readonly items: readonly Readonly<ResolvedCorePurchaseItem>[] }>
+  | Readonly<{ readonly status: "needs_clarification"; readonly clarification: ProductIdentityClarification }>;
+
+function purchaseReferences(
+  command: Readonly<CorePurchaseCommandCandidate | CoreInventoryCommandCandidate>,
+): readonly Readonly<PurchaseReference>[] {
+  if ("items" in command) return command.items;
+  return Object.freeze([Object.freeze({
+    order: 0,
+    raw_name: command.product.raw_text,
+    normalized_name: "milk",
+    identity_reference: "explicit" as const,
+    specification: null,
+  })]);
+}
+
+function requestedProductIdentity(reference: Readonly<PurchaseReference>): Readonly<ProductIdentityEvidence> {
+  return Object.freeze({
+    raw_name: reference.raw_name,
+    normalized_name: reference.normalized_name,
+    brand: null,
+    variant_or_flavor: null,
+    specification: reference.specification === null
+      ? null
+      : Object.freeze({
+          value: reference.specification.value,
+          unit: reference.specification.unit,
+        }),
+    evidence_kind: reference.identity_reference === "deictic" ? "unknown" : "explicit",
+  });
+}
+
+function storedProductIdentities(database: DatabaseSync): readonly Readonly<StoredProductIdentity>[] {
+  const rows = database.prepare(
+    "SELECT product_id, payload_json FROM products ORDER BY product_id LIMIT 257",
+  ).all() as Array<{ product_id: string; payload_json: string }>;
+  if (rows.length > 256) throw new Error("CORE_APPLICATION_RESULT_INVALID:product_candidate_count");
+  const identities = rows.flatMap((row) => {
+    const parsed = parseProductPayloadJson(row.payload_json);
+    return parsed.identity === null
+      ? []
+      : [Object.freeze({ product_id: row.product_id, identity: parsed.identity })];
+  });
+  return Object.freeze(identities);
+}
+
+function identityLabel(identity: Readonly<ProductIdentityEvidence>): string {
+  const specification = identity.specification === null
+    ? ""
+    : ` ${identity.specification.value}${identity.specification.unit}`;
+  const label = [identity.brand, identity.variant_or_flavor, identity.normalized_name]
+    .filter((part): part is string => part !== null && part.length > 0)
+    .join(" ") + specification;
+  const sanitized = label.replace(/[\u0000-\u001F\u007F]/gu, " ").trim().slice(0, 128);
+  return sanitized.length === 0 ? "product" : sanitized;
+}
+
+function productClarification(
+  candidates: readonly Readonly<StoredProductIdentity>[],
+): Readonly<ProductIdentityClarification> {
+  const keys = ["A", "B", "C", "D"] as const;
+  if (candidates.length < 2) throw new Error("CORE_APPLICATION_RESULT_INVALID:clarification_count");
+  return Object.freeze({
+    kind: "product_identity",
+    options: Object.freeze(candidates.slice(0, 4).map((candidate, index) => Object.freeze({
+      key: keys[index]!,
+      label: identityLabel(candidate.identity),
+    }))),
+    free_text_allowed: true,
+  });
+}
+
+function resolvePurchaseItems(
+  database: DatabaseSync,
+  request: Readonly<CoreApplicationRequest>,
+  command: Readonly<CorePurchaseCommandCandidate | CoreInventoryCommandCandidate>,
+): PurchaseResolution {
+  const stored = storedProductIdentities(database);
+  const byId = new Map(stored.map((candidate) => [candidate.product_id, candidate]));
+  const resolved: ResolvedCorePurchaseItem[] = [];
+  for (const reference of purchaseReferences(command)) {
+    const requested = requestedProductIdentity(reference);
+    let productId: string;
+    let identity: Readonly<ProductIdentityEvidence>;
+    if (reference.identity_reference === "deictic") {
+      const matches = stored.filter((candidate) =>
+        reference.normalized_name === "product" ||
+        candidate.identity.normalized_name === reference.normalized_name);
+      if (matches.length > 1) {
+        return Object.freeze({ status: "needs_clarification", clarification: productClarification(matches) });
+      }
+      if (matches.length === 1) {
+        productId = matches[0]!.product_id;
+        identity = matches[0]!.identity;
+      } else {
+        const resolution = resolveProductIdentity({ requested, candidates: stored });
+        if (resolution.status !== "new") {
+          throw new Error("CORE_APPLICATION_RESULT_INVALID:deictic_resolution");
+        }
+        productId = resolution.product_id;
+        identity = requested;
+      }
+    } else if (reference.identity_reference === "same_attributes") {
+      const matches = stored.filter((candidate) =>
+        candidate.identity.normalized_name === reference.normalized_name &&
+        canonicalJson(candidate.identity.specification) === canonicalJson(reference.specification));
+      if (matches.length > 1) {
+        return Object.freeze({ status: "needs_clarification", clarification: productClarification(matches) });
+      }
+      if (matches.length === 1) {
+        productId = matches[0]!.product_id;
+        identity = matches[0]!.identity;
+      } else {
+        const resolution = resolveProductIdentity({ requested, candidates: stored });
+        if (resolution.status === "needs_clarification") {
+          const candidates = resolution.candidate_product_ids.map((id) => byId.get(id)!).filter(Boolean);
+          return Object.freeze({ status: "needs_clarification", clarification: productClarification(candidates) });
+        }
+        productId = resolution.product_id;
+        identity = resolution.status === "reuse_exact" ? byId.get(productId)!.identity : requested;
+      }
+    } else {
+      const resolution = resolveProductIdentity({ requested, candidates: stored });
+      if (resolution.status === "needs_clarification") {
+        const candidates = resolution.candidate_product_ids.map((id) => byId.get(id)!).filter(Boolean);
+        return Object.freeze({ status: "needs_clarification", clarification: productClarification(candidates) });
+      }
+      productId = resolution.product_id;
+      identity = resolution.status === "reuse_exact" ? byId.get(productId)!.identity : requested;
+    }
+    const batchKey = createHash("sha256").update(canonicalJson({
+      operation_id: request.operation_id,
+      item_order: reference.order,
+      product_id: productId,
+    }), "utf8").digest("hex");
+    resolved.push(Object.freeze({
+      product_id: productId,
+      batch_id: deriveDomainId("batch", batchKey, 0),
+      identity,
+    }));
+  }
+  return Object.freeze({ status: "resolved", items: Object.freeze(resolved) });
+}
+
 function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operation: DomainOperation): string {
   const rows = database.prepare(`SELECT event_id, event_type, fact_kind, operation_id
     FROM event_records WHERE envelope_id = ? AND operation_id = ?`)
@@ -565,7 +739,9 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
     }>;
   const expected = operation.kind === "record_water"
     ? { event_type: "diet_water", fact_kind: "water" }
-    : { event_type: "diet_meal", fact_kind: "meal" };
+    : operation.kind === "add_inventory"
+      ? { event_type: "inventory_stock", fact_kind: "inventory" }
+      : { event_type: "diet_meal", fact_kind: "meal" };
   if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
       rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
     throw new Error("CORE_APPLICATION_RESULT_INVALID:event_identity");
@@ -573,22 +749,35 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
   return rows[0].event_id;
 }
 
-function executeCandidate(runtime: CoreRuntime, request: Readonly<CoreApplicationRequest>,
-  command: CoreCommandCandidate): { readonly status: "committed" | "committed_with_issues";
-    readonly record_id: string } {
-  const envelope = mapCoreCandidateToEnvelope(request, command);
-  const session = acquireSession(runtime);
+function executeCandidate(
+  runtime: CoreRuntime,
+  request: Readonly<CoreApplicationRequest>,
+  command: CoreCommandCandidate,
+  purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
+  existingSession?: CoreRuntimeSession,
+): { readonly status: "committed" | "committed_with_issues";
+    readonly record_id: string; readonly record_ids?: readonly string[] } {
+  const envelope = mapCoreCandidateToEnvelope(request, command, purchaseResolutions);
+  const session = existingSession ?? acquireSession(runtime);
   const preview = session.service.preview(envelope);
   const result = session.service.execute({ envelope, token: preview.token,
     input_digest: preview.input_digest, data_revision: preview.data_revision });
-  const operation = envelope.operations[0];
-  if (operation === undefined || result.items.length !== 1 ||
-      result.items[0]?.operation_id !== operation.operation_id ||
-      (result.items[0]?.status !== "committed" && result.items[0]?.status !== "committed_with_issues")) {
+  if (
+    envelope.operations.length === 0 || result.items.length !== envelope.operations.length ||
+    (result.status !== "committed" && result.status !== "committed_with_issues") ||
+    result.items.some((item, index) =>
+      item.operation_id !== envelope.operations[index]?.operation_id ||
+      (item.status !== "committed" && item.status !== "committed_with_issues"))
+  ) {
     throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
   }
-  return Object.freeze({ status: result.items[0].status,
-    record_id: recordId(session.database, envelope, operation) });
+  const recordIds = Object.freeze(envelope.operations.map((operation) =>
+    recordId(session.database, envelope, operation)));
+  return Object.freeze({
+    status: result.status,
+    record_id: recordIds[0]!,
+    ...(recordIds.length === 1 ? {} : { record_ids: recordIds }),
+  });
 }
 
 export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRequest): DietManagerOutcome {
@@ -615,10 +804,31 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   if (parsed.command.action !== request.action) {
     return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
   }
-  if (parsed.command.action === "add_inventory") {
+  if (parsed.command.action === "correct_record") {
     return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
   }
   try {
+    if (parsed.command.action === "add_inventory") {
+      const session = acquireSession(runtime);
+      const resolution = resolvePurchaseItems(session.database, request, parsed.command);
+      if (resolution.status === "needs_clarification") {
+        return nonWritingOutcome(
+          request.action,
+          request.operation_id,
+          "needs_clarification",
+          "product_identity_ambiguous",
+          resolution.clarification,
+        );
+      }
+      const result = executeCandidate(runtime, request, parsed.command, resolution.items, session);
+      return committedOutcome(
+        request.action,
+        request.operation_id,
+        result.status,
+        result.record_id,
+        result.record_ids,
+      );
+    }
     const result = executeCandidate(runtime, request, parsed.command);
     return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
   } catch (error) {

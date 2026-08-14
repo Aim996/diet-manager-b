@@ -73,7 +73,20 @@ export interface NonWritingOutcome {
   committed: false;
   operation_id?: string;
   reason_code: string;
+  clarification?: ProductIdentityClarification;
   record_id?: never;
+  record_ids?: never;
+}
+
+export interface ProductIdentityClarificationOption {
+  readonly key: "A" | "B" | "C" | "D";
+  readonly label: string;
+}
+
+export interface ProductIdentityClarification {
+  readonly kind: "product_identity";
+  readonly options: readonly ProductIdentityClarificationOption[];
+  readonly free_text_allowed: true;
 }
 
 export interface CommittedOutcome {
@@ -82,6 +95,7 @@ export interface CommittedOutcome {
   committed: true;
   operation_id: string;
   record_id: string;
+  record_ids?: readonly string[];
 }
 
 export type DietManagerOutcome =
@@ -91,6 +105,38 @@ export type DietManagerOutcome =
 
 function invalidOutcome(reason: string): never {
   throw new TypeError(`DIET_MANAGER_OUTCOME_INVALID:${reason}`);
+}
+
+function exactOutcomeKeys(candidate: Record<string, unknown>, required: readonly string[], optional: readonly string[]): void {
+  const keys = Object.keys(candidate).sort();
+  const expected = [...required, ...optional.filter((key) => Object.hasOwn(candidate, key))].sort();
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+    return invalidOutcome("keys");
+  }
+}
+
+function assertClarification(value: unknown): asserts value is ProductIdentityClarification {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("clarification");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).sort().join("\0") !== "free_text_allowed\0kind\0options" ||
+      candidate.kind !== "product_identity" || candidate.free_text_allowed !== true ||
+      !Array.isArray(candidate.options) || candidate.options.length < 2 || candidate.options.length > 4) {
+    return invalidOutcome("clarification");
+  }
+  const keys = ["A", "B", "C", "D"];
+  for (const [index, option] of candidate.options.entries()) {
+    if (typeof option !== "object" || option === null || Array.isArray(option)) {
+      return invalidOutcome("clarification_option");
+    }
+    const record = option as Record<string, unknown>;
+    if (Object.keys(record).sort().join("\0") !== "key\0label" || record.key !== keys[index] ||
+        typeof record.label !== "string" || record.label.length === 0 || record.label.length > 128 ||
+        /[\u0000-\u001F\u007F]/u.test(record.label)) {
+      return invalidOutcome("clarification_option");
+    }
+  }
 }
 
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
@@ -147,6 +193,25 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
       candidate.record_id.trim().length === 0)
   ) {
     return invalidOutcome("committed_identity");
+  }
+  if (candidate.status === "failed") {
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
+  } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "clarification"]);
+  } else {
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids"]);
+  }
+  if (candidate.clarification !== undefined) {
+    if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
+    assertClarification(candidate.clarification);
+  }
+  if (candidate.record_ids !== undefined) {
+    if (!hasCommittedStatus || !Array.isArray(candidate.record_ids) || candidate.record_ids.length < 2 ||
+        candidate.record_ids.length > 64 || candidate.record_ids[0] !== candidate.record_id ||
+        new Set(candidate.record_ids).size !== candidate.record_ids.length ||
+        candidate.record_ids.some((id) => typeof id !== "string" || id.length === 0)) {
+      return invalidOutcome("record_ids");
+    }
   }
 
   return candidate as unknown as DietManagerOutcome;

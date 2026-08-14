@@ -207,6 +207,12 @@ export interface InventoryDirectiveEvidence {
   readonly rule_version: string;
 }
 
+export interface PantryInventoryPolicy {
+  readonly mode: "pantry_v2";
+  readonly missing_candidate_behavior: "skip_insufficient";
+  readonly rule_version: "diet-manager/pantry-allocation-v1";
+}
+
 export interface MealItemInput {
   readonly normalized_name: string;
   readonly item_type: "dish" | "food" | "nutrition_drink";
@@ -221,6 +227,7 @@ export interface RecordMealOperation {
   readonly occurred_at: string;
   readonly meal_slot: string;
   readonly location: "home" | "outside";
+  readonly inventory_policy?: Readonly<PantryInventoryPolicy>;
   readonly items: readonly MealItemInput[];
   readonly source_text?: string;
   readonly occurred_time?: Readonly<OccurredTimeEvidence>;

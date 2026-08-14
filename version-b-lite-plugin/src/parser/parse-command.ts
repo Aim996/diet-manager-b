@@ -1,12 +1,14 @@
 import { classifyCompletion } from "./completion.js";
 import { resolveMealContext } from "./context.js";
 import { cloneCoreParseInput } from "./input-authority.js";
+import { resolveInventoryDirective } from "./inventory-directive.js";
 import {
   classifyMealLiquid,
   resolveWaterFrames,
 } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
+import { resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
   CoreInventoryCommandCandidate,
@@ -219,6 +221,7 @@ function mealCandidate(
   const purchaseReferenceDate = purchase === null
     ? null
     : shanghaiCalendarDate(input.received_at, -1);
+  const inventoryDirective = resolveInventoryDirective(input.source_text);
 
   const command: CoreMealCommandCandidate = {
     action: "record_meal",
@@ -258,7 +261,8 @@ function mealCandidate(
           matched_span: meal.group_amount_evidence.matched_span,
           rule_version: meal.group_amount_evidence.rule_version,
         } }),
-    ...(context.accepted_context === null &&
+    ...(context.scene === "unknown" &&
+        context.accepted_context === null &&
         context.expired_context_ids.length === 0 &&
         !context.inventory_read
       ? {}
@@ -271,6 +275,7 @@ function mealCandidate(
           affects_ingestion_date: false,
         } }),
     ...(liquid === null ? {} : { liquid_classification: liquid }),
+    ...(inventoryDirective === undefined ? {} : { inventory_directive: inventoryDirective }),
   };
   return detachedFrozen({ disposition: "candidate", command });
 }
@@ -278,6 +283,10 @@ function mealCandidate(
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value: unknown): CoreParseResult {
   const input = cloneCoreParseInput(value);
+  const pantry = resolvePantryCommand(input);
+  if (pantry !== null) {
+    return detachedFrozen({ disposition: "candidate", command: pantry });
+  }
   const meal = resolveMealFrames(input.source_text);
   const waterResolution = resolveWaterFrames(input.source_text);
   const healthIntent = classifyHealthIntent(input.source_text);

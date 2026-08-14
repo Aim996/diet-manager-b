@@ -1436,12 +1436,19 @@ describe("core parser quality boundaries", () => {
 
   it.each([
     "其他时候吃了一个苹果。",
-    "在公司吃了一个苹果。",
     "前天午饭吃了一个苹果。",
   ])("never defaults an unapproved omitted-subject prefix to self: %s", (
     sourceText,
   ) => {
     expect(variant(sourceText).disposition).not.toBe("candidate");
+  });
+
+  it("treats explicit company context as self-owned ingestion with zero home-inventory read", () => {
+    const command = requiredMeal(variant("在公司吃了一个苹果。"));
+    expect(command).toMatchObject({
+      subject: { kind: "self", resolution_basis: "omitted_subject_default" },
+      context: { scene: "company", inventory_read: false },
+    });
   });
 
   it("does not borrow an amount for the same food from a friend's clause", () => {

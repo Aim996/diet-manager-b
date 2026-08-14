@@ -172,6 +172,50 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     }
   });
 
+  it("returns ordered multi-event purchase record IDs through the registered tool", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-purchase-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    try {
+      const result = await registered.tool.execute("tool-call-purchase-001", {
+        ...mealParams(),
+        action: "add_inventory",
+        source_text: "买了牛奶、鸡蛋和苹果。",
+        operation_id: "operation-openclaw-purchase-001",
+        source_message_id: "message-openclaw-purchase-001",
+      });
+      expect(result.details).toMatchObject({
+        action: "add_inventory",
+        status: "committed",
+        committed: true,
+        operation_id: "operation-openclaw-purchase-001",
+        record_id: expect.stringMatching(/^event-[a-f0-9]{32}$/u),
+        record_ids: [
+          expect.stringMatching(/^event-[a-f0-9]{32}$/u),
+          expect.stringMatching(/^event-[a-f0-9]{32}$/u),
+          expect.stringMatching(/^event-[a-f0-9]{32}$/u),
+        ],
+      });
+      expect(Object.isFrozen(result.details)).toBe(true);
+      const details = result.details as { record_id: string; record_ids: readonly string[] };
+      expect(details.record_ids[0]).toBe(details.record_id);
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        expect(inspection.database.prepare(
+          "SELECT operation_id FROM event_records ORDER BY committed_at",
+        ).all()).toEqual([
+          { operation_id: "operation-openclaw-purchase-001:item:0" },
+          { operation_id: "operation-openclaw-purchase-001:item:1" },
+          { operation_id: "operation-openclaw-purchase-001:item:2" },
+        ]);
+      } finally {
+        inspection.close();
+      }
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
   it("commits explicit plain water as one water event through the registered tool", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-water-${randomUUID()}-`));
     const registered = registerPlugin({ official_data_root: root });

@@ -297,5 +297,52 @@ describe("diet manager B core plugin boundary", () => {
         committed: true,
       }),
     ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:committed_identity");
+    expect(() =>
+      validator?.({
+        action: "add_inventory",
+        status: "needs_clarification",
+        committed: false,
+        operation_id: "operation-purchase-ambiguous",
+        reason_code: "product_identity_ambiguous",
+        clarification: {
+          kind: "product_identity",
+          options: [{ key: "A", label: "milk 250ml" }, { key: "B", label: "milk 500ml" }],
+          free_text_allowed: true,
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validator?.({
+        action: "add_inventory",
+        status: "committed",
+        committed: true,
+        operation_id: "operation-purchase-multi",
+        record_id: "event-first",
+        record_ids: ["event-first", "event-second"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validator?.({
+        action: "add_inventory",
+        status: "needs_clarification",
+        committed: false,
+        reason_code: "product_identity_ambiguous",
+        clarification: {
+          kind: "product_identity",
+          options: [{ key: "A", label: "only one" }],
+          free_text_allowed: true,
+        },
+      }),
+    ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:clarification");
+    expect(() =>
+      validator?.({
+        action: "add_inventory",
+        status: "committed",
+        committed: true,
+        operation_id: "operation-purchase-multi",
+        record_id: "event-first",
+        record_ids: ["event-second", "event-first"],
+      }),
+    ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:record_ids");
   });
 });

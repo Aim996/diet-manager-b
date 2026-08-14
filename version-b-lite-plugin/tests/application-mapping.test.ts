@@ -46,24 +46,27 @@ describe("Task 8 production parser-to-domain mapping", () => {
     expect(envelope.operations).toEqual([{
       kind: "record_meal", operation_id: input.request.operation_id,
       meal_slot: "早餐", location: "home", source_text: input.request.source_text,
+      inventory_policy: {
+        mode: "pantry_v2", missing_candidate_behavior: "skip_insufficient",
+        rule_version: "diet-manager/pantry-allocation-v1",
+      },
       items: [
         { normalized_name: "egg", item_type: "food", amount: { unit: "piece",
           observed_microunits: 2_000_000, nutrition_adoption_microunits: null,
-          inventory_deduction_microunits: null, template_reference_microunits: null,
+          inventory_deduction_microunits: 2_000_000, template_reference_microunits: null,
           evidence: "explicit" }, nutrition_sources: [] },
         { normalized_name: "bread", item_type: "food", amount: { unit: "slice",
           observed_microunits: 2_000_000, nutrition_adoption_microunits: null,
-          inventory_deduction_microunits: null, template_reference_microunits: null,
+          inventory_deduction_microunits: 2_000_000, template_reference_microunits: null,
           evidence: "explicit" }, nutrition_sources: [] },
         { normalized_name: "milk", item_type: "nutrition_drink", amount: { unit: "ml",
           observed_microunits: 250_000_000, nutrition_adoption_microunits: null,
-          inventory_deduction_microunits: null, template_reference_microunits: null,
+          inventory_deduction_microunits: 250_000_000, template_reference_microunits: null,
           evidence: "explicit" }, nutrition_sources: [] },
       ],
       occurred_at: "2026-08-11T00:30:00.000Z",
       occurred_time: input.command.occurred_time,
       subject: input.command.subject,
-      context: "context" in input.command ? input.command.context : undefined,
     }]);
   });
 

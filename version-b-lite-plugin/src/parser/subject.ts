@@ -86,7 +86,7 @@ interface SubjectRule {
 }
 
 const FRAME_EXPLICIT_SELF_MODIFIERS = /^(?:(?:刚才|刚刚|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|在公司|然后|接着|后来|又|没|没有)\s*)*$/u;
-const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|后来|没(?:有)?)?$/u;
+const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|在公司|昨晚\s*\d{1,2}\s*点(?:\s*\d{1,2}\s*分)?|本来不想|后来还是|后来|没(?:有)?)?$/u;
 const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
 
 function frozenFrameRecord<T extends object>(entries: T): Readonly<T> {

@@ -3,6 +3,7 @@ import type {
   DietManagerAction,
   FailedOutcome,
   NonWritingOutcome,
+  ProductIdentityClarification,
 } from "../contracts.js";
 
 export function failedOutcome(
@@ -24,6 +25,7 @@ export function nonWritingOutcome(
   operationId: string,
   status: "ignored" | "needs_clarification",
   reasonCode: string,
+  clarification?: Readonly<ProductIdentityClarification>,
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -31,6 +33,7 @@ export function nonWritingOutcome(
     committed: false as const,
     operation_id: operationId,
     reason_code: reasonCode,
+    ...(clarification === undefined ? {} : { clarification }),
   });
 }
 
@@ -39,6 +42,7 @@ export function committedOutcome(
   operationId: string,
   status: "committed" | "committed_with_issues",
   recordId: string,
+  recordIds?: readonly string[],
 ): CommittedOutcome {
   return Object.freeze({
     action,
@@ -46,5 +50,6 @@ export function committedOutcome(
     committed: true as const,
     operation_id: operationId,
     record_id: recordId,
+    ...(recordIds === undefined ? {} : { record_ids: Object.freeze([...recordIds]) }),
   });
 }

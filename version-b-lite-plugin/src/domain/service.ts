@@ -79,6 +79,7 @@ import type {
   CorrectRecordOperation,
   DomainEnvelopeInput,
   DomainExecutionResult,
+  DomainOperation,
   DomainQueryOperation,
   RecordMealOperation,
   RecordWaterOperation,
@@ -268,6 +269,13 @@ function validateInventoryDirective(value: unknown, field: string): void {
   text(directive.rule_version, `${field}.rule_version`);
 }
 
+function validatePantryInventoryPolicy(value: unknown, field: string): void {
+  const policy = record(value, ["mode", "missing_candidate_behavior", "rule_version"], field);
+  enumValue(policy.mode, ["pantry_v2"], `${field}.mode`);
+  enumValue(policy.missing_candidate_behavior, ["skip_insufficient"], `${field}.missing_candidate_behavior`);
+  enumValue(policy.rule_version, ["diet-manager/pantry-allocation-v1"], `${field}.rule_version`);
+}
+
 function validateOperation(value: unknown, field: string): RecordWaterOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
@@ -309,14 +317,20 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     return;
   }
   if (kind === "record_meal") {
+    const policyKeys = Object.hasOwn(operation, "inventory_policy")
+      ? ["inventory_policy"]
+      : [];
     const candidate = record(value, [
       "kind", "operation_id", "occurred_at", "meal_slot", "location", "items",
-      ...optionalMealEvidenceFields(operation),
+      ...optionalMealEvidenceFields(operation), ...policyKeys,
     ], field);
     text(candidate.operation_id, `${field}.operation_id`);
     timestamp(candidate.occurred_at, `${field}.occurred_at`);
     text(candidate.meal_slot, `${field}.meal_slot`);
     enumValue(candidate.location, ["home", "outside"], `${field}.location`);
+    if (policyKeys.length === 1) {
+      validatePantryInventoryPolicy(candidate.inventory_policy, `${field}.inventory_policy`);
+    }
     if (!Array.isArray(candidate.items) || candidate.items.length === 0) return invalid(`${field}.items`);
     for (const [index, item] of candidate.items.entries()) {
       const directiveKeys = typeof item === "object" && item !== null && Object.hasOwn(item, "inventory_directive")
@@ -524,7 +538,7 @@ function preflightWriteOperations(
   database: DatabaseSync,
   operations: ValidatedWriteOperations,
 ): readonly ReturnType<typeof preflightMealOperation>[] {
-  if (operations.length === 2) {
+  if (isMixedPurchaseMeal(operations)) {
     const [purchase, meal] = operations;
     const purchaseCandidates = purchase.amount.observed_microunits === null
       ? new Map<string, readonly []>()
@@ -702,21 +716,33 @@ type WriteOperation =
   | CorrectRecordOperation
   | UndoRecordOperation;
 
-type ValidatedWriteOperations =
-  | readonly [WriteOperation]
-  | readonly [AddInventoryOperation, RecordMealOperation];
+type ValidatedWriteOperations = readonly WriteOperation[];
+
+function isMixedPurchaseMeal(
+  operations: readonly DomainOperation[],
+): operations is readonly [AddInventoryOperation, RecordMealOperation] {
+  return operations.length === 2 &&
+    operations[0]?.kind === "add_inventory" &&
+    operations[1]?.kind === "record_meal";
+}
 
 function writeOperations(
   envelope: DomainEnvelopeInput,
 ): ValidatedWriteOperations {
   if (
     envelope.command_type === "record_meal" &&
-    envelope.operations.length === 2 &&
-    envelope.operations[0]?.kind === "add_inventory" &&
-    envelope.operations[1]?.kind === "record_meal"
+    isMixedPurchaseMeal(envelope.operations)
   ) {
     return Object.freeze([envelope.operations[0], envelope.operations[1]]);
   }
+  if (
+    envelope.command_type === "add_inventory" &&
+    envelope.operations.length >= 1 &&
+    envelope.operations.length <= 64 &&
+    envelope.operations.every((operation) => operation.kind === "add_inventory") &&
+    new Set(envelope.operations.map((operation) => operation.operation_id)).size ===
+      envelope.operations.length
+  ) return Object.freeze([...envelope.operations]);
   if (envelope.operations.length !== 1) return invalid("operation_count");
   const operation = envelope.operations[0]!;
   if (
@@ -805,37 +831,34 @@ function factPreviewMaterial(
         },
       })),
     }));
-  const purchaseEntry = envelope.operations
+  const purchaseEntries = envelope.operations
     .map((operation, sequence) => ({ operation, sequence }))
-    .find((entry): entry is { operation: AddInventoryOperation; sequence: number } =>
+    .filter((entry): entry is { operation: AddInventoryOperation; sequence: number } =>
       entry.operation.kind === "add_inventory" && entry.operation.pantry_evidence !== undefined);
-  if (purchaseEntry) {
-    const purchaseIdentityKey = envelope.operations.length === 2
-      ? deriveDomainId("idempotency", envelope.idempotency_key, purchaseEntry.sequence)
-      : undefined;
-    const prepared = preparePurchaseOperation({
-      database,
-      secret,
-      token: "preview-material",
-      inputDigest,
-      dataRevision: "repository-v1:preview-material",
-      subjectScope: envelope.subject_scope,
-      commandType: envelope.command_type,
-      idempotencyKey: envelope.idempotency_key,
-      ...(purchaseIdentityKey === undefined ? {} : { effectIdentityKey: purchaseIdentityKey }),
-      sourceMessageId: envelope.source_message_id,
-      conversationId: envelope.conversation_id,
-      receivedAt: envelope.received_at,
-      committedAt: envelope.received_at,
-      sequence: purchaseEntry.sequence,
-      operation: purchaseEntry.operation,
-    });
-    const event = prepared.fact.event;
-    return Object.freeze({
-      authority_kind: "diet-manager/domain-preview/v4",
-      input_digest: inputDigest,
-      meal_fact_identities: Object.freeze(mealIdentities()),
-      purchase_fact_identities: Object.freeze([createPurchaseFactIdentity({
+  if (purchaseEntries.length > 0) {
+    const identities = purchaseEntries.map((purchaseEntry) => {
+      const purchaseIdentityKey = envelope.operations.length > 1
+        ? deriveDomainId("idempotency", envelope.idempotency_key, purchaseEntry.sequence)
+        : undefined;
+      const prepared = preparePurchaseOperation({
+        database,
+        secret,
+        token: "preview-material",
+        inputDigest,
+        dataRevision: "repository-v1:preview-material",
+        subjectScope: envelope.subject_scope,
+        commandType: envelope.command_type,
+        idempotencyKey: envelope.idempotency_key,
+        ...(purchaseIdentityKey === undefined ? {} : { effectIdentityKey: purchaseIdentityKey }),
+        sourceMessageId: envelope.source_message_id,
+        conversationId: envelope.conversation_id,
+        receivedAt: envelope.received_at,
+        committedAt: envelope.received_at,
+        sequence: purchaseEntry.sequence,
+        operation: purchaseEntry.operation,
+      });
+      const event = prepared.fact.event;
+      return createPurchaseFactIdentity({
         sequence: purchaseEntry.sequence,
         event_id: event.eventId,
         operation_id: event.operationId,
@@ -849,7 +872,13 @@ function factPreviewMaterial(
         meal_id: null,
         meal_slot: null,
         payload: event.payload,
-      })]),
+      });
+    });
+    return Object.freeze({
+      authority_kind: "diet-manager/domain-preview/v4",
+      input_digest: inputDigest,
+      meal_fact_identities: Object.freeze(mealIdentities()),
+      purchase_fact_identities: Object.freeze(identities),
     });
   }
   const hasEvidence = meals.some(({ operation }) =>
@@ -989,24 +1018,35 @@ function storedEnvelopeTime(database: DatabaseSync, envelopeId: string): string 
   return receivedTimestamp(row.received_at, "stored_received_at");
 }
 
-function frozenExecutionResult(
+function frozenPurchaseExecutionResult(
   envelope: DomainEnvelopeInput,
   inputDigest: string,
-  item: ReturnType<typeof preparePurchaseOperation>["result"],
+  items: readonly ReturnType<typeof preparePurchaseOperation>["result"][],
 ): DomainExecutionResult {
+  if (items.length === 0 || items.length > 64) return invalid("purchase_result_count");
+  const inventory = items.length === 1
+    ? Object.freeze({
+        batch_id: items[0]!.batch_id,
+        product_id: items[0]!.product_id,
+        quantity_microunits: items[0]!.inventory_quantity_microunits,
+        unit: items[0]!.unit,
+      })
+    : Object.freeze({
+        items: Object.freeze(items.map((item) => Object.freeze({
+          batch_id: item.batch_id,
+          product_id: item.product_id,
+          quantity_microunits: item.inventory_quantity_microunits,
+          unit: item.unit,
+        }))),
+      });
   return Object.freeze({
     envelope_id: envelope.envelope_id,
     input_digest: inputDigest,
     status: "committed" as const,
-    items: Object.freeze([item]),
+    items: Object.freeze([...items]),
     payload: Object.freeze({
       authority_kind: "diet-manager/domain-execution/v1",
-      inventory: Object.freeze({
-        batch_id: item.batch_id,
-        product_id: item.product_id,
-        quantity_microunits: item.inventory_quantity_microunits,
-        unit: item.unit,
-      }),
+      inventory,
     }),
   });
 }
@@ -1159,7 +1199,7 @@ export function createDietDomainService(
               )
           : undefined);
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
-      if (operations.length === 2) {
+      if (isMixedPurchaseMeal(operations)) {
         const [purchaseOperation, mealOperation] = operations;
         const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
         const purchaseIdentityKey = deriveDomainId(
@@ -1397,6 +1437,138 @@ export function createDietDomainService(
               payload: mealResult,
             }),
           ]),
+        }).payload as DomainExecutionResult;
+      }
+      if (operations.length > 1) {
+        const purchaseOperations = operations as readonly AddInventoryOperation[];
+        const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
+        const finalizedAt = timestampAfter(committedAt, purchaseOperations.length);
+        const preparedPurchases = Object.freeze(purchaseOperations.map((purchaseOperation, sequence) => {
+          const effectIdentityKey = deriveDomainId("idempotency", envelope.idempotency_key, sequence);
+          return preparePurchaseOperation({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            dataRevision: execution.data_revision,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            idempotencyKey: envelope.idempotency_key,
+            effectIdentityKey,
+            sourceMessageId: envelope.source_message_id,
+            conversationId: envelope.conversation_id,
+            receivedAt: envelope.received_at,
+            committedAt: timestampAfter(committedAt, sequence),
+            sequence,
+            operation: purchaseOperation,
+          });
+        }));
+
+        if (authority.envelope_state !== "received") {
+          preparedPurchases.forEach((preparedPurchase, sequence) => {
+            assertStoredPurchaseFactMatchesExpected({
+              database: options.database,
+              envelopeId: envelope.envelope_id,
+              operationId: purchaseOperations[sequence]!.operation_id,
+              operationSequence: sequence,
+              expectedFact: preparedPurchase.fact,
+              requireAppliedEffect: authority.envelope_state !== "effects_pending",
+            });
+          });
+        }
+        if (authority.envelope_state === "finalized") {
+          const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
+          return finalize({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            resultStatus: stored.resultStatus,
+            receiptId: stored.receiptId,
+            finalizedAt: stored.finalizedAt,
+            frozenAt: stored.frozenAt,
+            payload: stored.payload,
+            mixedItems: storedMixedItems(options.database, envelope.envelope_id),
+          }).payload as DomainExecutionResult;
+        }
+        if (
+          authority.envelope_state !== "received" &&
+          authority.envelope_state !== "effects_stable"
+        ) {
+          throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        }
+        if (authority.envelope_state === "received") {
+          if (options.fault === "before_fact_commit") {
+            emitFailure(options.failureSink, {
+              stage: "FactCommit",
+              error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+              trace_id: traceId,
+              input_digest: inputDigest,
+            });
+            throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+          }
+          preparedPurchases.forEach((preparedPurchase, sequence) => {
+            appendFactWithFailure(preparedPurchase.fact, options.failureSink);
+            runEffectWithFailure(
+              () => applyPurchaseEffect(
+                options.database,
+                preparedPurchase.outbox_id,
+                timestampAfter(committedAt, sequence),
+                sequence === 0 && options.fault === "after_inventory_business_writes"
+                  ? "after_business_writes"
+                  : undefined,
+              ),
+              options.failureSink,
+              traceId,
+              inputDigest,
+              "INVENTORY_EFFECT_FAILED",
+            );
+          });
+          sealPreparedEnvelopeFacts({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            expectedOperationIds: Object.freeze(purchaseOperations.map((operation) => operation.operation_id)),
+            sealedAt: finalizedAt,
+          });
+        }
+        const result = frozenPurchaseExecutionResult(
+          envelope,
+          inputDigest,
+          Object.freeze(preparedPurchases.map((preparedPurchase) => preparedPurchase.result)),
+        );
+        return finalize({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          dataRevision: execution.data_revision,
+          traceId,
+          resultStatus: "committed",
+          receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt,
+          frozenAt: finalizedAt,
+          payload: result,
+          mixedItems: Object.freeze(preparedPurchases.map((preparedPurchase, sequence) => Object.freeze({
+            sequence,
+            operation_id: purchaseOperations[sequence]!.operation_id,
+            idempotency_key: deriveDomainId("idempotency", envelope.idempotency_key, sequence),
+            command_type: "add_inventory" as const,
+            status: preparedPurchase.result.status,
+            error_code: preparedPurchase.result.error_code,
+            payload: preparedPurchase.result,
+          }))),
         }).payload as DomainExecutionResult;
       }
       const operation = operations[0];
@@ -1883,7 +2055,7 @@ export function createDietDomainService(
         operation,
       });
       const traceId = prepared.fact.traceId;
-      const result = frozenExecutionResult(envelope, inputDigest, prepared.result);
+      const result = frozenPurchaseExecutionResult(envelope, inputDigest, Object.freeze([prepared.result]));
       const finalizerInput = {
         database: options.database,
         secret: options.secret,

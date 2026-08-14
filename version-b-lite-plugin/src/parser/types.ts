@@ -132,6 +132,14 @@ export interface CoreMealCommandCandidate {
   readonly group_amount_evidence?: CoreGroupAmountEvidence;
   readonly purchase_evidence?: CorePurchaseEvidence;
   readonly liquid_classification?: CoreLiquidClassification;
+  readonly inventory_directive?: Readonly<CoreInventoryDirectiveEvidence>;
+}
+
+export interface CoreInventoryDirectiveEvidence {
+  readonly mode: "skip";
+  readonly evidence_kind: "explicit";
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/inventory-directive/v1";
 }
 
 export interface CoreWaterCommandCandidate {
@@ -163,10 +171,73 @@ export interface CoreInventoryCommandCandidate {
   readonly shelf_life_rule_version: "diet-manager/fresh-milk-shelf-life-v1";
 }
 
+export interface CorePurchasePackageQuantity {
+  readonly outer_count: number | null;
+  readonly outer_unit: string | null;
+  readonly inner_per_outer: number | null;
+  readonly inner_unit: string | null;
+  readonly capacity_per_inner: number | null;
+  readonly capacity_unit: string | null;
+  readonly total_inner: number | null;
+  readonly total_capacity: number | null;
+  readonly formula: string | null;
+}
+
+export interface CorePurchaseItemCandidate {
+  readonly order: number;
+  readonly raw_name: string;
+  readonly normalized_name: "milk" | "egg" | "apple" | "product";
+  readonly product_type: "nutrition_drink" | "food" | "generic";
+  readonly identity_reference: "explicit" | "same_attributes" | "deictic";
+  readonly specification: Readonly<{ readonly value: number; readonly unit: string }> | null;
+  readonly package_quantity: Readonly<CorePurchasePackageQuantity>;
+  readonly location: Readonly<{
+    readonly value: "refrigerator";
+    readonly evidence_kind: "configured_home_default";
+    readonly rule_version: "diet-manager/default-location-v1";
+  }>;
+  readonly opening: Readonly<{
+    readonly status: "opened";
+    readonly partial_use_explicit: true;
+    readonly matched_span: string;
+    readonly rule_version: "diet-manager/opening-evidence/v1";
+  }> | null;
+  readonly expiration: Readonly<{
+    readonly reliability: "unknown" | "unreliable";
+    readonly explicit_at: null;
+    readonly matched_span: string | null;
+  }>;
+}
+
+export interface CorePurchaseCommandCandidate {
+  readonly action: "add_inventory";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly stocked_at: OffsetIsoTimestamp;
+  readonly items: readonly Readonly<CorePurchaseItemCandidate>[];
+}
+
+export interface CoreInventoryLocationCorrectionCandidate {
+  readonly action: "correct_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly correction_kind: "inventory_location";
+  readonly product_reference: "milk";
+  readonly batch_reference: "this_batch";
+  readonly previous_location: "room_temperature_cabinet";
+  readonly next_location: "refrigerator";
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/location-correction/v1";
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
-  | Readonly<CoreInventoryCommandCandidate>;
+  | Readonly<CoreInventoryCommandCandidate>
+  | Readonly<CorePurchaseCommandCandidate>
+  | Readonly<CoreInventoryLocationCorrectionCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;
@@ -190,7 +261,7 @@ export type CoreClarificationReason =
   | "amount_ambiguous";
 
 export type CoreRecognizedAction =
-  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory">
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record">
   | "health_advice";
 
 export type CoreIgnoredResult =
