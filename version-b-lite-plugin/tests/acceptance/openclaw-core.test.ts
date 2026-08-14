@@ -172,6 +172,71 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     }
   });
 
+  it("uses the configured private FDC credential without exposing it in the public request", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-fdc-${randomUUID()}-`));
+    const previousKey = process.env.FDC_API_KEY;
+    const previousFetch = globalThis.fetch;
+    let observedUrl = "";
+    let observedKey: string | null = null;
+    process.env.FDC_API_KEY = "test-fdc-key-001";
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      observedUrl = String(input);
+      observedKey = new Headers(init?.headers).get("X-Api-Key");
+      return new Response(JSON.stringify({
+        foods: [{
+          fdcId: 746782,
+          description: "Milk, whole",
+          dataType: "Foundation",
+          publicationDate: "2026-04-01",
+          foodNutrients: [
+            { nutrientId: 1008, unitName: "kcal", value: 61 },
+            { nutrientId: 1003, unitName: "g", value: 3.15 },
+            { nutrientId: 1004, unitName: "g", value: 3.25 },
+            { nutrientId: 1005, unitName: "g", value: 4.8 },
+            { nutrientId: 1079, unitName: "g", value: 0 },
+          ],
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    const registered = registerPlugin({
+      official_data_root: root,
+      nutrition: {
+        policy_version: "2026-08-14.1",
+        resolution_deadline_ms: 2_000,
+        sources: [{
+          source_id: "public.usda_fooddata_central",
+          enabled: true,
+          backend_id: "fooddata-central",
+          backend_version: "api-v1",
+        }],
+        credential_refs: { "public.usda_fooddata_central": "env:FDC_API_KEY" },
+      },
+    });
+    try {
+      const result = await registered.tool.execute("tool-call-fdc-001", {
+        ...mealParams(),
+        source_text: "喝了250ml牛奶。",
+        operation_id: "operation-openclaw-fdc-001",
+        source_message_id: "message-openclaw-fdc-001",
+      });
+      expect(result.details).toMatchObject({
+        committed: true,
+        nutrition_items: [{ source_label: "public_reference" }],
+        receipt: { items: [{ nutrition: { source: "public_reference", status: "complete" } }] },
+      });
+      expect(observedUrl).toBe("https://api.nal.usda.gov/fdc/v1/foods/search");
+      expect(observedUrl).not.toContain("test-fdc-key-001");
+      expect(observedKey).toBe("test-fdc-key-001");
+      expect(JSON.stringify(result.details)).not.toContain("test-fdc-key-001");
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      globalThis.fetch = previousFetch;
+      if (previousKey === undefined) delete process.env.FDC_API_KEY;
+      else process.env.FDC_API_KEY = previousKey;
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
   it("returns ordered multi-event purchase record IDs through the registered tool", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-purchase-${randomUUID()}-`));
     const registered = registerPlugin({ official_data_root: root });

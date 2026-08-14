@@ -10,7 +10,9 @@ import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
-import type { NutritionRuntimeConfig } from "../nutrition/types.js";
+import { FoodDataCentralAdapter } from "../nutrition/adapters/fooddata-central.js";
+import { FoodDataCentralHttpTransport } from "../nutrition/adapters/fooddata-central-http.js";
+import type { NutritionRuntimeConfig, NutritionSourceAdapter, SourceContext } from "../nutrition/types.js";
 import {
   assertDietManagerOutcome,
   dietManagerActions,
@@ -65,17 +67,21 @@ export const dietManagerParameters = Type.Object(
 );
 
 const nutritionSourceConfigSchema = Type.Object({
-  source_id: Type.String(),
+  source_id: Type.Literal("public.usda_fooddata_central"),
   enabled: Type.Boolean(),
-  backend_id: Type.String(),
-  backend_version: Type.String(),
+  backend_id: Type.Literal("fooddata-central"),
+  backend_version: Type.Literal("api-v1"),
 }, { additionalProperties: false });
 
 const nutritionConfigSchema = Type.Object({
   policy_version: Type.String(),
   resolution_deadline_ms: Type.Optional(Type.Integer({ minimum: 500, maximum: 5000 })),
   sources: Type.Array(nutritionSourceConfigSchema, { maxItems: 32 }),
-  credential_refs: Type.Optional(Type.Record(Type.String(), Type.String())),
+  credential_refs: Type.Optional(Type.Object({
+    "public.usda_fooddata_central": Type.Optional(Type.Literal("env:FDC_API_KEY", {
+      description: "Private backend reference. The API key is read only from the FDC_API_KEY environment variable.",
+    })),
+  }, { additionalProperties: false })),
 }, { additionalProperties: false });
 
 const coreConfigSchema = Type.Object(
@@ -122,6 +128,32 @@ interface PluginRuntimeState {
   sourceConfigDigest?: string;
   lifecycleRegistered: boolean;
 }
+
+const FDC_CREDENTIAL_REFERENCE = "env:FDC_API_KEY";
+
+function configuredNutritionAdapters(
+  nutrition: Readonly<NutritionRuntimeConfig>,
+): readonly NutritionSourceAdapter[] {
+  const entry = nutrition.sources.find((candidate) =>
+    candidate.source_id === "public.usda_fooddata_central" && candidate.enabled);
+  if (entry === undefined) return Object.freeze([]);
+  if (entry.backend_id !== "fooddata-central" || entry.backend_version !== "api-v1" ||
+      entry.credential_ref !== FDC_CREDENTIAL_REFERENCE) {
+    throw new TypeError("OPENCLAW_AUTHORITY_INVALID:nutrition_source");
+  }
+  return Object.freeze([
+    new FoodDataCentralAdapter(new FoodDataCentralHttpTransport(), FDC_CREDENTIAL_REFERENCE),
+  ]);
+}
+
+const environmentNutritionCredential: SourceContext["credential"] = (reference) => {
+  if (reference !== FDC_CREDENTIAL_REFERENCE) return undefined;
+  const value = process.env.FDC_API_KEY;
+  if (value === undefined || value.length === 0 || value.length > 128 || /[^A-Za-z0-9_-]/u.test(value)) {
+    return undefined;
+  }
+  return Object.freeze({ value: new TextEncoder().encode(value) });
+};
 
 const pluginRuntimeStates = new WeakMap<object, PluginRuntimeState>();
 const pluginRuntimeOwners = new WeakMap<CoreRuntime, Set<object>>();
@@ -248,6 +280,8 @@ function acquirePluginRuntime(
     officialDataRoot: physicalRoot,
     now: () => new Date().toISOString(),
     nutritionConfig: nutrition,
+    nutritionAdapters: configuredNutritionAdapters(nutrition),
+    nutritionCredential: environmentNutritionCredential,
   });
   if (state.runtime === undefined) {
     state.runtime = candidate;

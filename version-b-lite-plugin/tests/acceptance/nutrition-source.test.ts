@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { cloneNutritionRuntimeConfig } from "../../src/nutrition/config.js";
+import { FoodDataCentralAdapter } from "../../src/nutrition/adapters/fooddata-central.js";
+import { FoodDataCentralHttpTransport } from "../../src/nutrition/adapters/fooddata-central-http.js";
 import { resolveNutrition } from "../../src/nutrition/source-client.js";
 import type {
   NutritionSourceAdapter,
@@ -73,6 +75,70 @@ const capability = (source_id: string, rank: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): Sou
 });
 
 describe("nutrition source authority", () => {
+  it("maps the fixed USDA FDC HTTPS response without exposing its credential", async () => {
+    const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const transport = new FoodDataCentralHttpTransport(async (input, init) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Response(JSON.stringify({
+        foods: [{
+          fdcId: 12345,
+          description: "Milk, whole",
+          dataType: "Foundation",
+          publicationDate: "2026-04-01",
+          foodNutrients: [
+            { nutrientId: 1008, unitName: "kcal", value: 61 },
+            { nutrientId: 1003, unitName: "g", value: 3.15 },
+            { nutrientId: 1004, unitName: "g", value: 3.25 },
+            { nutrientId: 1005, unitName: "g", value: 4.8 },
+            { nutrientId: 1079, unitName: "g", value: 0 },
+          ],
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const resolved = await resolveNutrition(request, {
+      signal: new AbortController().signal,
+      deadline_at: new Date(Date.now() + 5_000).toISOString(),
+      now: () => new Date().toISOString(),
+      credential: (reference) => reference === "env:FDC_API_KEY"
+        ? Object.freeze({ value: new TextEncoder().encode("test-key-123") })
+        : undefined,
+    }, {
+      config: cloneNutritionRuntimeConfig({
+        policy_version: "2026-08-14.1",
+        sources: [{
+          source_id: "public.usda_fooddata_central",
+          enabled: true,
+          backend_id: "fooddata-central",
+          backend_version: "api-v1",
+        }],
+        credential_refs: { "public.usda_fooddata_central": "env:FDC_API_KEY" },
+      }),
+      adapters: [new FoodDataCentralAdapter(transport, "env:FDC_API_KEY")],
+    });
+
+    expect(resolved).toMatchObject({
+      source_id: "public.usda_fooddata_central",
+      source_type: "authoritative_public_database",
+      source_ref: "https://fdc.nal.usda.gov/fdc-app.html#/food-details/12345/nutrients",
+      source_version: "2026-04-01",
+      basis_kind: "per_100g",
+      nutrient_values: {
+        energy_kcal: "61",
+        protein_g: "3.15",
+        fat_g: "3.25",
+        carbohydrate_g: "4.8",
+        fiber_g: "0",
+      },
+      coverage_status: "complete",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://api.nal.usda.gov/fdc/v1/foods/search");
+    expect(calls[0]?.url).not.toContain("test-key-123");
+    expect(String(calls[0]?.init.body)).not.toContain("test-key-123");
+    expect(new Headers(calls[0]?.init.headers).get("X-Api-Key")).toBe("test-key-123");
+    expect(Object.isFrozen(resolved.nutrient_values)).toBe(true);
+  });
+
   it("rejects a generic numeric source before calling its adapter", async () => {
     const calls: string[] = [];
     const sourceId = "local.generic_estimate";

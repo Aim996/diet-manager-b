@@ -223,3 +223,30 @@ Batch V1-F：只进行一次统一 focused/full/noEmit/OpenClaw 元数据验证�
 - 未重复执行完整套件；上述两个失败的直接覆盖均已通过。
 - 0.1.0 主链已经具备代码路径，但默认无已配置权威营养源时仍按 v1.0 返回 `unknown`。
 - 真实 FDC 网络 transport 与私有 credential resolver 尚未成为默认插件能力；这仍是“至少接入一个权威库”的部署缺口，不能因 fixture adapter 通过而宣称真实联网完成。
+
+## Batch V1-G：USDA FoodData Central 可部署接线
+
+- 日期：2026-08-14
+- 目标：关闭 §9“至少接入一个权威库”的代码与插件接线缺口。
+
+### 生产改动
+
+- 新增固定源 `https://api.nal.usda.gov/fdc/v1/foods/search` 的只读 HTTP transport。
+- 请求只发送规范食品名、固定数据类型筛选和分页；API key 仅放入 `X-Api-Key` header。
+- 禁止重定向；只接受 JSON；单响应上限 512 KiB；所有外部值只映射到固定营养字段。
+- 只采用 Foundation、FNDDS 与 SR Legacy 的每 100g 权威记录；无结果、缺 key、超时或异常均稳定降级为 `unknown`。
+- 插件配置只开放 `public.usda_fooddata_central` + `fooddata-central` + `api-v1`；私有引用固定为 `env:FDC_API_KEY`。
+- OpenClaw runtime 从服务进程环境读取 key，模型参数、URL、body、公开 outcome、SQLite、日志和 config digest 都不含 key。
+
+### 小门验证
+
+- `nutrition-source.test.ts`：5/5 PASS；fixture 响应映射、固定 URL、header credential、公开字段冻结。
+- `openclaw-core.test.ts`：21/21 PASS；真实注册工具经配置 FDC 路径提交餐食并返回 `public_reference`。
+- 两文件合计 26/26 PASS。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+- `openclaw.plugin.json` JSON parse：PASS。
+
+### 本批未声明
+
+- 测试没有请求真实 USDA 服务，也没有读取用户真实 key；真实联网由部署者/用户验收。
+- 没有生成 dist，没有再次运行完整 Vitest。

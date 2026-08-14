@@ -113,3 +113,18 @@
 - [ ] Run OpenClaw metadata validation without building or emitting dist.
 - [ ] Record exact commands/counts/commit SHA, unresolved DEBT/RISK, and the nonclaims for full 0.1.
 - [ ] Commit the closure documents without modifying source after the final gate.
+
+### Task 7: Connect one real allowlisted authoritative nutrition backend
+
+**Files:**
+- Create: `version-b-lite-plugin/src/nutrition/adapters/fooddata-central-http.ts`
+- Modify: `version-b-lite-plugin/src/openclaw/plugin.ts`
+- Modify: `version-b-lite-plugin/openclaw.plugin.json`
+- Test: `version-b-lite-plugin/tests/acceptance/nutrition-source.test.ts`
+- Test: `version-b-lite-plugin/tests/acceptance/openclaw-core.test.ts`
+
+- [x] Implement a fixed-origin, bounded, JSON-only USDA FoodData Central transport.
+- [x] Resolve the API key only from private `FDC_API_KEY` process environment through opaque `env:FDC_API_KEY` config.
+- [x] Map only fixed nutrient IDs and preserve the FDC source URL/record/version.
+- [x] Prove with fixture transport and registered OpenClaw tool tests that the key is absent from public request/result bytes.
+- [x] Run the two focused files and `tsc --noEmit`; do not make a real network call.

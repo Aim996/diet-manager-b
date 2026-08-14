@@ -32,15 +32,18 @@
               "type": "object",
               "properties": {
                 "source_id": {
+                  "const": "public.usda_fooddata_central",
                   "type": "string"
                 },
                 "enabled": {
                   "type": "boolean"
                 },
                 "backend_id": {
+                  "const": "fooddata-central",
                   "type": "string"
                 },
                 "backend_version": {
+                  "const": "api-v1",
                   "type": "string"
                 }
               },
@@ -55,11 +58,14 @@
           },
           "credential_refs": {
             "type": "object",
-            "patternProperties": {
-              "^.*$": {
+            "properties": {
+              "public.usda_fooddata_central": {
+                "const": "env:FDC_API_KEY",
+                "description": "Private backend reference. The API key is read only from the FDC_API_KEY environment variable.",
                 "type": "string"
               }
-            }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
