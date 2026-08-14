@@ -199,6 +199,15 @@ it("returns persisted nutrition evidence through the real asynchronous meal path
     });
     const stored = openDietDatabase({ privateRuntimeRoot: root });
     try {
+      const itemPayload = JSON.parse((stored.database.prepare(
+        "SELECT payload_json FROM meal_items WHERE event_id = ?",
+      ).get(outcome.record_id) as { payload_json: string }).payload_json) as Record<string, unknown>;
+      expect(itemPayload).toMatchObject({
+        nutrition_evidence: {
+          source_ref: "fdc:rice-001",
+          coverage_status: "partial",
+        },
+      });
       expect(stored.database.prepare(
         "SELECT count(*) AS count FROM nutrition_profiles WHERE schema_version = '1.1.0'",
       ).get()).toEqual({ count: 1 });

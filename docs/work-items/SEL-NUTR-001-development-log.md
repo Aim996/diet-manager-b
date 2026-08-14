@@ -176,6 +176,22 @@
 - 后续修复索引：下一小批先把 v1.1 记录移入 effect/terminal readback，随后补 new-key already-current 与代表性 fault/tamper，再进入统一 Gate。
 - 批次提交：`feat: append nutrition supplements`（本段记录随实现提交）。
 
+### Batch C5d / 2026-08-14
+
+- 目标：关闭 v1.1 Profile/Snapshot 在领域 Finalize 后补写的原子性缺口，让餐食与营养补充都在既有 EffectBundle 事务内保存完整营养证据。
+- 绑定 REQ：`REQ-NUTR-004/005/006`。
+- 绑定 CASE：`CASE-NUTR-004/005/009` 的 Profile/Snapshot、补充与来源标签主链；故障排列仍留到模块统一 Gate。
+- 起始 HEAD：`724b312`。
+- 改动文件：`nutrition/types`、`nutrition-repository`、`domain/types/service/effect-bundle`、`application/mapping/core-runtime` 与现有 application acceptance。
+- 行为变化：meal item fact 保存经过 exact 校验的完整 nutrition evidence；meal/supplement effect 在同一事务写 domain/v2 和 v1.1 Profile/Snapshot；terminal replay 精确读回 v1.1；应用层不再写业务记录，只验证已提交记录并生成净化 outcome。
+- 接口/Schema/authority 决策：未新增 migration/table/public action；十进制范围用任意精度整数比较，避免 Number 精度/溢出；旧同步餐食没有 nutrition evidence 时保持原有 domain/v2 行为。
+- 真实 RED：真实 async meal 已提交 v1.1 行，但 `meal_items.payload_json` 没有可供 EffectBundle 重建的 nutrition evidence；断言缺失后失败，接入事实/effect/terminal authority 后转 GREEN。
+- 定向 smoke：`nutrition-application + nutrition-supplement` 2 files / 7 tests PASS；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 延期到模块末的测试：after-nutrition 回滚、v1.1 tamper、并发、完整 Nutrition CASE、full/trace。
+- 已知风险/假设：本批只验证成功与同键 replay 代表路径，没有在开发中扩成 fault/tamper 穷举；这些按开发记录在最终统一 Gate 集中验证。
+- 后续修复索引：下一小批只实现 new-key already-current no-write，再进入代表性 fault/tamper 与模块统一 Gate。
+- 批次提交：`feat: persist nutrition evidence atomically`（本段记录随实现提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

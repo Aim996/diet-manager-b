@@ -45,6 +45,18 @@ import {
   type PantryPurchaseReceiptItem,
 } from "./receipt.js";
 import {
+  buildNutritionRecords,
+  type NutritionRecords,
+} from "../nutrition/nutrition-service.js";
+import {
+  assertNutritionRecordsPersisted,
+  persistNutritionRecords,
+} from "../nutrition/nutrition-repository.js";
+import {
+  validateAndFreezeResolvedNutritionEvidence,
+  type ResolvedNutritionEvidence,
+} from "../nutrition/types.js";
+import {
   addNutritionVectors,
   resolveInventoryMatch,
   scaleNutritionVector,
@@ -197,6 +209,7 @@ interface EffectiveMealItemSnapshot {
   readonly normalized_name: string;
   readonly amount: StructuredAmount;
   readonly nutrition_sources: readonly unknown[];
+  readonly nutrition_evidence?: Readonly<ResolvedNutritionEvidence>;
 }
 
 interface EffectiveMealSnapshot {
@@ -305,6 +318,9 @@ function readEffectiveMealState(
       normalized_name: item.normalized_name,
       amount: storedStructuredAmount(payload.amount, "effective_meal_amount"),
       nutrition_sources: payload.nutrition_sources,
+      ...(payload.nutrition_evidence === undefined
+        ? {}
+        : { nutrition_evidence: validateAndFreezeResolvedNutritionEvidence(payload.nutrition_evidence) }),
     };
   });
   let snapshot = freezeJson({
@@ -403,6 +419,7 @@ export function prepareCorrectionOperation(
               ...item,
               amount: operation.replacement_amount,
               nutrition_sources: [operation.replacement_nutrition_source],
+              nutrition_evidence: operation.replacement_nutrition_evidence,
             }
           : item),
       }) as EffectiveMealSnapshot;
@@ -1062,6 +1079,9 @@ export function prepareMealOperation(input: PrepareMealInput): PreparedMeal {
           ...(inventoryPlans?.[itemOrder] === undefined || inventoryPlans[itemOrder] === null
             ? {}
             : { inventory_plan: inventoryPlans[itemOrder] }),
+          ...(item.nutrition_evidence === undefined
+            ? {}
+            : { nutrition_evidence: item.nutrition_evidence }),
           nutrition_sources: item.nutrition_sources,
         }),
       }))),
@@ -1171,6 +1191,25 @@ interface StoredMealItem {
   item_order: number;
   normalized_name: string;
   payload_json: string;
+}
+
+function v11NutritionRecords(
+  operationId: string,
+  eventId: string,
+  committedAt: string,
+  item: Pick<StoredMealItem, "item_id" | "normalized_name">,
+  evidenceValue: unknown,
+): Readonly<NutritionRecords> {
+  const evidence = validateAndFreezeResolvedNutritionEvidence(evidenceValue);
+  return buildNutritionRecords({
+    operation_id: operationId,
+    meal_event_id: eventId,
+    intake_item_id: item.item_id,
+    item_name: item.normalized_name,
+    subject_type: evidence.source_type === "product_label" ? "product" : "food",
+    subject_id: item.normalized_name,
+    created_at: committedAt,
+  }, evidence);
 }
 
 interface MealBundleCheckpointRow {
@@ -2166,7 +2205,7 @@ function readAppliedMealResultInTransaction(
       : null;
     const snapshots = input.database.prepare(
       `SELECT source_type, profile_version, payload_json FROM nutrition_snapshots
-       WHERE intake_item_id = ? ORDER BY snapshot_id`,
+       WHERE intake_item_id = ? AND schema_version = 'domain/v2' ORDER BY snapshot_id`,
     ).all(item.item_id) as Array<{
       source_type: NutritionSelection["source_type"];
       profile_version: string;
@@ -2270,6 +2309,15 @@ function readAppliedMealResultInTransaction(
     const profileVersion = Number(snapshot.profile_version);
     if (!Number.isSafeInteger(profileVersion) || profileVersion < 1) {
       throw new Error("MEAL_EFFECT_AUTHORITY_INVALID:terminal_snapshot");
+    }
+    if (Object.hasOwn(itemPayload, "nutrition_evidence")) {
+      assertNutritionRecordsPersisted(input.database, [v11NutritionRecords(
+        event.operation_id,
+        event.event_id,
+        event.committed_at,
+        item,
+        itemPayload.nutrition_evidence,
+      )]);
     }
     const adoption = amount.nutrition_adoption_microunits;
     const deduction = amount.inventory_deduction_microunits;
@@ -2515,6 +2563,17 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
         profileId,
         generatedAt,
       );
+      if (Object.hasOwn(payload, "nutrition_evidence")) {
+        const records = v11NutritionRecords(
+          event.operation_id,
+          event.event_id,
+          event.committed_at,
+          item,
+          payload.nutrition_evidence,
+        );
+        persistNutritionRecords(input.database, [records]);
+        assertNutritionRecordsPersisted(input.database, [records]);
+      }
       if (input.fault === "after_nutrition") {
         throw new Error("NUTRITION_EFFECT_WRITE_FAILED:after_nutrition");
       }
@@ -3269,7 +3328,7 @@ export function applyCorrectionEffects(
     }
 
     const correctionEvent = input.database.prepare(
-      `SELECT event_id, event_type, source_message_id, conversation_id, received_at
+      `SELECT event_id, event_type, source_message_id, conversation_id, received_at, committed_at
        FROM event_records WHERE envelope_id = ? AND operation_id = ?
          AND event_type IN ('diet_correction','nutrition_supplemented')`,
     ).get(input.envelopeId, input.operationId) as {
@@ -3278,6 +3337,7 @@ export function applyCorrectionEffects(
       source_message_id: string;
       conversation_id: string;
       received_at: string;
+      committed_at: string;
     } | undefined;
     const correction = input.database.prepare(
       `SELECT correction_id, target_event_id, base_revision, operation, payload_json
@@ -3666,6 +3726,21 @@ export function applyCorrectionEffects(
           source_nutrients: nextSourceNutrients,
         }),
       );
+      if (correction.operation === "change_nutrition_source") {
+        const nutritionEvidence = afterSnapshot.items[itemOrder]?.nutrition_evidence;
+        if (nutritionEvidence === undefined) {
+          throw new Error("CORRECTION_EFFECT_INVALID:nutrition_evidence");
+        }
+        const records = v11NutritionRecords(
+          input.operationId,
+          correction.target_event_id,
+          correctionEvent.committed_at,
+          item,
+          nutritionEvidence,
+        );
+        persistNutritionRecords(input.database, [records]);
+        assertNutritionRecordsPersisted(input.database, [records]);
+      }
     }
     const date = String(payload.affected_dates[0]);
     const progressRow = input.database.prepare(
@@ -3889,7 +3964,7 @@ export function readAppliedCorrectionResult(
 
   const correctionRows = input.database.prepare(
     `SELECT c.correction_id, c.target_event_id, c.base_revision, c.request_id,
-            c.operation, c.payload_json, e.event_id, e.event_type
+            c.operation, c.payload_json, e.event_id, e.event_type, e.committed_at
      FROM correction_events c
      JOIN event_records e ON e.operation_id = c.request_id
        AND e.event_type IN ('diet_correction','nutrition_supplemented')
@@ -3903,6 +3978,7 @@ export function readAppliedCorrectionResult(
     payload_json: string;
     event_id: string;
     event_type: "diet_correction" | "nutrition_supplemented";
+    committed_at: string;
   }>;
   if (correctionRows.length !== 1) return correctionAuthorityInvalid("terminal_fact");
   const correction = correctionRows[0];
@@ -3951,6 +4027,45 @@ export function readAppliedCorrectionResult(
   );
   if (!Array.isArray(inventoryIntent.items) || inventoryIntent.items.length === 0) {
     return correctionAuthorityInvalid("terminal_fact");
+  }
+  if (correction.operation === "change_nutrition_source") {
+    if (inventoryIntent.items.length !== 1) return correctionAuthorityInvalid("terminal_nutrition");
+    const intent = exactCorrectionRecord(
+      inventoryIntent.items[0],
+      ["from_microunits", "item_order", "to_microunits"],
+      "terminal_nutrition",
+    );
+    if (!Number.isSafeInteger(intent.item_order) || (intent.item_order as number) < 0) {
+      return correctionAuthorityInvalid("terminal_nutrition");
+    }
+    const itemOrder = intent.item_order as number;
+    const afterSnapshot = exactCorrectionRecord(
+      fact.after_snapshot,
+      ["active", "items", "location", "meal_slot", "occurred_at", "timezone"],
+      "terminal_nutrition",
+    );
+    if (!Array.isArray(afterSnapshot.items)) return correctionAuthorityInvalid("terminal_nutrition");
+    const afterItem = afterSnapshot.items[itemOrder];
+    if (typeof afterItem !== "object" || afterItem === null || Array.isArray(afterItem)) {
+      return correctionAuthorityInvalid("terminal_nutrition");
+    }
+    const evidence = (afterItem as Record<string, unknown>).nutrition_evidence;
+    if (evidence === undefined) return correctionAuthorityInvalid("terminal_nutrition");
+    const storedItem = input.database.prepare(
+      `SELECT item_id, normalized_name FROM meal_items WHERE event_id = ? AND item_order = ?`,
+    ).get(correction.target_event_id, itemOrder) as Pick<StoredMealItem, "item_id" | "normalized_name"> | undefined;
+    if (storedItem === undefined) return correctionAuthorityInvalid("terminal_nutrition");
+    try {
+      assertNutritionRecordsPersisted(input.database, [v11NutritionRecords(
+        input.operationId,
+        correction.target_event_id,
+        correction.committed_at,
+        storedItem,
+        evidence,
+      )]);
+    } catch {
+      return correctionAuthorityInvalid("terminal_nutrition");
+    }
   }
 
   const outboxes = input.database.prepare(

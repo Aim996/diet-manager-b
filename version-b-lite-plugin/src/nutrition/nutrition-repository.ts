@@ -110,6 +110,20 @@ export function persistNutritionRecords(
   }
 }
 
+export function assertNutritionRecordsPersisted(
+  database: DatabaseSync,
+  records: readonly Readonly<NutritionRecords>[],
+): void {
+  for (const record of records) {
+    const profile = database.prepare("SELECT * FROM nutrition_profiles WHERE nutrition_profile_id = ?")
+      .get(record.profile.nutrition_profile_id) as unknown as StoredProfileRow | undefined;
+    const snapshot = database.prepare("SELECT * FROM nutrition_snapshots WHERE snapshot_id = ?")
+      .get(record.snapshot.snapshot_id) as unknown as StoredSnapshotRow | undefined;
+    if (profile === undefined || !profileMatches(profile, record.profile)) invalid("profile_readback");
+    if (snapshot === undefined || !snapshotMatches(snapshot, record.snapshot)) invalid("snapshot_readback");
+  }
+}
+
 export function readNutritionRecordsForMeal(
   database: DatabaseSync,
   mealEventId: string,

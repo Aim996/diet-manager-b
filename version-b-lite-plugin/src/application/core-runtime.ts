@@ -76,7 +76,7 @@ import {
   nutritionOutcomeItem,
   type NutritionRecords,
 } from "../nutrition/nutrition-service.js";
-import { persistNutritionRecords } from "../nutrition/nutrition-repository.js";
+import { assertNutritionRecordsPersisted } from "../nutrition/nutrition-repository.js";
 import {
   freezeNutritionData,
   type NutritionRuntimeConfig,
@@ -1344,6 +1344,7 @@ async function handleNutritionSupplement(
         nutrition_adoption_microunits: adopted,
       }),
       replacement_nutrition_source: source,
+      replacement_nutrition_evidence: evidence,
     });
     const execution = executeCandidate(
       runtime,
@@ -1369,7 +1370,7 @@ async function handleNutritionSupplement(
       created_at: supplementEvent.committed_at,
     }, evidence)];
     try {
-      persistNutritionRecords(session.database, records);
+      assertNutritionRecordsPersisted(session.database, records);
     } catch {
       return committedOutcome(request.action, request.operation_id, "committed_with_issues", execution.record_id);
     }
@@ -1452,7 +1453,7 @@ export async function handleCoreRequestAsync(
       }, material.nutrition_evidence[index]!);
     });
     try {
-      persistNutritionRecords(session.database, records);
+      assertNutritionRecordsPersisted(session.database, records);
     } catch {
       return committedOutcome(request.action, request.operation_id, "committed_with_issues", outcome.record_id,
         "record_ids" in outcome ? outcome.record_ids : undefined);

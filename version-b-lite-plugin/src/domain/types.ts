@@ -4,6 +4,7 @@ import type {
   CoreSubjectEvidence,
   OccurredTimeEvidence,
 } from "../parser/types.js";
+import type { ResolvedNutritionEvidence } from "../nutrition/types.js";
 
 export interface NutritionVector {
   readonly energy_kcal_milli: number | null;
@@ -219,6 +220,7 @@ export interface MealItemInput {
   readonly inventory_directive?: Readonly<InventoryDirectiveEvidence>;
   readonly amount: StructuredAmount;
   readonly nutrition_sources: readonly NutritionSourceCandidate[];
+  readonly nutrition_evidence?: Readonly<ResolvedNutritionEvidence>;
 }
 
 export interface RecordMealOperation {
@@ -278,6 +280,7 @@ export interface CorrectNutritionSupplementOperation {
   readonly previous_snapshot_id: string;
   readonly replacement_amount: Readonly<KnownStructuredAmount>;
   readonly replacement_nutrition_source: Readonly<NutritionSourceCandidate>;
+  readonly replacement_nutrition_evidence: Readonly<ResolvedNutritionEvidence>;
 }
 
 export type CorrectRecordOperation =

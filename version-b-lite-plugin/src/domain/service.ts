@@ -76,6 +76,7 @@ import {
   validateAndFreezeStorageLocationEvidence,
 } from "./inventory-service.js";
 import { queryDomainReadModel, type DomainQueryResult } from "./read-model.js";
+import { validateAndFreezeResolvedNutritionEvidence } from "../nutrition/types.js";
 import {
   buildQuickPrompt,
   buildReceiptData,
@@ -400,8 +401,13 @@ function validateOperation(
       const directiveKeys = typeof item === "object" && item !== null && Object.hasOwn(item, "inventory_directive")
         ? ["inventory_directive"]
         : [];
+      const nutritionEvidenceKeys = typeof item === "object" && item !== null &&
+          Object.hasOwn(item, "nutrition_evidence")
+        ? ["nutrition_evidence"]
+        : [];
       const mealItem = record(item, [
         "normalized_name", "item_type", "amount", "nutrition_sources", ...directiveKeys,
+        ...nutritionEvidenceKeys,
       ], `${field}.items.${index}`);
       text(mealItem.normalized_name, `${field}.items.${index}.normalized_name`);
       enumValue(mealItem.item_type, ["dish", "food", "nutrition_drink"], `${field}.items.${index}.item_type`);
@@ -410,6 +416,9 @@ function validateOperation(
       }
       validateStructuredAmount(mealItem.amount, `${field}.items.${index}.amount`);
       validateNutritionSources(mealItem.nutrition_sources, `${field}.items.${index}.nutrition_sources`);
+      if (nutritionEvidenceKeys.length === 1) {
+        validateAndFreezeResolvedNutritionEvidence(mealItem.nutrition_evidence);
+      }
     }
     try {
       validateMealOperationEvidence(candidate, candidate.occurred_at as string, field);
@@ -457,6 +466,7 @@ function validateOperation(
         const candidate = record(value, [
           "kind", "operation_id", "correction_kind", "target_event_id", "base_revision",
           "item_order", "previous_snapshot_id", "replacement_amount", "replacement_nutrition_source",
+          "replacement_nutrition_evidence",
         ], field);
         text(candidate.operation_id, `${field}.operation_id`);
         enumValue(candidate.correction_kind, ["nutrition_supplement"], `${field}.correction_kind`);
@@ -470,6 +480,7 @@ function validateOperation(
           [candidate.replacement_nutrition_source],
           `${field}.replacement_nutrition_source`,
         );
+        validateAndFreezeResolvedNutritionEvidence(candidate.replacement_nutrition_evidence);
         return Object.freeze({ ...candidate }) as unknown as CorrectNutritionSupplementOperation;
       }
       const candidate = record(value, [
@@ -1000,6 +1011,9 @@ function factPreviewMaterial(
               mealPlans.get(sequence)?.[itemOrder] === undefined
             ? {}
             : { inventory_plan: mealPlans.get(sequence)?.[itemOrder] }),
+          ...(item.nutrition_evidence === undefined
+            ? {}
+            : { nutrition_evidence: item.nutrition_evidence }),
           nutrition_sources: item.nutrition_sources,
         },
       })),

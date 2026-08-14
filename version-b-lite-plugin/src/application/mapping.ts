@@ -42,6 +42,7 @@ export interface ResolvedCoreNutritionSupplement {
   readonly previous_snapshot_id: string;
   readonly replacement_amount: Readonly<CorrectNutritionSupplementOperation["replacement_amount"]>;
   readonly replacement_nutrition_source: Readonly<NutritionSourceCandidate>;
+  readonly replacement_nutrition_evidence: Readonly<ResolvedNutritionEvidence>;
 }
 
 function identity(request: Readonly<CoreApplicationRequest>): string {
@@ -163,6 +164,7 @@ function mealOrWaterOperation(
           : item.estimated === false ? "explicit" : "estimated_upper_bound",
       },
       nutrition_sources: source === null ? [] : [source],
+      ...(evidence === undefined ? {} : { nutrition_evidence: evidence }),
     }); }),
     source_text: command.source_text, occurred_time: command.occurred_time,
     subject: command.subject,
@@ -376,6 +378,7 @@ function nutritionSupplementOperation(
     previous_snapshot_id: resolution.previous_snapshot_id,
     replacement_amount: resolution.replacement_amount,
     replacement_nutrition_source: resolution.replacement_nutrition_source,
+    replacement_nutrition_evidence: resolution.replacement_nutrition_evidence,
   });
 }
 
