@@ -5,6 +5,7 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import type {
   ExpirationEvidence,
+  InventoryLocationCorrectionFactPayload,
   InventoryAllocationPlan,
   OpeningEvidence,
   PackageQuantityEvidence,
@@ -13,6 +14,7 @@ import type {
   ProductSpecificationEvidence,
   StorageLocationEvidence,
 } from "./types.js";
+import { buildInventoryLocationCorrectionReceiptItem } from "./receipt.js";
 
 export type {
   ExpirationEvidence,
@@ -331,6 +333,160 @@ export function validateAndFreezePantryPurchaseEvidence(value: unknown): Readonl
   validateOpening(record.opening, "pantry_evidence.opening");
   validateExpiration(record.expiration, "pantry_evidence.expiration");
   return record as unknown as Readonly<PantryPurchaseEvidence>;
+}
+
+export function validateAndFreezeStorageLocationEvidence(
+  value: unknown,
+): Readonly<StorageLocationEvidence> {
+  return validateLocation(cloneOrdinary(value, "storage_location"), "storage_location");
+}
+
+export function validateAndFreezeExpirationEvidence(value: unknown): Readonly<ExpirationEvidence> {
+  return validateExpiration(cloneOrdinary(value, "expiration"), "expiration");
+}
+
+function canonicalObjectJson(value: unknown, path: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 65_536) return invalid(path);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return invalid(path);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || canonicalJson(parsed) !== value) {
+    return invalid(path);
+  }
+  return value;
+}
+
+function correctionProjectionJson(value: unknown, path: string): Readonly<{
+  batch_id: string;
+  product_id: string;
+  quantity_microunits: number | null;
+  unit: string;
+  pantry_evidence: Readonly<PantryPurchaseEvidence>;
+}> {
+  const source = canonicalObjectJson(value, path);
+  const parsed = JSON.parse(source) as unknown;
+  const record = exactRecord(parsed, [
+    "authority_kind", "batch_id", "product_id", "quantity_microunits", "unit", "pantry_evidence",
+  ], path);
+  enumValue(record.authority_kind, ["diet-manager/inventory-projection/v2"], `${path}.authority_kind`);
+  const quantity = record.quantity_microunits;
+  if (quantity !== null && (
+    typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 0
+  )) return invalid(`${path}.quantity_microunits`);
+  return Object.freeze({
+    batch_id: text(record.batch_id, `${path}.batch_id`),
+    product_id: text(record.product_id, `${path}.product_id`),
+    quantity_microunits: quantity as number | null,
+    unit: text(record.unit, `${path}.unit`),
+    pantry_evidence: validateAndFreezePantryPurchaseEvidence(record.pantry_evidence),
+  });
+}
+
+export function validateAndFreezeInventoryLocationCorrectionFactPayload(
+  value: unknown,
+): Readonly<InventoryLocationCorrectionFactPayload> {
+  const cloned = cloneOrdinary(value, "location_correction_fact");
+  const record = exactRecord(cloned, [
+    "authority_kind", "adjustment_kind", "batch_id", "base_revision",
+    "previous_last_event_id", "previous_last_changed_at", "previous_projection_json",
+    "next_projection_json", "previous_location", "next_location", "previous_expiration",
+    "next_expiration", "source_text", "matched_span", "rule_version", "effect_inputs", "result",
+  ], "location_correction_fact");
+  enumValue(record.authority_kind, ["diet-manager/inventory-location-correction-fact/v1"],
+    "location_correction_fact.authority_kind");
+  enumValue(record.adjustment_kind, ["location_correction"],
+    "location_correction_fact.adjustment_kind");
+  text(record.batch_id, "location_correction_fact.batch_id");
+  if (!Number.isSafeInteger(record.base_revision) || (record.base_revision as number) < 1) {
+    return invalid("location_correction_fact.base_revision");
+  }
+  text(record.previous_last_event_id, "location_correction_fact.previous_last_event_id");
+  nullableTimestamp(record.previous_last_changed_at, "location_correction_fact.previous_last_changed_at");
+  canonicalObjectJson(record.previous_projection_json, "location_correction_fact.previous_projection_json");
+  canonicalObjectJson(record.next_projection_json, "location_correction_fact.next_projection_json");
+  const previousLocation = validateLocation(record.previous_location, "location_correction_fact.previous_location");
+  const nextLocation = validateLocation(record.next_location, "location_correction_fact.next_location");
+  const previousExpiration = validateExpiration(record.previous_expiration,
+    "location_correction_fact.previous_expiration");
+  const nextExpiration = validateExpiration(record.next_expiration,
+    "location_correction_fact.next_expiration");
+  const previousProjection = correctionProjectionJson(
+    record.previous_projection_json,
+    "location_correction_fact.previous_projection_json",
+  );
+  const nextProjection = correctionProjectionJson(
+    record.next_projection_json,
+    "location_correction_fact.next_projection_json",
+  );
+  if (
+    canonicalJson(previousProjection.pantry_evidence.expiration) !== canonicalJson(previousExpiration) ||
+    canonicalJson(nextProjection.pantry_evidence.expiration) !== canonicalJson(nextExpiration) ||
+    (canonicalJson(previousExpiration) === canonicalJson(nextExpiration) && previousExpiration.basis !== "explicit")
+  ) return invalid("location_correction_fact.expiration_transition");
+  if (
+    previousLocation.value === nextLocation.value ||
+    nextLocation.evidence_kind !== "corrected_explicit" ||
+    previousProjection.batch_id !== record.batch_id || nextProjection.batch_id !== record.batch_id ||
+    previousProjection.product_id !== nextProjection.product_id ||
+    previousProjection.quantity_microunits !== nextProjection.quantity_microunits ||
+    previousProjection.unit !== nextProjection.unit ||
+    canonicalJson(previousProjection.pantry_evidence.product_identity) !==
+      canonicalJson(nextProjection.pantry_evidence.product_identity) ||
+    canonicalJson(previousProjection.pantry_evidence.package_quantity) !==
+      canonicalJson(nextProjection.pantry_evidence.package_quantity) ||
+    canonicalJson(previousProjection.pantry_evidence.opening) !==
+      canonicalJson(nextProjection.pantry_evidence.opening) ||
+    canonicalJson(previousProjection.pantry_evidence.location) !== canonicalJson(previousLocation) ||
+    canonicalJson(nextProjection.pantry_evidence.location) !== canonicalJson(nextLocation) ||
+    canonicalJson(nextExpiration) !== canonicalJson(record.result &&
+      typeof record.result === "object" && !Array.isArray(record.result)
+        ? (record.result as Record<string, unknown>).expiration
+        : undefined)
+  ) return invalid("location_correction_fact.transition");
+  text(record.source_text, "location_correction_fact.source_text");
+  text(record.matched_span, "location_correction_fact.matched_span");
+  enumValue(record.rule_version, ["diet-manager/location-correction/v1"],
+    "location_correction_fact.rule_version");
+  const effectInputs = exactRecord(record.effect_inputs, Object.keys(record.effect_inputs as object),
+    "location_correction_fact.effect_inputs");
+  const effectIds = Object.keys(effectInputs);
+  if (effectIds.length !== 1) return invalid("location_correction_fact.effect_inputs");
+  const effect = exactRecord(effectInputs[effectIds[0]!], [
+    "kind", "batch_id", "base_revision", "previous_last_event_id", "previous_last_changed_at",
+    "previous_projection_json", "next_projection_json",
+  ], "location_correction_fact.effect_input");
+  enumValue(effect.kind, ["inventory_location_correction"], "location_correction_fact.effect_input.kind");
+  if (
+    effect.batch_id !== record.batch_id || effect.base_revision !== record.base_revision ||
+    effect.previous_last_event_id !== record.previous_last_event_id ||
+    effect.previous_last_changed_at !== record.previous_last_changed_at ||
+    effect.previous_projection_json !== record.previous_projection_json ||
+    effect.next_projection_json !== record.next_projection_json
+  ) return invalid("location_correction_fact.effect_input");
+  const result = exactRecord(record.result, [
+    "sequence", "operation_id", "status", "error_code", "batch_id", "adjustment_kind",
+    "previous_location", "current_location", "expiration", "receipt_item",
+  ], "location_correction_fact.result");
+  const expectedReceipt = buildInventoryLocationCorrectionReceiptItem({
+    batch_id: record.batch_id as string,
+    previous_location: previousLocation,
+    current_location: nextLocation,
+    expiration: nextExpiration,
+  });
+  if (
+    !Number.isSafeInteger(result.sequence) || (result.sequence as number) < 0 ||
+    result.status !== "committed" || result.error_code !== null || result.batch_id !== record.batch_id ||
+    result.adjustment_kind !== "location_correction" ||
+    canonicalJson(result.previous_location) !== canonicalJson(previousLocation) ||
+    canonicalJson(result.current_location) !== canonicalJson(nextLocation) ||
+    canonicalJson(result.expiration) !== canonicalJson(nextExpiration) ||
+    canonicalJson(result.receipt_item) !== canonicalJson(expectedReceipt)
+  ) return invalid("location_correction_fact.result");
+  text(result.operation_id, "location_correction_fact.result.operation_id");
+  return record as unknown as Readonly<InventoryLocationCorrectionFactPayload>;
 }
 
 export function resolvePackageQuantity(input: Readonly<PackageQuantityInput>): Readonly<PackageQuantityEvidence> {

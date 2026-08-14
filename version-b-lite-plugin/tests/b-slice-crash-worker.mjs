@@ -384,7 +384,7 @@ function prepareFact(database, input) {
   if (operation.kind === "record_meal") {
     const progressReservation = createContributionProgressReservation(
       database,
-      preflightMealOperation(database, operation),
+      preflightMealOperation(database, secret, operation),
     );
     return prepareMealOperation({ ...common, progressReservation });
   }
@@ -401,6 +401,7 @@ function applyDurableEffect(database, input, prepared) {
   if (operation.kind === "record_meal") {
     applyMealEffects({
       database,
+      authoritySecret: secret,
       envelopeId: envelope.envelope_id,
       operationId: operation.operation_id,
       operationSequence: 0,

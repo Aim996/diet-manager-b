@@ -12,6 +12,7 @@ import type {
 import type {
   CoreCommandCandidate,
   CoreInventoryCommandCandidate,
+  CoreInventoryLocationCorrectionCandidate,
   CoreMealCommandCandidate,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
@@ -21,6 +22,14 @@ export interface ResolvedCorePurchaseItem {
   readonly product_id: string;
   readonly batch_id: string;
   readonly identity: Readonly<ProductIdentityEvidence>;
+}
+
+export interface ResolvedCoreInventoryLocationCorrection {
+  readonly batch_id: string;
+  readonly base_revision: number;
+  readonly previous_location: Readonly<PantryPurchaseEvidence["location"]>;
+  readonly previous_expiration: Readonly<PantryPurchaseEvidence["expiration"]>;
+  readonly expected_expiration: Readonly<PantryPurchaseEvidence["expiration"]>;
 }
 
 function identity(request: Readonly<CoreApplicationRequest>): string {
@@ -246,6 +255,34 @@ function purchaseOperations(
   }));
 }
 
+function locationCorrectionOperation(
+  command: Readonly<CoreInventoryLocationCorrectionCandidate>,
+  resolution: Readonly<ResolvedCoreInventoryLocationCorrection> | undefined,
+): DomainOperation {
+  if (
+    resolution === undefined ||
+    resolution.previous_location.value !== command.previous_location
+  ) throw new Error("CORE_APPLICATION_MAPPING_INVALID:location_correction_resolution");
+  return Object.freeze({
+    kind: "correct_record" as const,
+    operation_id: command.operation_id,
+    correction_kind: "inventory_location" as const,
+    batch_id: resolution.batch_id,
+    base_revision: resolution.base_revision,
+    previous_location: resolution.previous_location,
+    previous_expiration: resolution.previous_expiration,
+    next_location: Object.freeze({
+      value: command.next_location,
+      evidence_kind: "corrected_explicit" as const,
+      rule_version: null,
+    }),
+    expected_expiration: resolution.expected_expiration,
+    source_text: command.source_text,
+    matched_span: command.matched_span,
+    rule_version: command.rule_version,
+  });
+}
+
 function deepFreeze(value: unknown): void {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) return;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -256,11 +293,14 @@ export function mapCoreCandidateToEnvelope(
   request: Readonly<CoreApplicationRequest>,
   command: CoreCommandCandidate,
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
+  correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
 ): Readonly<DomainEnvelopeInput> {
   const digest = identity(request);
   const operations = command.action === "add_inventory"
     ? purchaseOperations(request, command, purchaseResolutions)
-    : Object.freeze([mealOrWaterOperation(command)]);
+    : command.action === "correct_record"
+      ? Object.freeze([locationCorrectionOperation(command, correctionResolution)])
+      : Object.freeze([mealOrWaterOperation(command)]);
   const envelope = JSON.parse(canonicalJson({
     envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
     idempotency_key: `core-${digest}`, command_type: request.action,

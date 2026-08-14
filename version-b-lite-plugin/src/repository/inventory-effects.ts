@@ -9,9 +9,11 @@ import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
   createPantryProjectionPayload,
   parseBatchPayload,
+  parseProjectionPayload,
   parseProductPayload,
 } from "../storage/inventory-repository.js";
 import type { PantryPurchaseEvidence } from "../domain/types.js";
+import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
 import {
   parseInventoryProjectionRow,
   type InventoryProjectionResult,
@@ -38,6 +40,10 @@ const DEDUCT_FIELDS = [
   "reason_code",
   "transaction_id",
   "unit",
+] as const;
+const LOCATION_CORRECTION_FIELDS = [
+  "kind", "batch_id", "base_revision", "previous_last_event_id", "previous_last_changed_at",
+  "previous_projection_json", "next_projection_json",
 ] as const;
 const PRODUCT_FIELDS = [
   "normalized_name",
@@ -106,7 +112,7 @@ export interface PendingInventoryEffect {
   envelope_id: string;
   operation_id: string;
   effect_id: string;
-  effect_kind: "inventory_add" | "inventory_deduct";
+  effect_kind: "inventory_add" | "inventory_deduct" | "inventory_location_correction";
   state: "pending" | "retryable_failed";
   attempt_count: number;
   created_at: string;
@@ -217,7 +223,17 @@ interface DeductIntent {
   unit: string;
 }
 
-type InventoryIntent = AddIntent | DeductIntent;
+interface LocationCorrectionIntent {
+  kind: "inventory_location_correction";
+  batchId: string;
+  baseRevision: number;
+  previousLastEventId: string;
+  previousLastChangedAt: string;
+  previousProjectionJson: string;
+  nextProjectionJson: string;
+}
+
+type InventoryIntent = AddIntent | DeductIntent | LocationCorrectionIntent;
 
 interface TransactionRow {
   transaction_id: string;
@@ -551,13 +567,73 @@ function parseDeduct(value: unknown): DeductIntent {
   });
 }
 
+function parseLocationCorrection(value: unknown): LocationCorrectionIntent {
+  const source = exactJsonObject(value, LOCATION_CORRECTION_FIELDS);
+  if (source.kind !== "inventory_location_correction") return authorityInvalid("effect_kind");
+  if (!Number.isSafeInteger(source.base_revision) || (source.base_revision as number) < 1) {
+    return authorityInvalid("base_revision");
+  }
+  const previousProjectionJson = text(source.previous_projection_json, "previous_projection_json", 65_536);
+  const nextProjectionJson = text(source.next_projection_json, "next_projection_json", 65_536);
+  let previousProjection: unknown;
+  let nextProjection: unknown;
+  try {
+    previousProjection = JSON.parse(previousProjectionJson) as unknown;
+    nextProjection = JSON.parse(nextProjectionJson) as unknown;
+  } catch {
+    return authorityInvalid("projection_payload");
+  }
+  if (
+    canonicalJson(previousProjection) !== previousProjectionJson ||
+    canonicalJson(nextProjection) !== nextProjectionJson
+  ) return authorityInvalid("projection_payload");
+  const previous = parseProjectionPayload(previousProjection);
+  const next = parseProjectionPayload(nextProjection);
+  if (
+    previous.version !== 2 || next.version !== 2 || previous.pantry_evidence === null ||
+    next.pantry_evidence === null || previous.batch_id !== next.batch_id ||
+    previous.product_id !== next.product_id || previous.quantity_microunits !== next.quantity_microunits ||
+    previous.unit !== next.unit || previous.batch_id !== source.batch_id ||
+    canonicalJson(previous.pantry_evidence.product_identity) !== canonicalJson(next.pantry_evidence.product_identity) ||
+    canonicalJson(previous.pantry_evidence.package_quantity) !== canonicalJson(next.pantry_evidence.package_quantity) ||
+    canonicalJson(previous.pantry_evidence.opening) !== canonicalJson(next.pantry_evidence.opening) ||
+    (canonicalJson(previous.pantry_evidence.expiration) === canonicalJson(next.pantry_evidence.expiration) &&
+      previous.pantry_evidence.expiration.basis !== "explicit") ||
+    previous.pantry_evidence.location.value === next.pantry_evidence.location.value ||
+    next.pantry_evidence.location.evidence_kind !== "corrected_explicit"
+  ) return authorityInvalid("projection_transition");
+  return Object.freeze({
+    kind: "inventory_location_correction",
+    batchId: ascii(source.batch_id, "batch_id"),
+    baseRevision: source.base_revision as number,
+    previousLastEventId: ascii(source.previous_last_event_id, "previous_last_event_id"),
+    previousLastChangedAt: timestamp(source.previous_last_changed_at, "previous_last_changed_at"),
+    previousProjectionJson,
+    nextProjectionJson,
+  });
+}
+
 function parseIntent(row: OutboxEventRow): InventoryIntent {
   const value = effectValue(row);
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return authorityInvalid("effect_input");
   }
   const kind = (value as Record<string, unknown>).kind;
-  const intent = kind === "inventory_add" ? parseAdd(value) : parseDeduct(value);
+  if (kind === "inventory_location_correction") {
+    if (row.event_type !== "inventory_adjusted") return authorityInvalid("event_type");
+    let eventPayload: unknown;
+    try {
+      eventPayload = JSON.parse(row.event_payload_json) as unknown;
+      validateAndFreezeInventoryLocationCorrectionFactPayload(eventPayload);
+    } catch {
+      return authorityInvalid("location_correction_fact");
+    }
+  }
+  const intent = kind === "inventory_add"
+    ? parseAdd(value)
+    : kind === "inventory_location_correction"
+      ? parseLocationCorrection(value)
+      : parseDeduct(value);
   if (row.effect_kind !== intent.kind) return authorityInvalid("outbox_effect_kind");
   return intent;
 }
@@ -735,7 +811,7 @@ function transactionPayload(
 function insertTransaction(
   database: DatabaseSync,
   row: OutboxEventRow,
-  intent: InventoryIntent,
+  intent: AddIntent | DeductIntent,
   productId: string,
   batchId: string,
   direction: "in" | "out",
@@ -996,6 +1072,69 @@ function applyDeduct(
     transaction_id: intent.transactionId,
     quantity_microunits: remaining,
     unit: intent.unit,
+  });
+}
+
+function applyLocationCorrection(
+  database: DatabaseSync,
+  row: OutboxEventRow,
+  intent: LocationCorrectionIntent,
+  now: string,
+): InventoryEffectResult {
+  const current = database.prepare(
+    `SELECT i.*, b.product_id, b.quantity_unit, b.explicit_expiration_at
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     WHERE i.batch_id = ?`,
+  ).get(intent.batchId) as (ProjectionRow & {
+    product_id: string;
+    quantity_unit: string | null;
+    explicit_expiration_at: string | null;
+  }) | undefined;
+  if (!current) return authorityInvalid("projection_missing");
+  if (
+    current.last_event_id !== intent.previousLastEventId ||
+    current.last_changed_at !== intent.previousLastChangedAt ||
+    current.payload_json !== intent.previousProjectionJson
+  ) return authorityInvalid("projection_compare_and_set");
+  const previous = parseProjectionPayload(JSON.parse(intent.previousProjectionJson) as unknown);
+  const next = parseProjectionPayload(JSON.parse(intent.nextProjectionJson) as unknown);
+  if (
+    previous.version !== 2 || next.version !== 2 || next.pantry_evidence === null ||
+    current.product_id !== next.product_id || current.quantity_unit !== next.unit
+  ) return authorityInvalid("projection_identity");
+  const effectiveExpiration = next.pantry_evidence.expiration.effective_at ??
+    next.pantry_evidence.expiration.explicit_at;
+  const sealStatus = next.pantry_evidence.opening?.status ?? "unknown";
+  const expiryStatus = effectiveExpiration === null ? "unknown" : "known";
+  database.prepare(
+    `UPDATE inventory_batch_projections
+     SET last_event_id = ?, last_changed_at = ?, seal_status = ?, expiry_status = ?,
+         effective_expiration_at = ?, payload_json = ?
+     WHERE batch_id = ? AND last_event_id = ? AND last_changed_at = ? AND payload_json = ?`,
+  ).run(
+    row.event_id,
+    now,
+    sealStatus,
+    expiryStatus,
+    effectiveExpiration,
+    intent.nextProjectionJson,
+    intent.batchId,
+    intent.previousLastEventId,
+    intent.previousLastChangedAt,
+    intent.previousProjectionJson,
+  );
+  const changes = database.prepare("SELECT changes() AS count").get() as { count: number };
+  if (changes.count !== 1) return authorityInvalid("projection_compare_and_set");
+  return Object.freeze({
+    outbox_id: row.outbox_id,
+    effect_id: row.effect_id,
+    effect_state: "succeeded",
+    result_status: "applied",
+    batch_id: intent.batchId,
+    transaction_id: null,
+    quantity_microunits: next.quantity_microunits,
+    unit: next.unit,
   });
 }
 
@@ -1334,11 +1473,31 @@ function transactionResult(
 
 function replayResult(database: DatabaseSync, row: OutboxEventRow): InventoryEffectResult {
   if (row.state === "succeeded") {
+    const intent = parseIntent(row);
+    if (intent.kind === "inventory_location_correction") {
+      const projection = database.prepare(
+        "SELECT last_event_id, last_changed_at, payload_json FROM inventory_batch_projections WHERE batch_id = ?",
+      ).get(intent.batchId) as { last_event_id: string; last_changed_at: string; payload_json: string } | undefined;
+      if (
+        !projection || projection.last_event_id !== row.event_id ||
+        projection.last_changed_at !== row.committed_at || projection.payload_json !== intent.nextProjectionJson
+      ) return authorityInvalid("location_correction_replay");
+      const parsed = parseProjectionPayload(JSON.parse(intent.nextProjectionJson) as unknown);
+      return Object.freeze({
+        outbox_id: row.outbox_id,
+        effect_id: row.effect_id,
+        effect_state: "succeeded",
+        result_status: "applied",
+        batch_id: intent.batchId,
+        transaction_id: null,
+        quantity_microunits: parsed.quantity_microunits,
+        unit: parsed.unit,
+      });
+    }
     const transaction = database
       .prepare("SELECT * FROM inventory_transactions WHERE transaction_id = ?")
       .get(row.effect_id) as unknown as TransactionRow | undefined;
     if (!transaction) {
-      const intent = parseIntent(row);
       const byIntent = database
         .prepare("SELECT * FROM inventory_transactions WHERE transaction_id = ?")
         .get(intent.transactionId) as unknown as TransactionRow | undefined;
@@ -1358,6 +1517,7 @@ function replayResult(database: DatabaseSync, row: OutboxEventRow): InventoryEff
   }
   const reason = exactJsonObject(parsed, ["code", "quantity_microunits", "unit"]);
   const intent = parseIntent(row);
+  if (intent.kind === "inventory_location_correction") return authorityInvalid("skip_reason");
   if (
     reason.code !== "INSUFFICIENT_INVENTORY" ||
     !Number.isSafeInteger(reason.quantity_microunits) ||
@@ -1401,14 +1561,15 @@ export function listPendingInventoryEffects(
         state, attempt_count, created_at, updated_at
        FROM effect_outbox
        WHERE state IN ('pending', 'retryable_failed')
-         AND effect_kind IN ('inventory_add', 'inventory_deduct')
+          AND effect_kind IN ('inventory_add', 'inventory_deduct', 'inventory_location_correction')
        ORDER BY created_at, outbox_id
        LIMIT ?`,
     )
     .all(fields.limit.value) as unknown as PendingInventoryEffect[];
   for (const row of rows) {
     if (
-      (row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct") ||
+      (row.effect_kind !== "inventory_add" && row.effect_kind !== "inventory_deduct" &&
+        row.effect_kind !== "inventory_location_correction") ||
       (row.state !== "pending" && row.state !== "retryable_failed") ||
       !Number.isSafeInteger(row.attempt_count) ||
       row.attempt_count < 0
@@ -1463,9 +1624,10 @@ export function processInventoryEffect(
     injectFault(frozenOptions, "after_claim");
 
     const intent = parseIntent(row);
-    const result =
-      intent.kind === "inventory_add"
-        ? applyAdd(frozen.database, row, intent, frozen.now)
+    const result = intent.kind === "inventory_add"
+      ? applyAdd(frozen.database, row, intent, frozen.now)
+      : intent.kind === "inventory_location_correction"
+        ? applyLocationCorrection(frozen.database, row, intent, frozen.now)
         : applyDeduct(frozen.database, row, intent, frozen.now);
     injectFault(frozenOptions, "after_business_writes");
     updateOutbox(frozen.database, result, frozen.now);

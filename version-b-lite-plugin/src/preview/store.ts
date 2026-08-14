@@ -18,6 +18,10 @@ import {
   parsePurchaseFactPreviewMaterial,
   type PurchaseFactPreviewMaterial,
 } from "../authority/purchase-fact-identity.js";
+import {
+  parseInventoryAdjustmentFactPreviewMaterial,
+  type InventoryAdjustmentFactPreviewMaterial,
+} from "../authority/inventory-adjustment-fact-identity.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
   freezePreviewBinding,
@@ -124,10 +128,12 @@ export interface AuthorizedRepositoryPreview {
     | "diet-manager/server-preview/v1"
     | "diet-manager/server-preview/v2"
     | "diet-manager/server-preview/v3"
-    | "diet-manager/server-preview/v4";
+    | "diet-manager/server-preview/v4"
+    | "diet-manager/server-preview/v5";
   meal_fact_preview_material?: MealFactPreviewMaterial;
   water_fact_preview_material?: WaterFactPreviewMaterial;
   purchase_fact_preview_material?: PurchaseFactPreviewMaterial;
+  inventory_adjustment_fact_preview_material?: InventoryAdjustmentFactPreviewMaterial;
   envelope_state: "received" | "effects_pending" | "effects_stable" | "finalized";
   result_status:
     | "preview_ready"
@@ -143,6 +149,7 @@ export interface StoredPreviewAuthority {
   readonly meal_fact_preview_material?: MealFactPreviewMaterial;
   readonly water_fact_preview_material?: WaterFactPreviewMaterial;
   readonly purchase_fact_preview_material?: PurchaseFactPreviewMaterial;
+  readonly inventory_adjustment_fact_preview_material?: InventoryAdjustmentFactPreviewMaterial;
 }
 
 interface FrozenCreateInput {
@@ -160,6 +167,7 @@ interface FrozenCreateInput {
   previewMaterialV2?: MealFactPreviewMaterial;
   previewMaterialV3?: WaterFactPreviewMaterial;
   previewMaterialV4?: PurchaseFactPreviewMaterial;
+  previewMaterialV5?: InventoryAdjustmentFactPreviewMaterial;
   now: string;
 }
 
@@ -293,6 +301,7 @@ function freezeCreateInput(value: CreateServerPreviewInput): FrozenCreateInput {
   let previewMaterialV2: MealFactPreviewMaterial | undefined;
   let previewMaterialV3: WaterFactPreviewMaterial | undefined;
   let previewMaterialV4: PurchaseFactPreviewMaterial | undefined;
+  let previewMaterialV5: InventoryAdjustmentFactPreviewMaterial | undefined;
   if (
     typeof previewMaterial === "object" && previewMaterial !== null &&
     !Array.isArray(previewMaterial) &&
@@ -318,6 +327,13 @@ function freezeCreateInput(value: CreateServerPreviewInput): FrozenCreateInput {
     previewMaterialV4 = parsePurchaseFactPreviewMaterial(previewMaterial);
     if (previewMaterialV4.input_digest !== inputDigest) return requestInvalid("preview_material_input_digest");
   }
+  if (
+    typeof previewMaterial === "object" && previewMaterial !== null && !Array.isArray(previewMaterial) &&
+    (previewMaterial as Record<string, unknown>).authority_kind === "diet-manager/domain-preview/v5"
+  ) {
+    previewMaterialV5 = parseInventoryAdjustmentFactPreviewMaterial(previewMaterial);
+    if (previewMaterialV5.input_digest !== inputDigest) return requestInvalid("preview_material_input_digest");
+  }
   return Object.freeze({
     database: database(fields.database.value),
     secret: secret(fields.secret.value),
@@ -333,6 +349,7 @@ function freezeCreateInput(value: CreateServerPreviewInput): FrozenCreateInput {
     ...(previewMaterialV2 === undefined ? {} : { previewMaterialV2 }),
     ...(previewMaterialV3 === undefined ? {} : { previewMaterialV3 }),
     ...(previewMaterialV4 === undefined ? {} : { previewMaterialV4 }),
+    ...(previewMaterialV5 === undefined ? {} : { previewMaterialV5 }),
     now: isoTimestamp(fields.now.value),
   });
 }
@@ -372,9 +389,19 @@ function authorityPayload(
   material?: MealFactPreviewMaterial,
   materialV3?: WaterFactPreviewMaterial,
   materialV4?: PurchaseFactPreviewMaterial,
+  materialV5?: InventoryAdjustmentFactPreviewMaterial,
 ): string {
+  if (materialV5 !== undefined) return canonicalJson({
+    authority_kind: "diet-manager/server-preview/v5",
+    binding,
+    input_digest: materialV5.input_digest,
+    inventory_adjustment_fact_identities: materialV5.inventory_adjustment_fact_identities,
+    fact_identity_mac: inventoryAdjustmentFactIdentityMac(binding, materialV5, authoritySecret),
+  });
   if (materialV4 !== undefined) return canonicalJson({
-    authority_kind: "diet-manager/server-preview/v4", binding, input_digest: materialV4.input_digest,
+    authority_kind: "diet-manager/server-preview/v4", binding,
+    committed_at_base: materialV4.committed_at_base,
+    input_digest: materialV4.input_digest,
     meal_fact_identities: materialV4.meal_fact_identities,
     purchase_fact_identities: materialV4.purchase_fact_identities,
     fact_identity_mac: purchaseFactIdentityMac(binding, materialV4, authoritySecret),
@@ -398,6 +425,23 @@ function authorityPayload(
       });
 }
 
+function inventoryAdjustmentFactIdentityMac(
+  binding: PreviewBindingV1,
+  material: InventoryAdjustmentFactPreviewMaterial,
+  authoritySecret: Uint8Array,
+): string {
+  return createHmac("sha256", secret(authoritySecret))
+    .update("diet-manager/fact-preview-authority/v5\n", "ascii")
+    .update(canonicalJson({
+      authority_kind: "diet-manager/server-preview/v5",
+      binding,
+      input_digest: material.input_digest,
+      inventory_adjustment_fact_identities: material.inventory_adjustment_fact_identities,
+    }), "utf8")
+    .digest("hex")
+    .toUpperCase();
+}
+
 function purchaseFactIdentityMac(
   binding: PreviewBindingV1,
   material: PurchaseFactPreviewMaterial,
@@ -408,6 +452,7 @@ function purchaseFactIdentityMac(
     .update(canonicalJson({
       authority_kind: "diet-manager/server-preview/v4",
       binding,
+      committed_at_base: material.committed_at_base,
       input_digest: material.input_digest,
       meal_fact_identities: material.meal_fact_identities,
       purchase_fact_identities: material.purchase_fact_identities,
@@ -459,10 +504,12 @@ function storedPreviewAuthority(
     authority_kind?: unknown;
     binding?: unknown;
     input_digest?: unknown;
+    committed_at_base?: unknown;
     meal_fact_identities?: unknown;
     meal_fact_identity_mac?: unknown;
     water_fact_identities?: unknown;
     purchase_fact_identities?: unknown;
+    inventory_adjustment_fact_identities?: unknown;
     fact_identity_mac?: unknown;
   };
   const keys = Object.keys(candidate).sort().join("\u0000");
@@ -474,15 +521,44 @@ function storedPreviewAuthority(
   const v3 = candidate.authority_kind === "diet-manager/server-preview/v3" && keys ===
     "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000water_fact_identities";
   const v4 = candidate.authority_kind === "diet-manager/server-preview/v4" && keys ===
-    "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000purchase_fact_identities";
-  if (!v1 && !v2 && !v3 && !v4) {
+    "authority_kind\u0000binding\u0000committed_at_base\u0000fact_identity_mac\u0000input_digest\u0000meal_fact_identities\u0000purchase_fact_identities";
+  const v5 = candidate.authority_kind === "diet-manager/server-preview/v5" && keys ===
+    "authority_kind\u0000binding\u0000fact_identity_mac\u0000input_digest\u0000inventory_adjustment_fact_identities";
+  if (!v1 && !v2 && !v3 && !v4 && !v5) {
     return authorityInvalid("binding");
   }
   try {
     const binding = freezePreviewBinding(candidate.binding);
+    if (v5) {
+      const material = parseInventoryAdjustmentFactPreviewMaterial({
+        authority_kind: "diet-manager/domain-preview/v5",
+        input_digest: candidate.input_digest,
+        inventory_adjustment_fact_identities: candidate.inventory_adjustment_fact_identities,
+      });
+      if (
+        binding.input_digest !== material.input_digest ||
+        binding.preview_hash !== canonicalSha256(material) ||
+        typeof candidate.fact_identity_mac !== "string" ||
+        !/^[A-F0-9]{64}$/.test(candidate.fact_identity_mac)
+      ) return authorityInvalid("fact_identity_mac");
+      const supplied = Buffer.from(candidate.fact_identity_mac, "hex");
+      const expected = Buffer.from(
+        inventoryAdjustmentFactIdentityMac(binding, material, authoritySecret),
+        "hex",
+      );
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+        return authorityInvalid("fact_identity_mac");
+      }
+      return Object.freeze({
+        binding,
+        preview_authority_kind: "diet-manager/server-preview/v5",
+        inventory_adjustment_fact_preview_material: material,
+      });
+    }
     if (v4) {
       const material = parsePurchaseFactPreviewMaterial({
         authority_kind: "diet-manager/domain-preview/v4",
+        committed_at_base: candidate.committed_at_base,
         input_digest: candidate.input_digest,
         meal_fact_identities: candidate.meal_fact_identities,
         purchase_fact_identities: candidate.purchase_fact_identities,
@@ -717,6 +793,7 @@ function assertRepositoryAuthorityRow(
   meal_fact_preview_material?: MealFactPreviewMaterial;
   water_fact_preview_material?: WaterFactPreviewMaterial;
   purchase_fact_preview_material?: PurchaseFactPreviewMaterial;
+  inventory_adjustment_fact_preview_material?: InventoryAdjustmentFactPreviewMaterial;
   envelope_state: AuthorizedRepositoryPreview["envelope_state"];
   result_status: AuthorizedRepositoryPreview["result_status"];
 } {
@@ -786,6 +863,12 @@ function assertRepositoryAuthorityRow(
     ...(previewAuthority.purchase_fact_preview_material === undefined
       ? {}
       : { purchase_fact_preview_material: previewAuthority.purchase_fact_preview_material }),
+    ...(previewAuthority.inventory_adjustment_fact_preview_material === undefined
+      ? {}
+      : {
+          inventory_adjustment_fact_preview_material:
+            previewAuthority.inventory_adjustment_fact_preview_material,
+        }),
     envelope_state: previewReady
       ? "received"
       : finalized
@@ -926,6 +1009,7 @@ export function createServerPreview(
           frozen.previewMaterialV2,
           frozen.previewMaterialV3,
           frozen.previewMaterialV4,
+          frozen.previewMaterialV5,
         ),
       );
     if (fault === "after_envelope") {
@@ -1038,6 +1122,12 @@ export function authorizeRepositoryPreview(
     ...(authority.purchase_fact_preview_material === undefined
       ? {}
       : { purchase_fact_preview_material: authority.purchase_fact_preview_material }),
+    ...(authority.inventory_adjustment_fact_preview_material === undefined
+      ? {}
+      : {
+          inventory_adjustment_fact_preview_material:
+            authority.inventory_adjustment_fact_preview_material,
+        }),
     envelope_state: authority.envelope_state,
     result_status: authority.result_status,
   });

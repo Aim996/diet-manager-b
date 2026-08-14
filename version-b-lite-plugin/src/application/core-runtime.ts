@@ -25,7 +25,10 @@ import {
   type DietManagerOutcome,
   type ProductIdentityClarification,
 } from "../contracts.js";
-import { resolveProductIdentity } from "../domain/inventory-service.js";
+import {
+  resolveProductIdentity,
+  resolveExpiration,
+} from "../domain/inventory-service.js";
 import { deriveDomainId } from "../domain/identity.js";
 import { createDietDomainService, type DietDomainService } from "../domain/service.js";
 import type {
@@ -38,14 +41,20 @@ import { parseCoreCommand } from "../parser/parse-command.js";
 import type {
   CoreCommandCandidate,
   CoreInventoryCommandCandidate,
+  CoreInventoryLocationCorrectionCandidate,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
 } from "../parser/types.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { openDietDatabase, type DietDatabaseRuntime } from "../storage/database.js";
-import { parseProductPayloadJson } from "../storage/inventory-repository.js";
+import {
+  assertCurrentInventoryLocationCorrectionLineage,
+  parseProductPayloadJson,
+  parseProjectionPayloadJson,
+} from "../storage/inventory-repository.js";
 import {
   mapCoreCandidateToEnvelope,
+  type ResolvedCoreInventoryLocationCorrection,
   type ResolvedCorePurchaseItem,
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
@@ -427,6 +436,7 @@ export interface CoreRuntime {
 interface CoreRuntimeSession {
   readonly database: DatabaseSync;
   readonly service: DietDomainService;
+  readonly authoritySecret: Uint8Array;
 }
 
 interface RuntimeState {
@@ -524,8 +534,11 @@ function acquireSession(runtime: CoreRuntime): CoreRuntimeSession {
   try {
     databaseRuntime = openDietDatabase({ privateRuntimeRoot: state.root, now: state.now });
     assertRuntimeRootAuthority(state.rootAuthority);
-    const session = Object.freeze({ database: databaseRuntime.database,
-      service: createDietDomainService({ database: databaseRuntime.database, secret, now: state.now }) });
+    const session = Object.freeze({
+      database: databaseRuntime.database,
+      service: createDietDomainService({ database: databaseRuntime.database, secret, now: state.now }),
+      authoritySecret: Uint8Array.from(secret),
+    });
     assertRuntimeRootAuthority(state.rootAuthority);
     state.databaseRuntime = databaseRuntime;
     state.session = session;
@@ -731,6 +744,74 @@ function resolvePurchaseItems(
   return Object.freeze({ status: "resolved", items: Object.freeze(resolved) });
 }
 
+function resolveLocationCorrection(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  command: Readonly<CoreInventoryLocationCorrectionCandidate>,
+): Readonly<
+  | { status: "resolved"; resolution: Readonly<ResolvedCoreInventoryLocationCorrection> }
+  | { status: "already_current" }
+> {
+  const rows = database.prepare(
+    `SELECT i.batch_id, i.payload_json, b.stocked_at, p.normalized_name
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     JOIN products p ON p.product_id = b.product_id
+     WHERE p.normalized_name = ?
+     ORDER BY i.batch_id`,
+  ).all(command.product_reference) as Array<{
+    batch_id: string;
+    payload_json: string;
+    stocked_at: string;
+    normalized_name: string;
+  }>;
+  const available = rows.flatMap((row) => {
+    try {
+      const projection = parseProjectionPayloadJson(row.payload_json);
+      if (projection.version !== 2 || projection.pantry_evidence === null) return [];
+      const revision = assertCurrentInventoryLocationCorrectionLineage(
+        database,
+        authoritySecret,
+        row.batch_id,
+        projection.pantry_evidence,
+      );
+      return [{ row, projection, revision }];
+    } catch {
+      throw new Error("CORE_APPLICATION_AUTHORITY_INVALID:location_correction_projection");
+    }
+  });
+  const candidates = available.filter(({ projection }) =>
+    projection.pantry_evidence!.location.value === command.previous_location);
+  if (candidates.length !== 1) {
+    if (
+      candidates.length === 0 && available.length === 1 &&
+      available[0]!.projection.pantry_evidence!.location.value === command.next_location
+    ) return Object.freeze({ status: "already_current" as const });
+    throw new Error(candidates.length === 0
+      ? "CORE_APPLICATION_TARGET_INVALID:location_correction_missing"
+      : "CORE_APPLICATION_TARGET_INVALID:location_correction_ambiguous");
+  }
+  const selected = candidates[0]!;
+  return Object.freeze({
+    status: "resolved" as const,
+    resolution: Object.freeze({
+      batch_id: selected.row.batch_id,
+      base_revision: selected.revision,
+      previous_location: selected.projection.pantry_evidence!.location,
+      previous_expiration: selected.projection.pantry_evidence!.expiration,
+      expected_expiration: selected.projection.pantry_evidence!.expiration.basis === "explicit"
+        ? selected.projection.pantry_evidence!.expiration
+        : resolveExpiration({
+            reliability: "reliable_rule",
+            explicit_at: null,
+            duration_days: 7,
+            anchor_at: selected.row.stocked_at,
+            rule_version: "diet-manager/fresh-milk-shelf-life-v1",
+          }),
+    }),
+  });
+}
+
 function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operation: DomainOperation): string {
   const rows = database.prepare(`SELECT event_id, event_type, fact_kind, operation_id
     FROM event_records WHERE envelope_id = ? AND operation_id = ?`)
@@ -741,7 +822,9 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
     ? { event_type: "diet_water", fact_kind: "water" }
     : operation.kind === "add_inventory"
       ? { event_type: "inventory_stock", fact_kind: "inventory" }
-      : { event_type: "diet_meal", fact_kind: "meal" };
+      : operation.kind === "correct_record"
+        ? { event_type: "inventory_adjusted", fact_kind: "inventory" }
+        : { event_type: "diet_meal", fact_kind: "meal" };
   if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
       rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
     throw new Error("CORE_APPLICATION_RESULT_INVALID:event_identity");
@@ -755,9 +838,10 @@ function executeCandidate(
   command: CoreCommandCandidate,
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
   existingSession?: CoreRuntimeSession,
+  correctionResolution?: Readonly<ResolvedCoreInventoryLocationCorrection>,
 ): { readonly status: "committed" | "committed_with_issues";
     readonly record_id: string; readonly record_ids?: readonly string[] } {
-  const envelope = mapCoreCandidateToEnvelope(request, command, purchaseResolutions);
+  const envelope = mapCoreCandidateToEnvelope(request, command, purchaseResolutions, correctionResolution);
   const session = existingSession ?? acquireSession(runtime);
   const preview = session.service.preview(envelope);
   const result = session.service.execute({ envelope, token: preview.token,
@@ -785,7 +869,7 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
-  if (!["record_meal", "record_water", "add_inventory"].includes(request.action)) {
+  if (!["record_meal", "record_water", "add_inventory", "correct_record"].includes(request.action)) {
     return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
   }
   let parsed;
@@ -803,9 +887,6 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   }
   if (parsed.command.action !== request.action) {
     return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
-  }
-  if (parsed.command.action === "correct_record") {
-    return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
   }
   try {
     if (parsed.command.action === "add_inventory") {
@@ -828,6 +909,31 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         result.record_id,
         result.record_ids,
       );
+    }
+    if (parsed.command.action === "correct_record") {
+      const session = acquireSession(runtime);
+      const resolution = resolveLocationCorrection(
+        session.database,
+        session.authoritySecret,
+        parsed.command,
+      );
+      if (resolution.status === "already_current") {
+        return nonWritingOutcome(
+          request.action,
+          request.operation_id,
+          "ignored",
+          "location_correction_already_current",
+        );
+      }
+      const result = executeCandidate(
+        runtime,
+        request,
+        parsed.command,
+        Object.freeze([]),
+        session,
+        resolution.resolution,
+      );
+      return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
     }
     const result = executeCandidate(runtime, request, parsed.command);
     return committedOutcome(request.action, request.operation_id, result.status, result.record_id);

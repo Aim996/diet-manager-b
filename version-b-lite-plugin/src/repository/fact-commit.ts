@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
 import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
+import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
 import {
   dietManagerActions,
   type DietManagerAction,
@@ -9,6 +10,7 @@ import {
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
+import { pendingMealInventoryAllocationBatchIds } from "../storage/inventory-repository.js";
 import { computeRepositoryDataRevision } from "./revision.js";
 import {
   assertProgressReservationFactCommitAuthority,
@@ -618,6 +620,65 @@ function insertCorrectionFact(
   );
 }
 
+function assertInventoryLocationCorrectionFact(
+  database: DatabaseSync,
+  event: FrozenFactEvent,
+  commandType: DietManagerAction,
+): void {
+  if (event.eventType !== "inventory_adjusted") return;
+  if (commandType !== "correct_record" || event.factKind !== "inventory") {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_command");
+  }
+  let payload;
+  try {
+    payload = validateAndFreezeInventoryLocationCorrectionFactPayload(JSON.parse(event.payloadJson) as unknown);
+  } catch {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_payload");
+  }
+  if (payload.result.operation_id !== event.operationId) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_operation");
+  }
+  try {
+    if (pendingMealInventoryAllocationBatchIds(database).has(payload.batch_id)) {
+      throw new Error("pending");
+    }
+  } catch {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_pending_inventory_effect");
+  }
+  const projection = database.prepare(
+    `SELECT last_event_id, last_changed_at, payload_json
+     FROM inventory_batch_projections WHERE batch_id = ?`,
+  ).get(payload.batch_id) as {
+    last_event_id: string;
+    last_changed_at: string;
+    payload_json: string;
+  } | undefined;
+  if (
+    !projection || projection.last_event_id !== payload.previous_last_event_id ||
+    projection.last_changed_at !== payload.previous_last_changed_at ||
+    projection.payload_json !== payload.previous_projection_json
+  ) throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_projection");
+  const rows = database.prepare(
+    `SELECT payload_json FROM event_records
+     WHERE event_type = 'inventory_adjusted' AND fact_kind = 'inventory'
+     ORDER BY committed_at, event_id`,
+  ).all() as Array<{ payload_json: string }>;
+  let revision = 1;
+  for (const row of rows) {
+    try {
+      const existing = validateAndFreezeInventoryLocationCorrectionFactPayload(
+        JSON.parse(row.payload_json) as unknown,
+      );
+      if (existing.batch_id === payload.batch_id) revision += 1;
+    } catch {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_chain");
+    }
+  }
+  if (payload.base_revision !== revision) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:location_correction_revision");
+  }
+}
+
 function freezeInput(value: PreparedFactCommit): FrozenFactCommit {
   const fields = exactDataProperties(value, INPUT_FIELDS);
   const event = freezeEvent(fields.event.value);
@@ -1198,6 +1259,7 @@ export function appendPreparedOperationFact(
     }
 
     const event = frozen.event;
+    assertInventoryLocationCorrectionFact(frozen.database, event, frozen.commandType);
     frozen.database
       .prepare(
         `INSERT INTO event_records(

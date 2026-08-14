@@ -156,7 +156,8 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
       });
       appendPreparedOperationFact(prepared.fact);
       applyMealEffects({
-        database: runtime.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+        database: runtime.database, authoritySecret: secret,
+        envelopeId: envelope.envelope_id, operationId: operation.operation_id,
         operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: envelope.received_at,
         location: operation.location,
       });
@@ -273,7 +274,8 @@ describe("B-FAULT-001 single-meal stable finalization recovery", () => {
       });
       appendPreparedOperationFact(prepared.fact);
       applyMealEffects({
-        database: runtime.database, envelopeId: envelope.envelope_id, operationId: operation.operation_id,
+        database: runtime.database, authoritySecret: secret,
+        envelopeId: envelope.envelope_id, operationId: operation.operation_id,
         operationSequence: 0, idempotencyKey: envelope.idempotency_key, now: factTime,
         location: operation.location,
       });
@@ -3185,6 +3187,7 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
       appendPreparedOperationFact(prepared.fact);
       const mealResult = applyMealEffects({
         database: runtime.database,
+        authoritySecret: secret,
         envelopeId: envelope.envelope_id,
         operationId: operation.operation_id,
         operationSequence: 0,

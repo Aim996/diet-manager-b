@@ -1511,7 +1511,7 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
     }
   });
 
-  it.each(["query_inventory", "query_meals", "query_daily_summary", "correct_record", "undo_record"] as const)(
+  it.each(["query_inventory", "query_meals", "query_daily_summary", "undo_record"] as const)(
     "returns frozen no-write not-implemented for %s",
     (action: DietManagerAction) => {
       const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));
@@ -1530,4 +1530,21 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
       }
     },
   );
+
+  it("rejects a correction action whose source parses as a meal without writing", () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));
+    const runtime = createCoreRuntime({ officialDataRoot: root,
+      now: () => "2026-08-11T00:30:01.000Z" });
+    try {
+      const request = { ...applicationRequest("CASE-MEAL-021", "record_meal"), action: "correct_record" as const };
+      const outcome = handleCoreRequest(runtime, request);
+      expect(outcome).toEqual({ action: "correct_record", status: "failed", committed: false,
+        operation_id: request.operation_id, error_code: "ACTION_CONFLICT" });
+      expect(Object.isFrozen(outcome)).toBe(true);
+      expect(readdirSync(root)).toEqual([]);
+    } finally {
+      runtime.close();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
 });

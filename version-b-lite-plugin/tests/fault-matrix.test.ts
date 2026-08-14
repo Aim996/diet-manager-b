@@ -1339,7 +1339,7 @@ function prepareMealFactBoundary(
   ).get(envelope.envelope_id) as { received_at: string }).received_at;
   const progressReservation = createContributionProgressReservation(
     database,
-    preflightMealOperation(database, operation),
+    preflightMealOperation(database, secret, operation),
   );
   const prepared = prepareMealOperation({
     database,

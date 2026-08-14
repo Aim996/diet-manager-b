@@ -21,7 +21,12 @@ import {
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
   applyPantryAllocationsInTransaction,
+  assertCurrentInventoryLocationCorrectionLineage,
+  createPantryProjectionPayload,
   listPantryAllocationCandidates,
+  pendingLocationCorrectionBatchIds,
+  pendingMealInventoryAllocationBatchIds,
+  parseProjectionPayloadJson,
   parseInventoryAllocationPlan,
   preparePantryPurchase,
   type AppliedPantryAllocation,
@@ -31,6 +36,11 @@ import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
 import { resolveInventoryAllocation } from "./inventory-service.js";
 import {
+  validateAndFreezeInventoryLocationCorrectionFactPayload,
+  validateAndFreezePantryPurchaseEvidence,
+} from "./inventory-service.js";
+import {
+  buildInventoryLocationCorrectionReceiptItem,
   buildPantryPurchaseReceiptItem,
   type PantryPurchaseReceiptItem,
 } from "./receipt.js";
@@ -42,7 +52,10 @@ import {
 } from "./rules.js";
 import type {
   AddInventoryOperation,
-  CorrectRecordOperation,
+  CorrectInventoryLocationOperation,
+  CorrectMealRecordOperation,
+  InventoryLocationCorrectionFactPayload,
+  InventoryLocationCorrectionResult,
   InventoryAllocationPlan,
   InventoryCandidate,
   InventoryMatchDecision,
@@ -92,6 +105,19 @@ export interface PreparedPurchase {
   readonly fact: PreparedEnvelopeOperation;
   readonly outbox_id: string;
   readonly result: PurchaseOperationResult;
+}
+
+export interface PrepareInventoryLocationCorrectionInput
+  extends Omit<PreparePurchaseInput, "operation"> {
+  readonly operation: CorrectInventoryLocationOperation;
+}
+
+export interface PreparedInventoryLocationCorrection {
+  readonly fact: PreparedEnvelopeOperation;
+  readonly outbox_id: string;
+  readonly event_id: string;
+  readonly payload: Readonly<InventoryLocationCorrectionFactPayload>;
+  readonly result: Readonly<InventoryLocationCorrectionResult>;
 }
 
 export interface MealItemExecutionResult {
@@ -187,13 +213,13 @@ interface EffectiveMealState {
 }
 
 export interface PrepareCorrectionInput extends Omit<PreparePurchaseInput, "operation"> {
-  readonly operation: CorrectRecordOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | UndoRecordOperation;
 }
 
 export interface PreparedCorrection {
   readonly fact: PreparedEnvelopeOperation;
   readonly correction_id: string;
-  readonly operation: CorrectRecordOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | UndoRecordOperation;
   readonly progress_date: string;
   readonly progress_before: NutritionVector;
   readonly progress_after: NutritionVector;
@@ -701,6 +727,174 @@ export function preparePurchaseOperation(input: PreparePurchaseInput): PreparedP
     }),
     outbox_id: outboxId,
     result,
+  });
+}
+
+export function prepareInventoryLocationCorrectionOperation(
+  input: PrepareInventoryLocationCorrectionInput,
+): PreparedInventoryLocationCorrection {
+  const operation = input.operation;
+  if (input.commandType !== "correct_record" || operation.correction_kind !== "inventory_location") {
+    return invalid("inventory_location_correction_operation");
+  }
+  try {
+    if (pendingMealInventoryAllocationBatchIds(input.database).has(operation.batch_id)) {
+      throw new Error("pending");
+    }
+  } catch {
+    throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_inventory_effect");
+  }
+  try {
+    if (pendingLocationCorrectionBatchIds(input.database).has(operation.batch_id)) {
+      throw new Error("pending");
+    }
+  } catch {
+    throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_revision");
+  }
+  const row = input.database.prepare(
+    `SELECT i.*, b.product_id, b.explicit_expiration_at, b.quantity_unit
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     WHERE i.batch_id = ?`,
+  ).get(operation.batch_id) as (Record<string, unknown> & {
+    batch_id: string;
+    product_id: string;
+    last_event_id: string;
+    last_changed_at: string;
+    effective_expiration_at: string | null;
+    payload_json: string;
+    explicit_expiration_at: string | null;
+    quantity_unit: string | null;
+  }) | undefined;
+  if (!row) throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:batch");
+  const projection = parseProjectionPayloadJson(row.payload_json);
+  if (projection.version !== 2 || projection.pantry_evidence === null) {
+    throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:projection_version");
+  }
+  let revision: number;
+  try {
+    revision = assertCurrentInventoryLocationCorrectionLineage(
+      input.database,
+      input.secret,
+      operation.batch_id,
+      projection.pantry_evidence,
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "PANTRY_REPOSITORY_AUTHORITY_INVALID:pending_location_correction"
+    ) {
+      throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:pending_revision");
+    }
+    throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:lineage_authority");
+  }
+  if (operation.base_revision !== revision) {
+    throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:stale_revision");
+  }
+  if (
+    canonicalJson(projection.pantry_evidence.location) !== canonicalJson(operation.previous_location) ||
+    canonicalJson(projection.pantry_evidence.expiration) !== canonicalJson(operation.previous_expiration) ||
+    row.effective_expiration_at !== operation.previous_expiration.effective_at
+  ) throw new Error("INVENTORY_LOCATION_CORRECTION_INVALID:previous_projection");
+  const nextEvidenceSource = JSON.parse(canonicalJson(projection.pantry_evidence)) as Record<string, unknown>;
+  nextEvidenceSource.location = operation.next_location;
+  nextEvidenceSource.expiration = operation.expected_expiration;
+  const nextEvidence = validateAndFreezePantryPurchaseEvidence(nextEvidenceSource);
+  const nextProjectionJson = canonicalJson(createPantryProjectionPayload({
+    batch_id: projection.batch_id,
+    product_id: projection.product_id,
+    quantity_microunits: projection.quantity_microunits,
+    unit: projection.unit,
+    pantry_evidence: nextEvidence,
+  }));
+  const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
+  const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
+  const result = Object.freeze({
+    sequence: input.sequence,
+    operation_id: operation.operation_id,
+    status: "committed" as const,
+    error_code: null,
+    batch_id: operation.batch_id,
+    adjustment_kind: "location_correction" as const,
+    previous_location: operation.previous_location,
+    current_location: operation.next_location,
+    expiration: operation.expected_expiration,
+    receipt_item: buildInventoryLocationCorrectionReceiptItem({
+      batch_id: operation.batch_id,
+      previous_location: operation.previous_location,
+      current_location: operation.next_location,
+      expiration: operation.expected_expiration,
+    }),
+  });
+  const intent = Object.freeze({
+    kind: "inventory_location_correction" as const,
+    batch_id: operation.batch_id,
+    base_revision: operation.base_revision,
+    previous_last_event_id: row.last_event_id,
+    previous_last_changed_at: row.last_changed_at,
+    previous_projection_json: row.payload_json,
+    next_projection_json: nextProjectionJson,
+  });
+  const payload = validateAndFreezeInventoryLocationCorrectionFactPayload({
+    authority_kind: "diet-manager/inventory-location-correction-fact/v1",
+    adjustment_kind: "location_correction",
+    batch_id: operation.batch_id,
+    base_revision: operation.base_revision,
+    previous_last_event_id: row.last_event_id,
+    previous_last_changed_at: row.last_changed_at,
+    previous_projection_json: row.payload_json,
+    next_projection_json: nextProjectionJson,
+    previous_location: operation.previous_location,
+    next_location: operation.next_location,
+    previous_expiration: projection.pantry_evidence.expiration,
+    next_expiration: operation.expected_expiration,
+    source_text: operation.source_text,
+    matched_span: operation.matched_span,
+    rule_version: operation.rule_version,
+    effect_inputs: Object.freeze({ [effectId]: intent }),
+    result,
+  });
+  return Object.freeze({
+    event_id: eventId,
+    outbox_id: outboxId,
+    payload,
+    result,
+    fact: Object.freeze({
+      database: input.database,
+      secret: Uint8Array.from(input.secret),
+      token: input.token,
+      inputDigest: input.inputDigest,
+      subjectScope: input.subjectScope,
+      commandType: input.commandType,
+      dataRevision: input.dataRevision,
+      traceId: deriveDomainId("trace", input.idempotencyKey, 0),
+      sequence: input.sequence,
+      operationId: operation.operation_id,
+      event: Object.freeze({
+        eventId,
+        operationId: operation.operation_id,
+        schemaVersion: "domain/v2",
+        eventType: "inventory_adjusted",
+        factKind: "inventory",
+        sourceMessageId: input.sourceMessageId,
+        conversationId: input.conversationId,
+        receivedAt: input.receivedAt,
+        committedAt: input.committedAt,
+        occurredAtText: input.receivedAt,
+        mealId: null,
+        mealSlot: null,
+        payload,
+      }),
+      items: Object.freeze([]),
+      effects: Object.freeze([Object.freeze({
+        outboxId,
+        effectId,
+        effectKind: "inventory_location_correction",
+        previousState: row.last_event_id,
+        reason: null,
+      })]),
+    }),
   });
 }
 
@@ -1230,6 +1424,7 @@ function inventoryCandidates(
  */
 export function prepareMealInventoryPlans(
   database: DatabaseSync,
+  authoritySecret: Uint8Array,
   operation: RecordMealOperation,
   envelopeId?: string,
 ): readonly (Readonly<InventoryAllocationPlan> | null)[] {
@@ -1266,7 +1461,12 @@ export function prepareMealInventoryPlans(
     if (operation.location === "outside" || item.amount.inventory_deduction_microunits === null) {
       return null;
     }
-    const read = listPantryAllocationCandidates(database, item.normalized_name, operation.occurred_at);
+    const read = listPantryAllocationCandidates(
+      database,
+      authoritySecret,
+      item.normalized_name,
+      operation.occurred_at,
+    );
     if (read === null && operation.inventory_policy === undefined) return null;
     return resolveInventoryAllocation({
       location: operation.location,
@@ -1315,12 +1515,13 @@ function selectMealNutrition(
 
 export function preflightMealOperation(
   database: DatabaseSync,
+  authoritySecret: Uint8Array,
   operation: RecordMealOperation,
   precedingCandidates: ReadonlyMap<string, readonly InventoryCandidate[]> = new Map(),
 ): DailyProgressResult {
   let preflightMealProgress: NutritionVector = zeroNutrition();
   const pantryPlans = precedingCandidates.size === 0
-    ? prepareMealInventoryPlans(database, operation)
+    ? prepareMealInventoryPlans(database, authoritySecret, operation)
     : Object.freeze(operation.items.map(() => null));
   for (let itemOrder = 0; itemOrder < operation.items.length; itemOrder += 1) {
     const item = operation.items[itemOrder]!;
@@ -1631,6 +1832,7 @@ function claimMealOutboxes(database: DatabaseSync, input: ApplyMealEffectsInput)
 
 export interface ApplyMealEffectsInput {
   readonly database: DatabaseSync;
+  readonly authoritySecret: Uint8Array;
   readonly envelopeId: string;
   readonly operationId: string;
   readonly operationSequence: number;
@@ -1650,7 +1852,7 @@ export interface ApplyMealEffectsInput {
  * effects.  It intentionally excludes the clock and fault injection fields
  * used while applying effects.
  */
-type MealTerminalReadbackInput = Omit<ApplyMealEffectsInput, "now" | "fault">;
+type MealTerminalReadbackInput = Omit<ApplyMealEffectsInput, "now" | "fault" | "authoritySecret">;
 
 export interface ReadAppliedMealResultInput extends MealTerminalReadbackInput {
   readonly expectedFact: PreparedEnvelopeOperation;
@@ -2282,6 +2484,7 @@ export function applyMealEffects(input: ApplyMealEffectsInput): MealOperationRes
         ? Object.freeze([]) as readonly Readonly<AppliedPantryAllocation>[]
         : applyPantryAllocationsInTransaction({
             database: input.database,
+            authority_secret: input.authoritySecret,
             event_id: event.event_id,
             source_message_id: event.source_message_id,
             conversation_id: event.conversation_id,

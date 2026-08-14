@@ -13,6 +13,10 @@ import {
   type PurchaseFactPreviewMaterial,
 } from "../authority/purchase-fact-identity.js";
 import {
+  createInventoryAdjustmentFactIdentity,
+  type InventoryAdjustmentFactPreviewMaterial,
+} from "../authority/inventory-adjustment-fact-identity.js";
+import {
   MealFactAuthorityError,
   optionalMealEvidenceFields,
   validateAndFreezeOccurredTimeEvidence,
@@ -60,12 +64,16 @@ import {
   prepareMealOperation,
   prepareWaterOperation,
   preparePurchaseOperation,
+  prepareInventoryLocationCorrectionOperation,
   type MealOperationResult,
 } from "./effect-bundle.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import {
   PantryEvidenceAuthorityError,
+  validateAndFreezeExpirationEvidence,
+  validateAndFreezeInventoryLocationCorrectionFactPayload,
   validateAndFreezePantryPurchaseEvidence,
+  validateAndFreezeStorageLocationEvidence,
 } from "./inventory-service.js";
 import { queryDomainReadModel, type DomainQueryResult } from "./read-model.js";
 import {
@@ -76,6 +84,7 @@ import {
 } from "./receipt.js";
 import type {
   AddInventoryOperation,
+  CorrectInventoryLocationOperation,
   CorrectRecordOperation,
   DomainEnvelopeInput,
   DomainExecutionResult,
@@ -85,6 +94,53 @@ import type {
   RecordWaterOperation,
   UndoRecordOperation,
 } from "./types.js";
+
+function isInventoryLocationCorrection(
+  operation: CorrectRecordOperation | UndoRecordOperation,
+): operation is CorrectInventoryLocationOperation {
+  return operation.kind === "correct_record" && Object.hasOwn(operation, "correction_kind");
+}
+
+function storedInventoryLocationCorrection(
+  database: DatabaseSync,
+  envelope: DomainEnvelopeInput,
+  operation: CorrectInventoryLocationOperation,
+) {
+  const rows = database.prepare(
+    `SELECT event_id, operation_id, schema_version, event_type, fact_kind,
+            source_message_id, conversation_id, received_at, occurred_at_text,
+            meal_id, meal_slot, payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(envelope.envelope_id, operation.operation_id) as Array<Record<string, unknown>>;
+  const row = rows[0];
+  if (
+    rows.length !== 1 || !row ||
+    row.event_id !== deriveDomainId("event", envelope.idempotency_key, 0) ||
+    row.operation_id !== operation.operation_id || row.schema_version !== "domain/v2" ||
+    row.event_type !== "inventory_adjusted" || row.fact_kind !== "inventory" ||
+    row.source_message_id !== envelope.source_message_id ||
+    row.conversation_id !== envelope.conversation_id || row.received_at !== envelope.received_at ||
+    row.occurred_at_text !== envelope.received_at || row.meal_id !== null || row.meal_slot !== null ||
+    typeof row.payload_json !== "string"
+  ) throw new Error("DIET_DOMAIN_RESULT_INVALID:location_correction_fact_identity");
+  let payload;
+  try {
+    const parsed = JSON.parse(row.payload_json) as unknown;
+    if (canonicalJson(parsed) !== row.payload_json) throw new Error("canonical");
+    payload = validateAndFreezeInventoryLocationCorrectionFactPayload(parsed);
+  } catch {
+    throw new Error("DIET_DOMAIN_RESULT_INVALID:location_correction_fact_payload");
+  }
+  if (
+    payload.batch_id !== operation.batch_id || payload.base_revision !== operation.base_revision ||
+    canonicalJson(payload.previous_location) !== canonicalJson(operation.previous_location) ||
+    canonicalJson(payload.next_location) !== canonicalJson(operation.next_location) ||
+    canonicalJson(payload.next_expiration) !== canonicalJson(operation.expected_expiration) ||
+    payload.source_text !== operation.source_text || payload.matched_span !== operation.matched_span ||
+    payload.rule_version !== operation.rule_version || payload.result.operation_id !== operation.operation_id
+  ) throw new Error("DIET_DOMAIN_RESULT_INVALID:location_correction_fact_authority");
+  return payload;
+}
 
 export interface DomainPreviewResult {
   readonly envelope_id: string;
@@ -111,6 +167,8 @@ export interface DietDomainFailureEntry {
 type DietDomainFault =
   | "before_fact_commit"
   | "after_inventory_business_writes"
+  | "after_location_correction_fact_commit"
+  | "after_location_correction_effect_claim"
   | "after_meal_nutrition"
   | "after_meal_first_item"
   | "after_meal_first_inventory_allocation"
@@ -276,7 +334,10 @@ function validatePantryInventoryPolicy(value: unknown, field: string): void {
   enumValue(policy.rule_version, ["diet-manager/pantry-allocation-v1"], `${field}.rule_version`);
 }
 
-function validateOperation(value: unknown, field: string): RecordWaterOperation | undefined {
+function validateOperation(
+  value: unknown,
+  field: string,
+): RecordWaterOperation | CorrectInventoryLocationOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -388,6 +449,41 @@ function validateOperation(value: unknown, field: string): RecordWaterOperation 
     return Object.freeze({ ...candidate, occurred_time: occurredTime }) as unknown as RecordWaterOperation;
   }
   if (kind === "correct_record") {
+    if (Object.hasOwn(operation, "correction_kind")) {
+      const candidate = record(value, [
+        "kind", "operation_id", "correction_kind", "batch_id", "base_revision",
+        "previous_location", "previous_expiration", "next_location", "expected_expiration", "source_text",
+        "matched_span", "rule_version",
+      ], field);
+      text(candidate.operation_id, `${field}.operation_id`);
+      enumValue(candidate.correction_kind, ["inventory_location"], `${field}.correction_kind`);
+      text(candidate.batch_id, `${field}.batch_id`);
+      const baseRevision = safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+      if (baseRevision < 1) return invalid(`${field}.base_revision`);
+      try {
+        const previousLocation = validateAndFreezeStorageLocationEvidence(candidate.previous_location);
+        const previousExpiration = validateAndFreezeExpirationEvidence(candidate.previous_expiration);
+        const nextLocation = validateAndFreezeStorageLocationEvidence(candidate.next_location);
+        const expectedExpiration = validateAndFreezeExpirationEvidence(candidate.expected_expiration);
+        if (
+          nextLocation.evidence_kind !== "corrected_explicit" ||
+          previousLocation.value === nextLocation.value
+        ) return invalid(`${field}.location_transition`);
+        text(candidate.source_text, `${field}.source_text`);
+        text(candidate.matched_span, `${field}.matched_span`);
+        enumValue(candidate.rule_version, ["diet-manager/location-correction/v1"], `${field}.rule_version`);
+        return Object.freeze({
+          ...candidate,
+          previous_location: previousLocation,
+          previous_expiration: previousExpiration,
+          next_location: nextLocation,
+          expected_expiration: expectedExpiration,
+        }) as unknown as CorrectInventoryLocationOperation;
+      } catch (error) {
+        if (error instanceof PantryEvidenceAuthorityError) return invalid(`${field}.${error.reason}`);
+        throw error;
+      }
+    }
     const candidate = record(value, ["kind", "operation_id", "target_event_id", "base_revision", "item_order", "replacement_amount"], field);
     text(candidate.operation_id, `${field}.operation_id`);
     text(candidate.target_event_id, `${field}.target_event_id`);
@@ -536,6 +632,7 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
 
 function preflightWriteOperations(
   database: DatabaseSync,
+  authoritySecret: Uint8Array,
   operations: ValidatedWriteOperations,
 ): readonly ReturnType<typeof preflightMealOperation>[] {
   if (isMixedPurchaseMeal(operations)) {
@@ -548,11 +645,13 @@ function preflightWriteOperations(
           available_microunits: purchase.amount.observed_microunits,
           unit: purchase.amount.unit,
         }])]]);
-    return Object.freeze([preflightMealOperation(database, meal, purchaseCandidates)]);
+    return Object.freeze([preflightMealOperation(database, authoritySecret, meal, purchaseCandidates)]);
   }
   const contributions = [];
   for (const operation of operations) {
-    if (operation.kind === "record_meal") contributions.push(preflightMealOperation(database, operation));
+    if (operation.kind === "record_meal") {
+      contributions.push(preflightMealOperation(database, authoritySecret, operation));
+    }
   }
   return Object.freeze(contributions);
 }
@@ -760,8 +859,60 @@ function factPreviewMaterial(
   inputDigest: string,
   database: DatabaseSync,
   secret: Uint8Array,
+  committedAtBase?: string,
 ): Readonly<{ authority_kind: "diet-manager/domain-preview/v1"; envelope: DomainEnvelopeInput }> |
-  MealFactPreviewMaterial | WaterFactPreviewMaterial | PurchaseFactPreviewMaterial {
+  MealFactPreviewMaterial | WaterFactPreviewMaterial | PurchaseFactPreviewMaterial |
+  InventoryAdjustmentFactPreviewMaterial {
+  const locationCorrection = envelope.operations.find(
+    (operation): operation is CorrectInventoryLocationOperation =>
+      operation.kind === "correct_record" &&
+      Object.hasOwn(operation, "correction_kind") &&
+      (operation as CorrectInventoryLocationOperation).correction_kind === "inventory_location",
+  );
+  if (locationCorrection) {
+    const existing = database.prepare(
+      "SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ? AND operation_id = ?",
+    ).get(envelope.envelope_id, locationCorrection.operation_id) as { count: number };
+    const payload = existing.count === 0
+      ? prepareInventoryLocationCorrectionOperation({
+          database,
+          secret,
+          token: "preview-material",
+          inputDigest,
+          dataRevision: "repository-v1:preview-material",
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt: envelope.received_at,
+          sequence: 0,
+          operation: locationCorrection,
+        }).payload
+      : storedInventoryLocationCorrection(database, envelope, locationCorrection);
+    return Object.freeze({
+      authority_kind: "diet-manager/domain-preview/v5",
+      input_digest: inputDigest,
+      inventory_adjustment_fact_identities: Object.freeze([
+        createInventoryAdjustmentFactIdentity({
+          sequence: 0,
+          event_id: deriveDomainId("event", envelope.idempotency_key, 0),
+          operation_id: locationCorrection.operation_id,
+          schema_version: "domain/v2",
+          event_type: "inventory_adjusted",
+          fact_kind: "inventory",
+          source_message_id: envelope.source_message_id,
+          conversation_id: envelope.conversation_id,
+          received_at: envelope.received_at,
+          occurred_at_text: envelope.received_at,
+          meal_id: null,
+          meal_slot: null,
+          payload,
+        }),
+      ]),
+    });
+  }
   const water = envelope.operations.find((operation): operation is RecordWaterOperation => operation.kind === "record_water");
   if (water) {
     if (water.occurred_time.resolved_start === null) return invalid("envelope.operations.0.occurred_time.resolved_interval");
@@ -788,7 +939,7 @@ function factPreviewMaterial(
   const mealPlans = new Map(meals.map(({ operation, sequence }) => [
     sequence,
     envelope.operations.length === 1
-      ? prepareMealInventoryPlans(database, operation, envelope.envelope_id)
+      ? prepareMealInventoryPlans(database, secret, operation, envelope.envelope_id)
       : Object.freeze(operation.items.map(() => null)),
   ]));
   const mealIdentities = () => meals.map(({ operation, sequence }) =>
@@ -836,6 +987,7 @@ function factPreviewMaterial(
     .filter((entry): entry is { operation: AddInventoryOperation; sequence: number } =>
       entry.operation.kind === "add_inventory" && entry.operation.pantry_evidence !== undefined);
   if (purchaseEntries.length > 0) {
+    if (committedAtBase === undefined) return invalid("purchase_committed_at_base");
     const identities = purchaseEntries.map((purchaseEntry) => {
       const purchaseIdentityKey = envelope.operations.length > 1
         ? deriveDomainId("idempotency", envelope.idempotency_key, purchaseEntry.sequence)
@@ -876,6 +1028,7 @@ function factPreviewMaterial(
     });
     return Object.freeze({
       authority_kind: "diet-manager/domain-preview/v4",
+      committed_at_base: committedAtBase,
       input_digest: inputDigest,
       meal_fact_identities: Object.freeze(mealIdentities()),
       purchase_fact_identities: Object.freeze(identities),
@@ -922,6 +1075,14 @@ function assertMealFactPreviewAuthority(
       authority.purchase_fact_preview_material === undefined ||
       canonicalJson(authority.purchase_fact_preview_material) !== canonicalJson(expected)
     ) throw new Error("PREVIEW_AUTHORITY_INVALID:purchase_fact_identity");
+    return;
+  }
+  if (expected.authority_kind === "diet-manager/domain-preview/v5") {
+    if (
+      authority.preview_authority_kind !== "diet-manager/server-preview/v5" ||
+      authority.inventory_adjustment_fact_preview_material === undefined ||
+      canonicalJson(authority.inventory_adjustment_fact_preview_material) !== canonicalJson(expected)
+    ) throw new Error("PREVIEW_AUTHORITY_INVALID:inventory_adjustment_fact_identity");
     return;
   }
   if (
@@ -1070,6 +1231,8 @@ function freezeCreator(input: CreateDietDomainServiceInput): {
     input.fault !== undefined &&
     input.fault !== "before_fact_commit" &&
     input.fault !== "after_inventory_business_writes" &&
+    input.fault !== "after_location_correction_fact_commit" &&
+    input.fault !== "after_location_correction_effect_claim" &&
     input.fault !== "after_meal_nutrition" &&
     input.fault !== "after_meal_first_item" &&
     input.fault !== "after_meal_first_inventory_allocation" &&
@@ -1114,7 +1277,26 @@ export function createDietDomainService(
       const validatedEnvelope = validateAndFreezeEnvelope(envelope);
       const operations = writeOperations(validatedEnvelope);
       const inputDigest = digestDomainEnvelope(validatedEnvelope);
-      const previewMaterial = factPreviewMaterial(validatedEnvelope, inputDigest, options.database, options.secret);
+      const needsPurchaseAuthority = operations.some(
+        (operation) => operation.kind === "add_inventory" && operation.pantry_evidence !== undefined,
+      );
+      const existingEnvelope = needsPurchaseAuthority
+        ? options.database.prepare(
+            "SELECT received_at FROM command_envelopes WHERE envelope_id = ?",
+          ).get(validatedEnvelope.envelope_id) as { received_at: string } | undefined
+        : undefined;
+      const previewNow = needsPurchaseAuthority
+        ? existingEnvelope === undefined
+          ? timestamp(options.now(), "clock")
+          : receivedTimestamp(existingEnvelope.received_at, "stored_received_at")
+        : undefined;
+      const previewMaterial = factPreviewMaterial(
+        validatedEnvelope,
+        inputDigest,
+        options.database,
+        options.secret,
+        previewNow,
+      );
       const reused = reuseServerPreview({
         database: options.database,
         secret: options.secret,
@@ -1136,9 +1318,8 @@ export function createDietDomainService(
           reused: true,
         });
       }
-      preflightWriteOperations(options.database, operations);
+      preflightWriteOperations(options.database, options.secret, operations);
       const dataRevision = computeRepositoryDataRevision(options.database);
-      const now = timestamp(options.now(), "clock");
       const preview = createServerPreview({
         database: options.database,
         secret: options.secret,
@@ -1151,7 +1332,7 @@ export function createDietDomainService(
         sourceMessageId: validatedEnvelope.source_message_id,
         conversationId: validatedEnvelope.conversation_id,
         previewMaterial,
-        now,
+        now: previewNow ?? timestamp(options.now(), "clock"),
       });
       return Object.freeze({
         envelope_id: validatedEnvelope.envelope_id,
@@ -1167,7 +1348,18 @@ export function createDietDomainService(
       const operations = writeOperations(envelope);
       const inputDigest = digestDomainEnvelope(envelope);
       if (execution.input_digest !== inputDigest) return invalid("input_digest");
-      const expectedPreviewMaterial = factPreviewMaterial(envelope, inputDigest, options.database, options.secret);
+      const needsPurchaseAuthority = operations.some(
+        (operation) => operation.kind === "add_inventory" && operation.pantry_evidence !== undefined,
+      );
+      const expectedPreviewMaterial = factPreviewMaterial(
+        envelope,
+        inputDigest,
+        options.database,
+        options.secret,
+        needsPurchaseAuthority
+          ? storedEnvelopeTime(options.database, envelope.envelope_id)
+          : undefined,
+      );
       const authority = authorizeRepositoryPreview({
         database: options.database,
         secret: options.secret,
@@ -1195,7 +1387,7 @@ export function createDietDomainService(
               )
             : createMealProgressReservation(
                 options.database,
-                preflightWriteOperations(options.database, operations),
+                preflightWriteOperations(options.database, options.secret, operations),
               )
           : undefined);
       const committedAt = storedEnvelopeTime(options.database, envelope.envelope_id);
@@ -1326,6 +1518,7 @@ export function createDietDomainService(
         const mealResult = runEffectWithFailure(
           () => applyMealEffects({
             database: options.database,
+            authoritySecret: options.secret,
             envelopeId: envelope.envelope_id,
             operationId: mealOperation.operation_id,
             operationSequence: 1,
@@ -1572,6 +1765,129 @@ export function createDietDomainService(
         }).payload as DomainExecutionResult;
       }
       const operation = operations[0];
+      if (operation.kind === "correct_record" && isInventoryLocationCorrection(operation)) {
+        const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
+        let correctionResult;
+        let outboxId = deriveDomainId("outbox", envelope.idempotency_key, 0);
+        const correctionFactCount = options.database.prepare(
+          "SELECT COUNT(*) AS count FROM event_records WHERE envelope_id = ? AND operation_id = ?",
+        ).get(envelope.envelope_id, operation.operation_id) as { count: number };
+        if (authority.envelope_state === "received" && correctionFactCount.count === 0) {
+          const prepared = prepareInventoryLocationCorrectionOperation({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            dataRevision: execution.data_revision,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            idempotencyKey: envelope.idempotency_key,
+            sourceMessageId: envelope.source_message_id,
+            conversationId: envelope.conversation_id,
+            receivedAt: envelope.received_at,
+            committedAt,
+            sequence: 0,
+            operation,
+          });
+          correctionResult = prepared.result;
+          outboxId = prepared.outbox_id;
+          if (options.fault === "before_fact_commit") {
+            throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+          }
+          appendFactWithFailure(prepared.fact, options.failureSink);
+          if (options.fault === "after_location_correction_fact_commit") {
+            throw new Error("DIET_DOMAIN_EXECUTION_FAILED:after_location_correction_fact_commit");
+          }
+        } else {
+          const stored = storedInventoryLocationCorrection(options.database, envelope, operation);
+          correctionResult = stored.result;
+        }
+        if (authority.envelope_state === "finalized") {
+          const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
+          return finalize({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            resultStatus: stored.resultStatus,
+            receiptId: stored.receiptId,
+            finalizedAt: stored.finalizedAt,
+            frozenAt: stored.frozenAt,
+            payload: stored.payload,
+            mixedItems: storedMixedItems(options.database, envelope.envelope_id),
+          }).payload as DomainExecutionResult;
+        }
+        if (
+          authority.envelope_state !== "received" &&
+          authority.envelope_state !== "effects_pending" &&
+          authority.envelope_state !== "effects_stable"
+        ) throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        if (authority.envelope_state !== "effects_stable") {
+          runEffectWithFailure(
+            () => applyPurchaseEffect(
+              options.database,
+              outboxId,
+              committedAt,
+              options.fault === "after_location_correction_effect_claim"
+                ? "after_claim"
+                : options.fault === "after_inventory_business_writes"
+                  ? "after_business_writes"
+                  : undefined,
+            ),
+            options.failureSink,
+            traceId,
+            inputDigest,
+            "INVENTORY_EFFECT_FAILED",
+          );
+          sealPreparedEnvelopeFacts({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            expectedOperationIds: Object.freeze([operation.operation_id]),
+            sealedAt: committedAt,
+          });
+        }
+        const correctionExecution: DomainExecutionResult = Object.freeze({
+          envelope_id: envelope.envelope_id,
+          input_digest: inputDigest,
+          status: "committed",
+          items: Object.freeze([correctionResult]),
+          payload: Object.freeze({
+            authority_kind: "diet-manager/domain-execution/v1",
+            inventory_location_correction: Object.freeze({
+              batch_id: correctionResult.batch_id,
+              previous_location: correctionResult.previous_location,
+              current_location: correctionResult.current_location,
+              expiration: correctionResult.expiration,
+            }),
+          }),
+        });
+        return finalize({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          dataRevision: execution.data_revision,
+          traceId,
+          resultStatus: "committed",
+          receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt: committedAt,
+          frozenAt: committedAt,
+          payload: correctionExecution,
+          mixedItems: Object.freeze([]),
+        }).payload as DomainExecutionResult;
+      }
       if (operation.kind === "correct_record" || operation.kind === "undo_record") {
         const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
         if (authority.envelope_state === "finalized") {
@@ -1840,6 +2156,7 @@ export function createDietDomainService(
       if (operation.kind === "record_meal") {
         const inventoryPlans = prepareMealInventoryPlans(
           options.database,
+          options.secret,
           operation,
           envelope.envelope_id,
         );
@@ -1936,6 +2253,7 @@ export function createDietDomainService(
           try {
             mealResult = applyMealEffects({
               database: options.database,
+              authoritySecret: options.secret,
               envelopeId: envelope.envelope_id,
               operationId: operation.operation_id,
               operationSequence: 0,

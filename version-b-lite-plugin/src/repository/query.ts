@@ -7,22 +7,24 @@ import {
 } from "../authority/meal-fact-identity.js";
 import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/water-fact-identity.js";
 import {
-  createPurchaseFactIdentity,
-  purchaseFactIdentityEquals,
-} from "../authority/purchase-fact-identity.js";
-import {
   validateAndFreezeMealFactPayload,
   validateAndFreezeOccurredTimeEvidence,
 } from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
+  assertAuthenticatedPantryPurchaseRoot,
   parseBatchPayloadJson,
   parseProductPayloadJson,
   parseProjectionPayloadJson,
   parsePurchaseFactPayloadJson,
 } from "../storage/inventory-repository.js";
 import type { PantryPurchaseEvidence } from "../domain/types.js";
+import {
+  assertAppliedInventoryLocationCorrectionAuthority,
+  assertAuthenticatedInventoryLocationCorrectionFactAuthority,
+} from "./inventory-location-correction-authority.js";
+import { assertAuthenticatedPurchaseEventAuthority } from "./purchase-event-authority.js";
 
 const QUERY_FIELDS = ["batchId", "database"] as const;
 const LIST_QUERY_FIELDS = ["authoritySecret", "database"] as const;
@@ -124,6 +126,7 @@ interface InventoryListRow extends ProjectionRow {
   stock_source_message_id: string;
   stock_conversation_id: string;
   stock_received_at: string;
+  stock_committed_at: string;
   stock_occurred_at_text: string | null;
   preview_payload_json: string;
   envelope_input_digest: string;
@@ -704,6 +707,128 @@ export function summarizeDailyProgress(input: DateRangeQuery): DailyNutritionSum
   });
 }
 
+function validateLocationCorrectionChain(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  row: InventoryListRow,
+  initialEvidence: Readonly<PantryPurchaseEvidence>,
+  projection: InventoryProjectionResult,
+): void {
+  const corrections = database.prepare(
+    `SELECT e.event_id, e.envelope_id, e.operation_id, e.schema_version,
+            e.event_type, e.fact_kind, e.source_message_id, e.conversation_id,
+            e.received_at, e.committed_at, e.occurred_at_text, e.meal_id, e.meal_slot,
+            e.payload_json, c.payload_json AS preview_payload_json,
+            c.input_digest AS envelope_input_digest,
+             o.effect_kind, o.state AS outbox_state,
+             b.effect_state, b.result_status, b.completed_at
+     FROM event_records e
+     JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+     LEFT JOIN effect_outbox o ON o.envelope_id = e.envelope_id AND o.operation_id = e.operation_id
+     LEFT JOIN effect_bundle_commits b ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+     WHERE e.event_type = 'inventory_adjusted' AND e.fact_kind = 'inventory'
+     ORDER BY e.committed_at, e.event_id`,
+  ).all() as Array<{
+    event_id: string;
+    envelope_id: string;
+    operation_id: string;
+    schema_version: "domain/v2";
+    event_type: "inventory_adjusted";
+    fact_kind: "inventory";
+    source_message_id: string;
+    conversation_id: string;
+    received_at: string;
+    committed_at: string;
+    occurred_at_text: string | null;
+    meal_id: string | null;
+    meal_slot: string | null;
+    payload_json: string;
+    preview_payload_json: string;
+    envelope_input_digest: string;
+    effect_kind: string | null;
+    outbox_state: string | null;
+    effect_state: string | null;
+    result_status: string | null;
+    completed_at: string | null;
+  }>;
+  const authenticatedCorrections = corrections.map((correction) => {
+    try {
+      return Object.freeze({
+        correction,
+        payload: assertAuthenticatedInventoryLocationCorrectionFactAuthority(
+          database,
+          authoritySecret,
+          correction.envelope_id,
+          correction.operation_id,
+          correction.event_id,
+        ),
+      });
+    } catch {
+      return invalid("location_correction_event_identity");
+    }
+  }).sort((left, right) =>
+    left.payload.base_revision !== right.payload.base_revision
+      ? left.payload.base_revision - right.payload.base_revision
+      : left.correction.event_id < right.correction.event_id
+        ? -1
+        : left.correction.event_id > right.correction.event_id
+          ? 1
+          : 0);
+  let evidence = initialEvidence;
+  let revision = 1;
+  let matched = 0;
+  for (const { correction, payload } of authenticatedCorrections) {
+    try {
+      assertAppliedInventoryLocationCorrectionAuthority(
+        database,
+        correction.envelope_id,
+        correction.operation_id,
+        correction.event_id,
+        { requireCurrentProjection: false },
+      );
+    } catch {
+      return invalid("location_correction_effect");
+    }
+    if (payload.batch_id !== row.batch_id) continue;
+    const previousProjection = parseProjectionPayloadJson(payload.previous_projection_json);
+    const nextProjection = parseProjectionPayloadJson(payload.next_projection_json);
+    const nextEvidence = JSON.parse(canonicalJson(evidence)) as Record<string, unknown>;
+    nextEvidence.location = payload.next_location;
+    nextEvidence.expiration = payload.next_expiration;
+    const previousEvent = database.prepare(
+      "SELECT committed_at FROM event_records WHERE event_id = ?",
+    ).get(payload.previous_last_event_id) as { committed_at: string } | undefined;
+    if (
+      payload.base_revision !== revision || !previousEvent ||
+      previousEvent.committed_at !== payload.previous_last_changed_at ||
+      previousProjection.version !== 2 || nextProjection.version !== 2 ||
+      previousProjection.pantry_evidence === null || nextProjection.pantry_evidence === null ||
+      previousProjection.batch_id !== row.batch_id || nextProjection.batch_id !== row.batch_id ||
+      previousProjection.product_id !== row.product_id || nextProjection.product_id !== row.product_id ||
+      previousProjection.unit !== nextProjection.unit ||
+      previousProjection.quantity_microunits !== nextProjection.quantity_microunits ||
+      canonicalJson(previousProjection.pantry_evidence) !== canonicalJson(evidence) ||
+      canonicalJson(nextProjection.pantry_evidence) !== canonicalJson(nextEvidence) ||
+      canonicalJson(payload.previous_location) !== canonicalJson(evidence.location) ||
+      canonicalJson(payload.previous_expiration) !== canonicalJson(evidence.expiration) ||
+      correction.effect_kind !== "inventory_location_correction" ||
+      correction.outbox_state !== "succeeded" || correction.effect_state !== "succeeded" ||
+      correction.result_status !== "applied" || correction.completed_at !== correction.committed_at
+    ) return invalid("location_correction_chain");
+    evidence = Object.freeze(nextEvidence) as unknown as Readonly<PantryPurchaseEvidence>;
+    revision += 1;
+    matched += 1;
+  }
+  if (matched === 0) return invalid("purchase_event_evidence");
+  const currentEvent = database.prepare(
+    "SELECT committed_at FROM event_records WHERE event_id = ?",
+  ).get(row.last_event_id) as { committed_at: string } | undefined;
+  if (
+    !currentEvent || currentEvent.committed_at !== row.last_changed_at ||
+    canonicalJson(projection.pantry_evidence) !== canonicalJson(evidence)
+  ) return invalid("location_correction_projection");
+}
+
 export function listInventoryProjection(
   input: InventoryProjectionListQuery,
 ): readonly InventoryListItem[] {
@@ -735,6 +860,7 @@ export function listInventoryProjection(
           e.source_message_id AS stock_source_message_id,
           e.conversation_id AS stock_conversation_id,
           e.received_at AS stock_received_at,
+          e.committed_at AS stock_committed_at,
           e.occurred_at_text AS stock_occurred_at_text,
           c.payload_json AS preview_payload_json,
           c.input_digest AS envelope_input_digest,
@@ -770,56 +896,36 @@ export function listInventoryProjection(
           productPayload.identity === null || batchPayload.pantry_evidence === null ||
           purchaseFactPayload.pantry_evidence === null ||
           canonicalJson(productPayload.identity) !== canonicalJson(batchPayload.pantry_evidence.product_identity) ||
-          canonicalJson(batchPayload.pantry_evidence) !== canonicalJson(projection.pantry_evidence) ||
           canonicalJson(batchPayload.pantry_evidence) !== canonicalJson(purchaseFactPayload.pantry_evidence)
         ) return invalid("purchase_event_evidence");
         try {
-          const authority = authenticateStoredPreviewAuthority(
-            row.preview_payload_json,
+          const authenticated = assertAuthenticatedPurchaseEventAuthority(
+            database,
             authoritySecret,
+            row.stock_event_id,
           );
-          const material = authority.purchase_fact_preview_material;
           if (
-            authority.preview_authority_kind !== "diet-manager/server-preview/v4" ||
-            material === undefined || material.input_digest !== row.envelope_input_digest ||
-            authority.binding.preview_id !== row.stock_envelope_id ||
-            authority.binding.input_digest !== row.envelope_input_digest ||
-            row.stock_occurred_at_text === null
+            authenticated.envelope_id !== row.stock_envelope_id ||
+            authenticated.operation_id !== row.stock_operation_id ||
+            authenticated.payload_json !== row.stock_event_payload_json
           ) return invalid("purchase_event_identity");
-          const storedPurchaseIds = database.prepare(
-            `SELECT event_id FROM event_records
-             WHERE envelope_id = ? AND event_type = 'inventory_stock'
-             ORDER BY event_id`,
-          ).all(row.stock_envelope_id) as Array<{ event_id: string }>;
-          const expectedIds = material.purchase_fact_identities
-            .map((identity) => identity.event_id)
-            .sort();
-          if (
-            storedPurchaseIds.length !== expectedIds.length ||
-            storedPurchaseIds.some((stored, index) => stored.event_id !== expectedIds[index])
-          ) return invalid("purchase_event_identity");
-          const expected = material.purchase_fact_identities.find((identity) =>
-            identity.event_id === row.stock_event_id && identity.operation_id === row.stock_operation_id);
-          if (!expected) return invalid("purchase_event_identity");
-          const actual = createPurchaseFactIdentity({
-            sequence: expected.sequence,
-            event_id: row.stock_event_id,
-            operation_id: row.stock_operation_id,
-            schema_version: row.stock_schema_version,
-            event_type: "inventory_stock",
-            fact_kind: "inventory",
-            source_message_id: row.stock_source_message_id,
-            conversation_id: row.stock_conversation_id,
-            received_at: row.stock_received_at,
-            occurred_at_text: row.stock_occurred_at_text,
-            meal_id: null,
-            meal_slot: null,
-            payload: JSON.parse(row.stock_event_payload_json) as unknown,
-          });
-          if (!purchaseFactIdentityEquals(actual, expected)) return invalid("purchase_event_identity");
+          assertAuthenticatedPantryPurchaseRoot(
+            database,
+            authoritySecret,
+            row.batch_id,
+          );
         } catch (error) {
           if (error instanceof Error && error.message.startsWith("INVENTORY_PROJECTION_INVALID:")) throw error;
           return invalid("purchase_event_identity");
+        }
+        if (canonicalJson(batchPayload.pantry_evidence) !== canonicalJson(projection.pantry_evidence)) {
+          validateLocationCorrectionChain(
+            database,
+            authoritySecret,
+            row,
+            batchPayload.pantry_evidence,
+            projection,
+          );
         }
       }
       return Object.freeze({

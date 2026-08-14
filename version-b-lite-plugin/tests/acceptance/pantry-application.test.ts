@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,8 +8,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import casesCatalog from "../../../shared/acceptance-cases/cases.json";
 import fixturesCatalog from "../../../shared/acceptance-cases/fixtures/core-v1.json";
 import { canonicalJson } from "../../src/authority/canonical-json.js";
-import { createCoreRuntime, handleCoreRequest } from "../../src/application/core-runtime.js";
+import {
+  CORE_RUNTIME_SECRET_FILENAME,
+  createCoreRuntime,
+  handleCoreRequest,
+  type CoreRuntime,
+} from "../../src/application/core-runtime.js";
 import { assertDietManagerOutcome, type CoreApplicationRequest } from "../../src/contracts.js";
+import { createDietDomainService } from "../../src/domain/service.js";
+import type { DomainEnvelopeInput } from "../../src/domain/types.js";
+import { assertAuthenticatedPurchaseEventAuthority } from "../../src/repository/purchase-event-authority.js";
+import {
+  assertCurrentInventoryLocationCorrectionLineage,
+  parseBatchPayloadJson,
+  parseProductPayloadJson,
+  parseProjectionPayloadJson,
+  parsePurchaseFactPayloadJson,
+} from "../../src/storage/inventory-repository.js";
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
@@ -86,6 +101,143 @@ function request(caseId: keyof typeof EXPECTED_ACTIONS): CoreApplicationRequest 
     action: EXPECTED_ACTIONS[caseId],
     ...parseInput,
   } as CoreApplicationRequest;
+}
+
+function seedSingleBatchEvidence(
+  runtime: CoreRuntime,
+  root: string,
+  location: Readonly<Record<string, unknown>>,
+  expiration: Readonly<Record<string, unknown>>,
+): void {
+  const waterCase = casesById.get("CASE-WATER-001");
+  if (waterCase === undefined) throw new Error("missing CASE-WATER-001");
+  const environment = environments.get(waterCase.setup.environment_fixture);
+  if (environment === undefined) throw new Error("missing CASE-WATER-001 environment");
+  expect(handleCoreRequest(runtime, {
+    action: "record_water",
+    source_text: waterCase.source_text,
+    received_at: environment.clock,
+    timezone: environment.timezone,
+    operation_id: "operation-location-correction-seed-water",
+    source_message_id: "message-location-correction-seed-water",
+    conversation_id: "conversation-pantry-application",
+    prior_context: waterCase.setup.prior_context,
+  })).toMatchObject({ committed: true });
+
+  const authoritySecret = readFileSync(join(root, CORE_RUNTIME_SECRET_FILENAME));
+  const setup = openDietDatabase({ privateRuntimeRoot: root });
+  try {
+    const service = createDietDomainService({
+      database: setup.database,
+      secret: authoritySecret,
+      now: () => "2026-08-11T08:30:00.500Z",
+    });
+    const envelope: DomainEnvelopeInput = {
+      envelope_id: "envelope-location-correction-seed-purchase",
+      idempotency_key: "idem-location-correction-seed-purchase",
+      command_type: "add_inventory",
+      subject_scope: "user:self",
+      source_message_id: "message-location-correction-seed-purchase",
+      conversation_id: "conversation-pantry-application",
+      received_at: "2026-08-11T00:30:00.000Z",
+      timezone: "Asia/Shanghai",
+      operations: [{
+        kind: "add_inventory",
+        operation_id: "operation-location-correction-seed-purchase",
+        product: {
+          product_id: "product-location-correction-seed-milk",
+          normalized_name: "milk",
+          product_type: "nutrition_drink",
+        },
+        batch_id: "batch-location-correction-seed-milk",
+        amount: {
+          unit: "carton",
+          observed_microunits: 24_000_000,
+          nutrition_adoption_microunits: null,
+          inventory_deduction_microunits: null,
+          template_reference_microunits: null,
+          evidence: "explicit",
+        },
+        nutrition_sources: [],
+        pantry_evidence: {
+          schema_version: "diet-manager/pantry-evidence/v1",
+          product_identity: {
+            raw_name: "牛奶",
+            normalized_name: "milk",
+            brand: null,
+            variant_or_flavor: null,
+            specification: null,
+            evidence_kind: "explicit",
+          },
+          package_quantity: {
+            outer_count: 2,
+            outer_unit: "box",
+            inner_per_outer: 12,
+            inner_unit: "carton",
+            capacity_per_inner: 250,
+            capacity_unit: "ml",
+            total_inner: 24,
+            total_capacity: 6000,
+            formula: "2*12*250=6000",
+          },
+          location,
+          opening: null,
+          expiration,
+        },
+      } as never],
+    };
+    const preview = service.preview(envelope);
+    expect(service.execute({
+      envelope,
+      token: preview.token,
+      input_digest: preview.input_digest,
+      data_revision: preview.data_revision,
+    }).status).toBe("committed");
+    const stored = setup.database.prepare(
+      `SELECT b.stock_event_id, b.batch_id, b.product_id,
+              b.payload_json AS batch_payload_json,
+              pr.payload_json AS product_payload_json,
+              p.payload_json AS projection_payload_json,
+              e.payload_json AS event_payload_json
+       FROM inventory_batches b
+       JOIN products pr ON pr.product_id = b.product_id
+       JOIN inventory_batch_projections p ON p.batch_id = b.batch_id
+       JOIN event_records e ON e.event_id = b.stock_event_id`,
+    ).get() as {
+      stock_event_id: string;
+      batch_id: string;
+      product_id: string;
+      batch_payload_json: string;
+      product_payload_json: string;
+      projection_payload_json: string;
+      event_payload_json: string;
+    };
+    expect(() => assertAuthenticatedPurchaseEventAuthority(
+      setup.database,
+      authoritySecret,
+      stored.stock_event_id,
+    )).not.toThrow();
+    const product = parseProductPayloadJson(stored.product_payload_json);
+    const batch = parseBatchPayloadJson(stored.batch_payload_json);
+    const fact = parsePurchaseFactPayloadJson(stored.event_payload_json);
+    expect(product).toMatchObject({ version: 2, identity: batch.pantry_evidence?.product_identity });
+    expect(batch).toMatchObject({
+      version: 2,
+      pantry_evidence: fact.pantry_evidence,
+    });
+    const projection = parseProjectionPayloadJson(stored.projection_payload_json);
+    if (projection.version !== 2 || projection.pantry_evidence === null) {
+      throw new Error("invalid seeded projection");
+    }
+    expect(() => assertCurrentInventoryLocationCorrectionLineage(
+      setup.database,
+      authoritySecret,
+      stored.batch_id,
+      projection.pantry_evidence,
+    )).not.toThrow();
+  } finally {
+    setup.close();
+  }
 }
 
 describe("SEL-PANTRY-001 parser and application authority", () => {
@@ -425,6 +577,171 @@ describe("SEL-PANTRY-001 parser and application authority", () => {
       try {
         expect(inspection.database.prepare("SELECT COUNT(*) AS count FROM event_records").get()).toEqual({ count: 3 });
         expect(inspection.database.prepare("SELECT COUNT(*) AS count FROM inventory_batches").get()).toEqual({ count: 3 });
+      } finally {
+        inspection.close();
+      }
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("commits CASE-PURCHASE-010 through the public runtime as one append-only correction", () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({ officialDataRoot: root, now: () => "2026-08-11T08:30:01.000Z" });
+    try {
+      seedSingleBatchEvidence(
+        runtime,
+        root,
+        {
+          value: "room_temperature_cabinet",
+          evidence_kind: "explicit",
+          rule_version: null,
+        },
+        {
+          explicit_at: null,
+          effective_at: "2026-08-12T08:30:00+08:00",
+          basis: "rule",
+          rule_version: "diet-manager/room-temperature-milk-shelf-life/v1",
+        },
+      );
+
+      const outcome = handleCoreRequest(runtime, request("CASE-PURCHASE-010"));
+
+      expect(outcome).toMatchObject({
+        action: "correct_record",
+        status: "committed",
+        committed: true,
+        record_id: expect.any(String),
+      });
+      const repeatedMeaning = structuredClone(request("CASE-PURCHASE-010"));
+      repeatedMeaning.operation_id = "operation-pantry-location-correction-no-change";
+      repeatedMeaning.source_message_id = "message-pantry-location-correction-no-change";
+      expect(handleCoreRequest(runtime, repeatedMeaning)).toEqual({
+        action: "correct_record",
+        status: "ignored",
+        committed: false,
+        operation_id: "operation-pantry-location-correction-no-change",
+        reason_code: "location_correction_already_current",
+      });
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        expect(inspection.database.prepare(
+          "SELECT COUNT(*) AS count FROM event_records WHERE event_type = 'inventory_adjusted'",
+        ).get()).toEqual({ count: 1 });
+        const projection = inspection.database.prepare(
+          "SELECT last_event_id, payload_json FROM inventory_batch_projections",
+        ).get() as { last_event_id: string; payload_json: string };
+        expect(JSON.parse(projection.payload_json)).toMatchObject({
+          pantry_evidence: {
+            location: { value: "refrigerator", evidence_kind: "corrected_explicit" },
+            expiration: {
+              explicit_at: null,
+              effective_at: "2026-08-18T08:30:00.000+08:00",
+              basis: "rule",
+              rule_version: "diet-manager/fresh-milk-shelf-life-v1",
+            },
+          },
+        });
+        expect(inspection.database.prepare(
+          "SELECT event_id FROM event_records WHERE event_type = 'inventory_adjusted'",
+        ).get()).toEqual({ event_id: projection.last_event_id });
+      } finally {
+        inspection.close();
+      }
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("rejects a forged already-current projection before returning a no-write outcome", () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({ officialDataRoot: root, now: () => "2026-08-11T08:30:01.000Z" });
+    try {
+      seedSingleBatchEvidence(runtime, root, {
+        value: "room_temperature_cabinet",
+        evidence_kind: "explicit",
+        rule_version: null,
+      }, {
+        explicit_at: null,
+        effective_at: "2026-08-12T08:30:00+08:00",
+        basis: "rule",
+        rule_version: "diet-manager/room-temperature-milk-shelf-life/v1",
+      });
+      const tamper = openDietDatabase({ privateRuntimeRoot: root });
+      let forgedProjectionJson: string;
+      try {
+        const row = tamper.database.prepare(
+          "SELECT batch_id, payload_json FROM inventory_batch_projections",
+        ).get() as { batch_id: string; payload_json: string };
+        const projection = JSON.parse(row.payload_json) as Record<string, unknown>;
+        (projection.pantry_evidence as Record<string, unknown>).location = {
+          value: "refrigerator",
+          evidence_kind: "corrected_explicit",
+          rule_version: null,
+        };
+        forgedProjectionJson = canonicalJson(projection);
+        tamper.database.prepare(
+          "UPDATE inventory_batch_projections SET payload_json = ? WHERE batch_id = ?",
+        ).run(forgedProjectionJson, row.batch_id);
+      } finally {
+        tamper.close();
+      }
+
+      expect(handleCoreRequest(runtime, request("CASE-PURCHASE-010"))).toEqual({
+        action: "correct_record",
+        status: "failed",
+        committed: false,
+        operation_id: "operation-case-purchase-010",
+        error_code: "CORE_APPLICATION_AUTHORITY_INVALID",
+      });
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        expect(inspection.database.prepare(
+          "SELECT COUNT(*) AS count FROM event_records WHERE event_type = 'inventory_adjusted'",
+        ).get()).toEqual({ count: 0 });
+        expect(inspection.database.prepare(
+          "SELECT payload_json FROM inventory_batch_projections",
+        ).get()).toEqual({ payload_json: forgedProjectionJson });
+      } finally {
+        inspection.close();
+      }
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("preserves explicit expiration authority through the public location correction", () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({ officialDataRoot: root, now: () => "2026-08-11T08:30:01.000Z" });
+    try {
+      const explicitExpiration = {
+        explicit_at: "2026-08-20T00:30:00.000Z",
+        effective_at: "2026-08-20T00:30:00.000Z",
+        basis: "explicit",
+        rule_version: null,
+      } as const;
+      seedSingleBatchEvidence(runtime, root, {
+        value: "room_temperature_cabinet",
+        evidence_kind: "explicit",
+        rule_version: null,
+      }, explicitExpiration);
+
+      expect(handleCoreRequest(runtime, request("CASE-PURCHASE-010"))).toMatchObject({
+        action: "correct_record",
+        status: "committed",
+        committed: true,
+      });
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const projection = inspection.database.prepare(
+          "SELECT payload_json FROM inventory_batch_projections",
+        ).get() as { payload_json: string };
+        expect(JSON.parse(projection.payload_json)).toMatchObject({
+          pantry_evidence: {
+            location: { value: "refrigerator", evidence_kind: "corrected_explicit" },
+            expiration: explicitExpiration,
+          },
+        });
       } finally {
         inspection.close();
       }

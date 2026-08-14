@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson } from "../authority/canonical-json.js";
 import {
   productIdentityFingerprint,
+  validateAndFreezeInventoryLocationCorrectionFactPayload,
   validateAndFreezePantryPurchaseEvidence,
   validateAndFreezeProductIdentityEvidence,
 } from "../domain/inventory-service.js";
@@ -14,8 +15,14 @@ import type {
   PantryPurchaseEvidence,
   ProductIdentityEvidence,
 } from "../domain/types.js";
+import { buildPantryPurchaseReceiptItem } from "../domain/receipt.js";
 import { deriveDomainId } from "../domain/identity.js";
 import type { PreparedEnvelopeOperation } from "../repository/fact-commit.js";
+import {
+  assertAppliedInventoryLocationCorrectionAuthority,
+  assertAuthenticatedInventoryLocationCorrectionFactAuthority,
+} from "../repository/inventory-location-correction-authority.js";
+import { assertAuthenticatedPurchaseEventAuthority } from "../repository/purchase-event-authority.js";
 import { assertCurrentMigrationAuthority } from "./migration-guard.js";
 
 export interface PreparePantryPurchaseInput {
@@ -426,8 +433,383 @@ export function parseInventoryAllocationPlan(value: unknown): Readonly<Inventory
   });
 }
 
+export function pendingMealInventoryAllocationBatchIds(
+  database: DatabaseSync,
+): ReadonlySet<string> {
+  const rows = database.prepare(
+    `SELECT i.payload_json, o.state AS outbox_state
+     FROM effect_outbox o
+     JOIN event_records e
+       ON e.envelope_id = o.envelope_id AND e.operation_id = o.operation_id
+     JOIN meal_items i ON i.event_id = e.event_id
+     WHERE e.event_type = 'diet_meal' AND e.fact_kind = 'meal'
+       AND o.effect_kind = 'inventory_deduct'
+       AND o.state IN ('pending', 'processing', 'retryable_failed')
+     ORDER BY e.committed_at, e.event_id, i.item_order`,
+  ).all() as Array<{ payload_json: string; outbox_state: string }>;
+  const batchIds = new Set<string>();
+  for (const row of rows) {
+    if (!['pending', 'processing', 'retryable_failed'].includes(row.outbox_state)) {
+      return invalid("pending_meal_inventory_effect");
+    }
+    const payload = parsedJson(row.payload_json, "pending_meal_item");
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      return invalid("pending_meal_item");
+    }
+    if (!Object.hasOwn(payload, "inventory_plan")) continue;
+    const plan = parseInventoryAllocationPlan(
+      (payload as Record<string, unknown>).inventory_plan,
+    );
+    for (const allocation of plan.allocations) batchIds.add(allocation.batch_id);
+  }
+  return batchIds;
+}
+
+export function assertAuthenticatedPantryPurchaseRoot(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  batchId: string,
+): Readonly<PantryPurchaseEvidence> {
+  const initialRow = database.prepare(
+    `SELECT b.stock_event_id, b.product_id, b.schema_version AS batch_schema_version,
+            b.committed_at AS batch_committed_at, b.stocked_at, b.explicit_expiration_at, b.quantity_unit,
+            b.payload_json AS batch_payload_json,
+            p.schema_version AS product_schema_version, p.normalized_name, p.product_type, p.brand,
+            p.payload_json AS product_payload_json
+     FROM inventory_batches b
+     JOIN products p ON p.product_id = b.product_id
+     WHERE b.batch_id = ?`,
+  ).get(batchId) as {
+    stock_event_id: string;
+    product_id: string;
+    batch_schema_version: string;
+    batch_committed_at: string;
+    stocked_at: string;
+    explicit_expiration_at: string | null;
+    quantity_unit: string;
+    batch_payload_json: string;
+    product_schema_version: string;
+    normalized_name: string;
+    product_type: string;
+    brand: string | null;
+    product_payload_json: string;
+  } | undefined;
+  if (initialRow === undefined) return invalid("purchase_event_identity");
+  let initialEvidence: Readonly<PantryPurchaseEvidence>;
+  try {
+    const authenticated = assertAuthenticatedPurchaseEventAuthority(
+      database,
+      authoritySecret,
+      initialRow.stock_event_id,
+    );
+    const product = parseProductPayloadJson(initialRow.product_payload_json);
+    const batch = parseBatchPayloadJson(initialRow.batch_payload_json);
+    const fact = parsePurchaseFactPayloadJson(authenticated.payload_json);
+    const effectEntries = Object.entries(fact.effect_inputs);
+    const effectId = effectEntries[0]?.[0];
+    const effect = exact(effectEntries[0]?.[1], [
+      "batch", "kind", "nutrition_profile", "product", "quantity_microunits",
+      "reason_code", "transaction_id", "unit",
+    ], "purchase_effect");
+    const effectProduct = exact(effect.product, [
+      "normalized_name", "payload", "product_id", "product_type", "schema_version",
+    ], "purchase_effect_product");
+    const effectBatch = exact(effect.batch, [
+      "batch_id", "explicit_expiration_at", "payload", "quantity_unit", "schema_version", "stocked_at",
+    ], "purchase_effect_batch");
+    const result = exact(fact.result, [
+      "batch_id", "error_code", "inventory_quantity_microunits", "nutrition_profile_id",
+      "operation_id", "pantry_evidence", "product_id", "receipt_item", "sequence", "status", "unit",
+    ], "purchase_result");
+    const nutritionProfile = effect.nutrition_profile === null
+      ? null
+      : exact(effect.nutrition_profile, [
+          "applicable_product_id", "basis_kind", "basis_microunits", "basis_unit", "nutrients",
+          "nutrition_profile_id", "profile_version", "source_ref", "source_type",
+        ], "purchase_nutrition_profile");
+    const effectIdentityKey = authenticated.envelope_event_count > 1
+      ? deriveDomainId("idempotency", authenticated.idempotency_key, authenticated.sequence)
+      : authenticated.idempotency_key;
+    const effectIdentitySequence = authenticated.envelope_event_count > 1 ? 0 : authenticated.sequence;
+    const expectedEffectId = deriveDomainId("effect", effectIdentityKey, effectIdentitySequence);
+    const expectedOutboxId = deriveDomainId("outbox", effectIdentityKey, effectIdentitySequence);
+    const expectedTransactionId = deriveDomainId("transaction", effectIdentityKey, effectIdentitySequence);
+    const outboxes = database.prepare(
+      `SELECT outbox_id,envelope_id,operation_id,effect_id,effect_kind,previous_state,
+              state,attempt_count,reason,created_at,updated_at
+       FROM effect_outbox
+       WHERE envelope_id = ? AND operation_id = ? ORDER BY effect_id`,
+    ).all(authenticated.envelope_id, authenticated.operation_id) as Array<{
+      outbox_id: string;
+      envelope_id: string;
+      operation_id: string;
+      effect_id: string;
+      effect_kind: string;
+      previous_state: string | null;
+      state: string;
+      attempt_count: number;
+      reason: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    const transactions = database.prepare(
+      `SELECT transaction_id,event_id,product_id,batch_id,idempotency_key,schema_version,
+              direction,reason_code,unit,related_event_id,related_transaction_id,
+              source_message_id,conversation_id,received_at,committed_at,
+              result_status,lifecycle_status,payload_json
+       FROM inventory_transactions WHERE event_id = ? ORDER BY transaction_id`,
+    ).all(authenticated.event_id) as Array<{
+      transaction_id: string;
+      event_id: string;
+      product_id: string;
+      batch_id: string;
+      idempotency_key: string;
+      schema_version: string;
+      direction: string;
+      reason_code: string;
+      unit: string;
+      related_event_id: string | null;
+      related_transaction_id: string | null;
+      source_message_id: string;
+      conversation_id: string;
+      received_at: string;
+      committed_at: string;
+      result_status: string;
+      lifecycle_status: string;
+      payload_json: string;
+    }>;
+    const bundles = database.prepare(
+      `SELECT stage,effect_state,result_status,completed_at,payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+    ).all(authenticated.envelope_id, authenticated.operation_id) as Array<{
+      stage: string;
+      effect_state: string;
+      result_status: string;
+      completed_at: string | null;
+      payload_json: string;
+    }>;
+    const outbox = outboxes[0];
+    const transaction = transactions[0];
+    const bundle = bundles[0];
+    const expectedReceipt = buildPantryPurchaseReceiptItem({
+      product_id: initialRow.product_id,
+      batch_id: batchId,
+      name: initialRow.normalized_name,
+      stocked_at: authenticated.received_at,
+      evidence: fact.pantry_evidence!,
+    });
+    const expectedTransactionPayload = canonicalJson({
+      authority_kind: effect.quantity_microunits === null
+        ? "diet-manager/inventory-transaction/v2"
+        : "diet-manager/inventory-transaction/v1",
+      quantity_after_microunits: effect.quantity_microunits,
+      quantity_delta_microunits: effect.quantity_microunits,
+      unit: effect.unit,
+    });
+    let bundlePayload: Record<string, unknown>;
+    try {
+      bundlePayload = exact(parsedJson(bundle?.payload_json ?? "", "purchase_bundle"), [
+        "authority_kind", "data_revision", "effects", "operation_sequence",
+      ], "purchase_bundle");
+    } catch {
+      return invalid("purchase_event_identity");
+    }
+    if (
+      product.version !== 2 || product.identity === null || batch.version !== 2 ||
+      batch.pantry_evidence === null || fact.version !== 2 || fact.pantry_evidence === null ||
+      effectEntries.length !== 1 || effectId === undefined ||
+      effect.kind !== "inventory_add" || effect.reason_code !== "purchase" ||
+      effect.unit !== initialRow.quantity_unit ||
+      effectProduct.product_id !== initialRow.product_id ||
+      effectProduct.schema_version !== initialRow.product_schema_version ||
+      effectProduct.normalized_name !== initialRow.normalized_name ||
+      effectProduct.product_type !== initialRow.product_type ||
+      canonicalJson(effectProduct.payload) !== initialRow.product_payload_json ||
+      effectBatch.batch_id !== batchId || effectBatch.schema_version !== initialRow.batch_schema_version ||
+      effectBatch.stocked_at !== initialRow.stocked_at ||
+      effectBatch.stocked_at !== new Date(authenticated.received_at).toISOString() ||
+      effectBatch.explicit_expiration_at !== initialRow.explicit_expiration_at ||
+      effectBatch.explicit_expiration_at !== fact.pantry_evidence.expiration.explicit_at ||
+      effectBatch.quantity_unit !== initialRow.quantity_unit ||
+      canonicalJson(effectBatch.payload) !== initialRow.batch_payload_json ||
+      initialRow.stock_event_id !== authenticated.event_id || initialRow.batch_schema_version !== "domain/v2" ||
+      initialRow.batch_committed_at !== authenticated.committed_at ||
+      initialRow.product_schema_version !== "domain/v2" || product.identity.brand !== initialRow.brand ||
+      product.identity.normalized_name !== initialRow.normalized_name ||
+      (nutritionProfile !== null && nutritionProfile.applicable_product_id !== initialRow.product_id) ||
+      result.sequence !== authenticated.sequence || result.operation_id !== authenticated.operation_id ||
+      result.status !== "committed" || result.error_code !== null || result.batch_id !== batchId ||
+      result.product_id !== initialRow.product_id ||
+      result.inventory_quantity_microunits !== effect.quantity_microunits || result.unit !== effect.unit ||
+      result.nutrition_profile_id !== (nutritionProfile?.nutrition_profile_id ?? null) ||
+      canonicalJson(result.pantry_evidence) !== canonicalJson(fact.pantry_evidence) ||
+      canonicalJson(result.receipt_item) !== canonicalJson(expectedReceipt) ||
+      effectId !== expectedEffectId || effect.transaction_id !== expectedTransactionId ||
+      outboxes.length !== 1 || outbox?.outbox_id !== expectedOutboxId ||
+      outbox.envelope_id !== authenticated.envelope_id || outbox.operation_id !== authenticated.operation_id ||
+      outbox.effect_id !== expectedEffectId || outbox.effect_kind !== "inventory_add" ||
+      outbox.previous_state !== null || outbox.state !== "succeeded" ||
+      !Number.isSafeInteger(outbox.attempt_count) || outbox.attempt_count < 1 ||
+      outbox.reason !== null || outbox.created_at !== authenticated.committed_at ||
+      bundles.length !== 1 || bundle?.stage !== "EffectBundle" || bundle.effect_state !== "succeeded" ||
+      bundle.result_status !== "applied" || bundle.completed_at === null ||
+      bundle.completed_at !== authenticated.committed_at ||
+      outbox.updated_at !== bundle.completed_at ||
+      bundlePayload.authority_kind !== "diet-manager/effect-bundle/v1" ||
+      typeof bundlePayload.data_revision !== "string" ||
+      !bundlePayload.data_revision.startsWith("repository-v1:") ||
+      bundlePayload.operation_sequence !== authenticated.sequence ||
+      canonicalJson(bundlePayload.effects) !== canonicalJson([{ effect_id: expectedEffectId, state: "succeeded" }]) ||
+      transactions.length !== 1 || transaction?.transaction_id !== expectedTransactionId ||
+      transaction.event_id !== authenticated.event_id || transaction.product_id !== initialRow.product_id ||
+      transaction.batch_id !== batchId || transaction.direction !== "in" ||
+      transaction.idempotency_key !== expectedEffectId || transaction.schema_version !== "domain/v2" ||
+      transaction.reason_code !== "purchase" || transaction.unit !== effect.unit ||
+      transaction.related_event_id !== null || transaction.related_transaction_id !== null ||
+      transaction.source_message_id !== authenticated.source_message_id ||
+      transaction.conversation_id !== authenticated.conversation_id ||
+      transaction.received_at !== authenticated.received_at ||
+      transaction.committed_at !== bundle.completed_at || transaction.result_status !== "applied" ||
+      transaction.lifecycle_status !== "active" || transaction.payload_json !== expectedTransactionPayload ||
+      canonicalJson(product.identity) !== canonicalJson(batch.pantry_evidence.product_identity) ||
+      canonicalJson(batch.pantry_evidence) !== canonicalJson(fact.pantry_evidence)
+    ) return invalid("purchase_event_identity");
+    initialEvidence = batch.pantry_evidence;
+  } catch {
+    return invalid("purchase_event_identity");
+  }
+  return initialEvidence;
+}
+
+export function assertCurrentInventoryLocationCorrectionLineage(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  batchId: string,
+  currentEvidence: Readonly<PantryPurchaseEvidence>,
+): number {
+  const initialEvidence = assertAuthenticatedPantryPurchaseRoot(
+    database,
+    authoritySecret,
+    batchId,
+  );
+  const rows = database.prepare(
+    `SELECT e.event_id, e.envelope_id, e.operation_id, e.payload_json,
+            c.state AS envelope_state
+     FROM event_records e
+     JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+     WHERE e.event_type = 'inventory_adjusted' AND e.fact_kind = 'inventory'
+     ORDER BY e.committed_at, e.event_id`,
+  ).all() as Array<{
+    event_id: string;
+    envelope_id: string;
+    operation_id: string;
+    payload_json: string;
+    envelope_state: string;
+  }>;
+  const authenticatedRows: Array<Readonly<{
+    row: (typeof rows)[number];
+    payload: ReturnType<typeof assertAuthenticatedInventoryLocationCorrectionFactAuthority>;
+  }>> = [];
+  for (const row of rows) {
+    try {
+      const entry = Object.freeze({
+        row,
+        payload: assertAuthenticatedInventoryLocationCorrectionFactAuthority(
+          database,
+          authoritySecret,
+          row.envelope_id,
+          row.operation_id,
+          row.event_id,
+        ),
+      });
+      if (entry.payload.batch_id === batchId) {
+        if (entry.row.envelope_state !== "finalized") {
+          return invalid("pending_location_correction");
+        }
+        authenticatedRows.push(entry);
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("INVENTORY_LOCATION_CORRECTION_AUTHORITY_INVALID:")
+      ) return invalid("location_correction_preview");
+      return invalid("location_correction_preview");
+    }
+  }
+  authenticatedRows.sort((left, right) =>
+    left.payload.base_revision !== right.payload.base_revision
+      ? left.payload.base_revision - right.payload.base_revision
+      : left.row.event_id < right.row.event_id
+        ? -1
+        : left.row.event_id > right.row.event_id
+          ? 1
+          : 0);
+  let evidence = initialEvidence;
+  let revision = 1;
+  for (const { row, payload } of authenticatedRows) {
+    try {
+      assertAppliedInventoryLocationCorrectionAuthority(
+        database,
+        row.envelope_id,
+        row.operation_id,
+        row.event_id,
+        { requireCurrentProjection: false },
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("INVENTORY_LOCATION_CORRECTION_AUTHORITY_INVALID:")
+      ) return invalid("location_correction_preview");
+      return invalid("location_correction_preview");
+    }
+    const previous = parseProjectionPayloadJson(payload.previous_projection_json);
+    const next = parseProjectionPayloadJson(payload.next_projection_json);
+    if (
+      previous.version !== 2 || next.version !== 2 ||
+      previous.pantry_evidence === null || next.pantry_evidence === null ||
+      payload.base_revision !== revision || previous.batch_id !== batchId || next.batch_id !== batchId ||
+      previous.product_id !== next.product_id || previous.unit !== next.unit ||
+      previous.quantity_microunits !== next.quantity_microunits ||
+      canonicalJson(previous.pantry_evidence) !== canonicalJson(evidence) ||
+      canonicalJson(previous.pantry_evidence.location) !== canonicalJson(payload.previous_location) ||
+      canonicalJson(previous.pantry_evidence.expiration) !== canonicalJson(payload.previous_expiration) ||
+      canonicalJson(next.pantry_evidence.location) !== canonicalJson(payload.next_location) ||
+      canonicalJson(next.pantry_evidence.expiration) !== canonicalJson(payload.next_expiration)
+    ) return invalid("location_correction_preview");
+    evidence = next.pantry_evidence;
+    revision += 1;
+  }
+  if (canonicalJson(evidence) !== canonicalJson(currentEvidence)) {
+    return invalid("location_correction_preview");
+  }
+  return revision;
+}
+
+export function pendingLocationCorrectionBatchIds(database: DatabaseSync): ReadonlySet<string> {
+  const rows = database.prepare(
+    `SELECT e.payload_json
+     FROM event_records e
+     JOIN command_envelopes c ON c.envelope_id = e.envelope_id
+     WHERE e.event_type = 'inventory_adjusted' AND e.fact_kind = 'inventory'
+       AND c.state <> 'finalized'
+     ORDER BY e.committed_at, e.event_id`,
+  ).all() as Array<{ payload_json: string }>;
+  const batchIds = new Set<string>();
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.payload_json) as unknown;
+      if (canonicalJson(parsed) !== row.payload_json) return invalid("pending_location_correction");
+      batchIds.add(validateAndFreezeInventoryLocationCorrectionFactPayload(parsed).batch_id);
+    } catch {
+      return invalid("pending_location_correction");
+    }
+  }
+  return batchIds;
+}
+
 export function listPantryAllocationCandidates(
   database: DatabaseSync,
+  authoritySecret: Uint8Array,
   normalizedName: string,
   occurredAt: string,
 ): Readonly<PantryAllocationCandidateRead> | null {
@@ -454,8 +836,12 @@ export function listPantryAllocationCandidates(
     projection_payload_json: string;
   }>;
   if (rows.length === 0) return null;
+  const pendingCorrectionBatches = pendingLocationCorrectionBatchIds(database);
   const candidates: InventoryAllocationCandidate[] = [];
   for (const row of rows) {
+    if (pendingCorrectionBatches.has(row.batch_id)) {
+      return invalid("pending_location_correction");
+    }
     const product = parseProductPayloadJson(row.product_payload_json);
     const batch = parseBatchPayloadJson(row.batch_payload_json);
     const projection = parseProjectionPayloadJson(row.projection_payload_json);
@@ -463,10 +849,15 @@ export function listPantryAllocationCandidates(
     if (
       product.identity_fingerprint === null || batch.pantry_evidence === null ||
       projection.pantry_evidence === null || projection.product_id !== row.product_id ||
-      projection.batch_id !== row.batch_id ||
-      canonicalJson(batch.pantry_evidence) !== canonicalJson(projection.pantry_evidence)
+      projection.batch_id !== row.batch_id
     ) return invalid("inventory_candidate_evidence");
-    const expiration = batch.pantry_evidence.expiration.effective_at;
+    assertCurrentInventoryLocationCorrectionLineage(
+      database,
+      authoritySecret,
+      row.batch_id,
+      projection.pantry_evidence,
+    );
+    const expiration = projection.pantry_evidence.expiration.effective_at;
     const expired = expiration !== null && Date.parse(expiration) <= occurredEpoch;
     const available = projection.quantity_microunits ?? 0;
     const status = expired || row.effective_status === "expired"
@@ -490,6 +881,7 @@ export function listPantryAllocationCandidates(
 
 export function applyPantryAllocationsInTransaction(input: Readonly<{
   readonly database: DatabaseSync;
+  readonly authority_secret: Uint8Array;
   readonly event_id: string;
   readonly source_message_id: string;
   readonly conversation_id: string;
@@ -504,25 +896,41 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
   if (plan.status !== "matched") return Object.freeze([]);
   const occurredEpoch = Date.parse(input.occurred_at);
   if (!Number.isFinite(occurredEpoch)) return invalid("inventory_allocation_time");
+  const pendingCorrectionBatches = pendingLocationCorrectionBatchIds(input.database);
+  if (plan.allocations.some((allocation) => pendingCorrectionBatches.has(allocation.batch_id))) {
+    return invalid("pending_location_correction");
+  }
   const applied = plan.allocations.map((allocation, index) => {
     const row = input.database.prepare(
-      `SELECT quantity_status, effective_status, payload_json
-       FROM inventory_batch_projections WHERE batch_id = ?`,
+      `SELECT i.quantity_status, i.effective_status, i.payload_json,
+              b.payload_json AS batch_payload_json
+       FROM inventory_batch_projections i
+       JOIN inventory_batches b ON b.batch_id = i.batch_id
+       WHERE i.batch_id = ?`,
     ).get(allocation.batch_id) as {
       quantity_status: string;
       effective_status: string;
       payload_json: string;
+      batch_payload_json: string;
     } | undefined;
     if (!row || row.quantity_status !== "available" || row.effective_status !== "active") {
       return invalid("inventory_allocation_projection");
     }
     const projection = parseProjectionPayloadJson(row.payload_json);
+    const batch = parseBatchPayloadJson(row.batch_payload_json);
     if (
       projection.version !== 2 || projection.pantry_evidence === null ||
+      batch.version !== 2 || batch.pantry_evidence === null ||
       projection.product_id !== allocation.product_id || projection.batch_id !== allocation.batch_id ||
       projection.quantity_microunits !== allocation.before_microunits ||
       projection.unit !== allocation.unit
     ) return invalid("inventory_allocation_projection");
+    assertCurrentInventoryLocationCorrectionLineage(
+      input.database,
+      input.authority_secret,
+      allocation.batch_id,
+      projection.pantry_evidence,
+    );
     const expiration = projection.pantry_evidence.expiration.effective_at;
     if (expiration !== null && Date.parse(expiration) <= occurredEpoch) {
       return invalid("inventory_allocation_expired");

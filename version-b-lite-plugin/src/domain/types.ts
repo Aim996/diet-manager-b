@@ -244,13 +244,83 @@ export interface RecordWaterOperation {
   readonly amount_evidence: unknown;
 }
 
-export interface CorrectRecordOperation {
+export interface CorrectMealRecordOperation {
   readonly kind: "correct_record";
   readonly operation_id: string;
   readonly target_event_id: string;
   readonly base_revision: number;
   readonly item_order: number;
   readonly replacement_amount: KnownStructuredAmount;
+}
+
+export interface CorrectInventoryLocationOperation {
+  readonly kind: "correct_record";
+  readonly operation_id: string;
+  readonly correction_kind: "inventory_location";
+  readonly batch_id: string;
+  readonly base_revision: number;
+  readonly previous_location: Readonly<StorageLocationEvidence>;
+  readonly previous_expiration: Readonly<ExpirationEvidence>;
+  readonly next_location: Readonly<StorageLocationEvidence>;
+  readonly expected_expiration: Readonly<ExpirationEvidence>;
+  readonly source_text: string;
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/location-correction/v1";
+}
+
+export type CorrectRecordOperation =
+  | CorrectMealRecordOperation
+  | CorrectInventoryLocationOperation;
+
+export interface InventoryLocationCorrectionResult {
+  readonly sequence: number;
+  readonly operation_id: string;
+  readonly status: "committed";
+  readonly error_code: null;
+  readonly batch_id: string;
+  readonly adjustment_kind: "location_correction";
+  readonly previous_location: Readonly<StorageLocationEvidence>;
+  readonly current_location: Readonly<StorageLocationEvidence>;
+  readonly expiration: Readonly<ExpirationEvidence>;
+  readonly receipt_item: Readonly<InventoryLocationCorrectionReceiptItem>;
+}
+
+export interface InventoryLocationCorrectionReceiptItem {
+  readonly batch_id: string;
+  readonly changed_fields: readonly ["location"];
+  readonly previous_location: Readonly<StorageLocationEvidence>;
+  readonly current_location: Readonly<StorageLocationEvidence>;
+  readonly expiration: Readonly<ExpirationEvidence>;
+}
+
+export interface InventoryLocationCorrectionIntent {
+  readonly kind: "inventory_location_correction";
+  readonly batch_id: string;
+  readonly base_revision: number;
+  readonly previous_last_event_id: string;
+  readonly previous_last_changed_at: string;
+  readonly previous_projection_json: string;
+  readonly next_projection_json: string;
+}
+
+export interface InventoryLocationCorrectionFactPayload {
+  readonly authority_kind: "diet-manager/inventory-location-correction-fact/v1";
+  readonly adjustment_kind: "location_correction";
+  readonly batch_id: string;
+  readonly base_revision: number;
+  readonly previous_last_event_id: string;
+  readonly previous_last_changed_at: string;
+  readonly previous_projection_json: string;
+  readonly next_projection_json: string;
+  readonly previous_location: Readonly<StorageLocationEvidence>;
+  readonly next_location: Readonly<StorageLocationEvidence>;
+  readonly previous_expiration: Readonly<ExpirationEvidence>;
+  readonly next_expiration: Readonly<ExpirationEvidence>;
+  readonly source_text: string;
+  readonly matched_span: string;
+  readonly rule_version: "diet-manager/location-correction/v1";
+  readonly effect_inputs: Readonly<Record<string, Readonly<InventoryLocationCorrectionIntent>>>;
+  readonly result: Readonly<InventoryLocationCorrectionResult>;
 }
 
 export interface UndoRecordOperation {

@@ -4,7 +4,12 @@ import type {
   MealItemExecutionResult,
 } from "./effect-bundle.js";
 import { deriveDomainId } from "./identity.js";
-import type { PantryPurchaseEvidence } from "./types.js";
+import type {
+  ExpirationEvidence,
+  InventoryLocationCorrectionReceiptItem,
+  PantryPurchaseEvidence,
+  StorageLocationEvidence,
+} from "./types.js";
 
 const FREE_TEXT_LINE = "也可以直接说明实际情况，不必选择以上选项。";
 
@@ -196,6 +201,21 @@ export function buildPantryPurchaseReceiptItem(input: Readonly<{
     opening: input.evidence.opening,
     expiration: input.evidence.expiration,
     inferred_fields: Object.freeze(inferred),
+  });
+}
+
+export function buildInventoryLocationCorrectionReceiptItem(input: Readonly<{
+  readonly batch_id: string;
+  readonly previous_location: Readonly<StorageLocationEvidence>;
+  readonly current_location: Readonly<StorageLocationEvidence>;
+  readonly expiration: Readonly<ExpirationEvidence>;
+}>): Readonly<InventoryLocationCorrectionReceiptItem> {
+  return Object.freeze({
+    batch_id: safeText(input.batch_id, "location_correction_batch_id", 256),
+    changed_fields: Object.freeze(["location"] as const),
+    previous_location: Object.freeze({ ...input.previous_location }),
+    current_location: Object.freeze({ ...input.current_location }),
+    expiration: Object.freeze({ ...input.expiration }),
   });
 }
 
