@@ -91,7 +91,7 @@ describe("diet manager B core plugin boundary", () => {
     }
   });
 
-  test("binds the frozen contract and sole official data-root key across runtime schemas and manifest", () => {
+  test("binds the frozen contract, official root, and optional nutrition config across schemas", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, any>;
     const metadata = getToolPluginMetadata(pluginEntry);
     const runtimeContract = Reflect.get(foundation, "dietManagerContract");
@@ -100,6 +100,7 @@ describe("diet manager B core plugin boundary", () => {
     expect(metadata?.configSchema).toEqual(manifest.configSchema);
     expect(Object.keys(metadata?.configSchema.properties ?? {})).toEqual([
       "official_data_root",
+      "nutrition",
     ]);
     expect(metadata?.configSchema).toMatchObject({
       required: ["official_data_root"],

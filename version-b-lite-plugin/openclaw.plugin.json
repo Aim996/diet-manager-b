@@ -13,6 +13,60 @@
         "type": "string",
         "description": "Absolute existing runtime root owned and configured only by the Diet Manager backend.",
         "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root"
+      },
+      "nutrition": {
+        "type": "object",
+        "properties": {
+          "policy_version": {
+            "type": "string"
+          },
+          "resolution_deadline_ms": {
+            "minimum": 500,
+            "maximum": 5000,
+            "type": "integer"
+          },
+          "sources": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "backend_id": {
+                  "type": "string"
+                },
+                "backend_version": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_id",
+                "enabled",
+                "backend_id",
+                "backend_version"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "credential_refs": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "policy_version",
+          "sources"
+        ],
+        "additionalProperties": false
       }
     },
     "additionalProperties": false,

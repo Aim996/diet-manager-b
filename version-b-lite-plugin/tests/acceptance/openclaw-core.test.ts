@@ -489,11 +489,12 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     try {
       expect((await first.tool.execute("tool-call-shared-a", mealParams())).details)
         .toMatchObject({ committed: true });
-      expect((await second.tool.execute("tool-call-shared-b", {
+      const sharedSecond = await second.tool.execute("tool-call-shared-b", {
         ...mealParams(),
         operation_id: "operation-openclaw-shared-b",
         source_message_id: "message-openclaw-shared-b",
-      })).details).toMatchObject({ committed: true });
+      });
+      expect(sharedSecond.details, JSON.stringify(sharedSecond.details)).toMatchObject({ committed: true });
 
       await first.lifecycle()?.cleanup();
 

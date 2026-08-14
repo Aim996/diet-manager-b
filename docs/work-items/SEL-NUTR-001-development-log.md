@@ -219,6 +219,17 @@
 - 后续修复索引：直接进入模块统一 Gate，根据统一结果集中修复。
 - 批次提交：`test: cover nutrition atomic recovery`（本段记录随实现提交）。
 
+### Batch D1 / 2026-08-14
+
+- 目标：执行一次统一营养 Gate，并只修复实际暴露的跨模块回归。
+- 起始 HEAD：`b77e9a0`。
+- 首轮统一结果：营养模块 6 files / 15 tests PASS；全插件 938 PASS / 4 FAIL。
+- 实际失败：旧 domain/v2 Profile 的 predecessor 查询未按 schema_version 隔离，被同表 v1.1 Profile 干扰；相同营养来源在第二餐合法复用时，v1.1 Profile 的本次 meal 时间与首次不可变 Profile 时间发生冲突；OpenClaw manifest/foundation 仍冻结为仅 official root，未同步可选 nutrition 配置。
+- 集中修复：domain/v2 Profile 查询增加 schema filter；v1.1 Profile 按内容身份复用首次合法时间，同时继续校 stored column 与 canonical payload 内时间一致；manifest 和 foundation contract 加入 exact optional nutrition schema。
+- 修复验证：`openclaw-core + foundation` 2 files / 30 tests PASS；`tsc --noEmit` 与 `git diff --check` PASS。首轮其余 938 条不重复执行。
+- 延期到最终收口：在不再修改生产代码后执行一次最终 full、trace normal/self 和工作树审计。
+- 批次提交：`fix: preserve nutrition profile reuse`（本段记录随实现提交）。
+
 ## 使用规则
 
 - 每个开发批次追加一段，不覆盖旧记录。

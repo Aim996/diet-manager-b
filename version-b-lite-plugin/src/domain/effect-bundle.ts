@@ -1683,7 +1683,8 @@ function writeMealNutritionProfile(
   });
   const previous = database.prepare(
     `SELECT nutrition_profile_id FROM nutrition_profiles
-     WHERE subject_type = ? AND subject_id = ? AND CAST(profile_version AS INTEGER) < ?
+     WHERE schema_version = 'domain/v2' AND subject_type = ? AND subject_id = ?
+       AND CAST(profile_version AS INTEGER) < ?
      ORDER BY CAST(profile_version AS INTEGER) DESC LIMIT 1`,
   ).get(subjectType, subjectId, selection.profile_version) as
     { nutrition_profile_id: string } | undefined;
@@ -1692,7 +1693,7 @@ function writeMealNutritionProfile(
     `SELECT nutrition_profile_id, source_type, source_ref, coverage_status,
             supersedes_profile_id, payload_json
      FROM nutrition_profiles
-     WHERE subject_type = ? AND subject_id = ? AND profile_version = ?`,
+     WHERE schema_version = 'domain/v2' AND subject_type = ? AND subject_id = ? AND profile_version = ?`,
   ).get(subjectType, subjectId, String(selection.profile_version)) as Record<string, unknown> | undefined;
   if (existing) {
     const legacyExisting = existing.payload_json === legacyPayloadJson;

@@ -34,6 +34,21 @@ interface StoredSnapshotRow {
   payload_json: string;
 }
 
+function stableProfilePayload(value: string, retrievedAt: string, createdAt: string): string | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value) as unknown; } catch { return null; }
+  if (
+    canonicalJson(parsed) !== value || typeof parsed !== "object" || parsed === null || Array.isArray(parsed)
+  ) return null;
+  const profile = parsed as Record<string, unknown>;
+  if (profile.retrieved_at !== retrievedAt || profile.created_at !== createdAt || retrievedAt !== createdAt) {
+    return null;
+  }
+  const timestamp = new Date(retrievedAt);
+  if (!Number.isFinite(timestamp.valueOf()) || timestamp.toISOString() !== retrievedAt) return null;
+  return canonicalJson({ ...profile, retrieved_at: null, created_at: null });
+}
+
 function invalid(reason: string): never {
   throw new Error(`NUTRITION_REPOSITORY_INVALID:${reason}`);
 }
@@ -43,9 +58,10 @@ function profileMatches(row: StoredProfileRow, profile: Readonly<NutritionProfil
     row.subject_type === profile.subject_type && row.subject_id === profile.subject_id &&
     row.profile_version === profile.profile_version && row.source_type === profile.source_type &&
     row.source_ref === profile.source_ref && row.source_version === profile.source_version &&
-    row.retrieved_at === profile.retrieved_at && row.coverage_status === profile.coverage_status &&
-    row.created_at === profile.created_at && row.supersedes_profile_id === profile.supersedes_profile_id &&
-    row.payload_json === canonicalJson(profile);
+    row.coverage_status === profile.coverage_status &&
+    row.supersedes_profile_id === profile.supersedes_profile_id &&
+    stableProfilePayload(row.payload_json, row.retrieved_at, row.created_at) ===
+      stableProfilePayload(canonicalJson(profile), profile.retrieved_at, profile.created_at);
 }
 
 function snapshotMatches(row: StoredSnapshotRow, snapshot: Readonly<NutritionSnapshotV11>): boolean {
