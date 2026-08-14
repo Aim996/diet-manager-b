@@ -108,8 +108,8 @@
 **Interfaces:**
 - Produces: one immutable commit-backed gate record for SLICE-0..5; makes no claim for frozen SLICE-6/7 features.
 
-- [ ] Run the v1.0 focused acceptance files once.
-- [ ] Run the full plugin Vitest suite once and `tsc --noEmit` once.
+- [x] Run the v1.0 focused acceptance files once.
+- [x] Run the full plugin Vitest suite once and `tsc --noEmit` once; record the two legacy expectation failures and their focused GREEN without rerunning full.
 - [ ] Run OpenClaw metadata validation without building or emitting dist.
 - [ ] Record exact commands/counts/commit SHA, unresolved DEBT/RISK, and the nonclaims for full 0.1.
 - [ ] Commit the closure documents without modifying source after the final gate.

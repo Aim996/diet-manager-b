@@ -197,3 +197,29 @@ GREEN：
 ### 下一步
 
 Batch V1-F：只进行一次统一 focused/full/noEmit/OpenClaw 元数据验证；修复真实回归后生成 0.1.0 报告，不再增加功能。
+
+## Batch V1-F：一次性统一基线与兼容收口
+
+- 日期：2026-08-14
+- 策略：按用户要求改为大批量开发；完整套件只运行一次作为基线，后续由用户体验测试驱动修复。
+
+### 唯一完整基线
+
+- 命令：`vitest run --maxWorkers=1 --minWorkers=1`
+- 结果：30 files；941 passed、2 failed，共 943 tests，163.97s。
+- 两个失败均为旧验收预期：
+  - 营养补全夹具仍配置 v1.0 已禁止的 `local.generic_estimate`；
+  - 库存故障夹具仍预期餐食事实提交后等待 EffectBundle 才扣减，和 Batch V1-C 的同事务扣减语义冲突。
+
+### 集中兼容修正
+
+- 营养补全夹具改用白名单 `public.usda_fooddata_central` / `authoritative_public_database`；测试 transport 仍为本地 fixture，不访问网络。
+- 餐食库存故障场景改为断言 FactCommit 成功后库存已从 24 降至 23；后续同键效果恢复不得再次扣减。
+- 定向复验：2 files / 70 tests PASS。
+- `tsc -p tsconfig.json --noEmit`：exit 0。
+
+### 说明
+
+- 未重复执行完整套件；上述两个失败的直接覆盖均已通过。
+- 0.1.0 主链已经具备代码路径，但默认无已配置权威营养源时仍按 v1.0 返回 `unknown`。
+- 真实 FDC 网络 transport 与私有 credential resolver 尚未成为默认插件能力；这仍是“至少接入一个权威库”的部署缺口，不能因 fixture adapter 通过而宣称真实联网完成。

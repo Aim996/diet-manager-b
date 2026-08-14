@@ -55,24 +55,24 @@ it("appends a nutrition supplement fact and preserves the original unknown snaps
   let resolveCalls = 0;
   const adapter: NutritionSourceAdapter = {
     describe: () => Object.freeze({
-      source_id: "local.generic_estimate",
-      tier: "generic_estimate",
-      rank: 7,
+      source_id: "public.usda_fooddata_central",
+      tier: "authoritative_public_database",
+      rank: 4,
       backend_id: "test.delayed-nutrition",
       backend_version: "1",
       network: false,
       request_fields: Object.freeze(["normalized_food_name"]),
     }),
     probe: async () => Object.freeze({
-      source_id: "local.generic_estimate", status: "ok", reason: null,
+      source_id: "public.usda_fooddata_central", status: "ok", reason: null,
     }),
     resolve: async () => {
       resolveCalls += 1;
       if (resolveCalls === 1) {
         return Object.freeze({
           status: "no_results" as const,
-          source_id: "local.generic_estimate",
-          tier: "generic_estimate" as const,
+          source_id: "public.usda_fooddata_central",
+          tier: "authoritative_public_database" as const,
           source_record_id: null,
           source_version: "1",
           retained_fields_sha256: null,
@@ -82,14 +82,14 @@ it("appends a nutrition supplement fact and preserves the original unknown snaps
       }
       return Object.freeze({
         status: "partial" as const,
-        source_id: "local.generic_estimate",
-        tier: "generic_estimate" as const,
+        source_id: "public.usda_fooddata_central",
+        tier: "authoritative_public_database" as const,
         source_record_id: "test:milk:v1",
         source_version: "1",
         retained_fields_sha256: "A".repeat(64),
         evidence: Object.freeze({
-          source_id: "local.generic_estimate",
-          source_type: "generic_estimate" as const,
+          source_id: "public.usda_fooddata_central",
+          source_type: "authoritative_public_database" as const,
           source_ref: "test:milk:v1",
           source_version: "1",
           basis_kind: "per_100ml" as const,
@@ -118,7 +118,7 @@ it("appends a nutrition supplement fact and preserves the original unknown snaps
       policy_version: "2026-08-14.1",
       resolution_deadline_ms: 2_000,
       sources: [{
-        source_id: "local.generic_estimate",
+        source_id: "public.usda_fooddata_central",
         enabled: true,
         backend_id: "test.delayed-nutrition",
         backend_version: "1",

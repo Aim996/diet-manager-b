@@ -2393,7 +2393,7 @@ describe("SEL-PANTRY-001 purchase evidence vertical persistence", () => {
       expect(normal.query({ kind: "query_inventory", operation_id: "query-pending-meal-before-correction" }))
         .toMatchObject({ batches: [{
           batch_id: "batch-pantry-authority-001",
-          quantity_microunits: 24_000_000,
+          quantity_microunits: 23_000_000,
         }] });
 
       const correction = locationCorrectionEnvelope();
