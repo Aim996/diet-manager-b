@@ -1,0 +1,136 @@
+{
+  "schema_version": "diet-manager/x-gate-001-matrix/v1",
+  "gate_id": "X-GATE-001",
+  "route": "B",
+  "scope": "g1_storage_responsibility_only",
+  "candidate_implementation_commit": "d66c55ce5c734eaaa18625e8cf706a91c5eb8e9b",
+  "closure_commit": "40f7b608f72935becd7628dd89ef4cf7f515c05b",
+  "dependencies": [
+    {
+      "task_id": "B-STOR-001",
+      "implementation_commit": "71cc68b7649604b76cb27b253a673347012ca4f0",
+      "evidence_id": "EV-20260812-027",
+      "evidence_path": "docs/evidence/EV-20260812-027-b-stor-001.md",
+      "evidence_sha256": "819252058D563843081180256F4F4A4CBD275DD1AAE2FCC5B2C49E5A70E979FB"
+    },
+    {
+      "task_id": "B-MERGE-C-001",
+      "implementation_commit": "0184ac8eb53583db1e95a4c55fa146a0dfca58cf",
+      "evidence_id": "EV-20260812-028",
+      "evidence_path": "docs/evidence/EV-20260812-028-b-merge-c-001.md",
+      "evidence_sha256": "3DA15C063FEA4EF2903BC811C6DDDCEEC9E0DFBA370BB20BD53D9AC3953BCDB6"
+    },
+    {
+      "task_id": "B-STOR-002",
+      "implementation_commit": "d66c55ce5c734eaaa18625e8cf706a91c5eb8e9b",
+      "evidence_id": "EV-20260812-029",
+      "evidence_path": "docs/evidence/EV-20260812-029-b-stor-002.md",
+      "evidence_sha256": "5A0256BC95C2EB5841B673D48AD5AEA12E9E884E2A0DDA64B59931BB0099E748"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "CASE-STORAGE-001",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-028", "EV-20260812-029"],
+      "oracle_refs": ["repository: commits one complete fact and durable effect checkpoint atomically", "repository: rejects a changed deterministic fact under the same authority with zero mutation"],
+      "proved": "one authoritative atomic FactCommit and exact idempotent/conflict behavior"
+    },
+    {
+      "case_id": "CASE-STORAGE-002",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: rolls back every partial FactCommit write point without leaving a half record", "repository: redacted failure diagnostic remains outside business rows"],
+      "proved": "pre-commit failure creates zero new dietary/business rows"
+    },
+    {
+      "case_id": "CASE-STORAGE-004",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-027", "EV-20260812-029"],
+      "oracle_refs": ["storage bootstrap: rejects caller-controlled or reparse paths before opening SQLite", "foundation: public handler remains non-writing"],
+      "proved": "fixed adapter-owned database boundary, no official-root use and non-writing public entry"
+    },
+    {
+      "case_id": "CASE-STORAGE-005",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-027", "EV-20260812-029"],
+      "oracle_refs": ["storage bootstrap: rejects unknown or drifted database bytes unchanged", "repository: recovers committed fact after close/reopen", "repository: integrity-valid backup candidate"],
+      "proved": "migration/schema drift rejection, restart authority and integrity-valid backup"
+    },
+    {
+      "case_id": "CASE-STORAGE-006",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: authoritative exact replay after commit response loss", "repository: applied effect response-loss replay", "repository: frozen terminal replay after later fact"],
+      "proved": "response loss never duplicates facts, inventory effects or terminal result"
+    },
+    {
+      "case_id": "CASE-STORAGE-007",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-028", "EV-20260812-029"],
+      "oracle_refs": ["server authority: exact forward envelope/effect edges", "repository: rolls back every finalizer write while preserving committed fact/effect"],
+      "proved": "server-read transitions and atomic finalization prevent partial terminal state"
+    },
+    {
+      "case_id": "CASE-EFFECT-003",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: technical effect failure returns to pending", "repository: discovers pending work after reopen", "repository concurrency: exactly-once effect"],
+      "proved": "durable pending/retry discovery and exactly-once effect claim"
+    },
+    {
+      "case_id": "CASE-FOUNDATION-002",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-027", "EV-20260812-028", "EV-20260812-029"],
+      "oracle_refs": ["complete B foundation/plugin gates", "protected-path delta zero", "test-owned residual zero"],
+      "proved": "B build/plugin/foundation remains valid without real dietary data or official-root mutation"
+    },
+    {
+      "case_id": "CASE-INVENTORY-007",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: insufficient inventory is a business skip without negative projection"],
+      "proved": "insufficient stock changes neither inventory transaction nor projection and never goes negative"
+    },
+    {
+      "case_id": "CASE-PURCHASE-001",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: adds one batch and persists it after reopen"],
+      "proved": "atomic product/batch addition at the G1 storage boundary"
+    },
+    {
+      "case_id": "CASE-QUERY-003",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: deterministic inventory projection after database reopen"],
+      "proved": "current inventory projection is persistent and deterministic"
+    },
+    {
+      "case_id": "CASE-INVENTORY-001",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-029"],
+      "oracle_refs": ["repository: adds one batch, applies one deduction and preserves projection after reopen"],
+      "proved": "one add/deduct path updates transaction and projection atomically"
+    },
+    {
+      "case_id": "CASE-INVENTORY-004",
+      "result": "pass",
+      "evidence_ids": ["EV-20260812-028", "EV-20260812-029"],
+      "oracle_refs": ["repository: product rows participate in server repository revision", "repository: authoritative inventory effect consumes prepared fact intent"],
+      "proved": "inventory-linked fact is revision-bound and cannot commit from stale product state"
+    }
+  ],
+  "checks": [
+    {"check_id": "typescript_no_emit", "result": "pass"},
+    {"check_id": "typescript_build", "result": "pass"},
+    {"check_id": "b_full_vitest_69", "result": "pass"},
+    {"check_id": "repository_concurrency_recovery", "result": "pass"},
+    {"check_id": "openclaw_plugin_local_no_model", "result": "pass"},
+    {"check_id": "traceability_29_evidence_7_mutations", "result": "pass"},
+    {"check_id": "protected_secret_official_residual_boundary", "result": "pass"}
+  ],
+  "decision": "pass_b_safety",
+  "authorized_next": ["B-SLICE-001"],
+  "forbidden_claims": ["G2", "G3", "installable", "product_ready", "complete_skill"]
+}

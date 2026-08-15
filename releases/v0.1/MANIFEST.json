@@ -1,0 +1,26 @@
+{
+  "version": "v0.1",
+  "created_at": "2026-08-15T10:13:14.4676545+08:00",
+  "snapshot_commit": "19b375a6efa247f784f2fb59d6449aff3a7582c1",
+  "source_commit": "e46ebccbb741bab3ac3b324bdb5531bd6032a01f",
+  "build_commit": "a723c25f3c28a45f842aea0ed6c29240c503aa51",
+  "artifact": {
+    "path": "artifacts/diet-manager-b-v0.1.zip",
+    "bytes": 897514,
+    "sha256": "9BBFD64C9E993237ACB9E7BD496FF76930A8B1959F5DDD2A8E62B46107D48FBC"
+  },
+  "included": [
+    "source/version-b-lite-plugin",
+    "source/shared",
+    "docs"
+  ],
+  "excluded": [
+    ".git",
+    ".tmp",
+    "development node_modules tree",
+    "runtime databases",
+    "private secrets",
+    ".env",
+    "historical experimental variants"
+  ]
+}

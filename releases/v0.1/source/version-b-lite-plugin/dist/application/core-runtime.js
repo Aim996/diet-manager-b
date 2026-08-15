@@ -1,0 +1,1395 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { chmodSync, closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readSync, unlinkSync, writeSync, } from "node:fs";
+import { dirname, join, parse } from "node:path";
+import { isProxy } from "node:util/types";
+import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import { dietManagerActions, } from "../contracts.js";
+import { resolveProductIdentity, resolveExpiration, } from "../domain/inventory-service.js";
+import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
+import { createDietDomainService } from "../domain/service.js";
+import { cloneCoreParseInput } from "../parser/input-authority.js";
+import { parseCoreCommand } from "../parser/parse-command.js";
+import { assertPrivateRuntimeRoot } from "../storage/database.js";
+import { openDietDatabase } from "../storage/database.js";
+import { assertCurrentInventoryLocationCorrectionLineage, parseProductPayloadJson, parseProjectionPayloadJson, } from "../storage/inventory-repository.js";
+import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
+import { mapResolvedNutritionAmountMicrounits, mapResolvedNutritionEvidenceToDomainSource, mapCoreCandidateToEnvelope, } from "./mapping.js";
+import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
+import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { resolveNutrition } from "../nutrition/source-client.js";
+import { claimNutritionResolution, completeNutritionResolution, } from "../nutrition/resolution-claim.js";
+import { buildNutritionRecords, adoptNutritionAmount, nutritionOutcomeItem, } from "../nutrition/nutrition-service.js";
+import { assertNutritionRecordsPersisted } from "../nutrition/nutrition-repository.js";
+import { freezeNutritionData, } from "../nutrition/types.js";
+export const CORE_RUNTIME_SECRET_FILENAME = ".diet-manager-b.authority-secret";
+function invalid(kind, reason) {
+    throw new Error(kind === "secret"
+        ? `CORE_RUNTIME_SECRET_INVALID:${reason}`
+        : `STORAGE_PATH_INVALID:${reason}`);
+}
+function samePath(left, right) {
+    return process.platform === "win32"
+        ? left.toLowerCase() === right.toLowerCase()
+        : left === right;
+}
+function identity(path) {
+    const stat = lstatSync(path, { bigint: true });
+    return Object.freeze({ path, dev: stat.dev, ino: stat.ino });
+}
+function sameIdentity(left, right) {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+function ancestorChain(root) {
+    const values = [];
+    let current = root;
+    for (;;) {
+        values.push(identity(current));
+        const parent = dirname(current);
+        if (samePath(parent, current) || samePath(current, parse(current).root))
+            break;
+        current = parent;
+    }
+    return Object.freeze(values);
+}
+function createRuntimeRootAuthority(value) {
+    const root = assertPrivateRuntimeRoot(value);
+    return Object.freeze({ root, chain: ancestorChain(root) });
+}
+function assertRuntimeRootAuthority(authority) {
+    let current;
+    try {
+        current = assertPrivateRuntimeRoot(authority.root);
+    }
+    catch {
+        return invalid("root", "root_identity");
+    }
+    if (!samePath(current, authority.root))
+        return invalid("root", "root_identity");
+    let chain;
+    try {
+        chain = ancestorChain(current);
+    }
+    catch {
+        return invalid("root", "root_identity");
+    }
+    if (chain.length !== authority.chain.length || chain.some((entry, index) => {
+        const expected = authority.chain[index];
+        return expected === undefined || !samePath(entry.path, expected.path) ||
+            !sameIdentity(entry, expected);
+    }))
+        return invalid("root", "root_identity");
+}
+const HANDLE_IDENTITY_SCRIPT = String.raw `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class DietManagerFileIdentity {
+  [StructLayout(LayoutKind.Sequential)] public struct FileTime { public uint Low; public uint High; }
+  [StructLayout(LayoutKind.Sequential)] public struct Info {
+    public uint Attributes; public FileTime Creation; public FileTime Access; public FileTime Write;
+    public uint Volume; public uint SizeHigh; public uint SizeLow; public uint Links;
+    public uint IndexHigh; public uint IndexLow;
+  }
+  [DllImport("kernel32.dll", SetLastError=true)]
+  public static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Info info);
+}
+"@
+`;
+const HANDLE_RESULT_SCRIPT = String.raw `
+$info = New-Object DietManagerFileIdentity+Info
+if (-not [DietManagerFileIdentity]::GetFileInformationByHandle($stream.SafeFileHandle, [ref]$info)) { throw 'file_identity' }
+$index = ([uint64]$info.IndexHigh -shl 32) -bor [uint64]$info.IndexLow
+`;
+const ACL_SET_SCRIPT = String.raw `
+$ErrorActionPreference = 'Stop'
+${HANDLE_IDENTITY_SCRIPT}
+$stream = [System.IO.File]::Open($env:DIET_SECRET_PATH, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+try {
+  $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+  $acl = New-Object System.Security.AccessControl.FileSecurity
+  $acl.SetOwner($current)
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($value in @($current.Value, 'S-1-5-18', 'S-1-5-32-544')) {
+    $sid = New-Object System.Security.Principal.SecurityIdentifier($value)
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, [System.Security.AccessControl.AccessControlType]::Allow)
+    [void]$acl.AddAccessRule($rule)
+  }
+  Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
+  $acl = Get-Acl -LiteralPath $env:DIET_SECRET_PATH
+  $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+  $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+    [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString(); rights = [int]$_.FileSystemRights; inherited = $_.IsInherited }
+  })
+  ${HANDLE_RESULT_SCRIPT}
+  [pscustomobject]@{ owner = $owner; current = $current.Value; protected = $acl.AreAccessRulesProtected; rules = $rules; volume = $info.Volume.ToString(); index = $index.ToString() } | ConvertTo-Json -Compress -Depth 4
+} finally {
+  $stream.Dispose()
+}
+`;
+const ACL_AUDIT_SCRIPT = String.raw `
+$ErrorActionPreference = 'Stop'
+${HANDLE_IDENTITY_SCRIPT}
+$stream = [System.IO.File]::Open($env:DIET_SECRET_PATH, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+try {
+  $acl = Get-Acl -LiteralPath $env:DIET_SECRET_PATH
+  $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+  $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+    [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString(); rights = [int]$_.FileSystemRights; inherited = $_.IsInherited }
+  })
+  ${HANDLE_RESULT_SCRIPT}
+  [pscustomobject]@{ owner = $owner; current = $current; protected = $acl.AreAccessRulesProtected; rules = $rules; volume = $info.Volume.ToString(); index = $index.ToString() } | ConvertTo-Json -Compress -Depth 4
+} finally {
+  $stream.Dispose()
+}
+`;
+function powershell(script, path) {
+    const systemRoot = process.env.SystemRoot;
+    if (typeof systemRoot !== "string" || systemRoot.length === 0)
+        return invalid("secret", "permissions");
+    const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const result = spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script], {
+        encoding: "utf8",
+        env: { ...process.env, DIET_SECRET_PATH: path },
+        timeout: 10_000,
+        maxBuffer: 16_384,
+        windowsHide: true,
+    });
+    if (result.error !== undefined || result.status !== 0 || result.signal !== null ||
+        typeof result.stdout !== "string" || result.stdout.length > 16_384)
+        return invalid("secret", "permissions");
+    return result.stdout.trim();
+}
+function assertPrivateAclOutput(output, expectedIdentity) {
+    let value;
+    try {
+        value = JSON.parse(output);
+    }
+    catch {
+        return invalid("secret", "permissions");
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        return invalid("secret", "permissions");
+    }
+    const candidate = value;
+    if (Object.keys(candidate).sort().join("\0") !== "current\0index\0owner\0protected\0rules\0volume" ||
+        typeof candidate.current !== "string" || candidate.owner !== candidate.current ||
+        candidate.protected !== true || !Array.isArray(candidate.rules) || candidate.rules.length !== 3 ||
+        typeof candidate.volume !== "string" || !/^\d+$/.test(candidate.volume) ||
+        typeof candidate.index !== "string" || !/^\d+$/.test(candidate.index) ||
+        BigInt(candidate.volume) !== expectedIdentity.dev || BigInt(candidate.index) !== expectedIdentity.ino)
+        return invalid("secret", "permissions");
+    const expected = [candidate.current, "S-1-5-18", "S-1-5-32-544"].sort();
+    const actual = candidate.rules.map((rule) => {
+        if (typeof rule !== "object" || rule === null || Array.isArray(rule)) {
+            return invalid("secret", "permissions");
+        }
+        const fields = rule;
+        if (Object.keys(fields).sort().join("\0") !== "inherited\0rights\0sid\0type" ||
+            typeof fields.sid !== "string" || fields.type !== "Allow" ||
+            fields.rights !== 2_032_127 || fields.inherited !== false)
+            return invalid("secret", "permissions");
+        return fields.sid;
+    }).sort();
+    if (actual.join("\0") !== expected.join("\0"))
+        return invalid("secret", "permissions");
+}
+function setPrivateAcl(path, expectedIdentity) {
+    if (process.platform === "win32") {
+        assertPrivateAclOutput(powershell(ACL_SET_SCRIPT, path), expectedIdentity);
+    }
+}
+function auditPrivateAcl(path, expectedIdentity) {
+    if (process.platform === "win32") {
+        assertPrivateAclOutput(powershell(ACL_AUDIT_SCRIPT, path), expectedIdentity);
+    }
+}
+function fdStat(descriptor) {
+    return fstatSync(descriptor, { bigint: true });
+}
+function validateFileStat(stat) {
+    if (!stat.isFile())
+        return invalid("secret", "file");
+    if (stat.nlink !== 1n)
+        return invalid("secret", "link_count");
+    if (stat.size !== 32n)
+        return invalid("secret", "length");
+    if (process.platform !== "win32" && (Number(stat.mode) & 0o077) !== 0) {
+        return invalid("secret", "permissions");
+    }
+}
+function pathMatchesFd(path, stat) {
+    try {
+        const pathStat = lstatSync(path, { bigint: true });
+        return !pathStat.isSymbolicLink() && pathStat.dev === stat.dev && pathStat.ino === stat.ino;
+    }
+    catch {
+        return false;
+    }
+}
+function readSecret(path, authority) {
+    assertRuntimeRootAuthority(authority);
+    const saved = savedIdentity(path);
+    if (saved === undefined) {
+        const missing = new Error("missing");
+        missing.code = "ENOENT";
+        throw missing;
+    }
+    auditPrivateAcl(path, saved);
+    assertRuntimeRootAuthority(authority);
+    let descriptor;
+    try {
+        const noFollow = constants.O_NOFOLLOW ?? 0;
+        descriptor = openSync(path, constants.O_RDONLY | noFollow);
+        const before = fdStat(descriptor);
+        validateFileStat(before);
+        if (!sameIdentity(saved, before) || !pathMatchesFd(path, before)) {
+            return invalid("secret", "identity");
+        }
+        const bytes = Buffer.alloc(32);
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+            if (count === 0)
+                return invalid("secret", "length");
+            offset += count;
+        }
+        const after = fdStat(descriptor);
+        validateFileStat(after);
+        if (before.dev !== after.dev || before.ino !== after.ino ||
+            !pathMatchesFd(path, after))
+            return invalid("secret", "identity");
+        assertRuntimeRootAuthority(authority);
+        return Uint8Array.from(bytes);
+    }
+    catch (error) {
+        if (error instanceof Error && /^(CORE_RUNTIME_SECRET_INVALID|STORAGE_PATH_INVALID):/.test(error.message)) {
+            throw error;
+        }
+        if (error.code === "ENOENT")
+            throw error;
+        if (["EACCES", "EPERM"].includes(error.code ?? "")) {
+            return invalid("secret", "permissions");
+        }
+        return invalid("secret", "identity");
+    }
+    finally {
+        if (descriptor !== undefined)
+            closeSync(descriptor);
+    }
+}
+function savedIdentity(path) {
+    try {
+        return identity(path);
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return undefined;
+        throw error;
+    }
+}
+function unlinkOnlyIdentity(path, saved) {
+    if (saved === undefined)
+        return;
+    let current;
+    try {
+        current = identity(path);
+    }
+    catch {
+        return;
+    }
+    if (sameIdentity(current, saved))
+        unlinkSync(path);
+}
+function loadOrCreateRuntimeSecret(authority) {
+    assertRuntimeRootAuthority(authority);
+    const finalPath = join(authority.root, CORE_RUNTIME_SECRET_FILENAME);
+    try {
+        return readSecret(finalPath, authority);
+    }
+    catch (error) {
+        if (error.code !== "ENOENT")
+            throw error;
+    }
+    const candidatePath = join(authority.root, `.${CORE_RUNTIME_SECRET_FILENAME}.candidate-${randomUUID()}`);
+    let descriptor;
+    let candidateIdentity;
+    try {
+        const noFollow = constants.O_NOFOLLOW ?? 0;
+        descriptor = openSync(candidatePath, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | noFollow, 0o600);
+        const created = fdStat(descriptor);
+        if (!created.isFile() || created.nlink !== 1n || created.size !== 0n) {
+            return invalid("secret", "identity");
+        }
+        candidateIdentity = Object.freeze({ path: candidatePath, dev: created.dev, ino: created.ino });
+        if (!pathMatchesFd(candidatePath, created))
+            return invalid("secret", "identity");
+        if (process.platform !== "win32")
+            chmodSync(candidatePath, 0o600);
+        closeSync(descriptor);
+        descriptor = undefined;
+        setPrivateAcl(candidatePath, candidateIdentity);
+        descriptor = openSync(candidatePath, constants.O_RDWR | noFollow);
+        const protectedStat = fdStat(descriptor);
+        if (!sameIdentity(candidateIdentity, protectedStat) ||
+            !pathMatchesFd(candidatePath, protectedStat))
+            return invalid("secret", "identity");
+        const bytes = randomBytes(32);
+        let offset = 0;
+        while (offset < bytes.length) {
+            offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
+        }
+        fsyncSync(descriptor);
+        const beforeAcl = fdStat(descriptor);
+        validateFileStat(beforeAcl);
+        if (!pathMatchesFd(candidatePath, beforeAcl))
+            return invalid("secret", "identity");
+        assertRuntimeRootAuthority(authority);
+        try {
+            linkSync(candidatePath, finalPath);
+        }
+        catch (error) {
+            if (error.code !== "EEXIST")
+                throw error;
+        }
+        assertRuntimeRootAuthority(authority);
+    }
+    catch (error) {
+        if (error instanceof Error && /^(CORE_RUNTIME_SECRET_INVALID|STORAGE_PATH_INVALID):/.test(error.message)) {
+            throw error;
+        }
+        if (error.code === "ENOENT")
+            return invalid("root", "root_identity");
+        throw error;
+    }
+    finally {
+        if (descriptor !== undefined)
+            closeSync(descriptor);
+        unlinkOnlyIdentity(candidatePath, candidateIdentity);
+    }
+    assertRuntimeRootAuthority(authority);
+    return readSecret(finalPath, authority);
+}
+const liveByRoot = new Map();
+const states = new WeakMap();
+const nutritionFlights = new WeakMap();
+function runtimeInvalid(reason) {
+    throw new TypeError(`CORE_RUNTIME_INVALID:${reason}`);
+}
+function clockValue(now) {
+    let value;
+    try {
+        value = now();
+    }
+    catch {
+        return runtimeInvalid("clock");
+    }
+    if (typeof value !== "string")
+        return runtimeInvalid("clock");
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.valueOf()) || parsed.toISOString() !== value) {
+        return runtimeInvalid("clock");
+    }
+    return value;
+}
+function exactOptions(value) {
+    if (typeof value !== "object" || value === null || Array.isArray(value) ||
+        isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+        return runtimeInvalid("options");
+    }
+    const keys = Reflect.ownKeys(value);
+    const allowed = ["officialDataRoot", "now", "nutritionConfig", "nutritionAdapters", "nutritionCredential"];
+    if (keys.length < 2 || keys.length > allowed.length || keys.some((key) => typeof key !== "string" || !allowed.includes(key)) ||
+        !keys.includes("officialDataRoot") || !keys.includes("now"))
+        return runtimeInvalid("options");
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (const key of keys) {
+        const descriptor = descriptors[key];
+        if (!descriptor || !Object.hasOwn(descriptor, "value") || descriptor.enumerable !== true) {
+            return runtimeInvalid("options");
+        }
+    }
+    const root = descriptors.officialDataRoot.value;
+    const now = descriptors.now.value;
+    if (typeof root !== "string")
+        return runtimeInvalid("root");
+    if (typeof now !== "function")
+        return runtimeInvalid("clock");
+    clockValue(now);
+    const nutritionConfig = descriptors.nutritionConfig?.value ?? cloneNutritionRuntimeConfig(undefined);
+    if (typeof nutritionConfig !== "object" || nutritionConfig === null || isProxy(nutritionConfig) ||
+        typeof nutritionConfig.source_config_digest !== "string" ||
+        !/^[A-F0-9]{64}$/u.test(nutritionConfig.source_config_digest) ||
+        !Array.isArray(nutritionConfig.sources))
+        return runtimeInvalid("nutrition_config");
+    const adaptersValue = descriptors.nutritionAdapters?.value ?? Object.freeze([]);
+    if (typeof adaptersValue !== "object" || adaptersValue === null || isProxy(adaptersValue) || !Array.isArray(adaptersValue) ||
+        adaptersValue.some((adapter) => typeof adapter !== "object" || adapter === null || isProxy(adapter) ||
+            typeof adapter.describe !== "function" ||
+            typeof adapter.probe !== "function" ||
+            typeof adapter.resolve !== "function"))
+        return runtimeInvalid("nutrition_adapters");
+    const credential = descriptors.nutritionCredential?.value ?? (() => undefined);
+    if (typeof credential !== "function")
+        return runtimeInvalid("nutrition_credential");
+    return Object.freeze({
+        officialDataRoot: root,
+        now: now,
+        nutritionConfig: nutritionConfig,
+        nutritionAdapters: Object.freeze([...adaptersValue]),
+        nutritionCredential: credential,
+    });
+}
+export function createCoreRuntime(options) {
+    const validated = exactOptions(options);
+    const rootAuthority = createRuntimeRootAuthority(validated.officialDataRoot);
+    const cached = liveByRoot.get(rootAuthority.root);
+    if (cached !== undefined) {
+        const cachedState = states.get(cached);
+        if (cachedState === undefined)
+            throw new Error("STORAGE_PATH_INVALID:root_identity");
+        assertRuntimeRootAuthority(cachedState.rootAuthority);
+        if (cachedState.nutritionConfig.source_config_digest !== validated.nutritionConfig?.source_config_digest) {
+            throw new Error("CORE_RUNTIME_INVALID:nutrition_config_conflict");
+        }
+        return cached;
+    }
+    let runtime;
+    const state = { root: rootAuthority.root, rootAuthority,
+        now: validated.now,
+        nutritionConfig: validated.nutritionConfig ?? cloneNutritionRuntimeConfig(undefined),
+        nutritionAdapters: validated.nutritionAdapters ?? Object.freeze([]),
+        nutritionCredential: validated.nutritionCredential ?? (() => undefined),
+        closed: false };
+    runtime = Object.freeze({
+        close() {
+            if (state.closed)
+                return;
+            state.closed = true;
+            state.databaseRuntime?.close();
+            state.databaseRuntime = undefined;
+            state.session = undefined;
+            if (liveByRoot.get(state.root) === runtime)
+                liveByRoot.delete(state.root);
+        },
+    });
+    states.set(runtime, state);
+    assertRuntimeRootAuthority(rootAuthority);
+    liveByRoot.set(rootAuthority.root, runtime);
+    return runtime;
+}
+function acquireSession(runtime) {
+    const state = states.get(runtime);
+    if (state === undefined)
+        return runtimeInvalid("runtime");
+    if (state.closed)
+        return runtimeInvalid("closed");
+    assertRuntimeRootAuthority(state.rootAuthority);
+    if (state.session !== undefined)
+        return state.session;
+    const secret = loadOrCreateRuntimeSecret(state.rootAuthority);
+    assertRuntimeRootAuthority(state.rootAuthority);
+    let databaseRuntime;
+    try {
+        databaseRuntime = openDietDatabase({ privateRuntimeRoot: state.root, now: state.now });
+        assertRuntimeRootAuthority(state.rootAuthority);
+        const session = Object.freeze({
+            database: databaseRuntime.database,
+            service: createDietDomainService({ database: databaseRuntime.database, secret, now: state.now }),
+            authoritySecret: Uint8Array.from(secret),
+        });
+        assertRuntimeRootAuthority(state.rootAuthority);
+        state.databaseRuntime = databaseRuntime;
+        state.session = session;
+        return session;
+    }
+    catch (error) {
+        databaseRuntime?.close();
+        throw error;
+    }
+}
+const REQUEST_FIELDS = Object.freeze(["action", "source_text", "received_at", "timezone",
+    "operation_id", "source_message_id", "conversation_id", "prior_context"]);
+function requestInvalid(reason) {
+    throw new TypeError(`CORE_APPLICATION_REQUEST_INVALID:${reason}`);
+}
+function cloneRequest(value) {
+    if (typeof value !== "object" || value === null || Array.isArray(value) ||
+        isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype)
+        return requestInvalid("shape");
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== REQUEST_FIELDS.length || keys.some((key) => typeof key !== "string") ||
+        REQUEST_FIELDS.some((key) => !keys.includes(key)))
+        return requestInvalid("keys");
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (const key of REQUEST_FIELDS) {
+        const descriptor = descriptors[key];
+        if (!descriptor || !Object.hasOwn(descriptor, "value") || descriptor.enumerable !== true) {
+            return requestInvalid(`${key}:descriptor`);
+        }
+    }
+    const action = descriptors.action.value;
+    if (typeof action !== "string" || !dietManagerActions.includes(action)) {
+        return requestInvalid("action");
+    }
+    const parseInput = cloneCoreParseInput(Object.fromEntries(REQUEST_FIELDS
+        .filter((key) => key !== "action").map((key) => [key, descriptors[key].value])));
+    const ordinary = JSON.parse(canonicalJson(parseInput));
+    return Object.freeze({ action: action, ...ordinary });
+}
+function sanitizedCode(error) {
+    if (!(error instanceof Error))
+        return "CORE_APPLICATION_FAILED";
+    if (error.message.startsWith("IDEMPOTENCY_CONFLICT:"))
+        return "idempotency_conflict";
+    const code = error.message.split(":", 1)[0];
+    return /^[A-Z][A-Z0-9_]*$/u.test(code) ? code : "CORE_APPLICATION_FAILED";
+}
+function purchaseReferences(command) {
+    if ("items" in command)
+        return command.items;
+    return Object.freeze([Object.freeze({
+            order: 0,
+            raw_name: command.product.raw_text,
+            normalized_name: "milk",
+            identity_reference: "explicit",
+            specification: null,
+        })]);
+}
+function requestedProductIdentity(reference) {
+    return Object.freeze({
+        raw_name: reference.raw_name,
+        normalized_name: reference.normalized_name,
+        brand: null,
+        variant_or_flavor: null,
+        specification: reference.specification === null
+            ? null
+            : Object.freeze({
+                value: reference.specification.value,
+                unit: reference.specification.unit,
+            }),
+        evidence_kind: reference.identity_reference === "deictic" ? "unknown" : "explicit",
+    });
+}
+function storedProductIdentities(database) {
+    const rows = database.prepare("SELECT product_id, payload_json FROM products ORDER BY product_id LIMIT 257").all();
+    if (rows.length > 256)
+        throw new Error("CORE_APPLICATION_RESULT_INVALID:product_candidate_count");
+    const identities = rows.flatMap((row) => {
+        const parsed = parseProductPayloadJson(row.payload_json);
+        return parsed.identity === null
+            ? []
+            : [Object.freeze({ product_id: row.product_id, identity: parsed.identity })];
+    });
+    return Object.freeze(identities);
+}
+function identityLabel(identity) {
+    const specification = identity.specification === null
+        ? ""
+        : ` ${identity.specification.value}${identity.specification.unit}`;
+    const label = [identity.brand, identity.variant_or_flavor, identity.normalized_name]
+        .filter((part) => part !== null && part.length > 0)
+        .join(" ") + specification;
+    const sanitized = label.replace(/[\u0000-\u001F\u007F]/gu, " ").trim().slice(0, 128);
+    return sanitized.length === 0 ? "product" : sanitized;
+}
+function productClarification(candidates) {
+    const keys = ["A", "B", "C", "D"];
+    if (candidates.length < 2)
+        throw new Error("CORE_APPLICATION_RESULT_INVALID:clarification_count");
+    return Object.freeze({
+        kind: "product_identity",
+        options: Object.freeze(candidates.slice(0, 4).map((candidate, index) => Object.freeze({
+            key: keys[index],
+            label: identityLabel(candidate.identity),
+        }))),
+        free_text_allowed: true,
+    });
+}
+function resolvePurchaseItems(database, request, command) {
+    const stored = storedProductIdentities(database);
+    const byId = new Map(stored.map((candidate) => [candidate.product_id, candidate]));
+    const resolved = [];
+    for (const reference of purchaseReferences(command)) {
+        const requested = requestedProductIdentity(reference);
+        let productId;
+        let identity;
+        if (reference.identity_reference === "deictic") {
+            const matches = stored.filter((candidate) => reference.normalized_name === "product" ||
+                candidate.identity.normalized_name === reference.normalized_name);
+            if (matches.length > 1) {
+                return Object.freeze({ status: "needs_clarification", clarification: productClarification(matches) });
+            }
+            if (matches.length === 1) {
+                productId = matches[0].product_id;
+                identity = matches[0].identity;
+            }
+            else {
+                const resolution = resolveProductIdentity({ requested, candidates: stored });
+                if (resolution.status !== "new") {
+                    throw new Error("CORE_APPLICATION_RESULT_INVALID:deictic_resolution");
+                }
+                productId = resolution.product_id;
+                identity = requested;
+            }
+        }
+        else if (reference.identity_reference === "same_attributes") {
+            const matches = stored.filter((candidate) => candidate.identity.normalized_name === reference.normalized_name &&
+                canonicalJson(candidate.identity.specification) === canonicalJson(reference.specification));
+            if (matches.length > 1) {
+                return Object.freeze({ status: "needs_clarification", clarification: productClarification(matches) });
+            }
+            if (matches.length === 1) {
+                productId = matches[0].product_id;
+                identity = matches[0].identity;
+            }
+            else {
+                const resolution = resolveProductIdentity({ requested, candidates: stored });
+                if (resolution.status === "needs_clarification") {
+                    const candidates = resolution.candidate_product_ids.map((id) => byId.get(id)).filter(Boolean);
+                    return Object.freeze({ status: "needs_clarification", clarification: productClarification(candidates) });
+                }
+                productId = resolution.product_id;
+                identity = resolution.status === "reuse_exact" ? byId.get(productId).identity : requested;
+            }
+        }
+        else {
+            const resolution = resolveProductIdentity({ requested, candidates: stored });
+            if (resolution.status === "needs_clarification") {
+                const candidates = resolution.candidate_product_ids.map((id) => byId.get(id)).filter(Boolean);
+                return Object.freeze({ status: "needs_clarification", clarification: productClarification(candidates) });
+            }
+            productId = resolution.product_id;
+            identity = resolution.status === "reuse_exact" ? byId.get(productId).identity : requested;
+        }
+        const batchKey = createHash("sha256").update(canonicalJson({
+            operation_id: request.operation_id,
+            item_order: reference.order,
+            product_id: productId,
+        }), "utf8").digest("hex");
+        resolved.push(Object.freeze({
+            product_id: productId,
+            batch_id: deriveDomainId("batch", batchKey, 0),
+            identity,
+        }));
+    }
+    return Object.freeze({ status: "resolved", items: Object.freeze(resolved) });
+}
+function resolveLocationCorrection(database, authoritySecret, command) {
+    const rows = database.prepare(`SELECT i.batch_id, i.payload_json, b.stocked_at, p.normalized_name
+     FROM inventory_batch_projections i
+     JOIN inventory_batches b ON b.batch_id = i.batch_id
+     JOIN products p ON p.product_id = b.product_id
+     WHERE p.normalized_name = ?
+     ORDER BY i.batch_id`).all(command.product_reference);
+    const available = rows.flatMap((row) => {
+        try {
+            const projection = parseProjectionPayloadJson(row.payload_json);
+            if (projection.version !== 2 || projection.pantry_evidence === null)
+                return [];
+            const revision = assertCurrentInventoryLocationCorrectionLineage(database, authoritySecret, row.batch_id, projection.pantry_evidence);
+            return [{ row, projection, revision }];
+        }
+        catch {
+            throw new Error("CORE_APPLICATION_AUTHORITY_INVALID:location_correction_projection");
+        }
+    });
+    const candidates = available.filter(({ projection }) => projection.pantry_evidence.location.value === command.previous_location);
+    if (candidates.length !== 1) {
+        if (candidates.length === 0 && available.length === 1 &&
+            available[0].projection.pantry_evidence.location.value === command.next_location)
+            return Object.freeze({ status: "already_current" });
+        throw new Error(candidates.length === 0
+            ? "CORE_APPLICATION_TARGET_INVALID:location_correction_missing"
+            : "CORE_APPLICATION_TARGET_INVALID:location_correction_ambiguous");
+    }
+    const selected = candidates[0];
+    return Object.freeze({
+        status: "resolved",
+        resolution: Object.freeze({
+            batch_id: selected.row.batch_id,
+            base_revision: selected.revision,
+            previous_location: selected.projection.pantry_evidence.location,
+            previous_expiration: selected.projection.pantry_evidence.expiration,
+            expected_expiration: selected.projection.pantry_evidence.expiration.basis === "explicit"
+                ? selected.projection.pantry_evidence.expiration
+                : resolveExpiration({
+                    reliability: "reliable_rule",
+                    explicit_at: null,
+                    duration_days: 7,
+                    anchor_at: selected.row.stocked_at,
+                    rule_version: "diet-manager/fresh-milk-shelf-life-v1",
+                }),
+        }),
+    });
+}
+function recordId(database, envelope, operation) {
+    const rows = database.prepare(`SELECT event_id, event_type, fact_kind, operation_id
+    FROM event_records WHERE envelope_id = ? AND operation_id = ?`)
+        .all(envelope.envelope_id, operation.operation_id);
+    const expected = operation.kind === "record_water"
+        ? { event_type: "diet_water", fact_kind: "water" }
+        : operation.kind === "add_inventory"
+            ? { event_type: "inventory_stock", fact_kind: "inventory" }
+            : operation.kind === "correct_record"
+                ? "correction_kind" in operation && operation.correction_kind === "inventory_location"
+                    ? { event_type: "inventory_adjusted", fact_kind: "inventory" }
+                    : "correction_kind" in operation && operation.correction_kind === "nutrition_supplement"
+                        ? { event_type: "nutrition_supplemented", fact_kind: "correction" }
+                        : { event_type: "diet_correction", fact_kind: "correction" }
+                : { event_type: "diet_meal", fact_kind: "meal" };
+    if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
+        rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
+        throw new Error("CORE_APPLICATION_RESULT_INVALID:event_identity");
+    }
+    return rows[0].event_id;
+}
+function executeCandidate(runtime, request, command, purchaseResolutions = Object.freeze([]), existingSession, correctionResolution, nutritionEvidence = Object.freeze([])) {
+    const envelope = mapCoreCandidateToEnvelope(request, command, purchaseResolutions, correctionResolution, nutritionEvidence);
+    const session = existingSession ?? acquireSession(runtime);
+    const preview = session.service.preview(envelope);
+    const result = session.service.execute({ envelope, token: preview.token,
+        input_digest: preview.input_digest, data_revision: preview.data_revision });
+    if (envelope.operations.length === 0 || result.items.length !== envelope.operations.length ||
+        (result.status !== "committed" && result.status !== "committed_with_issues") ||
+        result.items.some((item, index) => item.operation_id !== envelope.operations[index]?.operation_id ||
+            (item.status !== "committed" && item.status !== "committed_with_issues"))) {
+        throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
+    }
+    const recordIds = Object.freeze(envelope.operations.map((operation) => recordId(session.database, envelope, operation)));
+    return Object.freeze({
+        status: result.status,
+        record_id: recordIds[0],
+        ...(recordIds.length === 1 ? {} : { record_ids: recordIds }),
+    });
+}
+function readDailyProgress(session, request) {
+    const date = toNaturalDate(new Date(request.received_at).toISOString(), "Asia/Shanghai");
+    const summary = session.service.query(Object.freeze({
+        kind: "query_daily_summary",
+        operation_id: request.operation_id,
+        date,
+        timezone: "Asia/Shanghai",
+    }));
+    const meals = session.service.query(Object.freeze({
+        kind: "query_meals",
+        operation_id: request.operation_id,
+        date,
+        timezone: "Asia/Shanghai",
+    }));
+    if (summary.kind !== "daily_summary" || meals.kind !== "meals") {
+        throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+    }
+    const water = listWaterEvents({
+        database: session.database,
+        authoritySecret: session.authoritySecret,
+        date,
+        timezone: "Asia/Shanghai",
+    });
+    // Authenticate every current Pantry lineage before exposing aggregate inventory counters.
+    listInventoryProjection({ database: session.database, authoritySecret: session.authoritySecret });
+    const start = new Date(`${date}T00:00:00.000+08:00`).toISOString();
+    const end = new Date(Date.parse(start) + 86_400_000).toISOString();
+    const count = (sql) => {
+        const row = session.database.prepare(sql).get(start, end);
+        if (!Number.isSafeInteger(row.count) || row.count < 0)
+            throw new Error("CORE_APPLICATION_QUERY_INVALID:count");
+        return row.count;
+    };
+    const deductionCount = count(`SELECT COUNT(*) AS count FROM inventory_transactions t
+     JOIN event_records e ON e.event_id = t.event_id
+     WHERE t.direction = 'out' AND t.reason_code = 'meal_consumption'
+       AND e.lifecycle_status = 'active' AND e.occurred_at_text >= ? AND e.occurred_at_text < ?`);
+    const purchaseCount = count(`SELECT COUNT(*) AS count FROM event_records
+     WHERE event_type = 'inventory_stock' AND lifecycle_status = 'active'
+       AND COALESCE(occurred_at_text, received_at) >= ? AND COALESCE(occurred_at_text, received_at) < ?`);
+    const correctionCount = count(`SELECT COUNT(*) AS count FROM event_records
+     WHERE event_type IN ('diet_correction','nutrition_supplemented','inventory_adjusted')
+       AND lifecycle_status = 'active'
+       AND COALESCE(occurred_at_text, received_at) >= ? AND COALESCE(occurred_at_text, received_at) < ?`);
+    const waterTotal = water.reduce((sum, item) => sum + item.plain_water_ml_milli, 0);
+    if (!Number.isSafeInteger(waterTotal))
+        throw new Error("CORE_APPLICATION_QUERY_INVALID:water_sum");
+    return Object.freeze({
+        date,
+        timezone: "Asia/Shanghai",
+        meals: Object.freeze({ count: meals.meals.length }),
+        water: Object.freeze({ count: water.length, plain_water_ml_milli: waterTotal }),
+        nutrition: Object.freeze({
+            coverage_status: summary.coverage_status,
+            nutrients: Object.freeze({ ...summary.nutrients }),
+        }),
+        inventory: Object.freeze({ deduction_count: deductionCount }),
+        purchases: Object.freeze({ count: purchaseCount }),
+        corrections: Object.freeze({ count: correctionCount }),
+    });
+}
+function readMealHistory(session, request) {
+    const date = toNaturalDate(new Date(request.received_at).toISOString(), "Asia/Shanghai");
+    const result = session.service.query(Object.freeze({
+        kind: "query_meals",
+        operation_id: request.operation_id,
+        date,
+        timezone: "Asia/Shanghai",
+    }));
+    if (result.kind !== "meals")
+        throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+    return Object.freeze({
+        date,
+        timezone: "Asia/Shanghai",
+        meals: Object.freeze(result.meals.map((meal) => Object.freeze({
+            occurred_at: meal.occurred_at,
+            meal_slot: meal.meal_slot,
+            location: meal.location,
+            items: Object.freeze(meal.items.map((item) => {
+                const amount = item.amount;
+                const observed = amount.observed_microunits;
+                const unit = amount.unit;
+                const evidence = amount.evidence;
+                if ((observed !== null && (!Number.isSafeInteger(observed) || Number(observed) <= 0)) ||
+                    typeof unit !== "string" ||
+                    !["explicit", "estimated_upper_bound", "unknown"].includes(String(evidence)) ||
+                    (observed === null) !== (evidence === "unknown")) {
+                    throw new Error("CORE_APPLICATION_QUERY_INVALID:meal_amount");
+                }
+                return Object.freeze({
+                    item_order: item.item_order,
+                    item_type: item.item_type,
+                    name: item.normalized_name,
+                    quantity_microunits: observed,
+                    unit,
+                    quantity_evidence: evidence,
+                });
+            })),
+        }))),
+    });
+}
+function readInventoryView(session, request) {
+    const result = session.service.query(Object.freeze({
+        kind: "query_inventory",
+        operation_id: request.operation_id,
+    }));
+    if (result.kind !== "inventory")
+        throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
+    return Object.freeze({
+        batches: Object.freeze(result.batches.map((batch) => Object.freeze({
+            batch_id: batch.batch_id,
+            product_id: batch.product_id,
+            name: batch.normalized_name,
+            product_type: batch.product_type,
+            quantity_microunits: batch.quantity_microunits,
+            unit: batch.unit,
+            quantity_status: batch.quantity_status,
+            effective_status: batch.effective_status,
+            expiration_at: batch.effective_expiration_at ?? null,
+            location: batch.pantry_evidence?.location.value ?? "unknown",
+        }))),
+    });
+}
+export function handleCoreRequest(runtime, value) {
+    let request;
+    try {
+        request = cloneRequest(value);
+    }
+    catch {
+        return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
+    }
+    if (request.action === "query_daily_summary" || request.action === "query_meals" ||
+        request.action === "query_inventory") {
+        try {
+            const session = acquireSession(runtime);
+            const progress = request.action === "query_daily_summary" ? readDailyProgress(session, request) : undefined;
+            const meals = request.action === "query_meals" ? readMealHistory(session, request) : undefined;
+            const inventory = request.action === "query_inventory" ? readInventoryView(session, request) : undefined;
+            return nonWritingOutcome(request.action, request.operation_id, "ignored", "read_only_result", undefined, progress, meals, inventory);
+        }
+        catch (error) {
+            return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+        }
+    }
+    if (!["record_meal", "record_water", "add_inventory", "correct_record"].includes(request.action)) {
+        return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
+    }
+    let parsed;
+    try {
+        const { action: _action, ...parseInput } = request;
+        parsed = parseCoreCommand(parseInput);
+    }
+    catch {
+        return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+    }
+    if (parsed.disposition !== "candidate") {
+        if (parsed.action !== request.action) {
+            return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
+        }
+        return nonWritingOutcome(request.action, request.operation_id, parsed.disposition, parsed.reason_code, undefined, undefined, undefined, undefined, parsed.disposition === "needs_clarification" ? parsed.question : undefined);
+    }
+    if (parsed.command.action !== request.action) {
+        return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
+    }
+    try {
+        if (parsed.command.action === "add_inventory") {
+            const session = acquireSession(runtime);
+            const resolution = resolvePurchaseItems(session.database, request, parsed.command);
+            if (resolution.status === "needs_clarification") {
+                return nonWritingOutcome(request.action, request.operation_id, "needs_clarification", "product_identity_ambiguous", resolution.clarification);
+            }
+            const result = executeCandidate(runtime, request, parsed.command, resolution.items, session);
+            return committedOutcome(request.action, request.operation_id, result.status, result.record_id, result.record_ids);
+        }
+        if (parsed.command.action === "correct_record") {
+            if (!("correction_kind" in parsed.command)) {
+                return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
+            }
+            const session = acquireSession(runtime);
+            const resolution = resolveLocationCorrection(session.database, session.authoritySecret, parsed.command);
+            if (resolution.status === "already_current") {
+                return nonWritingOutcome(request.action, request.operation_id, "ignored", "location_correction_already_current");
+            }
+            const result = executeCandidate(runtime, request, parsed.command, Object.freeze([]), session, resolution.resolution);
+            return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+        }
+        const result = executeCandidate(runtime, request, parsed.command);
+        return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+    }
+    catch (error) {
+        return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+    }
+}
+// Public plugin execution is asynchronous so nutrition adapters can be awaited without
+// weakening the existing synchronous internal/test compatibility surface.
+function nutritionClaimIdentity(request) {
+    return canonicalSha256({
+        authority_kind: "diet-manager/nutrition-claim-identity/v1",
+        operation_id: request.operation_id,
+        source_message_id: request.source_message_id,
+        conversation_id: request.conversation_id,
+    });
+}
+function nutritionSourceRequest(item) {
+    return freezeNutritionData({
+        normalized_food_name: item.normalized_name,
+        brand: null,
+        variant: null,
+        package_specification: null,
+        processing_state: null,
+        minimum_food_category: item.kind === "nutritious_drink" ? "processed_beverage" : "food",
+        locale: "zh-CN",
+    });
+}
+function resolveNutritionSupplementTarget(database, targetEventId, operationId) {
+    const rows = database.prepare(`SELECT e.event_id, i.item_id, i.item_order, i.item_type, i.normalized_name, i.payload_json
+     FROM event_records e JOIN meal_items i ON i.event_id = e.event_id
+     WHERE e.event_id = ? AND e.event_type = 'diet_meal'
+     ORDER BY i.item_order`).all(targetEventId);
+    const row = rows[0];
+    if (rows.length !== 1 || row === undefined || row.item_order !== 0) {
+        throw new Error(rows.length === 0
+            ? "NUTRITION_SUPPLEMENT_TARGET_INVALID:missing"
+            : "NUTRITION_SUPPLEMENT_TARGET_INVALID:ambiguous_item");
+    }
+    let itemPayload;
+    try {
+        itemPayload = JSON.parse(row.payload_json);
+    }
+    catch {
+        throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:item_payload");
+    }
+    if (canonicalJson(itemPayload) !== row.payload_json ||
+        typeof itemPayload !== "object" || itemPayload === null || Array.isArray(itemPayload))
+        throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:item_payload");
+    const amount = itemPayload.amount;
+    if (typeof amount !== "object" || amount === null || Array.isArray(amount)) {
+        throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:amount");
+    }
+    const known = amount;
+    if (typeof known.unit !== "string" || known.unit.length === 0 ||
+        !Number.isSafeInteger(known.observed_microunits) || known.observed_microunits <= 0 ||
+        (known.evidence !== "explicit" && known.evidence !== "estimated_upper_bound"))
+        throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:amount");
+    const snapshots = database.prepare(`SELECT snapshot_id, source_ref, payload_json FROM nutrition_snapshots
+     WHERE meal_event_id = ? AND intake_item_id = ? AND schema_version = 'domain/v2'
+     ORDER BY rowid`).all(targetEventId, row.item_id);
+    if (snapshots.length === 0)
+        throw new Error("NUTRITION_SUPPLEMENT_TARGET_INVALID:snapshot");
+    const existing = database.prepare(`SELECT c.correction_id, c.target_event_id, c.base_revision, c.operation,
+            b.effect_state, b.result_status
+     FROM correction_events c
+     JOIN event_records e ON e.operation_id = c.request_id
+       AND e.event_type = 'nutrition_supplemented'
+     JOIN effect_bundle_commits b
+       ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+     WHERE c.request_id = ?`).get(operationId);
+    let previousSnapshotId = snapshots.at(-1).snapshot_id;
+    let revision = database.prepare("SELECT COUNT(*) AS count FROM correction_events WHERE target_event_id = ?").get(targetEventId).count + 1;
+    if (existing !== undefined) {
+        if (existing.target_event_id !== targetEventId ||
+            existing.operation !== "change_nutrition_source" ||
+            !Number.isSafeInteger(existing.base_revision) || existing.base_revision < 1)
+            throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:existing_fact");
+        revision = existing.base_revision;
+        if (existing.effect_state === "pending" && existing.result_status === "facts_committed_effects_pending") {
+            // The new Snapshot is written atomically with the effect, so the current tail is still the original input.
+            previousSnapshotId = snapshots.at(-1).snapshot_id;
+        }
+        else if ((existing.effect_state === "succeeded" && existing.result_status === "applied") ||
+            (existing.effect_state === "permanent_business_skip" &&
+                existing.result_status === "applied_with_issues")) {
+            const appliedIndex = snapshots.findIndex((candidate) => {
+                let payload;
+                try {
+                    payload = JSON.parse(candidate.payload_json);
+                }
+                catch {
+                    return false;
+                }
+                return canonicalJson(payload) === candidate.payload_json &&
+                    typeof payload === "object" && payload !== null && !Array.isArray(payload) &&
+                    payload.correction_id === existing.correction_id;
+            });
+            if (appliedIndex <= 0 || snapshots.some((candidate, index) => index !== appliedIndex && (() => {
+                try {
+                    const payload = JSON.parse(candidate.payload_json);
+                    return typeof payload === "object" && payload !== null && !Array.isArray(payload) &&
+                        payload.correction_id === existing.correction_id;
+                }
+                catch {
+                    return false;
+                }
+            })()))
+                throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:snapshot_chain");
+            previousSnapshotId = snapshots[appliedIndex - 1].snapshot_id;
+        }
+        else {
+            throw new Error("NUTRITION_SUPPLEMENT_AUTHORITY_INVALID:effect_state");
+        }
+    }
+    return Object.freeze({
+        event_id: row.event_id,
+        item_id: row.item_id,
+        item_order: row.item_order,
+        normalized_name: row.normalized_name,
+        item_kind: row.item_type === "nutrition_drink" ? "nutritious_drink" : "food",
+        amount: Object.freeze({ ...known }),
+        previous_snapshot_id: previousSnapshotId,
+        base_revision: revision,
+        already_current: existing === undefined && snapshots.at(-1).source_ref !== "unknown",
+    });
+}
+async function resolveNutritionMaterial(runtime, request, command, session) {
+    const state = states.get(runtime);
+    if (state === undefined || state.closed)
+        return runtimeInvalid("runtime");
+    const baseInputDigest = canonicalSha256({ request, command });
+    let flights = nutritionFlights.get(runtime);
+    if (flights === undefined) {
+        flights = new Map();
+        nutritionFlights.set(runtime, flights);
+    }
+    const active = flights.get(baseInputDigest);
+    if (active !== undefined)
+        return active;
+    const flight = (async () => {
+        const identityDigest = nutritionClaimIdentity(request);
+        const ownerNonce = randomUUID();
+        const startedAt = clockValue(state.now);
+        const deadlineMs = state.nutritionConfig.resolution_deadline_ms;
+        const deadlineAt = new Date(Date.parse(startedAt) + deadlineMs).toISOString();
+        let claim = claimNutritionResolution({
+            database: session.database,
+            authority_secret: session.authoritySecret,
+            envelope_id: `nutrition-resolution-${identityDigest.slice(0, 32).toLowerCase()}`,
+            idempotency_key: `nutrition-resolution-${identityDigest}`,
+            operation_id: command.operation_id,
+            base_input_digest: baseInputDigest,
+            source_message_id: request.source_message_id,
+            conversation_id: request.conversation_id,
+            source_config_digest: state.nutritionConfig.source_config_digest,
+            owner_nonce: ownerNonce,
+            now: startedAt,
+            lease_expires_at: deadlineAt,
+        });
+        while (claim.kind === "pending") {
+            if (Date.now() >= Date.parse(deadlineAt))
+                throw new Error("NUTRITION_RESOLUTION_PENDING:deadline");
+            const retryAfterMs = claim.retry_after_ms;
+            await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, retryAfterMs))));
+            claim = claimNutritionResolution({
+                database: session.database,
+                authority_secret: session.authoritySecret,
+                envelope_id: `nutrition-resolution-${identityDigest.slice(0, 32).toLowerCase()}`,
+                idempotency_key: `nutrition-resolution-${identityDigest}`,
+                operation_id: command.operation_id,
+                base_input_digest: baseInputDigest,
+                source_message_id: request.source_message_id,
+                conversation_id: request.conversation_id,
+                source_config_digest: state.nutritionConfig.source_config_digest,
+                owner_nonce: ownerNonce,
+                now: new Date().toISOString(),
+                lease_expires_at: new Date(Date.now() + deadlineMs).toISOString(),
+            });
+        }
+        if (claim.kind === "complete")
+            return claim.material;
+        const parent = new AbortController();
+        const timer = setTimeout(() => parent.abort(new Error("nutrition_deadline")), Math.max(0, Date.parse(deadlineAt) - Date.now()));
+        let evidence;
+        try {
+            const context = Object.freeze({
+                signal: parent.signal,
+                deadline_at: deadlineAt,
+                now: state.now,
+                credential: state.nutritionCredential,
+            });
+            const values = [];
+            for (const item of command.items) {
+                const resolved = await resolveNutrition(nutritionSourceRequest(item), context, {
+                    adapters: state.nutritionAdapters,
+                    config: state.nutritionConfig,
+                });
+                values.push(adoptNutritionAmount(item, resolved));
+            }
+            evidence = Object.freeze(values);
+        }
+        finally {
+            clearTimeout(timer);
+            if (!parent.signal.aborted)
+                parent.abort();
+        }
+        const material = freezeNutritionData({
+            authority_kind: "diet-manager/domain-preview/v6",
+            base_input_digest: baseInputDigest,
+            resolved_evidence_digest: canonicalSha256(evidence),
+            source_config_digest: state.nutritionConfig.source_config_digest,
+            operation_id: command.operation_id,
+            source_message_id: request.source_message_id,
+            conversation_id: request.conversation_id,
+            meal_fact_identities: [],
+            nutrition_evidence: evidence,
+            effect_identities: [],
+        });
+        return completeNutritionResolution({
+            database: session.database,
+            authority_secret: session.authoritySecret,
+            envelope_id: claim.envelope_id,
+            owner_nonce: claim.owner_nonce,
+            generation: claim.generation,
+            material,
+            now: clockValue(state.now),
+        }).material;
+    })();
+    flights.set(baseInputDigest, flight);
+    try {
+        return await flight;
+    }
+    finally {
+        if (flights.get(baseInputDigest) === flight)
+            flights.delete(baseInputDigest);
+    }
+}
+function storedMealItems(database, eventId) {
+    return Object.freeze(database.prepare(`SELECT item_id, normalized_name FROM meal_items
+    WHERE event_id = ? ORDER BY item_order`).all(eventId));
+}
+function storedMealReceipt(database, eventId, nutritionItems) {
+    const row = database.prepare(`SELECT e.envelope_id,e.payload_json,f.payload_json AS finalization_payload
+     FROM event_records e JOIN envelope_finalizations f ON f.envelope_id = e.envelope_id
+     WHERE e.event_id = ? AND e.event_type = 'diet_meal'`).get(eventId);
+    if (row === undefined)
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:missing");
+    let eventPayload;
+    let finalization;
+    try {
+        eventPayload = JSON.parse(row.payload_json);
+        finalization = JSON.parse(row.finalization_payload);
+    }
+    catch {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:json");
+    }
+    if (canonicalJson(eventPayload) !== row.payload_json || canonicalJson(finalization) !== row.finalization_payload ||
+        typeof eventPayload !== "object" || eventPayload === null || Array.isArray(eventPayload) ||
+        typeof eventPayload.source_text !== "string" ||
+        typeof finalization !== "object" || finalization === null || Array.isArray(finalization)) {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:authority");
+    }
+    const executionPayload = finalization.payload;
+    const receiptData = typeof executionPayload === "object" && executionPayload !== null && !Array.isArray(executionPayload)
+        ? executionPayload.receipt_data
+        : undefined;
+    const blocks = typeof receiptData === "object" && receiptData !== null && !Array.isArray(receiptData)
+        ? receiptData.blocks
+        : undefined;
+    if (!Array.isArray(blocks))
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:blocks");
+    const itemBlocks = blocks.filter((block) => typeof block === "object" && block !== null && !Array.isArray(block) &&
+        block.kind === "item");
+    const storedItems = storedMealItems(database, eventId);
+    if (itemBlocks.length !== storedItems.length || nutritionItems.length !== storedItems.length) {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_count");
+    }
+    const items = storedItems.map((stored, index) => {
+        const block = itemBlocks[index];
+        const amount = block.amount;
+        const inventory = block.inventory_effect;
+        const nutrition = nutritionItems[index];
+        const observed = amount?.observed_microunits;
+        if (block.item_order !== index || block.name !== stored.normalized_name ||
+            (observed !== null && (!Number.isSafeInteger(observed) || Number(observed) <= 0)) ||
+            typeof amount?.unit !== "string" ||
+            !["explicit", "estimated", "unknown"].includes(String(amount.evidence)) ||
+            typeof inventory?.status !== "string" || nutrition.item_id !== stored.item_id) {
+            throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item");
+        }
+        return Object.freeze({
+            item_id: stored.item_id,
+            name: stored.normalized_name,
+            quantity: observed === null ? null : Number(observed) / 1_000_000,
+            unit: observed === null ? null : amount.unit,
+            derived: amount.evidence === "estimated",
+            nutrition: Object.freeze({ status: nutrition.coverage_status, source: nutrition.source_label }),
+            inventory: Object.freeze({ status: inventory.status }),
+        });
+    });
+    return Object.freeze({
+        raw_text: eventPayload.source_text,
+        items: Object.freeze(items),
+    });
+}
+async function handleNutritionSupplement(runtime, request, command) {
+    try {
+        const session = acquireSession(runtime);
+        if (command.target_record_id === null) {
+            return nonWritingOutcome(request.action, request.operation_id, "needs_clarification", "target_ambiguous");
+        }
+        const target = resolveNutritionSupplementTarget(session.database, command.target_record_id, command.operation_id);
+        if (target.already_current) {
+            return nonWritingOutcome(request.action, request.operation_id, "ignored", "nutrition_already_current");
+        }
+        const resolutionCommand = Object.freeze({
+            operation_id: command.operation_id,
+            items: Object.freeze([Object.freeze({
+                    normalized_name: target.normalized_name,
+                    kind: target.item_kind,
+                    quantity: target.amount.observed_microunits / 1_000_000,
+                    unit: target.amount.unit,
+                    estimated: target.amount.evidence !== "explicit",
+                })]),
+        });
+        const material = await resolveNutritionMaterial(runtime, request, resolutionCommand, session);
+        const evidence = material.nutrition_evidence[0];
+        if (material.nutrition_evidence.length !== 1 || evidence === undefined) {
+            throw new Error("NUTRITION_RESOLUTION_AUTHORITY_INVALID:item_count");
+        }
+        const source = mapResolvedNutritionEvidenceToDomainSource(evidence);
+        const adopted = mapResolvedNutritionAmountMicrounits(evidence);
+        if (source === null || adopted === null) {
+            return nonWritingOutcome(request.action, request.operation_id, "ignored", "nutrition_still_unknown");
+        }
+        const correctionResolution = Object.freeze({
+            target_event_id: target.event_id,
+            base_revision: target.base_revision,
+            item_order: target.item_order,
+            previous_snapshot_id: target.previous_snapshot_id,
+            replacement_amount: Object.freeze({
+                ...target.amount,
+                nutrition_adoption_microunits: adopted,
+            }),
+            replacement_nutrition_source: source,
+            replacement_nutrition_evidence: evidence,
+        });
+        const execution = executeCandidate(runtime, request, command, Object.freeze([]), session, correctionResolution);
+        const supplementEvent = session.database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?").get(execution.record_id);
+        if (supplementEvent === undefined) {
+            throw new Error("NUTRITION_REPOSITORY_INVALID:supplement_event");
+        }
+        const records = [buildNutritionRecords({
+                operation_id: command.operation_id,
+                meal_event_id: target.event_id,
+                intake_item_id: target.item_id,
+                item_name: target.normalized_name,
+                subject_type: evidence.source_type === "product_label" ? "product" : "food",
+                subject_id: target.normalized_name,
+                created_at: supplementEvent.committed_at,
+            }, evidence)];
+        try {
+            assertNutritionRecordsPersisted(session.database, records);
+        }
+        catch {
+            return committedOutcome(request.action, request.operation_id, "committed_with_issues", execution.record_id);
+        }
+        return committedOutcome(request.action, request.operation_id, execution.status, execution.record_id, undefined, [nutritionOutcomeItem(target.normalized_name, records[0])]);
+    }
+    catch (error) {
+        return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+    }
+}
+export async function handleCoreRequestAsync(runtime, value) {
+    let request;
+    try {
+        request = cloneRequest(value);
+    }
+    catch {
+        return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
+    }
+    let parsed;
+    try {
+        const { action: _action, ...parseInput } = request;
+        parsed = parseCoreCommand(parseInput);
+    }
+    catch {
+        return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+    }
+    if (parsed.disposition === "candidate" && parsed.command.action === "correct_record" &&
+        "kind" in parsed.command && parsed.command.kind === "nutrition_supplement")
+        return handleNutritionSupplement(runtime, request, parsed.command);
+    if (request.action !== "record_meal")
+        return handleCoreRequest(runtime, value);
+    if (parsed.disposition !== "candidate" || parsed.command.action !== "record_meal") {
+        return handleCoreRequest(runtime, value);
+    }
+    try {
+        const session = acquireSession(runtime);
+        const material = await resolveNutritionMaterial(runtime, request, parsed.command, session);
+        if (material.nutrition_evidence.length !== parsed.command.items.length) {
+            throw new Error("NUTRITION_RESOLUTION_AUTHORITY_INVALID:item_count");
+        }
+        const execution = executeCandidate(runtime, request, parsed.command, Object.freeze([]), session, undefined, material.nutrition_evidence);
+        const outcome = committedOutcome(request.action, request.operation_id, execution.status, execution.record_id, execution.record_ids);
+        if (!outcome.committed)
+            return outcome;
+        const event = session.database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?")
+            .get(outcome.record_id);
+        const storedItems = storedMealItems(session.database, outcome.record_id);
+        if (event === undefined || storedItems.length !== parsed.command.items.length) {
+            throw new Error("NUTRITION_REPOSITORY_INVALID:meal_identity");
+        }
+        const records = parsed.command.items.map((item, index) => {
+            const stored = storedItems[index];
+            if (stored.normalized_name !== item.normalized_name)
+                throw new Error("NUTRITION_REPOSITORY_INVALID:item_name");
+            return buildNutritionRecords({
+                operation_id: parsed.command.operation_id,
+                meal_event_id: outcome.record_id,
+                intake_item_id: stored.item_id,
+                item_name: stored.normalized_name,
+                subject_type: material.nutrition_evidence[index].source_type === "product_label" ? "product" : "food",
+                subject_id: stored.normalized_name,
+                created_at: event.committed_at,
+            }, material.nutrition_evidence[index]);
+        });
+        try {
+            assertNutritionRecordsPersisted(session.database, records);
+        }
+        catch {
+            return committedOutcome(request.action, request.operation_id, "committed_with_issues", outcome.record_id, "record_ids" in outcome ? outcome.record_ids : undefined);
+        }
+        const nutritionItems = records.map((record, index) => nutritionOutcomeItem(storedItems[index].normalized_name, record));
+        const receipt = storedMealReceipt(session.database, outcome.record_id, nutritionItems);
+        return committedOutcome(request.action, request.operation_id, outcome.status, outcome.record_id, "record_ids" in outcome ? outcome.record_ids : undefined, nutritionItems, receipt);
+    }
+    catch (error) {
+        return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+    }
+}

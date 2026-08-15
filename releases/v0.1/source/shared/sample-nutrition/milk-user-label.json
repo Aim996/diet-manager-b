@@ -1,0 +1,11 @@
+{
+  "food_name": "示例纯牛奶",
+  "basis": "per_100ml",
+  "source_type": "user_label",
+  "energy_kcal": 65,
+  "protein_g": 3.3,
+  "fat_g": 3.6,
+  "carbohydrate_g": 4.8,
+  "note": "仅供三版本共同验收，不代表默认互联网数据。"
+}
+

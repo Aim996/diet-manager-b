@@ -1,0 +1,241 @@
+{
+  "policy_id": "diet-manager/decision-thresholds/v1",
+  "policy_version": "1.0.0",
+  "change_level": "L3",
+  "product_write_route": "B",
+  "route_selection_mode": "fixed_b_only",
+  "score_based_selection": false,
+  "candidate_rules": {
+    "hard_conflict_fields": [
+      "brand",
+      "variant",
+      "specification",
+      "food_form",
+      "confirmed_alias"
+    ],
+    "unique_remaining_count": 1,
+    "similarity_rank_may_select": false,
+    "confirmed_alias_allowed": true,
+    "similarity_only_result": "needs_confirmation",
+    "unresolved_hard_conflict_result": "needs_confirmation"
+  },
+  "quick_option_rules": {
+    "min_options": 2,
+    "max_options": 4,
+    "requires_complete_safe_action": true,
+    "requires_live_target_revision": true,
+    "requires_safe_exit": true,
+    "hidden_when_outside_range": true
+  },
+  "expiry_policy": {
+    "reliable_source_rank": [
+      "user_explicit_expiration",
+      "product_label_expiration",
+      "production_plus_explicit_shelf_life",
+      "manufacturer_product_rule",
+      "confirmed_same_product_rule"
+    ],
+    "opened_shelf_life_source_rank": [
+      "user_explicit",
+      "product_label",
+      "manufacturer_product_rule",
+      "confirmed_same_product_rule"
+    ],
+    "category_derived_expiration_enabled": false,
+    "effective_expiration_rule": "min(package_expiration, opened_at_plus_explicit_opened_shelf_life)",
+    "near_expiry_operator": "0 < remaining_hours <= threshold_hours",
+    "threshold_unit": "hours",
+    "missing_rule_result": "unknown",
+    "safety_semantics": "reminder_only_not_edibility_or_safety",
+    "near_expiry_rules": [
+      {
+        "rule_id": "prepared_refrigerated_opened",
+        "category": "prepared_food",
+        "storage_location": "refrigerated",
+        "seal_status": "opened",
+        "threshold_hours": 24
+      },
+      {
+        "rule_id": "prepared_refrigerated_unopened",
+        "category": "prepared_food",
+        "storage_location": "refrigerated",
+        "seal_status": "unopened",
+        "threshold_hours": 48
+      },
+      {
+        "rule_id": "perishable_refrigerated_opened",
+        "category": "refrigerated_perishable",
+        "storage_location": "refrigerated",
+        "seal_status": "opened",
+        "threshold_hours": 24
+      },
+      {
+        "rule_id": "perishable_refrigerated_unopened",
+        "category": "refrigerated_perishable",
+        "storage_location": "refrigerated",
+        "seal_status": "unopened",
+        "threshold_hours": 72
+      },
+      {
+        "rule_id": "frozen_opened",
+        "category": "frozen_food",
+        "storage_location": "frozen",
+        "seal_status": "opened",
+        "threshold_hours": 168
+      },
+      {
+        "rule_id": "frozen_unopened",
+        "category": "frozen_food",
+        "storage_location": "frozen",
+        "seal_status": "unopened",
+        "threshold_hours": 168
+      },
+      {
+        "rule_id": "shelf_stable_opened",
+        "category": "shelf_stable",
+        "storage_location": "ambient",
+        "seal_status": "opened",
+        "threshold_hours": 168
+      },
+      {
+        "rule_id": "shelf_stable_unopened",
+        "category": "shelf_stable",
+        "storage_location": "ambient",
+        "seal_status": "unopened",
+        "threshold_hours": 336
+      }
+    ]
+  },
+  "template_policy": {
+    "major_component_set_must_match": true,
+    "absolute_tolerance_grams": 10,
+    "relative_tolerance_ratio": "0.10",
+    "amount_tolerance_operator": "difference <= max(absolute_tolerance_grams, baseline_grams * relative_tolerance_ratio)",
+    "minor_component_categories": {
+      "strict_composition": [],
+      "seasoning_tolerant": [
+        "minor_seasoning"
+      ]
+    },
+    "system_estimates_count_as_confirmation": false,
+    "confirmation_states": [
+      {
+        "explicit_confirmation_count": 1,
+        "status": "candidate"
+      },
+      {
+        "explicit_confirmation_count": 2,
+        "status": "active"
+      },
+      {
+        "explicit_confirmation_count": 3,
+        "status": "stable"
+      }
+    ]
+  },
+  "rounding_policy": {
+    "internal_rounding": "none",
+    "display_quantity_decimal_places": 1,
+    "display_quantity_mode": "round_half_up",
+    "percentage_decimal_places": 0,
+    "percentage_mode": "round_half_up",
+    "ten_grid_segments": 10,
+    "ten_grid_mode": "round_half_up_percentage_divided_by_10_clamped",
+    "decimal_separator": "."
+  },
+  "b_only_gates": {
+    "x_gate_001": {
+      "allowed_outcomes": [
+        "pass_b_safety",
+        "return_to_b_storage"
+      ],
+      "pass_outcome": "pass_b_safety",
+      "return_outcome": "return_to_b_storage",
+      "required_conditions": [
+        "shared_models_frozen",
+        "b_merge_c_controls_passed",
+        "b_storage_driver_compatible",
+        "b_migrations_and_constraints_passed",
+        "b_fault_matrix_passed",
+        "official_roots_unchanged",
+        "fresh_evidence_present"
+      ],
+      "score_fields_allowed": false
+    },
+    "x_gate_002": {
+      "allowed_outcomes": [
+        "bind_b_ready",
+        "return_to_b_slice"
+      ],
+      "pass_outcome": "bind_b_ready",
+      "return_outcome": "return_to_b_slice",
+      "required_conditions": [
+        "x_gate_001_pass_b_safety",
+        "b_slice_evidence_fresh",
+        "b_fault_evidence_fresh",
+        "contract_ids_and_hashes_frozen",
+        "absolute_paths_complete",
+        "selected_route_map_absent",
+        "no_legacy_route_scores"
+      ],
+      "score_fields_allowed": false,
+      "map_creation_outcome": "bind_b_ready"
+    }
+  },
+  "required_fixture_ids": [
+    "POL-CAND-0",
+    "POL-CAND-1",
+    "POL-CAND-2",
+    "POL-CAND-SIMILARITY-2",
+    "POL-CAND-SIMILARITY-1",
+    "POL-CAND-CONFLICT-1",
+    "POL-QUICK-1",
+    "POL-QUICK-2",
+    "POL-QUICK-4",
+    "POL-QUICK-5",
+    "POL-QUICK-STALE",
+    "POL-QUICK-INCOMPLETE",
+    "POL-QUICK-NO-EXIT",
+    "POL-EXP-NEGATIVE",
+    "POL-EXP-ZERO",
+    "POL-EXP-JUST-IN",
+    "POL-EXP-AT",
+    "POL-EXP-ABOVE",
+    "POL-EXP-MISSING-RULE",
+    "POL-EXP-MISSING-DATE",
+    "POL-EXP-PREP-UNOPEN-AT",
+    "POL-EXP-PREP-UNOPEN-ABOVE",
+    "POL-EXP-PERISH-OPEN-AT",
+    "POL-EXP-PERISH-OPEN-ABOVE",
+    "POL-EXP-PERISH-UNOPEN-AT",
+    "POL-EXP-PERISH-UNOPEN-ABOVE",
+    "POL-EXP-FROZEN-OPEN-AT",
+    "POL-EXP-FROZEN-OPEN-ABOVE",
+    "POL-EXP-FROZEN-UNOPEN-AT",
+    "POL-EXP-FROZEN-UNOPEN-ABOVE",
+    "POL-EXP-SHELF-OPEN-AT",
+    "POL-EXP-SHELF-OPEN-ABOVE",
+    "POL-EXP-SHELF-UNOPEN-AT",
+    "POL-EXP-SHELF-UNOPEN-ABOVE",
+    "POL-TPL-ABS-AT",
+    "POL-TPL-ABS-ABOVE",
+    "POL-TPL-REL-AT",
+    "POL-TPL-REL-ABOVE",
+    "POL-TPL-MAJOR-ADDED",
+    "POL-TPL-UNRESOLVED",
+    "POL-TPL-CONF-1",
+    "POL-TPL-CONF-2",
+    "POL-TPL-CONF-3",
+    "POL-TPL-SYSTEM-ONLY",
+    "POL-ROUND-Q-DOWN",
+    "POL-ROUND-Q-HALF",
+    "POL-ROUND-PCT-HALF",
+    "POL-ROUND-GRID-LOW",
+    "POL-ROUND-GRID-HALF",
+    "POL-G1-PASS",
+    "POL-G1-RETURN",
+    "POL-G2-BIND",
+    "POL-G2-RETURN-HASH",
+    "POL-G2-RETURN-SCORES"
+  ]
+}

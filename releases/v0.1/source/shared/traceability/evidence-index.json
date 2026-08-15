@@ -1,0 +1,697 @@
+{
+  "schema_version": "diet-manager/traceability-evidence/v1",
+  "generated_from": {
+    "plan": {
+      "path": "总功能开发计划0.4.md",
+      "length": 324487,
+      "sha256": "53D2C58BA790B6DCC74BDCC8E7E10E2C54E398AC425308A942043050D50C4DCF"
+    },
+    "acceptance_catalog": {
+      "path": "shared/acceptance-cases/cases.json",
+      "length": 73335,
+      "sha256": "0F7E7DC6E26A49638F4E64B1DC26DE6800176C055D10A9754EFD790579EC2F28"
+    },
+    "generator": {
+      "path": "shared/tests/validate-traceability.mjs",
+      "length": 54274,
+      "sha256": "A31C9EB99EE6471E80975365FF123E3F9890A90F94F655E9FEDE191D810DBE95"
+    }
+  },
+  "counts": {
+    "evidence": 38,
+    "files_present": 36,
+    "historical_registry_only": 2
+  },
+  "evidence": [
+    {
+      "id": "EV-20260809-001",
+      "scope": "M0三foundation",
+      "result": "A结构、B/C测试构建插件验证通过；当时业务文件0",
+      "limitation": "无独立原始日志与完整前后哈希，仅作M0历史证据",
+      "reference_ids": [],
+      "file": null,
+      "file_status": "historical_registry_only",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-002",
+      "scope": "M0状态隔离",
+      "result": "临时状态、环境恢复、清理通过",
+      "limitation": "G1前必须新鲜重跑",
+      "reference_ids": [],
+      "file": null,
+      "file_status": "historical_registry_only",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-003",
+      "scope": "DOC-0.2计划校验",
+      "result": "旧0.2需求/案例/决定/任务拓扑检查",
+      "limitation": "只证明DOC-0.2，不证明0.3",
+      "reference_ids": [],
+      "file": {
+        "path": "docs/evidence/EV-20260809-003-plan-0.2-validation.md",
+        "length": 5010,
+        "sha256": "8554BC7FCA2F0CC06CA6E61FA73A41FB1518F604A3F0E50370A2B89E4C3BFE99"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-004",
+      "scope": "DOC-0.2独立复核",
+      "result": "旧37轮迁移与治理复核",
+      "limitation": "0.3新增44轮迁移后已失效为现行证明",
+      "reference_ids": [],
+      "file": {
+        "path": "docs/evidence/EV-20260809-004-plan-0.2-independent-review.md",
+        "length": 4457,
+        "sha256": "96980994986BAACD6788EDAF2D9179B0635A777D52084A34D278EFF3446DB303"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-005",
+      "scope": "shared/business-contract.md旧CONTRACT-v1",
+      "result": "当时77项语义检查",
+      "limitation": "需与0.3做差异复核后才可继续引用",
+      "reference_ids": [],
+      "file": {
+        "path": "docs/evidence/EV-20260809-005-contract-v1-validation.md",
+        "length": 6324,
+        "sha256": "52AA056534D03965159005E8806A2054CC5480AB9AB6F0ECC10B521798910754"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-006",
+      "scope": "日期与回执契约",
+      "result": "当时日期、快捷、六项和黄金格式通过",
+      "limitation": "0.3新增水分下界/纠正差额等规则后需重验",
+      "reference_ids": [],
+      "file": {
+        "path": "docs/evidence/EV-20260809-006-receipt-date-contract-validation.md",
+        "length": 6231,
+        "sha256": "260A7DE27606E7863B539BD197D8769392DF34C349B678A8C4377BF317B230F0"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-007",
+      "scope": "SH-CONTRACT-003营养来源注册表",
+      "result": "注册表、许可/来源边界、外部字段白名单、失败映射与独立复审通过；业务数据前后0",
+      "limitation": "只冻结来源策略，不代表客户端、缓存和营养计算已实现",
+      "reference_ids": [
+        "SH-CONTRACT-003"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260809-007-nutrition-source-registry-validation.md",
+        "length": 9416,
+        "sha256": "1DB7B96459ABDCA7EAF39966CE43400E908CE760096C35F16D388BBBE4B178E3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CONTRACT-003"
+      ]
+    },
+    {
+      "id": "EV-20260809-008",
+      "scope": "SH-CONTRACT-004旧问题/纠错契约验证",
+      "result": "当时32/32需求、13/13场景和只读验证通过；业务数据前后0",
+      "limitation": "属CONTRACT-v1历史；单事件大原子边界和旧Issue枚举与DOC-0.3的DEC-023/现行模型不一致，不支撑当前SH-CONTRACT-004完成",
+      "reference_ids": [
+        "SH-CONTRACT-004"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260809-008-issue-correction-contract-validation.md",
+        "length": 7238,
+        "sha256": "FB8D99D089E6CD557BBF71DFE507CDA9A355AC525485C43F49B34716EEFD50CA"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260809-009",
+      "scope": "五项foundation任务的当前新鲜重验",
+      "result": "A结构、B/C各7/7、构建、OpenClaw校验、状态隔离通过；业务类和辅助文件前后0；残留0",
+      "limitation": "空业务数据基线；不关闭预置正式数据哈希与失败路径扫描缺口",
+      "reference_ids": [],
+      "file": {
+        "path": "docs/evidence/EV-20260809-009-foundation-refresh.md",
+        "length": 19083,
+        "sha256": "3B28604F50711E6383EFA207C2A54AC53F098738B92125D8E8D1B85EEF276589"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "A-FND-001",
+        "B-FND-001",
+        "C-FND-001",
+        "SH-FND-001",
+        "SH-FND-REFRESH-001"
+      ]
+    },
+    {
+      "id": "EV-20260809-010",
+      "scope": "DOC-003-001总计划0.3旧版本技术校验",
+      "result": "71条REQ、144个CASE、58项TASK、26项DEC、44/44会话、任务案例并集144及四个完整案例集均通过机器校验和独立复核；业务类和辅助文件0",
+      "limitation": "本轮DEC/REQ/CASE/validator变化后属于旧版本，不再单独证明当前候选；不证明PRODUCT业务、安装或发布已完成",
+      "reference_ids": [
+        "DOC-003-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260809-010-plan-0.3-validation.md",
+        "length": 9601,
+        "sha256": "250A67B70714783D2B74DA89CD483895BC7E10DE3120FDB1EC9801D06FDCC3FF"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "DOC-003-001"
+      ]
+    },
+    {
+      "id": "EV-20260809-011",
+      "scope": "五项foundation的Skill-first增量、DOC-003-001与DOC-003-002",
+      "result": "复核EV-009的38项文件身份未变；A/B/C Skill与B/C唯一工具绑定3/3；DOC结构71/144/58/26、45/45及批准链通过；业务类和辅助文件前后0",
+      "limitation": "仅补Skill-first静态Oracle、当前DOC与批准；不关闭SH-SAFE-BASE-001或任一PRODUCT任务",
+      "reference_ids": [
+        "DOC-003-001",
+        "DOC-003-002",
+        "SH-SAFE-BASE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260809-011-plan-approval-skill-first.md",
+        "length": 10256,
+        "sha256": "7BEFFF0112728209FCF5832249C2BFE4C58D1DCA10D870AB8B5EEF17357CD18F"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "A-FND-001",
+        "B-FND-001",
+        "C-FND-001",
+        "SH-FND-001",
+        "SH-FND-REFRESH-001",
+        "DOC-003-001",
+        "DOC-003-002"
+      ]
+    },
+    {
+      "id": "EV-20260811-012",
+      "scope": "SH-SAFE-BASE-001按DEC-028有界退出验收",
+      "result": "Parser/ASCII/LibraryOnly通过；ROOT/TEMP/REPORT/MANIFEST四项focused与4/4状态隔离通过；业务候选0、fixture残留0；冻结hash见证据文件",
+      "limitation": "关闭必要安全底座范围；不代表48项完整矩阵、G1/G2/G3、产品业务或安装发布通过；conhost精确计数保持deferred",
+      "reference_ids": [
+        "SH-SAFE-BASE-001",
+        "DEC-028"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-012-sh-safe-bounded-exit.md",
+        "length": 2975,
+        "sha256": "4E1AB059C0BA0D626B92DFBB2636D4E77EA05D60E60D8FEDC44CEFF343743DE2"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-SAFE-BASE-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-013",
+      "scope": "SH-CONTRACT-001 CONTRACT-v2",
+      "result": "Windows PowerShell验证器PASS；77/77五族集合与追踪表通过；旧规则命中0；业务候选0；OpenClaw第二轮独立复核PASS并确认F1–F9/NUTR关闭",
+      "limitation": "关闭共同命令/事实/效果/最终器/幂等契约；不代表伴随契约、Schema、SQLite repository、G1/G2/G3或产品发布通过",
+      "reference_ids": [
+        "SH-CONTRACT-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-013-sh-contract-v2.md",
+        "length": 2921,
+        "sha256": "AFC3F3C160D310ACDBD767333DC34E48D3795D5A0D4732BF5D963C606BC28E61"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CONTRACT-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-014",
+      "scope": "SH-CONTRACT-002 日期/回执 v2",
+      "result": "两轮RED→GREEN；11项当前需求、六项黄金重算、单日/跨日结果和失败零成功输出通过；OpenClaw独立复核PASS",
+      "limitation": "关闭日期/回执伴随契约；不代表模型、repository、真实写入、安装或发布完成",
+      "reference_ids": [
+        "SH-CONTRACT-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-014-sh-contract-002-v2.md",
+        "length": 3889,
+        "sha256": "59E2D29AF0F9E0CCC3B441FB617635BF809B7DFF5C3A237538A876AC798D8BF2"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CONTRACT-002"
+      ]
+    },
+    {
+      "id": "EV-20260811-015",
+      "scope": "SH-CONTRACT-004 Issue/纠正 v2",
+      "result": "两轮语义RED→GREEN；Issue、快捷、追加纠正、三阶段补偿、批量预览和失败零业务数据通过；OpenClaw第二轮独立复核PASS",
+      "limitation": "关闭Issue/纠正伴随契约；不代表Schema、SQLite repository、真实业务闭环、G1/G2/G3或发布完成",
+      "reference_ids": [
+        "SH-CONTRACT-004"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-015-sh-contract-004-v2.md",
+        "length": 5529,
+        "sha256": "5775CD3F9FF97AB22F3BA79818C422B04890CD0F7EDEC9BE8F5FD169B5E7A28C"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CONTRACT-004"
+      ]
+    },
+    {
+      "id": "EV-20260811-016",
+      "scope": "SH-DECISION-001 确定性策略 v1",
+      "result": "缺文件RED、两轮测试质量RED和54用例GREEN；8条临期规则、16个阈值边界、4个mutation与OpenClaw独立复核PASS",
+      "limitation": "关闭Q-005的v1来源/提醒覆盖和M2策略前置；不代表保质/可食用安全判断、模型、SQLite、G1/G2/G3或发布完成",
+      "reference_ids": [
+        "SH-DECISION-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-016-sh-decision-001.md",
+        "length": 4324,
+        "sha256": "E5B3E09B845CF0E5BD8C47F5EB67841E45B6C81C2946266A2C22871C5997E30F"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-DECISION-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-017",
+      "scope": "SH-MODEL-001 Event/Amount/Product/Inventory模型 v1",
+      "result": "三轮RED→GREEN、41个固定案例、4个mutation、Schema/fixture字节锁定；OpenClaw第二轮复核与Ajv 2020-12独立运行PASS",
+      "limitation": "关闭首组共同模型与失败零业务对象边界；不代表其余模型、SQLite mapping、生产runtime validator、G1/G2/G3或发布完成",
+      "reference_ids": [
+        "SH-MODEL-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-017-sh-model-001.md",
+        "length": 5404,
+        "sha256": "14DF79B4CE127DE9253A22CC874B47E9CB280F75912A902A5D5725947E0C2D67"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-MODEL-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-018",
+      "scope": "SH-MODEL-002 Nutrition/Profile/Snapshot/GoalVersion/DailyProgress模型 v1",
+      "result": "缺文件RED、42个固定案例、4个mutation、Schema/fixture字节锁定；OpenClaw复核与Ajv 2020-12跨$id独立运行PASS",
+      "limitation": "关闭营养/进度共同模型与失败零业务对象边界；不代表Mixed模型、SQLite mapping、生产runtime validator、G1/G2/G3或发布完成",
+      "reference_ids": [
+        "SH-MODEL-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-018-sh-model-002.md",
+        "length": 4889,
+        "sha256": "342CE6CFB291889AE29A842DCC6DEE4D159BD5728022ACCF7A609B4AF87AFEAD"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-MODEL-002"
+      ]
+    },
+    {
+      "id": "EV-20260811-019",
+      "scope": "SH-MODEL-003 Issue/Correction/FactCommit/EffectBundle/EnvelopeFinalize/Mixed模型 v1",
+      "result": "两轮RED→GREEN、65个固定案例、10项semantic-only、10项语义invariant和4个mutation；OpenClaw双引擎/独立语义复核与GitHub clone复验PASS",
+      "limitation": "关闭第三组共同模型及写失败零业务对象边界；不代表SQLite mapping、生产runtime validator、G1/G2/G3或发布完成",
+      "reference_ids": [
+        "SH-MODEL-003"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-019-sh-model-003.md",
+        "length": 5741,
+        "sha256": "BB12C6A4B8753D793127AE9322D79F54D036053064002EAE30AE8AAA85580387"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-MODEL-003"
+      ]
+    },
+    {
+      "id": "EV-20260811-020",
+      "scope": "SH-MAP-001 B SQLite精确映射",
+      "result": "34个共享定义映射到20表、18索引、22外键；18个本地mutation、33个独立mutation和公开clone复验PASS；业务数据库文件0",
+      "limitation": "关闭B存储映射与A只读/C控制合并边界；不代表DDL、migration、repository、G1/G2/G3或产品发布完成",
+      "reference_ids": [
+        "SH-MAP-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-020-sh-map-001.md",
+        "length": 6343,
+        "sha256": "B723740C650BB59C2F47B2B6B9C0D4EE8D01F2EC45C3920DDE0BC886032F56CF"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-MAP-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-021",
+      "scope": "SH-CASE-001 核心共同案例",
+      "result": "首组5个CASE-ID、3个固定fixture、8个本地mutation、20个独立mutation和公开clone复验PASS",
+      "limitation": "关闭核心共同Oracle静态定义；不代表B adapter执行、SQLite、安装或产品通过",
+      "reference_ids": [
+        "SH-CASE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-021-sh-case-001.md",
+        "length": 4186,
+        "sha256": "ADD93F41ACE1A8AE6B8E006A9E1AFB67F72F1F7D9D604E351EC1190EF3B2EFFF"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CASE-001"
+      ]
+    },
+    {
+      "id": "EV-20260811-022",
+      "scope": "SH-CASE-002 领域与故障案例",
+      "result": "累计14案；新增9个CASE-ID、9个确定性场景、11个本地mutation和11个独立mutation，八项串行验证通过",
+      "limitation": "关闭领域/故障共同Oracle静态定义；不代表B adapter执行、SQLite、安装或产品通过",
+      "reference_ids": [
+        "SH-CASE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-022-sh-case-002.md",
+        "length": 4536,
+        "sha256": "0F3C804D20D09DC2A3552D3F908454976A1135F23DE2D3BB618DCEBEA0853E35"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CASE-002"
+      ]
+    },
+    {
+      "id": "EV-20260811-023",
+      "scope": "SH-CASE-003 运维与安全案例",
+      "result": "累计20案；新增6个CASE-ID、6个固定场景、12个本地mutation，九项回归与公开clone独立复核PASS",
+      "limitation": "关闭运维/安全静态Oracle；不代表安装器、迁移器、repository或可部署Skill完成",
+      "reference_ids": [
+        "SH-CASE-003"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260811-023-sh-case-003.md",
+        "length": 4950,
+        "sha256": "6EBCC92864825A2816F77FD9035AD5696BA9FF253163B85427720CB4BBBB6260"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CASE-003"
+      ]
+    },
+    {
+      "id": "EV-20260812-024",
+      "scope": "SH-CASE-004 黄金回执Oracle",
+      "result": "累计26案；8份UTF-8/LF黄金文本、6个新增CASE-ID、12个真实mutation和十项串行回归通过；独立复核P0=0/P1=0",
+      "limitation": "关闭黄金回执静态Oracle；不代表渲染器、SQLite、业务写入、安装或产品发布完成",
+      "reference_ids": [
+        "SH-CASE-004"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-024-sh-case-004.md",
+        "length": 3790,
+        "sha256": "FB41E78AF0EF7E1E09D55ECF9B696912225E5C3EDB7D9507FC3B4FC3E3C22C96"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-CASE-004"
+      ]
+    },
+    {
+      "id": "EV-20260812-025",
+      "scope": "SH-HARNESS-001 共享执行harness",
+      "result": "累计1.4.0/27案；A只读零写、B backend-pending、C无独立adapter、15项Node测试和12组串行回归通过；独立复核P0=0/P1=0",
+      "limitation": "关闭共同执行协议边界；B真实后端、业务整案、SQLite、安装和G1/G2/G3仍未完成",
+      "reference_ids": [
+        "SH-HARNESS-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-025-sh-harness-001.md",
+        "length": 3734,
+        "sha256": "4EC87F5A121D974B61D608D22A1B782B77F9C067B365B39E6E9374F31C466A5A"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-HARNESS-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-026",
+      "scope": "SH-TRACE-001 机器追踪",
+      "result": "71 REQ、144 CASE、59 TASK、63 governance和26 EV可由唯一Markdown权威确定性生成；7项mutation、PS5.1回读和独立复核P0=0/P1=0/P2=0",
+      "limitation": "关闭M2追踪与零孤儿门；不代表SQLite、repository、业务写入、安装或G1/G2/G3完成",
+      "reference_ids": [
+        "SH-TRACE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-026-sh-trace-001.md",
+        "length": 2808,
+        "sha256": "C70477E9C5FE6479A674CFCC4B1148F968D775A657EDCD1E992B11F7C7427410"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260812-027",
+      "scope": "B-STOR-001 SQLite bootstrap",
+      "result": "固定私有root/数据库叶、内置node:sqlite、mapping-locked 20表/18索引/22外键、三阶段故障零发布/零残留、21项测试与OpenClaw插件门通过；独立复核P0=0/P1=0",
+      "limitation": "关闭驱动、初始migration与本地打包兼容；不代表repository、真实业务写入、安装、部署或G1/G2/G3完成",
+      "reference_ids": [
+        "B-STOR-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-027-b-stor-001.md",
+        "length": 2902,
+        "sha256": "819252058D563843081180256F4F4A4CBD275DD1AAE2FCC5B2C49E5A70E979FB"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-STOR-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-028",
+      "scope": "B-MERGE-C-001 服务端preview/state权威",
+      "result": "七字段HMAC preview绑定、BEGIN IMMEDIATE幂等预留、调用方状态不信任、陈旧/伪造/非法状态/非法migration零写入；27项focused、48项B测试与独立并发/篡改/rollback探针通过，复核P0=0/P1=0/P2=0",
+      "limitation": "关闭B写入前服务端权威与guard；不代表business repository、FactCommit、效果/最终器、安装、部署或G1/G2/G3完成",
+      "reference_ids": [
+        "B-MERGE-C-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-028-b-merge-c-001.md",
+        "length": 3234,
+        "sha256": "3DA15C063FEA4EF2903BC811C6DDDCEEC9E0DFBA370BB20BD53D9AC3953BCDB6"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-MERGE-C-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-029",
+      "scope": "B-STOR-002 原子repository",
+      "result": "FactCommit、库存投影、outbox/effect、终态封存、幂等/响应丢失、重启恢复、同键并发和崩溃不可见；21项focused、69项B测试、真实worker并发/崩溃harness与OpenClaw本地插件门通过，独立复核P0=0/P1=0",
+      "limitation": "关闭B原子repository和“技术日志可有、饮食业务零半写入”边界；不代表G1门、业务纵切、安装、部署或产品可用",
+      "reference_ids": [
+        "B-STOR-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-029-b-stor-002.md",
+        "length": 3788,
+        "sha256": "5A0256BC95C2EB5841B673D48AD5AEA12E9E884E2A0DDA64B59931BB0099E748"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-STOR-002"
+      ]
+    },
+    {
+      "id": "EV-20260812-030",
+      "scope": "X-GATE-001 B-only存储安全门",
+      "result": "三项依赖提交/EV哈希精确，13项G1存储责任、7项检查、6项门变异、69项B测试、并发/崩溃、OpenClaw本地门与追踪均PASS；独立复核P0=0/P1=0/P2=2，决策=pass_b_safety",
+      "limitation": "只授权B-SLICE-001；不代表完整产品案例、G2/G3、安装、部署或Skill可用",
+      "reference_ids": [
+        "X-GATE-001",
+        "B-SLICE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-030-x-gate-001.md",
+        "length": 2444,
+        "sha256": "904F131D223A527614FBD0AE629DE88E4D16393D1CDBF8FCE157217197DB3E26"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "X-GATE-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-031",
+      "scope": "B-SLICE-001 B-only首条纵向切片",
+      "result": "候选c8e6bcef39d0f98452432c3331095d963b9b9778通过153项插件测试、31项repository、13项foundation、共享22项/精确17案责任、x-gate/trace、两类并发/崩溃、OpenClaw本地门和残留检查；Stage A=e8680a131cec1e5dd7c18c9f50b9fed35510dae3；最终独立复审P0=0/P1=0/P2=0、Ready=YES",
+      "limitation": "关闭B-SLICE-001并将B-FAULT-001列为唯一下一项；保留一次rg范围扩大过程例外，Git无保护路径变更；not installable; public OpenClaw tool remains non-writing；不代表完整故障矩阵、G2/G3、安装、部署或产品可用",
+      "reference_ids": [
+        "B-SLICE-001",
+        "B-FAULT-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-031-b-slice-001.md",
+        "length": 4920,
+        "sha256": "846A3D057A00E9A980EFD4720B7BFD589BABB2D1CE07F09FF705D6DEBECC35C1"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-SLICE-001"
+      ]
+    },
+    {
+      "id": "EV-20260812-032",
+      "scope": "B-FAULT-001 最终替换候选故障矩阵闭环",
+      "result": "最终候选552feee374fe3463f296bd4a110af11747a7ee29；替换22-gate证据74d8193debf1347b07a4c5e594f4b7c3f11c5828，71,063 bytes，SHA-256 ECAC880CE676A0F2D64B1B1AAB13479058AA99CEF069CFC915442AC984B87F91，22/22 exit 0且逐边界Node/新增temp为0；独立全分支复审P0=0/P1=0、technical Ready YES；分支已推送，draft PR #11目标main；旧候选与两轮审阅链继续作为历史保留",
+      "limitation": "关闭B-FAULT-001，结果DONE_WITH_CONCERNS并保留Task 6搜索输出过程concern；不授权map、X-GATE-002、G2/G3、安装、部署或产品可用",
+      "reference_ids": [
+        "B-FAULT-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260812-032-b-fault-001.md",
+        "length": 7324,
+        "sha256": "B7EFF9C7CCB6F566E2BA1AF553667C9986BB653511B8A7883DF65D322A9216A9"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "B-FAULT-001"
+      ]
+    },
+    {
+      "id": "EV-20260813-033",
+      "scope": "DOC-004-001、DOC-004-002 DOC-0.4治理与用户批准",
+      "result": "50/50会话台账、唯一DOC-0.4权威、0.3冻结SHA-256、74 REQ/153 CASE/63 TASK、27/1/27/0/8状态、唯一WIP=SH-TRACE-001、X-GATE-002显式依赖与四份陈旧镜像事实均经只读结构检查；批准记录已锁定",
+      "limitation": "关闭DOC-004文档/批准治理；不重生成追踪JSON、不关闭SH-TRACE-001或X-GATE-002，不证明产品实现、可安装性或发布",
+      "reference_ids": [
+        "DOC-004-001",
+        "DOC-004-002",
+        "SH-TRACE-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-033-doc-004-governance.md",
+        "length": 7591,
+        "sha256": "95F9C4D9942BF7D4697B68D9E6488CC3C80A47C7429AF7E0EF1D220AA171546F"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "DOC-004-001",
+        "DOC-004-002"
+      ]
+    },
+    {
+      "id": "EV-20260813-034",
+      "scope": "SH-TRACE-001 DOC-0.4机器追踪闭合（重开前历史）",
+      "result": "74 REQ、153 CASE、63 TASK、70 governance和34 EV为当前登记口径；G1/G2=13/17、累计发布集=124/152，15个mutation、镜像字节/身份一致和独立复核P0/P1/P2=0、Ready=YES",
+      "limitation": "该EV只关闭其原候选；CHG-20260813-002改变计划/生成器后已重开SH-TRACE-001，不得用旧EV授权X-GATE、安装或发布",
+      "reference_ids": [
+        "SH-TRACE-001",
+        "CHG-20260813-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-034-sh-trace-001-doc-0.4.md",
+        "length": 8502,
+        "sha256": "C146431BE6A961C6EBB232EFBCA8659EEB6137B19DDEF2C19281D943C00D5DE3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": []
+    },
+    {
+      "id": "EV-20260813-035",
+      "scope": "SH-TRACE-001 DOC-0.4重开后的机器追踪刷新",
+      "result": "候选96cba14646e2cee46ed45fe3711eb061f59b6c0e上74 REQ、153 CASE、63 TASK、70 governance和34历史EV确定性重生成；15个mutation、四镜像字节新鲜、独立复核P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭本轮追踪重开并把EV总数推进至35；只解锁X-GATE-002有界预检，不授权map结果、SEL-*、安装或发布",
+      "reference_ids": [
+        "SH-TRACE-001",
+        "X-GATE-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-035-sh-trace-001-refresh.md",
+        "length": 3023,
+        "sha256": "22117816EF5579BE89E92692D1BB19E130F7F78CB787B0D09F190AB06461E910"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SH-TRACE-001"
+      ]
+    },
+    {
+      "id": "EV-20260813-036",
+      "scope": "X-GATE-002 B-only就绪与路径绑定门",
+      "result": "候选4646194fe8a7acc03157419f1789bbb6a9460ee6上21任务/43路径、4项前置、8项实际检查、正式build回执、原子no-replace本地map及两轮独立复核全部通过；P0/P1/P2=0、Ready=YES、决策=bind_b_ready",
+      "limitation": "关闭X-GATE-002并只解锁SEL-CORE-001；map为Git忽略的环境绑定状态，不证明产品可安装、可发布或远程OpenClaw已验收",
+      "reference_ids": [
+        "X-GATE-002",
+        "SEL-CORE-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-036-x-gate-002.md",
+        "length": 3359,
+        "sha256": "748E514DB17B2B9C31B92B90809DC9A193F7ED870C955F8776C4328E6EFFDBA3"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "X-GATE-002"
+      ]
+    },
+    {
+      "id": "EV-20260813-037",
+      "scope": "SEL-CORE-001 选中核心命令切片",
+      "result": "产品候选01e2b7b9d681ddc6dc0bcd15970dfc6de1ad801c通过21个选中ID的声明路径、535项核心验收、788项全插件测试、事务/崩溃/OpenClaw隔离门和两轮独立复核；正式build只执行1次，44/44产物由429cfc21a4bf05e98a4fe47fe3771cb46a1f1a47完整绑定；P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭SEL-CORE-001并按依赖与计划顺序只解锁SEL-PANTRY-001；20个解析Oracle+CASE-RECEIPT-002可达性，full_case_set=none，不证明21案E2E、安装、发布、远程验收或PRODUCT-0.1可用",
+      "reference_ids": [
+        "SEL-CORE-001",
+        "SEL-PANTRY-001",
+        "CASE-RECEIPT-002"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260813-037-sel-core-001.md",
+        "length": 3149,
+        "sha256": "69078233A51D4CBB0AB94D72A093B7FC43750F940B5AAC15CE0271BC82DE5F69"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SEL-CORE-001"
+      ]
+    },
+    {
+      "id": "EV-20260814-038",
+      "scope": "SEL-PANTRY-001 商品、入库、家庭库存与批次切片",
+      "result": "产品候选36b1c6d30375c7d5369c42f22ce498086d50f25c通过17个选中CASE断言路径、926项完整source测试、Pantry/事务/根权威门与两路独立复核；P0/P1/P2=0、Ready=YES",
+      "limitation": "关闭SEL-PANTRY-001并只解锁SEL-NUTR-001；full_case_set=none，不证明完整PRODUCT-0.1、安装、发布或正式dist",
+      "reference_ids": [
+        "SEL-PANTRY-001",
+        "SEL-NUTR-001"
+      ],
+      "file": {
+        "path": "docs/evidence/EV-20260814-038-sel-pantry-001.md",
+        "length": 3133,
+        "sha256": "44A742AF5D702DDA5FC463A81DA83A1BE05070A5E90D6054C1A884FB6EE57809"
+      },
+      "file_status": "present",
+      "referenced_by_task_ids": [
+        "SEL-PANTRY-001"
+      ]
+    }
+  ]
+}

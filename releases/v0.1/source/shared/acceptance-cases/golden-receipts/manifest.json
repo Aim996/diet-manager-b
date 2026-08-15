@@ -1,0 +1,398 @@
+{
+  "golden_catalog_id": "diet-manager/golden-receipts-v1",
+  "version": "1.0.0",
+  "encoding": "utf-8",
+  "newline": "lf",
+  "terminal_newline": true,
+  "entries": [
+    {
+      "fixture_id": "golden-receipt-multi-dish-v1",
+      "case_id": "CASE-RECEIPT-001",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号晚餐",
+          "item_lines": [
+            "牛肉面1碗｜牛肉80g（按通用模板估算）、面条100g（按通用模板估算）、配菜50g（按通用模板估算）",
+            "凉拌黄瓜1小盘｜黄瓜200g（按通用模板估算）、调味油5g（按通用模板估算）",
+            "橙子1个｜按可食部分200g估算",
+            "白水500ml"
+          ],
+          "inventory_line": "库存：已扣橙子1个；牛肉面和凉拌黄瓜未据通用营养模板扣减组件库存",
+          "issue_prompt": null,
+          "analysis_line": null
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": 775, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 41},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": 35, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 29},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": 23.2, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 39},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 107, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 43},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": 9.5, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 38},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": 775, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 41},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": 35, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 29},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": 23.2, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 39},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 107, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 43},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": 9.5, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 38},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-RECEIPT-001.txt",
+      "utf8_length": 862,
+      "sha256": "9F778B0FC9E3AF49973CAEEAB2B101567CFA80E54681F86DDD85F409D2530463",
+      "line_count": 19,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["已记录：9号晚餐", "牛肉面1碗", "凉拌黄瓜1小盘", "橙子1个", "白水500ml", "💧1420ml / 2.5L +500ml +20%"],
+      "forbidden_literals": ["本轮营养", "📊 今日进度", "建议", "内部ID"]
+    },
+    {
+      "fixture_id": "golden-receipt-evidence-quick-v1",
+      "case_id": "CASE-RECEIPT-002",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed_with_issues",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号午餐",
+          "item_lines": ["米饭200g｜参考数据库", "鸡胸肉1块｜按可食部分150g估算"],
+          "inventory_line": "库存：米饭和鸡胸肉未关联家庭库存",
+          "issue_prompt": {
+            "issue_code": "quantity_estimated",
+            "status": "awaiting_user",
+            "option_count": 4,
+            "safe_exit_option": "D",
+            "free_text_line": "也可以直接说明实际情况，不必选择以上选项。"
+          },
+          "analysis_line": null
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": 775, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 41},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": 35, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 29},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": 23.2, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 39},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 107, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 43},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": 9.5, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 38},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": 775, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 41},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": 35, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 29},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": 23.2, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 39},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 107, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 43},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": 9.5, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 38},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-RECEIPT-002.txt",
+      "utf8_length": 925,
+      "sha256": "F57748CDE3DC278A9C02348246309E030741E474FE963CFF528674AAEF60F4B5",
+      "line_count": 24,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "issues_and_quick_options", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["米饭200g｜参考数据库", "鸡胸肉1块｜按可食部分150g估算", "D. 稍后处理", "也可以直接说明实际情况，不必选择以上选项。", "💧1420ml / 2.5L +500ml +20%"],
+      "forbidden_literals": ["米饭200g估算", "建议", "诊断", "内部ID"]
+    },
+    {
+      "fixture_id": "golden-receipt-normal-success-v1",
+      "case_id": "CASE-RECEIPT-004",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号加餐",
+          "item_lines": ["酸奶200g｜参考数据库"],
+          "inventory_line": "库存：未关联家庭库存",
+          "issue_prompt": null,
+          "analysis_line": null
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": 120, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 6},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": 6, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 5},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": 4, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 7},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 18, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 7},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": null, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": null}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": 120, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 6},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": 6, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 5},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": 4, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 7},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 18, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 7},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": null, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": null}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-RECEIPT-004.txt",
+      "utf8_length": 511,
+      "sha256": "F300D3FE8983AA972137555596922F62807953DBCE128C9B8DB1DF21EB725B24",
+      "line_count": 16,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["已记录：9号加餐", "酸奶200g｜参考数据库", "库存：未关联家庭库存", "💧1420ml / 2.5L"],
+      "forbidden_literals": ["本轮营养", "建议", "推荐", "太棒了"]
+    },
+    {
+      "fixture_id": "golden-receipt-requested-analysis-v1",
+      "case_id": "CASE-RECEIPT-005",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号晚餐",
+          "item_lines": ["鸡胸肉150g｜参考数据库"],
+          "inventory_line": "库存：未关联家庭库存",
+          "issue_prompt": null,
+          "analysis_line": "分析：本次记录采用鸡胸肉150g；这里只说明已记录事实和采用来源。"
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": 248, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 13},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": 46, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 38},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": 5.4, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 9},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": null, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": null},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": null, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": null}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": 248, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 13},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": 46, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 38},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": 5.4, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 9},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": null, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": null},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": null, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": null}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-RECEIPT-005.txt",
+      "utf8_length": 602,
+      "sha256": "BE5A233E893C502719AE0B69F29BC1C35F430115516B782DCE2F72E11F80636C",
+      "line_count": 17,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "requested_analysis", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["已记录：9号晚餐", "鸡胸肉150g｜参考数据库", "分析：本次记录采用鸡胸肉150g；这里只说明已记录事实和采用来源。", "💧1420ml / 2.5L"],
+      "forbidden_literals": ["诊断", "建议", "应该", "下一餐"]
+    },
+    {
+      "fixture_id": "golden-receipt-single-item-v1",
+      "case_id": "CASE-RECEIPT-006",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号加餐",
+          "item_lines": ["苹果1个｜按可食部分180g估算"],
+          "inventory_line": "库存：已扣苹果1个",
+          "issue_prompt": null,
+          "analysis_line": null
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": 95, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 5},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": 0.5, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 0},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": 0.3, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 0},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 25, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 10},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": 4, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 16},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": 150, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 6}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": 95, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": 5},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": 0.5, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": 0},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": 0.3, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": 0},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": 25, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": 10},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": 4, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": 16},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": 150, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 6}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-RECEIPT-006.txt",
+      "utf8_length": 542,
+      "sha256": "D68B77AA6F75C43293D5B80BEEFC223EFB959D5619DBECF82A399361C2287EAC",
+      "line_count": 16,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["已记录：9号加餐", "苹果1个｜按可食部分180g估算", "库存：已扣苹果1个", "💧1420ml / 2.5L +150ml +6%"],
+      "forbidden_literals": ["空项目", "内部ID", "建议", "本轮营养"]
+    },
+    {
+      "fixture_id": "golden-progress-same-finalizer-v1",
+      "case_id": "CASE-PROGRESS-006",
+      "mode": "terminal_success",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "receipt_data": {
+          "title": "已记录：9号饮水",
+          "item_lines": ["白水500ml"],
+          "inventory_line": "库存：无库存变更",
+          "issue_prompt": null,
+          "analysis_line": null
+        },
+        "daily_progress_by_date": [
+          {
+            "date": "2026-08-09",
+            "metrics": [
+              {"metric": "energy", "current": 1874, "target": 1900, "increment": null, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": null},
+              {"metric": "protein", "current": 82.3, "target": 120, "increment": null, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": null},
+              {"metric": "fat", "current": 63.8, "target": 60, "increment": null, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": null},
+              {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": null, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": null},
+              {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+              {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+            ]
+          }
+        ],
+        "daily_progress": {
+          "date": "2026-08-09",
+          "metrics": [
+            {"metric": "energy", "current": 1874, "target": 1900, "increment": null, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": null},
+            {"metric": "protein", "current": 82.3, "target": 120, "increment": null, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": null},
+            {"metric": "fat", "current": 63.8, "target": 60, "increment": null, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": null},
+            {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": null, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": null},
+            {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+            {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+          ]
+        },
+        "terminal_idempotency_result": "frozen"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-PROGRESS-006.txt",
+      "utf8_length": 462,
+      "sha256": "87544ADD218EFF1C5D1F13811A4B72D4351C738C3EE1E8FEF57FBF1F003718BA",
+      "line_count": 16,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "progress_blocks"],
+      "progress_dates": ["2026-08-09"],
+      "daily_progress_alias": "required_equal_single",
+      "required_literals": ["已记录：9号饮水", "白水500ml", "库存：无库存变更", "💧1420ml / 2.5L +500ml +20%"],
+      "forbidden_literals": ["额外查询", "本轮营养", "建议", "📊 今日进度"]
+    },
+    {
+      "fixture_id": "golden-receipt-cross-date-replay-v1",
+      "case_id": "CASE-STORAGE-006",
+      "mode": "terminal_replay",
+      "final_result": {
+        "command_status": "committed",
+        "envelope_status": "terminal",
+        "original_result": {
+          "receipt_data": {
+            "title": "已记录：8号晚餐、9号饮水",
+            "item_lines": ["苹果1个｜按可食部分180g估算", "白水500ml"],
+            "inventory_line": "库存：苹果未关联家庭库存"
+          },
+          "daily_progress_by_date": [
+            {
+              "date": "2026-08-08",
+              "metrics": [
+                {"metric": "energy", "current": 950, "target": 1900, "increment": 95, "unit": "kcal", "percentage": 50, "filled": 5, "increment_percentage": 5},
+                {"metric": "protein", "current": 60, "target": 120, "increment": 0.5, "unit": "g", "percentage": 50, "filled": 5, "increment_percentage": 0},
+                {"metric": "fat", "current": 30.3, "target": 60, "increment": 0.3, "unit": "g", "percentage": 51, "filled": 5, "increment_percentage": 0},
+                {"metric": "carbohydrate", "current": 150, "target": 250, "increment": 25, "unit": "g", "percentage": 60, "filled": 6, "increment_percentage": 10},
+                {"metric": "fiber", "current": 16.5, "target": 25, "increment": 4, "unit": "g", "percentage": 66, "filled": 7, "increment_percentage": 16},
+                {"metric": "water", "current": 1150, "target": 2500, "increment": 150, "unit": "ml", "percentage": 46, "filled": 5, "increment_percentage": 6}
+              ]
+            },
+            {
+              "date": "2026-08-09",
+              "metrics": [
+                {"metric": "energy", "current": 1874, "target": 1900, "increment": null, "unit": "kcal", "percentage": 99, "filled": 10, "increment_percentage": null},
+                {"metric": "protein", "current": 82.3, "target": 120, "increment": null, "unit": "g", "percentage": 69, "filled": 7, "increment_percentage": null},
+                {"metric": "fat", "current": 63.8, "target": 60, "increment": null, "unit": "g", "percentage": 106, "filled": 10, "increment_percentage": null},
+                {"metric": "carbohydrate", "current": 246.5, "target": 250, "increment": null, "unit": "g", "percentage": 99, "filled": 10, "increment_percentage": null},
+                {"metric": "fiber", "current": 21.3, "target": 25, "increment": null, "unit": "g", "percentage": 85, "filled": 9, "increment_percentage": null},
+                {"metric": "water", "current": 1420, "target": 2500, "increment": 500, "unit": "ml", "percentage": 57, "filled": 6, "increment_percentage": 20}
+              ]
+            }
+          ]
+        },
+        "later_unrelated_write": {
+          "date": "2026-08-09",
+          "latest_energy_kcal": 1974,
+          "latest_water_ml": 1420
+        },
+        "retry_expectation": "exact_original_result"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-STORAGE-006.txt",
+      "utf8_length": 1002,
+      "sha256": "330795318F893993989CBE7D23B237B876DA25A609DEF63DB9AFAC23CF68A26C",
+      "line_count": 32,
+      "block_order": ["record_header", "item_lines", "actual_inventory_effect", "progress_blocks"],
+      "progress_dates": ["2026-08-08", "2026-08-09"],
+      "daily_progress_alias": "forbidden_multi",
+      "required_literals": ["已记录：8号晚餐、9号饮水", "8号更新后", "9号更新后", "💧1420ml / 2.5L +500ml +20%"],
+      "forbidden_literals": ["最新累计", "建议", "daily_progress", "当前进度查询"]
+    },
+    {
+      "fixture_id": "golden-receipt-finalizer-pending-v1",
+      "case_id": "CASE-EFFECT-003",
+      "mode": "effects_pending",
+      "final_result": {
+        "command_status": "failed",
+        "envelope_status": "effects_pending",
+        "receipt_data": null,
+        "daily_progress_by_date": null,
+        "daily_progress": null,
+        "terminal_idempotency_result": null,
+        "pending_message": "饮食事实与已完成效果已保留，最终结果尚未完成；系统将仅重试最终化，当前不提供成功回执或进度。"
+      },
+      "text_path": "shared/acceptance-cases/golden-receipts/CASE-EFFECT-003.txt",
+      "utf8_length": 139,
+      "sha256": "7FE08C39724C3E2A0A0D614D3AA2AACC7C8EC7442398E54438127A9B76F8ECA3",
+      "line_count": 1,
+      "block_order": ["pending_status"],
+      "progress_dates": [],
+      "daily_progress_alias": "forbidden_pending",
+      "required_literals": ["饮食事实与已完成效果已保留", "系统将仅重试最终化", "当前不提供成功回执或进度"],
+      "forbidden_literals": ["已记录", "🔥", "🥩", "🧈", "🌾", "🥬", "💧"]
+    }
+  ]
+}
