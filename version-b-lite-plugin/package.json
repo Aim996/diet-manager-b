@@ -12,6 +12,7 @@
     "test:b-slice-crash": "npm run build && node tests/b-slice-crash-harness.mjs",
     "test:progress-reservation-concurrency": "npm run build && node tests/progress-reservation-concurrency.mjs",
     "test:repository-concurrency": "npm run build && node tests/repository-concurrency.mjs",
+    "test:undo-concurrency": "npm run build && node tests/undo-concurrency.mjs",
     "admin:backup": "node dist/admin/cli.js backup",
     "admin:restore": "node dist/admin/cli.js restore",
     "install:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-local.ps1",

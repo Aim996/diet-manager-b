@@ -1232,12 +1232,38 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         resolvedTarget.base_revision,
       );
       const preview = session.service.preview(envelope);
-      const result = session.service.execute({
-        envelope,
-        token: preview.token,
-        input_digest: preview.input_digest,
-        data_revision: preview.data_revision,
-      });
+      let result;
+      try {
+        result = session.service.execute({
+          envelope,
+          token: preview.token,
+          input_digest: preview.input_digest,
+          data_revision: preview.data_revision,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (
+          message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
+          message.startsWith("PREVIEW_STALE:data_revision")
+        ) {
+          const rechecked = resolveCorrectionTarget({
+            database: session.database,
+            authoritySecret: session.authoritySecret,
+            conversationId: request.conversation_id,
+            reference: parsed.command.target,
+          });
+          if (!rechecked.active) {
+            return nonWritingOutcome(
+              request.action,
+              request.operation_id,
+              "ignored",
+              "already_voided",
+            );
+          }
+          return failedOutcome(request.action, request.operation_id, "correction_conflict");
+        }
+        throw error;
+      }
       if (
         envelope.operations.length !== 1 ||
         result.items.length !== 1 ||

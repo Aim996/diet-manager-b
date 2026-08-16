@@ -13,14 +13,14 @@
     {
       "id": 1,
       "name": "0.1.0 合规闭环",
-      "status": "IN_PROGRESS",
-      "gate_evidence": [],
+      "status": "DONE",
+      "gate_evidence": ["docs/evidence/product-0.1.1/stage-1-undo-gate.json"],
       "reopened_by": []
     },
     {
       "id": 2,
       "name": "完整 0.1 业务补齐",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "gate_evidence": [],
       "reopened_by": []
     },

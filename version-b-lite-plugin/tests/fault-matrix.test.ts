@@ -2776,3 +2776,150 @@ describe("B-FAULT-001 correction late rollback and finalizer diagnostics", () =>
     }
   });
 });
+
+// Task 6 Step 1: undo (void) fault matrix. The public undo path crosses six fault
+// boundaries — before_fact_commit, after_event, after_effects,
+// after_inventory_business_writes, before_finalize, after_commit_before_reply. The
+// three effect boundaries (after_event/after_effects/after_inventory_business_writes)
+// and the finalizer boundary (before_finalize) already leave no partial write and no
+// repeated compensation, verified by "B-FAULT-001 correction late rollback and finalizer
+// diagnostics" above on the shared correction seam. These two tests cover the remaining
+// fact-commit and reply-lost boundaries and assert the terminal two-snapshot invariant:
+// fully unchanged, or exactly one complete void plus one compensation. Never a void
+// without compensation, a duplicate compensation, a modified original payload, negative
+// inventory or an orphaned row.
+describe("B-FAULT undo void terminal-snapshot reliability", () => {
+  function undoEnvelope(suffix: string, targetEventId: string): DomainEnvelopeInput {
+    return {
+      envelope_id: `envelope-fault-undo-${suffix}`,
+      idempotency_key: `idem-fault-undo-${suffix}`,
+      command_type: "undo_record",
+      subject_scope: "user:self",
+      source_message_id: `message-fault-undo-${suffix}`,
+      conversation_id: "conversation-b-fault-001-undo",
+      received_at: "2026-08-12T05:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      operations: [{
+        kind: "undo_record",
+        operation_id: `operation-fault-undo-${suffix}`,
+        target_event_id: targetEventId,
+        base_revision: 1,
+      }],
+    };
+  }
+
+  function originalTargetPayload(database: DatabaseSyncType, targetEventId: string): string {
+    return (database.prepare(
+      "SELECT payload_json FROM event_records WHERE event_id = ?",
+    ).get(targetEventId) as { payload_json: string }).payload_json;
+  }
+
+  function voidEventRows(database: DatabaseSyncType, targetEventId: string) {
+    return database.prepare(
+      "SELECT operation, base_revision FROM correction_events WHERE target_event_id = ? ORDER BY base_revision",
+    ).all(targetEventId);
+  }
+
+  function compensationRows(database: DatabaseSyncType) {
+    return database.prepare(
+      `SELECT direction, json_extract(payload_json, '$.quantity_delta_microunits') AS delta
+       FROM inventory_transactions WHERE reason_code = 'correction_compensation'`,
+    ).all() as Array<{ direction: string; delta: number | string }>;
+  }
+
+  function assertExactlyOneVoidPlusCompensation(
+    database: DatabaseSyncType,
+    targetEventId: string,
+    originalPayload: string,
+  ): void {
+    expect(voidEventRows(database, targetEventId)).toEqual([
+      { operation: "void_event", base_revision: 1 },
+    ]);
+    const compensation = compensationRows(database);
+    expect(compensation.length).toBe(1);
+    expect(compensation[0].direction).toBe("in");
+    expect(Number(compensation[0].delta) > 0).toBe(true);
+    expect(originalTargetPayload(database, targetEventId)).toBe(originalPayload);
+    expect(database.prepare(
+      `SELECT COUNT(*) AS count FROM inventory_batch_projections
+       WHERE json_extract(payload_json, '$.quantity_microunits') < 0`,
+    ).get()).toEqual({ count: 0 });
+    expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  }
+
+  it("before_fact_commit leaves the target fully unchanged, then recovers to one void plus compensation", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const base = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:01.000Z",
+      });
+      const targetEventId = seedCorrectionTarget(base, "undo-before-fact-commit");
+      const originalPayload = originalTargetPayload(runtime.database, targetEventId);
+      const envelope = undoEnvelope("before-fact-commit", targetEventId);
+
+      const failures: DietDomainFailureEntry[] = [];
+      const faulting = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:02.000Z",
+        fault: "before_fact_commit",
+        failureSink: (entry) => failures.push(entry),
+      });
+      const failedAttempt = attempt(faulting, envelope);
+      expect(captureError(failedAttempt.run))
+        .toEqual(new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit"));
+      expect(failures).toHaveLength(1);
+
+      // Allowed snapshot A: fully unchanged — no void event, no compensation, payload intact.
+      expect(voidEventRows(runtime.database, targetEventId)).toEqual([]);
+      expect(compensationRows(runtime.database)).toEqual([]);
+      expect(originalTargetPayload(runtime.database, targetEventId)).toBe(originalPayload);
+
+      const recovery = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:03.000Z",
+      });
+      expect(recovery.execute(failedAttempt.input).status).toBe("committed");
+      assertExactlyOneVoidPlusCompensation(runtime.database, targetEventId, originalPayload);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("after_commit_before_reply commits the void once and replays without duplicating compensation", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const base = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:01.000Z",
+      });
+      const targetEventId = seedCorrectionTarget(base, "undo-after-commit-before-reply");
+      const originalPayload = originalTargetPayload(runtime.database, targetEventId);
+      const envelope = undoEnvelope("after-commit-before-reply", targetEventId);
+
+      const failures: DietDomainFailureEntry[] = [];
+      const faulting = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:02.000Z",
+        fault: "after_mixed_finalize_commit",
+        failureSink: (entry) => failures.push(entry),
+      });
+      const failedAttempt = attempt(faulting, envelope);
+      expect(captureError(failedAttempt.run))
+        .toEqual(new Error("ENVELOPE_FINALIZE_RESPONSE_LOST:after_commit_before_reply"));
+      expect(failures).toHaveLength(1);
+
+      // The void and its compensation are already durable; only the reply was lost.
+      assertExactlyOneVoidPlusCompensation(runtime.database, targetEventId, originalPayload);
+
+      const recovery = createDietDomainService({
+        database: runtime.database, secret, now: () => "2026-08-12T05:00:03.000Z",
+      });
+      expect(recovery.execute(failedAttempt.input).status).toBe("committed");
+      // A second replay of the same token must not duplicate the compensation.
+      expect(recovery.execute(failedAttempt.input).status).toBe("committed");
+      assertExactlyOneVoidPlusCompensation(runtime.database, targetEventId, originalPayload);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+});

@@ -1,5 +1,4 @@
 import { canonicalJson } from "../authority/canonical-json.js";
-import { createMealFactIdentity, mealFactIdentityEquals, } from "../authority/meal-fact-identity.js";
 import { createWaterFactIdentity, waterFactIdentityEquals } from "../authority/water-fact-identity.js";
 import { validateAndFreezeMealFactPayload, validateAndFreezeOccurredTimeEvidence, } from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
@@ -7,6 +6,7 @@ import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { assertAuthenticatedPantryPurchaseRoot, parseBatchPayloadJson, parseProductPayloadJson, parseProjectionPayloadJson, parsePurchaseFactPayloadJson, } from "../storage/inventory-repository.js";
 import { assertAppliedInventoryLocationCorrectionAuthority, assertAuthenticatedInventoryLocationCorrectionFactAuthority, } from "./inventory-location-correction-authority.js";
 import { assertAuthenticatedPurchaseEventAuthority } from "./purchase-event-authority.js";
+import { authenticateInitialMealEvent } from "./correction-target.js";
 const QUERY_FIELDS = ["batchId", "database"];
 const LIST_QUERY_FIELDS = ["authoritySecret", "database"];
 const DATE_QUERY_FIELDS = ["authoritySecret", "database", "date", "timezone"];
@@ -214,63 +214,20 @@ export function listMealProjection(input) {
             const itemRows = query.database.prepare(`SELECT item_id, item_order, item_type, normalized_name, payload_json
          FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(row.event_id);
             try {
-                const previewAuthority = authenticateStoredPreviewAuthority(row.preview_payload_json, query.authoritySecret);
-                if (row.input_digest !== row.idempotency_input_digest) {
-                    return invalid("meal_event_identity");
-                }
-                const binding = previewAuthority.binding;
-                if (binding.preview_id !== row.envelope_id ||
-                    binding.input_digest !== row.input_digest)
-                    return invalid("meal_event_identity");
-                if (previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2" ||
-                    previewAuthority.preview_authority_kind === "diet-manager/server-preview/v4") {
-                    const material = previewAuthority.preview_authority_kind === "diet-manager/server-preview/v2"
-                        ? previewAuthority.meal_fact_preview_material
-                        : previewAuthority.purchase_fact_preview_material;
-                    if (material === undefined || material.input_digest !== row.input_digest) {
-                        return invalid("meal_event_identity");
-                    }
-                    const storedMealIds = query.database.prepare(`SELECT event_id FROM event_records
-             WHERE envelope_id = ? AND event_type = 'diet_meal'
-             ORDER BY event_id`).all(row.envelope_id);
-                    const expectedMealIds = material.meal_fact_identities
-                        .map((identity) => identity.event_id)
-                        .sort();
-                    if (storedMealIds.length !== expectedMealIds.length ||
-                        storedMealIds.some((stored, index) => stored.event_id !== expectedMealIds[index]))
-                        return invalid("meal_event_identity");
-                    const expected = material.meal_fact_identities.find((identity) => identity.event_id === row.event_id && identity.operation_id === row.operation_id);
-                    if (!expected)
-                        return invalid("meal_event_identity");
-                    const actual = createMealFactIdentity({
-                        sequence: expected.sequence,
-                        event_id: row.event_id,
-                        operation_id: row.operation_id,
-                        schema_version: row.schema_version,
-                        event_type: row.event_type,
-                        fact_kind: row.fact_kind,
-                        source_message_id: row.source_message_id,
-                        conversation_id: row.conversation_id,
-                        received_at: row.received_at,
-                        occurred_at_text: row.occurred_at_text,
-                        meal_id: row.meal_id,
-                        meal_slot: row.meal_slot,
-                        payload: eventPayload,
-                        items: itemRows.map((item) => ({
-                            item_id: item.item_id,
-                            item_order: item.item_order,
-                            item_type: item.item_type,
-                            normalized_name: item.normalized_name,
-                            payload: parseCanonicalRecord(item.payload_json, "meal_item"),
-                        })),
-                    });
-                    if (!mealFactIdentityEquals(actual, expected))
-                        return invalid("meal_event_identity");
-                }
-                else {
-                    if (["source_text", "occurred_time", "subject", "context"].some((field) => Object.hasOwn(eventPayload, field)))
-                        return invalid("meal_event_identity");
-                }
+                authenticateInitialMealEvent({
+                    database: query.database,
+                    authoritySecret: query.authoritySecret,
+                    eventId: row.event_id,
+                    row,
+                    eventPayload,
+                    items: itemRows.map((item) => ({
+                        item_id: item.item_id,
+                        item_order: item.item_order,
+                        item_type: item.item_type,
+                        normalized_name: item.normalized_name,
+                        payload: parseCanonicalRecord(item.payload_json, "meal_item"),
+                    })),
+                });
             }
             catch (error) {
                 if (error instanceof Error &&

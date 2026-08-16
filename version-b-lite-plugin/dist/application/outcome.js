@@ -59,7 +59,7 @@ export function nonWritingOutcome(action, operationId, status, reasonCode, clari
             }) }),
     });
 }
-export function committedOutcome(action, operationId, status, recordId, recordIds, nutritionItems, receipt) {
+export function committedOutcome(action, operationId, status, recordId, recordIds, nutritionItems, receipt, correction) {
     return Object.freeze({
         action,
         status,
@@ -79,6 +79,14 @@ export function committedOutcome(action, operationId, status, recordId, recordId
                     nutrition: Object.freeze({ ...item.nutrition }),
                     inventory: Object.freeze({ ...item.inventory }),
                 }))),
+            }) }),
+        ...(correction === undefined ? {} : { correction: Object.freeze({
+                correction_id: correction.correction_id,
+                target_event_id: correction.target_event_id,
+                revision: correction.revision,
+                operation: correction.operation,
+                current_active: correction.current_active,
+                compensation_transaction_id: correction.compensation_transaction_id,
             }) }),
     });
 }

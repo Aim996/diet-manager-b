@@ -3,6 +3,7 @@ import { validateAndFreezeMealFactPayload, validateAndFreezeOccurredTimeEvidence
 import { processInventoryEffect, } from "../repository/inventory-effects.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import { createReplacementProgressReservation, reservationFromEventPayload, } from "../repository/progress-reservation.js";
+import { readEffectiveMealState, } from "../repository/correction-target.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { applyPantryAllocationsInTransaction, assertCurrentInventoryLocationCorrectionLineage, createPantryProjectionPayload, listPantryAllocationCandidates, pendingLocationCorrectionBatchIds, pendingMealInventoryAllocationBatchIds, parseProjectionPayloadJson, parseInventoryAllocationPlan, preparePantryPurchase, } from "../storage/inventory-repository.js";
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
@@ -13,7 +14,7 @@ import { validateAndFreezeInventoryLocationCorrectionFactPayload, validateAndFre
 import { buildInventoryLocationCorrectionReceiptItem, buildPantryPurchaseReceiptItem, } from "./receipt.js";
 import { buildNutritionRecords, } from "../nutrition/nutrition-service.js";
 import { assertNutritionRecordsPersisted, persistNutritionRecords, } from "../nutrition/nutrition-repository.js";
-import { validateAndFreezeResolvedNutritionEvidence, } from "../nutrition/types.js";
+import { validateAndFreezeResolvedNutritionEvidence } from "../nutrition/types.js";
 import { addNutritionVectors, resolveInventoryMatch, scaleNutritionVector, selectNutritionSource, } from "./rules.js";
 function freezeJson(value) {
     if (Array.isArray(value)) {
@@ -28,88 +29,13 @@ function freezeJson(value) {
     }
     return value;
 }
-function readEffectiveMealState(database, targetEventId) {
-    const event = database.prepare(`SELECT event_id, occurred_at_text, meal_slot, payload_json
-     FROM event_records WHERE event_id = ? AND event_type = 'diet_meal'`).get(targetEventId);
-    if (!event)
-        throw new Error("CORRECTION_TARGET_INVALID:event");
-    const parsedEventPayload = parseCanonical(event.payload_json, "correction_target_event");
-    const eventPayload = validatedMealFactPayload(parsedEventPayload, event.occurred_at_text, "correction_target_event");
-    reservationFromEventPayload(eventPayload, "diet_meal");
-    if (eventPayload.authority_kind !== "diet-manager/meal-fact/v1" ||
-        (eventPayload.location !== "home" && eventPayload.location !== "outside") ||
-        eventPayload.timezone !== "Asia/Shanghai")
-        throw new Error("CORRECTION_TARGET_INVALID:event_payload");
-    const itemRows = database.prepare(`SELECT item_id, item_order, item_type, normalized_name, payload_json
-     FROM meal_items WHERE event_id = ? ORDER BY item_order`).all(targetEventId);
-    if (itemRows.length === 0)
-        throw new Error("CORRECTION_TARGET_INVALID:items");
-    const items = itemRows.map((item, index) => {
-        if (item.item_order !== index)
-            throw new Error("CORRECTION_TARGET_INVALID:item_order");
-        const payload = parseCanonical(item.payload_json, "correction_target_item");
-        if (payload.authority_kind !== "diet-manager/meal-item/v1" ||
-            typeof payload.amount !== "object" || payload.amount === null || Array.isArray(payload.amount) ||
-            !Array.isArray(payload.nutrition_sources))
-            throw new Error("CORRECTION_TARGET_INVALID:item_payload");
-        return {
-            item_id: item.item_id,
-            item_order: item.item_order,
-            item_type: item.item_type,
-            normalized_name: item.normalized_name,
-            amount: storedStructuredAmount(payload.amount, "effective_meal_amount"),
-            nutrition_sources: payload.nutrition_sources,
-            ...(payload.nutrition_evidence === undefined
-                ? {}
-                : { nutrition_evidence: validateAndFreezeResolvedNutritionEvidence(payload.nutrition_evidence) }),
-        };
-    });
-    let snapshot = freezeJson({
-        active: true,
-        occurred_at: event.occurred_at_text,
-        meal_slot: event.meal_slot,
-        location: eventPayload.location,
-        timezone: "Asia/Shanghai",
-        items,
-    });
-    let revision = 1;
-    const corrections = database.prepare(`SELECT c.base_revision, c.payload_json, e.event_type, b.effect_state, b.result_status
-     FROM correction_events c
-     JOIN event_records e ON e.operation_id = c.request_id
-       AND e.event_type IN ('diet_correction','nutrition_supplemented')
-     JOIN effect_bundle_commits b
-       ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
-     WHERE c.target_event_id = ? ORDER BY c.base_revision`).all(targetEventId);
-    for (const correction of corrections) {
-        if (correction.effect_state === "pending") {
-            throw new Error("CORRECTION_TARGET_INVALID:pending_correction");
-        }
-        if (!((correction.effect_state === "succeeded" && correction.result_status === "applied") ||
-            (correction.effect_state === "permanent_business_skip" &&
-                correction.result_status === "applied_with_issues"))) {
-            throw new Error("CORRECTION_TARGET_INVALID:chain_state");
-        }
-        const payload = parseCanonical(correction.payload_json, "correction_chain");
-        reservationFromEventPayload(payload, correction.event_type);
-        if (correction.base_revision !== revision || payload.base_revision !== revision ||
-            payload.target_event_id !== targetEventId ||
-            payload.authority_kind !== "diet-manager/correction-fact/v1" ||
-            canonicalJson(payload.before_snapshot) !== canonicalJson(snapshot) ||
-            typeof payload.after_snapshot !== "object" || payload.after_snapshot === null ||
-            Array.isArray(payload.after_snapshot))
-            throw new Error("CORRECTION_TARGET_INVALID:chain");
-        snapshot = freezeJson(JSON.parse(canonicalJson(payload.after_snapshot)));
-        revision += 1;
-    }
-    return Object.freeze({ revision, snapshot });
-}
 export function prepareCorrectionOperation(input) {
     const operation = input.operation;
     if ((operation.kind !== "correct_record" && operation.kind !== "undo_record") ||
         (input.commandType !== "correct_record" && input.commandType !== "undo_record") ||
         operation.kind !== input.commandType)
         return invalid("correction_operation");
-    const current = readEffectiveMealState(input.database, operation.target_event_id);
+    const current = readEffectiveMealState(input.database, input.secret, operation.target_event_id);
     if (current.snapshot.items.some((item) => item.amount.observed_microunits === null)) {
         throw new Error("DIET_DOMAIN_REQUEST_INVALID:unknown_target_amount");
     }
@@ -158,11 +84,14 @@ export function prepareCorrectionOperation(input) {
         }
     }
     else {
+        if (!current.snapshot.active) {
+            throw new Error("CORRECTION_TARGET_INVALID:already_void");
+        }
         afterSnapshot = freezeJson({
             ...current.snapshot,
-            active: !current.snapshot.active,
+            active: false,
         });
-        operationKind = current.snapshot.active ? "void_event" : "restore_event";
+        operationKind = "void_event";
     }
     if (canonicalJson(afterSnapshot) === canonicalJson(current.snapshot)) {
         throw new Error("CORRECTION_TARGET_INVALID:no_change");
@@ -2512,11 +2441,22 @@ export function applyCorrectionEffects(input) {
                 outbox.effect_kind === "correction_inventory_compensation")) {
                 throw new Error("CORRECTION_EFFECT_INVALID:compensation_outbox");
             }
-            const originalTransactionId = deriveDomainId("transaction", target.idempotency_key, itemOrder);
-            const originalTransaction = input.database.prepare(`SELECT transaction_id, product_id, batch_id, direction, unit, payload_json
+            // The meal keys its out transactions by the item's inventory-effect id in both
+            // write paths (the legacy single-deduction write and the pantry-v2 allocation
+            // write), never by the target's raw idempotency key. Re-derive that effect id so
+            // undo/amount correction finds the actual deducted batch instead of guessing.
+            const originalTransactions = input.database.prepare(`SELECT transaction_id, product_id, batch_id, direction, unit, payload_json
          FROM inventory_transactions
-         WHERE transaction_id = ? AND event_id = ? AND direction = 'out'
-           AND reason_code = 'meal_consumption' AND lifecycle_status = 'active'`).get(originalTransactionId, correction.target_event_id);
+         WHERE event_id = ? AND idempotency_key = ? AND direction = 'out'
+           AND reason_code = 'meal_consumption' AND lifecycle_status = 'active'
+         ORDER BY transaction_id`).all(correction.target_event_id, mealEffectId(target.idempotency_key, itemOrder, 0));
+            if (originalTransactions.length > 1) {
+                // A single meal item can span multiple pantry batches. Reversing that split
+                // across batches needs an allocation-aware compensation plan that 0.1.1 does
+                // not model; fail closed rather than silently under-compensate a batch.
+                throw new Error("CORRECTION_EFFECT_INVALID:multiple_allocations");
+            }
+            const originalTransaction = originalTransactions[0];
             if (originalTransaction) {
                 const ledgerRows = [originalTransaction, ...input.database.prepare(`SELECT transaction_id, product_id, batch_id, direction, unit, payload_json
            FROM inventory_transactions
@@ -2527,13 +2467,15 @@ export function applyCorrectionEffects(input) {
                 for (const ledgerRow of ledgerRows) {
                     const ledgerPayload = parseCanonical(ledgerRow.payload_json, "correction_inventory_ledger");
                     const signedDelta = ledgerPayload.quantity_delta_microunits;
-                    if (Object.keys(ledgerPayload).sort().join("\u0000") !== [
-                        "authority_kind",
-                        "quantity_after_microunits",
-                        "quantity_delta_microunits",
-                        "unit",
-                    ].sort().join("\u0000") ||
-                        ledgerPayload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
+                    const kind = ledgerPayload.authority_kind;
+                    const isV1 = kind === "diet-manager/inventory-transaction/v1" &&
+                        Object.keys(ledgerPayload).sort().join("\u0000") ===
+                            ["authority_kind", "quantity_after_microunits", "quantity_delta_microunits", "unit"].sort().join("\u0000");
+                    const isV2 = kind === "diet-manager/inventory-transaction/v2" &&
+                        Object.keys(ledgerPayload).sort().join("\u0000") ===
+                            ["allocation_index", "authority_kind", "quantity_after_microunits", "quantity_delta_microunits", "selection_basis", "unit"].sort().join("\u0000") &&
+                        ["explicit_batch", "fefo", "fifo"].includes(String(ledgerPayload.selection_basis));
+                    if ((!isV1 && !isV2) ||
                         ledgerPayload.unit !== originalTransaction.unit ||
                         !Number.isSafeInteger(ledgerPayload.quantity_after_microunits) ||
                         ledgerPayload.quantity_after_microunits < 0 ||

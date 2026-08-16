@@ -3376,20 +3376,34 @@ export function applyCorrectionEffects(
         outbox.effect_kind === "correction_inventory_compensation")) {
         throw new Error("CORRECTION_EFFECT_INVALID:compensation_outbox");
       }
-      const originalTransactionId = deriveDomainId("transaction", target.idempotency_key, itemOrder);
-      const originalTransaction = input.database.prepare(
+      // The meal keys its out transactions by the item's inventory-effect id in both
+      // write paths (the legacy single-deduction write and the pantry-v2 allocation
+      // write), never by the target's raw idempotency key. Re-derive that effect id so
+      // undo/amount correction finds the actual deducted batch instead of guessing.
+      const originalTransactions = input.database.prepare(
         `SELECT transaction_id, product_id, batch_id, direction, unit, payload_json
          FROM inventory_transactions
-         WHERE transaction_id = ? AND event_id = ? AND direction = 'out'
-           AND reason_code = 'meal_consumption' AND lifecycle_status = 'active'`,
-      ).get(originalTransactionId, correction.target_event_id) as {
+         WHERE event_id = ? AND idempotency_key = ? AND direction = 'out'
+           AND reason_code = 'meal_consumption' AND lifecycle_status = 'active'
+         ORDER BY transaction_id`,
+      ).all(
+        correction.target_event_id,
+        mealEffectId(target.idempotency_key, itemOrder, 0),
+      ) as Array<{
         transaction_id: string;
         product_id: string;
         batch_id: string;
         direction: string;
         unit: string;
         payload_json: string;
-      } | undefined;
+      }>;
+      if (originalTransactions.length > 1) {
+        // A single meal item can span multiple pantry batches. Reversing that split
+        // across batches needs an allocation-aware compensation plan that 0.1.1 does
+        // not model; fail closed rather than silently under-compensate a batch.
+        throw new Error("CORRECTION_EFFECT_INVALID:multiple_allocations");
+      }
+      const originalTransaction = originalTransactions[0];
       if (originalTransaction) {
         const ledgerRows = [originalTransaction, ...input.database.prepare(
           `SELECT transaction_id, product_id, batch_id, direction, unit, payload_json
@@ -3412,14 +3426,16 @@ export function applyCorrectionEffects(
             "correction_inventory_ledger",
           );
           const signedDelta = ledgerPayload.quantity_delta_microunits;
+          const kind = ledgerPayload.authority_kind;
+          const isV1 = kind === "diet-manager/inventory-transaction/v1" &&
+            Object.keys(ledgerPayload).sort().join("\u0000") ===
+              ["authority_kind", "quantity_after_microunits", "quantity_delta_microunits", "unit"].sort().join("\u0000");
+          const isV2 = kind === "diet-manager/inventory-transaction/v2" &&
+            Object.keys(ledgerPayload).sort().join("\u0000") ===
+              ["allocation_index", "authority_kind", "quantity_after_microunits", "quantity_delta_microunits", "selection_basis", "unit"].sort().join("\u0000") &&
+            ["explicit_batch", "fefo", "fifo"].includes(String(ledgerPayload.selection_basis));
           if (
-            Object.keys(ledgerPayload).sort().join("\u0000") !== [
-              "authority_kind",
-              "quantity_after_microunits",
-              "quantity_delta_microunits",
-              "unit",
-            ].sort().join("\u0000") ||
-            ledgerPayload.authority_kind !== "diet-manager/inventory-transaction/v1" ||
+            (!isV1 && !isV2) ||
             ledgerPayload.unit !== originalTransaction.unit ||
             !Number.isSafeInteger(ledgerPayload.quantity_after_microunits) ||
             (ledgerPayload.quantity_after_microunits as number) < 0 ||

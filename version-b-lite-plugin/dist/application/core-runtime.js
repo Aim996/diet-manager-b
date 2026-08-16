@@ -7,6 +7,7 @@ import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import { dietManagerActions, } from "../contracts.js";
 import { resolveProductIdentity, resolveExpiration, } from "../domain/inventory-service.js";
 import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
+import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
 import { createDietDomainService } from "../domain/service.js";
 import { cloneCoreParseInput } from "../parser/input-authority.js";
 import { parseCoreCommand } from "../parser/parse-command.js";
@@ -14,7 +15,8 @@ import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { openDietDatabase } from "../storage/database.js";
 import { assertCurrentInventoryLocationCorrectionLineage, parseProductPayloadJson, parseProjectionPayloadJson, } from "../storage/inventory-repository.js";
 import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
-import { mapResolvedNutritionAmountMicrounits, mapResolvedNutritionEvidenceToDomainSource, mapCoreCandidateToEnvelope, } from "./mapping.js";
+import { resolveCorrectionTarget } from "../repository/correction-target.js";
+import { mapResolvedNutritionAmountMicrounits, mapResolvedNutritionEvidenceToDomainSource, mapCoreCandidateToEnvelope, mapUndoCandidateToEnvelope, } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { resolveNutrition } from "../nutrition/source-client.js";
@@ -756,7 +758,9 @@ function recordId(database, envelope, operation) {
                     : "correction_kind" in operation && operation.correction_kind === "nutrition_supplement"
                         ? { event_type: "nutrition_supplemented", fact_kind: "correction" }
                         : { event_type: "diet_correction", fact_kind: "correction" }
-                : { event_type: "diet_meal", fact_kind: "meal" };
+                : operation.kind === "undo_record"
+                    ? { event_type: "diet_correction", fact_kind: "correction" }
+                    : { event_type: "diet_meal", fact_kind: "meal" };
     if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
         rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
         throw new Error("CORE_APPLICATION_RESULT_INVALID:event_identity");
@@ -926,7 +930,7 @@ export function handleCoreRequest(runtime, value) {
             return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
         }
     }
-    if (!["record_meal", "record_water", "add_inventory", "correct_record"].includes(request.action)) {
+    if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record"].includes(request.action)) {
         return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
     }
     let parsed;
@@ -967,6 +971,69 @@ export function handleCoreRequest(runtime, value) {
             }
             const result = executeCandidate(runtime, request, parsed.command, Object.freeze([]), session, resolution.resolution);
             return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+        }
+        if (parsed.command.action === "undo_record") {
+            const session = acquireSession(runtime);
+            const resolvedTarget = resolveCorrectionTarget({
+                database: session.database,
+                authoritySecret: session.authoritySecret,
+                conversationId: request.conversation_id,
+                reference: parsed.command.target,
+            });
+            if (!resolvedTarget.active) {
+                return nonWritingOutcome(request.action, request.operation_id, "ignored", "already_voided");
+            }
+            const envelope = mapUndoCandidateToEnvelope(request, parsed.command, resolvedTarget.target_event_id, resolvedTarget.base_revision);
+            const preview = session.service.preview(envelope);
+            let result;
+            try {
+                result = session.service.execute({
+                    envelope,
+                    token: preview.token,
+                    input_digest: preview.input_digest,
+                    data_revision: preview.data_revision,
+                });
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : "";
+                if (message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
+                    message.startsWith("PREVIEW_STALE:data_revision")) {
+                    const rechecked = resolveCorrectionTarget({
+                        database: session.database,
+                        authoritySecret: session.authoritySecret,
+                        conversationId: request.conversation_id,
+                        reference: parsed.command.target,
+                    });
+                    if (!rechecked.active) {
+                        return nonWritingOutcome(request.action, request.operation_id, "ignored", "already_voided");
+                    }
+                    return failedOutcome(request.action, request.operation_id, "correction_conflict");
+                }
+                throw error;
+            }
+            if (envelope.operations.length !== 1 ||
+                result.items.length !== 1 ||
+                (result.status !== "committed" && result.status !== "committed_with_issues") ||
+                result.items[0]?.operation_id !== envelope.operations[0]?.operation_id ||
+                (result.items[0]?.status !== "committed" && result.items[0]?.status !== "committed_with_issues")) {
+                throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
+            }
+            const correctionResult = readAppliedCorrectionResult({
+                database: session.database,
+                envelopeId: envelope.envelope_id,
+                operationId: parsed.command.operation_id,
+                operationSequence: 0,
+                idempotencyKey: envelope.idempotency_key,
+            });
+            const correctionView = {
+                correction_id: correctionResult.correction_id,
+                target_event_id: correctionResult.target_event_id,
+                revision: correctionResult.revision,
+                operation: "void_event",
+                current_active: false,
+                compensation_transaction_id: correctionResult.compensation_transaction_id,
+            };
+            return committedOutcome(request.action, request.operation_id, correctionResult.status, recordId(session.database, envelope, envelope.operations[0]), undefined, undefined, undefined, correctionView);
         }
         const result = executeCandidate(runtime, request, parsed.command);
         return committedOutcome(request.action, request.operation_id, result.status, result.record_id);

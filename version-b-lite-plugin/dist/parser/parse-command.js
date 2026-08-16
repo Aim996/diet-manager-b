@@ -1,5 +1,6 @@
 import { classifyCompletion } from "./completion.js";
 import { resolveMealContext } from "./context.js";
+import { parseCorrectionCommand } from "./correction.js";
 import { cloneCoreParseInput } from "./input-authority.js";
 import { resolveInventoryDirective } from "./inventory-directive.js";
 import { classifyMealLiquid, resolveWaterFrames, } from "./liquid.js";
@@ -254,6 +255,9 @@ function mealCandidate(input, completion, occurredTime, meal, retained) {
 /** Compose the deterministic selected-core parser from ordinary input authority. */
 export function parseCoreCommand(value) {
     const input = cloneCoreParseInput(value);
+    const correction = parseCorrectionCommand(input);
+    if (correction !== undefined)
+        return correction;
     const nutritionSupplement = nutritionSupplementCandidate(input);
     if (nutritionSupplement !== null) {
         return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
