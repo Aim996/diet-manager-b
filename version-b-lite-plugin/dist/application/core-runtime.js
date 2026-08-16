@@ -145,14 +145,31 @@ try {
   $stream.Dispose()
 }
 `;
+// Windows environment names are case-insensitive, but spreading process.env yields
+// a case-sensitive object: `{ ...process.env, PSModulePath: x }` leaves a
+// pre-existing PSMODULEPATH entry in place and the child resolves that one instead.
+// Drop every case-insensitive match before applying our own values.
+function childEnvironment(overrides) {
+    const reserved = new Set(Object.keys(overrides).map((key) => key.toUpperCase()));
+    const env = {};
+    for (const [key, value] of Object.entries(process.env)) {
+        if (!reserved.has(key.toUpperCase()))
+            env[key] = value;
+    }
+    return Object.assign(env, overrides);
+}
+// The ACL audit pins PSModulePath to Windows PowerShell's own system modules:
+// an inherited path lets PowerShell 7's Core-only Microsoft.PowerShell.Security
+// win command discovery, so Get-Acl and Set-Acl fail to autoload entirely.
 function powershell(script, path) {
     const systemRoot = process.env.SystemRoot;
     if (typeof systemRoot !== "string" || systemRoot.length === 0)
         return invalid("secret", "permissions");
-    const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const shellHome = join(systemRoot, "System32", "WindowsPowerShell", "v1.0");
+    const executable = join(shellHome, "powershell.exe");
     const result = spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script], {
         encoding: "utf8",
-        env: { ...process.env, DIET_SECRET_PATH: path },
+        env: childEnvironment({ PSModulePath: join(shellHome, "Modules"), DIET_SECRET_PATH: path }),
         timeout: 10_000,
         maxBuffer: 16_384,
         windowsHide: true,
