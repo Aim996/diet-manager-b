@@ -2,7 +2,7 @@
 
 饮食管家 B 是一个以 Skill 为智能体入口、SQLite 为唯一业务后端的饮食记录项目。OpenClaw、MCP 和其他智能体平台只提供薄适配层，不复制业务逻辑。
 
-> 当前状态：v1.0 的 0.1.0 主链已完成构建与 OpenClaw 插件校验，进入用户真实环境验收。当前适合本地链接安装和受控数据测试；跨机器加密灾备与后续 0.1 增量仍未完成。
+> 当前状态：v1.0 的 0.1.0 主链已完成构建与 OpenClaw 插件校验；该版工程快照冻结于 `releases/v0.1`（只读）。当前目标版本是 0.1.1：按批准的分段计划补齐撤销、纠正、多商品采购、加密灾备与安装升级闭环。早先"进入用户真实环境验收"的表述属于历史结论；阶段 1 的撤销能力未关闭前，0.1.1 不得发布。
 
 ## 当前路线
 
@@ -12,7 +12,7 @@
 - `FactCommit` 失败时，允许产生独立、脱敏的技术日志，但饮食记录、库存、营养、Issue、业务 outbox 和进度必须保持零写入。
 - OpenClaw/MCP 仅转发同一套 B 能力。
 
-当前唯一产品权威见 [饮食管家-开发约束与需求-v1.0.md](./饮食管家-开发约束与需求-v1.0.md)，本轮开发报告见 [PRODUCT-v1.0-report.md](./docs/work-items/PRODUCT-v1.0-report.md)。旧 0.3/0.4 文档仅保留为历史参考，不再覆盖 v1.0。
+当前唯一产品权威见 [饮食管家-开发约束与需求-v1.0.md](./饮食管家-开发约束与需求-v1.0.md)；0.1.1 交付按 [批准设计](./docs/superpowers/specs/2026-08-15-complete-0.1x-staged-development-design.md) 与 [分段实施计划](./docs/superpowers/plans/2026-08-15-complete-0.1x-staged-development.md) 推进，阶段状态见 [PRODUCT-0.1.1-ledger.json](./docs/work-items/PRODUCT-0.1.1-ledger.json)。本轮开发报告见 [PRODUCT-v1.0-report.md](./docs/work-items/PRODUCT-v1.0-report.md)。旧 0.2/0.3/0.4 计划已归档至 `docs/archive/legacy-plans/`，仅保留为历史参考，不再覆盖 v1.0。
 
 `B-STOR-002` 的实现报告、独立复核和证据分别见 [实现报告](./docs/work-items/B-STOR-002-report.md)、[复核报告](./docs/work-items/B-STOR-002-review.md) 与 [EV-20260812-029](./docs/evidence/EV-20260812-029-b-stor-002.md)。当前公开草稿 PR 为 [#8](https://github.com/Aim996/diet-manager-b/pull/8)。
 

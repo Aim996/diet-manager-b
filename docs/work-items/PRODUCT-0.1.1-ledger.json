@@ -1,0 +1,51 @@
+{
+  "schema_version": "diet-manager/product-ledger/v1",
+  "product_version": "0.1.1",
+  "authority": "饮食管家-开发约束与需求-v1.0.md",
+  "stages": [
+    {
+      "id": 0,
+      "name": "权威统一与可重复基线",
+      "status": "IN_PROGRESS",
+      "gate_evidence": [],
+      "reopened_by": []
+    },
+    {
+      "id": 1,
+      "name": "0.1.0 合规闭环",
+      "status": "NOT_STARTED",
+      "gate_evidence": [],
+      "reopened_by": []
+    },
+    {
+      "id": 2,
+      "name": "完整 0.1 业务补齐",
+      "status": "NOT_STARTED",
+      "gate_evidence": [],
+      "reopened_by": []
+    },
+    {
+      "id": 3,
+      "name": "安装、升级与灾备闭环",
+      "status": "NOT_STARTED",
+      "gate_evidence": [],
+      "reopened_by": []
+    },
+    {
+      "id": 4,
+      "name": "真实环境产品验收",
+      "status": "NOT_STARTED",
+      "gate_evidence": [],
+      "reopened_by": []
+    },
+    {
+      "id": 5,
+      "name": "不可变候选与正式发布",
+      "status": "NOT_STARTED",
+      "gate_evidence": [],
+      "reopened_by": []
+    }
+  ],
+  "candidates": [],
+  "accepted_candidate": null
+}

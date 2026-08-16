@@ -1,18 +1,21 @@
 # 饮食管家：当前计划入口
 
-当前唯一计划入口是 `总功能开发计划0.3.md`。旧 `总功能开发计划0.2.md` 与 `总功能开发计划.md` 仅为历史输入，不再维护现行状态。
+现行产品需求的唯一权威是仓库根的《[饮食管家-开发约束与需求-v1.0.md](./饮食管家-开发约束与需求-v1.0.md)》。`releases/v0.1` 是 0.1.0 的冻结工程快照（只读）；当前目标版本是 **0.1.1**。
 
-所有路线都面向智能体提供 Skill 层：A 为纯 Skill；B/C 为 Skill 加确定性插件后端。插件、存储和领域服务只是供 Skill 调用的执行后端，不是独立产品。当前仍不可安装：PRODUCT-0.1/0.2 的业务、正式存储、安装与发布门均未完成。DOC-0.3批准链已由`EV-20260809-011`关闭；`SH-SAFE-BASE-001`现已启动并进入测试先行阶段，A/共享验证器/当前重验已因测试变化重开，等待本任务终态后复验。
+0.1.1 按以下两份文件推进，阶段状态记录在台账中：
 
-本目录仍保留三版本基底，用于并行验证候选实现路线。三个版本解决同一件事：理解用户口语中的“吃了什么”与“买了什么”，查询或改变家庭库存，选择可追溯的营养资料，并把正式数据写入预先指定的位置。
+1. 批准设计：[docs/superpowers/specs/2026-08-15-complete-0.1x-staged-development-design.md](./docs/superpowers/specs/2026-08-15-complete-0.1x-staged-development-design.md)
+2. 分段实施计划：[docs/superpowers/plans/2026-08-15-complete-0.1x-staged-development.md](./docs/superpowers/plans/2026-08-15-complete-0.1x-staged-development.md)
+3. 阶段台账：[docs/work-items/PRODUCT-0.1.1-ledger.json](./docs/work-items/PRODUCT-0.1.1-ledger.json)
+
+旧《总功能开发计划》系列（0.1–0.4）已全部归档至 `docs/archive/legacy-plans/`，仅用于追溯历史，不再决定任何新任务范围、完成状态或发布结论。
 
 ## 从哪里看起
 
-1. `docs/0.1-foundation-design.md`：共同目的、范围和三个版本的差异。
-2. `shared/business-contract.md`：三个版本必须遵守的业务语义。
-3. `shared/acceptance-cases/cases.json`：后续公平比较使用的共同口语案例。
-4. `version-a-skill-only/`：纯 Skill 对照版本。
-5. `version-b-lite-plugin/`：小 Skill + 单一插件工具版本。
-6. `version-c-strict-plugin/`：Skill + 强约束插件版本。
+1. `饮食管家-开发约束与需求-v1.0.md`：产品定义、8 条硬不变式、需求与切片。
+2. `version-b-lite-plugin/`：唯一主线（B 路线，Skill + TypeScript/SQLite 插件）。
+3. `docs/work-items/`：任务 brief、报告、复核与台账。
+4. `docs/evidence/`：不可变证据链。
+5. `version-a-skill-only/`、`version-c-strict-plugin/`：历史对照版本，已停止开发。
 
-当前阶段是“基底”：要求结构清楚、边界明确、测试入口可运行；不代表完整饮食记账能力已经实现，也不代表产品可安装。
+当前阶段目标：完成 0.1.1 的六阶段交付（治理统一 → 撤销闭环 → 完整业务 → 安装灾备 → 真实验收 → 不可变发布）。阶段 1 的撤销能力关闭前，产品不得宣称可发布。
