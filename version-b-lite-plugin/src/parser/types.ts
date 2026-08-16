@@ -244,13 +244,26 @@ export interface CoreNutritionSupplementCandidate {
   readonly subject: Readonly<CoreSubjectEvidence>;
 }
 
+export type CoreCorrectionTargetReference =
+  | Readonly<{ readonly kind: "event_id"; readonly event_id: string }>
+  | Readonly<{ readonly kind: "latest_meal_in_conversation" }>;
+
+export interface CoreUndoCommandCandidate {
+  readonly action: "undo_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly target: CoreCorrectionTargetReference;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
   | Readonly<CoreInventoryCommandCandidate>
   | Readonly<CorePurchaseCommandCandidate>
   | Readonly<CoreInventoryLocationCorrectionCandidate>
-  | Readonly<CoreNutritionSupplementCandidate>;
+  | Readonly<CoreNutritionSupplementCandidate>
+  | Readonly<CoreUndoCommandCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;
@@ -271,10 +284,11 @@ export type CoreIgnoreReason =
 export type CoreClarificationReason =
   | "occurred_date_ambiguous"
   | "unsupported_command"
-  | "amount_ambiguous";
+  | "amount_ambiguous"
+  | "target_ambiguous";
 
 export type CoreRecognizedAction =
-  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record">
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record">
   | "health_advice";
 
 export type CoreIgnoredResult =
@@ -340,6 +354,14 @@ export type CoreClarificationResult =
       disposition: "needs_clarification";
       action: "health_advice";
       reason_code: "unsupported_command";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "undo_record";
+      reason_code: "target_ambiguous";
       question: string;
       occurred_time?: never;
       context_id?: never;

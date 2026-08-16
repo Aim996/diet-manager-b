@@ -809,6 +809,21 @@ describe("selected core command composition", () => {
     expect(result.disposition).toBe("needs_clarification");
     expect(Object.hasOwn(result, "command")).toBe(false);
   });
+
+  it("dispatches the bounded undo family before pantry/meal parsing", () => {
+    const input = {
+      ...parseInput(selectedCase("CASE-MEAL-021")),
+      source_text: "撤销刚才那条饮食记录",
+    };
+
+    expect(parseCoreCommand(input)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "undo_record",
+        target: { kind: "latest_meal_in_conversation" },
+      },
+    });
+  });
 });
 
 describe("core parser quality boundaries", () => {
