@@ -69,10 +69,22 @@ foreach ($value in @($current.Value, 'S-1-5-18', 'S-1-5-32-544')) {
 Set-Acl -LiteralPath $env:DIET_SECRET_PATH -AclObject $acl
 `;
 
+// Windows environment names are case-insensitive; a plain spread leaves a
+// pre-existing PSMODULEPATH in place and the child resolves that one instead.
+function childEnvironment(overrides: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
+  const reserved = new Set(Object.keys(overrides).map((key) => key.toUpperCase()));
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!reserved.has(key.toUpperCase())) env[key] = value;
+  }
+  return Object.assign(env, overrides);
+}
+
 function powershell(script: string, path: string): string {
+  const shellHome = `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0`;
   const result = spawnSync(POWERSHELL_EXE, ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8", windowsHide: true,
-    env: { ...process.env, DIET_SECRET_PATH: path },
+    env: childEnvironment({ PSModulePath: join(shellHome, "Modules"), DIET_SECRET_PATH: path }),
   });
   if (result.status !== 0) throw new Error(`PowerShell failed ${result.status}: ${result.stderr}`);
   return result.stdout.trim();
