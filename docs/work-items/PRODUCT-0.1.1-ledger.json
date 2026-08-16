@@ -6,14 +6,14 @@
     {
       "id": 0,
       "name": "权威统一与可重复基线",
-      "status": "IN_PROGRESS",
-      "gate_evidence": [],
+      "status": "DONE",
+      "gate_evidence": ["docs/evidence/product-0.1.1/stage-0-baseline.json"],
       "reopened_by": []
     },
     {
       "id": 1,
       "name": "0.1.0 合规闭环",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "gate_evidence": [],
       "reopened_by": []
     },
