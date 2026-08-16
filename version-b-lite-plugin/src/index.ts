@@ -1,6 +1,7 @@
 export { default, dietManagerParameters } from "./openclaw/plugin.js";
 
 export type {
+  CorrectionOutcomeView,
   DietManagerAction,
   DietManagerItem,
   DietManagerOutcome,

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import casesCatalog from "../../shared/acceptance-cases/cases.json";
 import fixturesCatalog from "../../shared/acceptance-cases/fixtures/core-v1.json";
 import type { CoreApplicationRequest } from "../src/contracts.js";
-import { mapCoreCandidateToEnvelope } from "../src/application/mapping.js";
+import { mapCoreCandidateToEnvelope, mapUndoCandidateToEnvelope } from "../src/application/mapping.js";
 import { parseCoreCommand } from "../src/parser/parse-command.js";
 
 function candidate(id: string, action: "record_meal" | "record_water") {
@@ -80,6 +80,42 @@ describe("Task 8 production parser-to-domain mapping", () => {
       amount_evidence: { raw_text: "喝了500ml白水", quantity: 500,
         unit: "ml", estimated: false },
       occurred_time: input.command.occurred_time,
+    }]);
+  });
+
+  it("maps an undo candidate to one frozen undo_record operation with resolved target and revision", () => {
+    const request: CoreApplicationRequest = {
+      action: "undo_record",
+      source_text: "撤销刚才那条饮食记录",
+      received_at: "2026-08-11T00:31:00+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-undo-mapping",
+      source_message_id: "message-undo-mapping",
+      conversation_id: "conversation-mapping",
+      prior_context: [],
+    };
+    const parsed = parseCoreCommand({
+      source_text: request.source_text, received_at: request.received_at,
+      timezone: request.timezone, operation_id: request.operation_id,
+      source_message_id: request.source_message_id,
+      conversation_id: request.conversation_id, prior_context: request.prior_context,
+    });
+    if (parsed.disposition !== "candidate" || parsed.command.action !== "undo_record") {
+      throw new Error("expected undo_record candidate");
+    }
+    const envelope = mapUndoCandidateToEnvelope(
+      request,
+      parsed.command,
+      "event-undo-mapping-target",
+      2,
+    );
+    expectDeepFrozen(envelope);
+    expect(envelope.command_type).toBe("undo_record");
+    expect(envelope.operations).toEqual([{
+      kind: "undo_record",
+      operation_id: request.operation_id,
+      target_event_id: "event-undo-mapping-target",
+      base_revision: 2,
     }]);
   });
 });

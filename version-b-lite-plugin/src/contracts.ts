@@ -78,6 +78,7 @@ export interface NonWritingOutcome {
   daily_progress?: Readonly<DailyProgressView>;
   meal_history?: Readonly<MealHistoryView>;
   inventory_view?: Readonly<InventoryView>;
+  correction?: Readonly<CorrectionOutcomeView>;
   record_id?: never;
   record_ids?: never;
 }
@@ -197,6 +198,15 @@ export interface MealReceipt {
   readonly items: readonly MealReceiptItem[];
 }
 
+export interface CorrectionOutcomeView {
+  readonly correction_id: string;
+  readonly target_event_id: string;
+  readonly revision: number;
+  readonly operation: "void_event" | "change_amount" | "change_time" | "change_water_classification";
+  readonly current_active: boolean;
+  readonly compensation_transaction_id: string | null;
+}
+
 export interface CommittedOutcome {
   action: DietManagerAction;
   status: "committed" | "committed_with_issues";
@@ -206,6 +216,7 @@ export interface CommittedOutcome {
   record_ids?: readonly string[];
   nutrition_items?: readonly NutritionOutcomeItem[];
   receipt?: Readonly<MealReceipt>;
+  correction?: Readonly<CorrectionOutcomeView>;
 }
 
 export type DietManagerOutcome =
@@ -469,6 +480,30 @@ function assertInventoryView(value: unknown): asserts value is InventoryView {
   }
 }
 
+function assertCorrection(value: unknown): asserts value is CorrectionOutcomeView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("correction");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).sort().join("\0") !==
+      "compensation_transaction_id\0correction_id\0current_active\0operation\0revision\0target_event_id") {
+    return invalidOutcome("correction");
+  }
+  boundedText(candidate.correction_id, "correction_id", 128);
+  boundedText(candidate.target_event_id, "correction_target_event_id", 128);
+  if (!Number.isSafeInteger(candidate.revision) || (candidate.revision as number) < 1) {
+    return invalidOutcome("correction_revision");
+  }
+  if (!["void_event", "change_amount", "change_time", "change_water_classification"]
+    .includes(candidate.operation as string)) {
+    return invalidOutcome("correction_operation");
+  }
+  if (typeof candidate.current_active !== "boolean") return invalidOutcome("correction_active");
+  if (candidate.compensation_transaction_id !== null) {
+    boundedText(candidate.compensation_transaction_id, "correction_compensation", 128);
+  }
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -528,9 +563,9 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "question", "clarification", "daily_progress", "meal_history", "inventory_view"]);
+      ["operation_id", "question", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
   } else {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt", "correction"]);
   }
   if (candidate.clarification !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
@@ -576,6 +611,11 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
         candidate.reason_code !== "read_only_result" || candidate.meal_history !== undefined ||
         candidate.daily_progress !== undefined) return invalidOutcome("inventory_view_status");
     assertInventoryView(candidate.inventory_view);
+  }
+
+  if (candidate.correction !== undefined) {
+    if (candidate.action !== "undo_record") return invalidOutcome("correction_action");
+    assertCorrection(candidate.correction);
   }
 
   return candidate as unknown as DietManagerOutcome;

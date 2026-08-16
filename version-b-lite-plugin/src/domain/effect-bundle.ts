@@ -301,11 +301,14 @@ export function prepareCorrectionOperation(
       operationKind = "change_amount";
     }
   } else {
+    if (!current.snapshot.active) {
+      throw new Error("CORRECTION_TARGET_INVALID:already_void");
+    }
     afterSnapshot = freezeJson({
       ...current.snapshot,
-      active: !current.snapshot.active,
+      active: false,
     }) as EffectiveMealSnapshot;
-    operationKind = current.snapshot.active ? "void_event" : "restore_event";
+    operationKind = "void_event";
   }
   if (canonicalJson(afterSnapshot) === canonicalJson(current.snapshot)) {
     throw new Error("CORRECTION_TARGET_INVALID:no_change");

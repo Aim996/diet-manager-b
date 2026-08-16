@@ -1670,18 +1670,64 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
     }
   });
 
-  it("returns frozen no-write not-implemented for undo_record", () => {
-      const action: DietManagerAction = "undo_record";
-      const root = mkdtempSync(join(tmpdir(), `diet-manager-task8-app-${randomUUID()}-`));
+  it("voids the latest home meal and ignores a second undo", () => {
+      const root = mkdtempSync(join(tmpdir(), `diet-manager-undo-${randomUUID()}-`));
       const runtime = createCoreRuntime({ officialDataRoot: root,
-        now: () => "2026-08-11T00:30:01.000Z" });
+        now: () => "2026-08-11T08:30:01.000Z" });
       try {
-        const request = { ...applicationRequest("CASE-MEAL-021", "record_meal"), action };
-        const outcome = handleCoreRequest(runtime, request);
-        expect(outcome).toEqual({ action, status: "failed", committed: false,
-          operation_id: request.operation_id, error_code: "ACTION_NOT_IMPLEMENTED" });
-        expect(Object.isFrozen(outcome)).toBe(true);
-        expect(readdirSync(root)).toEqual([]);
+        const meal = handleCoreRequest(runtime, {
+          action: "record_meal",
+          source_text: "吃了一个苹果。",
+          received_at: "2026-08-11T08:30:00+08:00",
+          timezone: "Asia/Shanghai",
+          operation_id: "operation-undo-public-meal",
+          source_message_id: "message-undo-public-meal",
+          conversation_id: "conversation-undo-public",
+          prior_context: [],
+        });
+        expect(meal).toMatchObject({ action: "record_meal", committed: true });
+        const mealId = (meal as { record_id: string }).record_id;
+
+        const undo = handleCoreRequest(runtime, {
+          action: "undo_record",
+          source_text: "撤销刚才那条饮食记录",
+          received_at: "2026-08-11T08:31:00+08:00",
+          timezone: "Asia/Shanghai",
+          operation_id: "operation-undo-public-001",
+          source_message_id: "message-undo-public-001",
+          conversation_id: "conversation-undo-public",
+          prior_context: [],
+        });
+        expect(undo).toMatchObject({
+          action: "undo_record",
+          committed: true,
+          operation_id: "operation-undo-public-001",
+          correction: {
+            operation: "void_event",
+            target_event_id: mealId,
+            current_active: false,
+          },
+        });
+
+        const secondUndo = handleCoreRequest(runtime, {
+          action: "undo_record",
+          source_text: "撤销刚才那条饮食记录",
+          received_at: "2026-08-11T08:32:00+08:00",
+          timezone: "Asia/Shanghai",
+          operation_id: "operation-undo-public-002",
+          source_message_id: "message-undo-public-002",
+          conversation_id: "conversation-undo-public",
+          prior_context: [],
+        });
+        expect(secondUndo).toMatchObject({
+          action: "undo_record",
+          status: "ignored",
+          committed: false,
+          operation_id: "operation-undo-public-002",
+          reason_code: "already_voided",
+        });
+        expect(Object.isFrozen(undo)).toBe(true);
+        expect(Object.isFrozen(secondUndo)).toBe(true);
       } finally {
         runtime.close();
         rmSync(root, { recursive: true, force: false });

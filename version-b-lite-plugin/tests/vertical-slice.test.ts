@@ -3957,7 +3957,7 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     }
   });
 
-  it("restores a voided meal by appending restore_event and reevaluating current inventory", () => {
+  it("rejects a second undo with already_void and never appends a restore_event", () => {
     const fixture = createCorrectionFixture();
     try {
       previewAndExecute(fixture.service, correctionEnvelope({
@@ -3979,50 +3979,30 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
         baseRevision: 3,
       });
       const restorePreview = fixture.service.preview(restoreEnvelope);
-      const restored = fixture.service.execute({
+      expect(() => fixture.service.execute({
         envelope: restoreEnvelope,
         token: restorePreview.token,
         input_digest: restorePreview.input_digest,
         data_revision: restorePreview.data_revision,
-      });
+      })).toThrow("CORRECTION_TARGET_INVALID:already_void");
 
-      expect(restored.status).toBe("committed");
-      expect(restored.items).toMatchObject([{ operation: "restore_event", revision: 4 }]);
       expect(fixture.runtime.database.prepare(
         "SELECT operation, base_revision FROM correction_events ORDER BY base_revision",
       ).all()).toEqual([
         { operation: "change_amount", base_revision: 1 },
         { operation: "void_event", base_revision: 2 },
-        { operation: "restore_event", base_revision: 3 },
       ]);
-      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(7_000_000);
+      expect(fixture.service.query(queryInventory()).batches[0].quantity_microunits).toBe(10_000_000);
       expect(fixture.runtime.database.prepare(
         `SELECT direction, payload_json FROM inventory_transactions
          WHERE reason_code = 'correction_compensation' ORDER BY committed_at, transaction_id`,
-      ).all()).toHaveLength(3);
+      ).all()).toHaveLength(2);
       expect(fixture.service.query({
         kind: "query_meals",
         operation_id: "query-restored-eggs",
         date: "2026-08-12",
         timezone: "Asia/Shanghai",
-      })).toMatchObject({
-        meals: [{ items: [{ amount: { observed_microunits: 3_000_000 } }] }],
-      });
-      expect(fixture.service.query({
-        kind: "query_daily_summary",
-        operation_id: "query-restored-progress",
-        date: "2026-08-12",
-        timezone: "Asia/Shanghai",
-      })).toMatchObject({ nutrients: { energy_kcal_milli: 300_000 } });
-
-      const beforeReplay = tableCounts(fixture.runtime.database);
-      expect(fixture.service.execute({
-        envelope: restoreEnvelope,
-        token: restorePreview.token,
-        input_digest: restorePreview.input_digest,
-        data_revision: restorePreview.data_revision,
-      })).toEqual(restored);
-      expect(tableCounts(fixture.runtime.database)).toEqual(beforeReplay);
+      })).toMatchObject({ meals: [] });
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
