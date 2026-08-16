@@ -256,9 +256,9 @@ describe("SEL-PANTRY-001 parser and application authority", () => {
         normalized_name: "milk",
         package_quantity: {
           outer_count: 2,
-          outer_unit: "箱",
+          outer_unit: "box",
           inner_per_outer: 12,
-          inner_unit: "盒",
+          inner_unit: "carton",
           capacity_per_inner: 250,
           capacity_unit: "ml",
           total_inner: 24,
@@ -276,7 +276,7 @@ describe("SEL-PANTRY-001 parser and application authority", () => {
         normalized_name: "egg",
         package_quantity: {
           outer_count: 1,
-          outer_unit: "袋",
+          outer_unit: "bag",
           inner_per_outer: null,
           total_inner: null,
           total_capacity: null,
@@ -794,4 +794,41 @@ describe("SEL-PANTRY-001 parser and application authority", () => {
       runtime.close();
     }
   });
+});
+
+describe("SEL-PANTRY-001 generalized bounded single-layer purchase grammar", () => {
+  function grammarInput(sourceText: string) {
+    return {
+      source_text: sourceText,
+      received_at: "2026-08-11T08:30:00+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-grammar",
+      source_message_id: "message-grammar",
+      conversation_id: "conversation-grammar",
+      prior_context: [],
+    };
+  }
+
+  it.each([
+    ["买了2盒牛奶，每盒250ml", { outer_count: 2, outer_unit: "carton", capacity_per_inner: 250, capacity_unit: "ml", total_capacity: 500 }],
+    ["买了3袋苹果", { outer_count: 3, outer_unit: "bag", inner_per_outer: null, total_capacity: null }],
+    ["买了1盒鸡蛋，每盒12个", { outer_count: 1, outer_unit: "carton", inner_per_outer: 12, inner_unit: "piece", total_inner: 12 }],
+  ])("parses one-layer purchase %s", (sourceText, quantity) => {
+    const result = parseCoreCommand(grammarInput(sourceText));
+    expect(result).toMatchObject({
+      disposition: "candidate",
+      command: { action: "add_inventory", items: [{ package_quantity: quantity }] },
+    });
+  });
+
+  it.each(["买了0盒牛奶", "买了65盒牛奶", "买了2.5盒牛奶"])(
+    "does not invent an unsafe quantity for %s",
+    (sourceText) => {
+      expect(parseCoreCommand(grammarInput(sourceText))).toMatchObject({
+        disposition: "needs_clarification",
+        action: "add_inventory",
+        reason_code: "amount_ambiguous",
+      });
+    },
+  );
 });

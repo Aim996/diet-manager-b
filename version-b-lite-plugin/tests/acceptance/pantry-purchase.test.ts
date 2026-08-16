@@ -540,6 +540,29 @@ describe("SEL-PANTRY-001 deterministic purchase rules", () => {
     });
   });
 
+  it("derives a single-layer capacity equation without an inner package", () => {
+    expect(resolvePackageQuantity({
+      outer_count: 2,
+      outer_unit: "carton",
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: 250,
+      capacity_unit: "ml",
+      total_inner: null,
+      total_capacity: null,
+    })).toEqual({
+      outer_count: 2,
+      outer_unit: "carton",
+      inner_per_outer: null,
+      inner_unit: null,
+      capacity_per_inner: 250,
+      capacity_unit: "ml",
+      total_inner: null,
+      total_capacity: 500,
+      formula: "2*250=500",
+    });
+  });
+
   it.each([
     ["zero", { outer_count: 0 }],
     ["negative", { inner_per_outer: -1 }],

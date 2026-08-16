@@ -72,6 +72,176 @@ function purchase(
   });
 }
 
+const MAX_PURCHASE_ITEMS = 64;
+const MAX_CAPACITY_PER_PACKAGE = 1_000_000;
+
+const CHINESE_NUMERALS = Object.freeze<Readonly<Record<string, number>>>({
+  一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5,
+  六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+});
+
+const PACKAGE_UNIT_ALIASES = Object.freeze<Readonly<Record<string, string>>>({
+  盒: "carton", 袋: "bag", 箱: "box", 瓶: "bottle",
+  罐: "can", 包: "pack", 桶: "bucket",
+  个: "piece", 只: "piece", 颗: "piece", 枚: "piece",
+  片: "slice", 支: "stick",
+});
+
+const CAPACITY_UNIT_ALIASES = Object.freeze<Readonly<Record<string, string>>>({
+  ml: "ml", 毫升: "ml",
+  l: "l", 升: "l",
+  g: "g", 克: "g",
+  kg: "kg", 千克: "kg", 公斤: "kg",
+});
+
+const PRODUCT_ALIASES = Object.freeze<Readonly<Record<string, Readonly<{
+  readonly normalized_name: string;
+  readonly product_type: CorePurchaseItemCandidate["product_type"];
+}>>>>({
+  牛奶: { normalized_name: "milk", product_type: "nutrition_drink" },
+  鲜牛奶: { normalized_name: "milk", product_type: "nutrition_drink" },
+  奶: { normalized_name: "milk", product_type: "nutrition_drink" },
+  鸡蛋: { normalized_name: "egg", product_type: "food" },
+  蛋: { normalized_name: "egg", product_type: "food" },
+  苹果: { normalized_name: "apple", product_type: "food" },
+});
+
+const PURCHASE_PREFIX = /^(?:我\s*)?买了/u;
+const NUMERIC_TOKEN = /^([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
+const PACKAGE_UNIT_TOKEN = /^([盒袋箱瓶罐包桶])([\s\S]*)$/u;
+const CLAUSE_TOKEN = /^([盒袋箱瓶罐包桶])([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
+
+/** Parse a bounded positive integer: Chinese 一–十 (plus 两) or Arabic, 1..max. */
+function parsePositiveInteger(text: string, max: number): number | null {
+  const chinese = CHINESE_NUMERALS[text];
+  if (chinese !== undefined) return chinese <= max ? chinese : null;
+  if (!/^[0-9]+$/u.test(text)) return null;
+  const value = Number(text);
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) return null;
+  return value;
+}
+
+function normalizePackageUnit(text: string): string | null {
+  return PACKAGE_UNIT_ALIASES[text] ?? null;
+}
+
+function normalizeCapacityUnit(text: string): string | null {
+  return CAPACITY_UNIT_ALIASES[text] ?? null;
+}
+
+type SingleItemParse =
+  | Readonly<{ readonly status: "candidate"; readonly item: Readonly<CorePurchaseItemCandidate> }>
+  | Readonly<{ readonly status: "amount_ambiguous" }>
+  | Readonly<{ readonly status: "not_purchase" }>;
+
+/**
+ * Parse one bounded single-layer purchase item, e.g. "买了2盒牛奶，每盒250ml",
+ * "买了3袋苹果" or "买了1盒鸡蛋，每盒12个". It never invents an unknown inner
+ * count or capacity; an unparseable or out-of-range quantity becomes amount_ambiguous.
+ */
+function parseSinglePurchaseItem(
+  input: Readonly<CoreParseInput>,
+  order: number,
+): SingleItemParse {
+  const body = input.source_text.trim().replace(/[。.]$/u, "");
+  if (!PURCHASE_PREFIX.test(body)) return Object.freeze({ status: "not_purchase" });
+  const after = body.replace(PURCHASE_PREFIX, "");
+
+  const countMatch = NUMERIC_TOKEN.exec(after);
+  if (countMatch === null) return Object.freeze({ status: "not_purchase" });
+  const outerCount = parsePositiveInteger(countMatch[1]!, MAX_PURCHASE_ITEMS);
+  if (outerCount === null) return Object.freeze({ status: "amount_ambiguous" });
+
+  const unitMatch = PACKAGE_UNIT_TOKEN.exec(countMatch[2]!);
+  if (unitMatch === null) return Object.freeze({ status: "not_purchase" });
+  const outerUnit = normalizePackageUnit(unitMatch[1]!);
+  if (outerUnit === null) return Object.freeze({ status: "amount_ambiguous" });
+  const remainder = unitMatch[2]!;
+
+  const clauseStart = remainder.search(/每/u);
+  const rawProduct = (clauseStart === -1 ? remainder : remainder.slice(0, clauseStart))
+    .replace(/[，,\s]+$/u, "")
+    .trim();
+  if (rawProduct.length === 0) return Object.freeze({ status: "not_purchase" });
+  if (/[、和与]/u.test(rawProduct)) return Object.freeze({ status: "not_purchase" });
+
+  const clauses: Array<Readonly<{ readonly count: number; readonly measure: string }>> = [];
+  if (clauseStart !== -1) {
+    const segments = remainder.slice(clauseStart)
+      .split(/每/u)
+      .filter((segment) => segment.trim().length > 0);
+    if (segments.length === 0 || segments.length > 2) {
+      return Object.freeze({ status: "amount_ambiguous" });
+    }
+    const parsed: Array<Readonly<{ readonly count: number; readonly measure: string }>> = [];
+    for (const segment of segments) {
+      const clause = CLAUSE_TOKEN.exec(segment);
+      if (clause === null) return Object.freeze({ status: "amount_ambiguous" });
+      const count = parsePositiveInteger(clause[2]!, MAX_CAPACITY_PER_PACKAGE);
+      if (count === null) return Object.freeze({ status: "amount_ambiguous" });
+      const measure = clause[3]!.replace(/[，,\s]+$/u, "").trim();
+      if (measure.length === 0) return Object.freeze({ status: "amount_ambiguous" });
+      parsed.push(Object.freeze({ count, measure }));
+    }
+    clauses.push(...parsed);
+  }
+
+  let innerPerOuter: number | null = null;
+  let innerUnit: string | null = null;
+  let capacityPerInner: number | null = null;
+  let capacityUnit: string | null = null;
+  for (const clause of clauses) {
+    const capacity = normalizeCapacityUnit(clause.measure);
+    if (capacity !== null) {
+      if (capacityPerInner !== null) return Object.freeze({ status: "amount_ambiguous" });
+      capacityPerInner = clause.count;
+      capacityUnit = capacity;
+      continue;
+    }
+    const inner = normalizePackageUnit(clause.measure);
+    if (inner !== null) {
+      if (innerPerOuter !== null) return Object.freeze({ status: "amount_ambiguous" });
+      innerPerOuter = clause.count;
+      innerUnit = inner;
+      continue;
+    }
+    return Object.freeze({ status: "amount_ambiguous" });
+  }
+
+  const totalInner = innerPerOuter === null ? null : outerCount * innerPerOuter;
+  const totalCapacity = capacityPerInner === null
+    ? null
+    : (innerPerOuter === null ? outerCount : totalInner!) * capacityPerInner;
+  const formula = capacityPerInner === null
+    ? (innerPerOuter === null ? null : `${outerCount}*${innerPerOuter}=${totalInner}`)
+    : (innerPerOuter === null
+      ? `${outerCount}*${capacityPerInner}=${totalCapacity}`
+      : `${outerCount}*${innerPerOuter}*${capacityPerInner}=${totalCapacity}`);
+
+  const product = PRODUCT_ALIASES[rawProduct];
+  const candidate = item({
+    order,
+    raw_name: rawProduct,
+    normalized_name: product?.normalized_name ?? "product",
+    product_type: product?.product_type ?? "generic",
+    ...(capacityPerInner === null
+      ? {}
+      : { specification: Object.freeze({ value: capacityPerInner, unit: capacityUnit! }) }),
+    package_quantity: Object.freeze({
+      outer_count: outerCount,
+      outer_unit: outerUnit,
+      inner_per_outer: innerPerOuter,
+      inner_unit: innerUnit,
+      capacity_per_inner: capacityPerInner,
+      capacity_unit: capacityUnit,
+      total_inner: totalInner,
+      total_capacity: totalCapacity,
+      formula,
+    }),
+  });
+  return Object.freeze({ status: "candidate", item: candidate });
+}
+
 export function resolvePantryClarification(
   input: Readonly<CoreParseInput>,
 ): Extract<CoreClarificationResult, { action: "add_inventory" }> | null {
@@ -90,6 +260,14 @@ export function resolvePantryClarification(
       action: "add_inventory",
       reason_code: "unsupported_command",
       question: "还没有记录。请分别说明牛奶每箱的盒数和每盒规格，以及鸡蛋每袋的数量。",
+    });
+  }
+  if (parseSinglePurchaseItem(input, 0).status === "amount_ambiguous") {
+    return Object.freeze({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "amount_ambiguous",
+      question: "购买数量无效或超出可安全记录的范围，请重新说明（1–64 个包装）。",
     });
   }
   return null;
@@ -115,19 +293,11 @@ export function resolvePantryCommand(
       rule_version: "diet-manager/location-correction/v1",
     });
   }
-  if (/^(?:我\s*)?买了两箱牛奶[，,]每箱12盒[，,]每盒250ml[。.]?$/u.test(source)) {
-    return purchase(input, [item({
-      order: 0,
-      raw_name: "牛奶",
-      normalized_name: "milk",
-      product_type: "nutrition_drink",
-      specification: Object.freeze({ value: 250, unit: "ml" }),
-      package_quantity: Object.freeze({
-        outer_count: 2, outer_unit: "箱", inner_per_outer: 12, inner_unit: "盒",
-        capacity_per_inner: 250, capacity_unit: "ml", total_inner: 24,
-        total_capacity: 6000, formula: "2*12*250=6000",
-      }),
-    })]);
+  {
+    const single = parseSinglePurchaseItem(input, 0);
+    if (single.status === "candidate") {
+      return purchase(input, [single.item]);
+    }
   }
   if (/^买了鲜牛奶[。.]?$/u.test(source)) {
     return purchase(input, [item({
@@ -142,19 +312,6 @@ export function resolvePantryCommand(
       product_type: "nutrition_drink",
       identity_reference: "same_attributes",
       specification: Object.freeze({ value: 250, unit: "ml" }),
-    })]);
-  }
-  if (/^买了一袋鸡蛋[。.]?$/u.test(source)) {
-    return purchase(input, [item({
-      order: 0,
-      raw_name: "鸡蛋",
-      normalized_name: "egg",
-      product_type: "food",
-      package_quantity: Object.freeze({
-        outer_count: 1, outer_unit: "袋", inner_per_outer: null, inner_unit: null,
-        capacity_per_inner: null, capacity_unit: null, total_inner: null,
-        total_capacity: null, formula: null,
-      }),
     })]);
   }
   if (/^买了这个商品[，,]包装上没有可靠保质期[。.]?$/u.test(source)) {

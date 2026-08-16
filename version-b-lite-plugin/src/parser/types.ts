@@ -186,13 +186,13 @@ export interface CorePurchasePackageQuantity {
 export interface CorePurchaseItemCandidate {
   readonly order: number;
   readonly raw_name: string;
-  readonly normalized_name: "milk" | "egg" | "apple" | "product";
+  readonly normalized_name: string;
   readonly product_type: "nutrition_drink" | "food" | "generic";
   readonly identity_reference: "explicit" | "same_attributes" | "deictic";
   readonly specification: Readonly<{ readonly value: number; readonly unit: string }> | null;
   readonly package_quantity: Readonly<CorePurchasePackageQuantity>;
   readonly location: Readonly<{
-    readonly value: "refrigerator";
+    readonly value: string;
     readonly evidence_kind: "configured_home_default";
     readonly rule_version: "diet-manager/default-location-v1";
   }>;
@@ -346,6 +346,14 @@ export type CoreClarificationResult =
       disposition: "needs_clarification";
       action: "add_inventory";
       reason_code: "unsupported_command";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "add_inventory";
+      reason_code: "amount_ambiguous";
       question: string;
       occurred_time?: never;
       context_id?: never;
