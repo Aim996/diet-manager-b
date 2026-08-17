@@ -69,40 +69,52 @@ function parseChineseQuantity(raw) {
     const ones = parts[1] === "" ? 0 : digits[parts[1] ?? ""];
     return tens === undefined || ones === undefined ? null : tens * 10 + ones;
 }
+// 餐食词表认可的普通单位 → 规范化单位。correct_record 的纠正单位集合必须与此对齐。
+const ALLOWED_UNITS = frozenRecord({
+    egg: frozenRecord({ 个: "piece", 克: "g" }),
+    apple: frozenRecord({ 个: "piece", 克: "g" }),
+    banana: frozenRecord({ 个: "piece", 克: "g" }),
+    chicken: frozenRecord({ 块: "piece", 克: "g" }),
+    bread: frozenRecord({ 片: "slice", 克: "g" }),
+    milk: frozenRecord({ 瓶: "bottle", 盒: "carton", ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
+    rice: frozenRecord({ 碗: "bowl", 克: "g" }),
+    fried_rice: frozenRecord({ 盘: "plate", 克: "g" }),
+    soup: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
+    soy_milk: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
+    coffee: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
+    tea: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
+});
+// 数量在食物词之前：`1碗米饭`（锚定在食物词之前）。
+const AMOUNT_BEFORE_ITEM = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u;
+// 数量在食物词之后：`米饭 1 碗`（锚定在食物词之后，单位后须是分隔符或句尾）。
+const AMOUNT_AFTER_ITEM = /^\s*([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)(?=$|[\s、和与，,。；;！？!?])/u;
+function resolveAmountEvidence(quantityText, rawUnit, matchedSpan, item, frame) {
+    const quantity = parseChineseQuantity(quantityText);
+    const unit = ALLOWED_UNITS[item.normalized_name]?.[rawUnit];
+    if (quantity === null || quantity <= 0 || unit === undefined ||
+        (item.normalized_name === "fried_rice" && /^\s*了?\s*两\s*盘/u.test(frame.object_span.raw) &&
+            frame.subject_prefix_span.raw.trim() === "我们")) {
+        if (item.normalized_name === "fried_rice" && unit !== undefined && quantity === 2 &&
+            frame.subject_prefix_span.raw.trim() === "我们") {
+            return occurrenceAmount(unknownAmount(), "unknown");
+        }
+        return occurrenceAmount(unknownAmount(), "invalid");
+    }
+    return occurrenceAmount(explicitAmount(matchedSpan.trim(), quantity, unit), "resolved");
+}
 function amountForOccurrence(frame, item, relativePosition) {
     const before = frame.object_span.raw
         .slice(0, relativePosition)
         .replace(/(?:这个|这瓶|这种)\s*$/u, "");
-    const match = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u.exec(before);
-    if (match !== null) {
-        const quantityText = match[1] ?? "";
-        const rawUnit = match[2] ?? "";
-        const quantity = parseChineseQuantity(quantityText);
-        const allowedUnits = frozenRecord({
-            egg: frozenRecord({ 个: "piece", 克: "g" }),
-            apple: frozenRecord({ 个: "piece", 克: "g" }),
-            banana: frozenRecord({ 个: "piece", 克: "g" }),
-            chicken: frozenRecord({ 块: "piece", 克: "g" }),
-            bread: frozenRecord({ 片: "slice", 克: "g" }),
-            milk: frozenRecord({ 瓶: "bottle", 盒: "carton", ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-            rice: frozenRecord({ 碗: "bowl", 克: "g" }),
-            fried_rice: frozenRecord({ 盘: "plate", 克: "g" }),
-            soup: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-            soy_milk: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-            coffee: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-            tea: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
-        });
-        const unit = allowedUnits[item.normalized_name]?.[rawUnit];
-        if (quantity === null || quantity <= 0 || unit === undefined ||
-            (item.normalized_name === "fried_rice" && /^\s*了?\s*两\s*盘/u.test(frame.object_span.raw) &&
-                frame.subject_prefix_span.raw.trim() === "我们")) {
-            if (item.normalized_name === "fried_rice" && unit !== undefined && quantity === 2 &&
-                frame.subject_prefix_span.raw.trim() === "我们") {
-                return occurrenceAmount(unknownAmount(), "unknown");
-            }
-            return occurrenceAmount(unknownAmount(), "invalid");
-        }
-        return occurrenceAmount(explicitAmount(match[0].trim(), quantity, unit), "resolved");
+    const beforeMatch = AMOUNT_BEFORE_ITEM.exec(before);
+    if (beforeMatch !== null) {
+        return resolveAmountEvidence(beforeMatch[1] ?? "", beforeMatch[2] ?? "", beforeMatch[0], item, frame);
+    }
+    const afterStart = relativePosition + item.raw_text.length;
+    const after = frame.object_span.raw.slice(afterStart);
+    const afterMatch = AMOUNT_AFTER_ITEM.exec(after);
+    if (afterMatch !== null) {
+        return resolveAmountEvidence(afterMatch[1] ?? "", afterMatch[2] ?? "", afterMatch[0], item, frame);
     }
     const bareObject = frame.object_span.raw.replace(/^\s*(?:了|过|完)?\s*/u, "").trim();
     if (item.normalized_name === "banana" && bareObject === item.raw_text) {

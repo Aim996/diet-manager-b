@@ -145,7 +145,7 @@ it("corrects the latest meal amount to an explicit new amount", async () => {
   }
 });
 
-it("corrects a bowl-measured rice meal amount to a new bowl amount", () => {
+it("corrects an item-before-amount bowl meal to a new bowl amount", () => {
   const root = mkdtempSync(join(tmpdir(), `diet-manager-rice-correction-${randomUUID()}-`));
   const runtime = createCoreRuntime({
     officialDataRoot: root,
@@ -154,7 +154,8 @@ it("corrects a bowl-measured rice meal amount to a new bowl amount", () => {
   try {
     const meal = handleCoreRequest(runtime, {
       action: "record_meal",
-      source_text: "我吃了1碗米饭",
+      // 镜像真机验收场景：食物词在前、数量在后（`米饭 1 碗`）。
+      source_text: "我吃了米饭 1 碗",
       received_at: "2026-08-14T12:00:00+08:00",
       timezone: "Asia/Shanghai",
       operation_id: "operation-rice-seed-001",

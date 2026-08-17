@@ -1539,6 +1539,42 @@ describe("core parser quality boundaries", () => {
     ]);
   });
 
+  it("resolves a rice bowl amount placed after the item", () => {
+    const command = requiredMeal(variant("我吃了米饭 1 碗。"));
+    expect(command.items).toEqual([
+      {
+        order: 0,
+        kind: "food",
+        normalized_name: "rice",
+        quantity: 1,
+        unit: "bowl",
+        estimated: false,
+      },
+    ]);
+  });
+
+  it("resolves every item-before-amount in a coordinated meal", () => {
+    const command = requiredMeal(variant("我吃了米饭 1 碗、鸡胸肉 150 克。"));
+    expect(command.items).toEqual([
+      {
+        order: 0,
+        kind: "food",
+        normalized_name: "rice",
+        quantity: 1,
+        unit: "bowl",
+        estimated: false,
+      },
+      {
+        order: 1,
+        kind: "food",
+        normalized_name: "chicken",
+        quantity: 150,
+        unit: "g",
+        estimated: false,
+      },
+    ]);
+  });
+
   it("treats a dinner-time omitted subject as the current user", () => {
     const command = requiredMeal(
       variant("晚饭吃了200克米饭和150克鸡胸肉。"),
