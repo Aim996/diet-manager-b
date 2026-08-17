@@ -275,6 +275,13 @@ function purchaseAmount(item: Readonly<CorePurchaseItemCandidate>): Readonly<{
       evidence: "explicit" as const,
     });
   }
+  if (quantity.total_capacity !== null && quantity.capacity_unit !== null) {
+    return Object.freeze({
+      unit: quantity.capacity_unit,
+      observed_microunits: quantity.total_capacity * 1_000_000,
+      evidence: "explicit" as const,
+    });
+  }
   if (
     item.opening !== null && quantity.outer_count !== null &&
     quantity.outer_unit === "瓶"

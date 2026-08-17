@@ -125,7 +125,7 @@ if (candidate.correction !== undefined) {
 | `query_meals` | 查饮食记录 | 我今天吃了什么 |
 | `query_daily_summary` | 查当天汇总 | 今天营养汇总 |
 | `correct_record` | 更正已有记录 | 把刚才苹果改成200克 |
-| `undo_record` | 撤销记录 | 撤销刚才那条 |
+| `undo_record` | 撤销记录 | 撤销刚才那条饮食记录 |
 
 **每次调用必须带齐 7 个字段**：`action`、`source_text`（用户原话逐字）、`received_at`、`timezone`（固定 `"Asia/Shanghai"`）、`operation_id`、`source_message_id`、`conversation_id`。查询请求也用同一组完整元数据。
 
@@ -144,7 +144,7 @@ Content-Type: application/json
 1. `record_meal`「我吃了150克苹果」→ `committed=true`
 2. `correct_record`「把刚才苹果改成200克」→ `committed=true` + `correction.operation=change_amount`（**本次修复点**）
 3. `query_meals` → 看到该记录（150→200）
-4. `undo_record`「撤销刚才那条」→ `committed=true`
+4. `undo_record`「撤销刚才那条饮食记录」→ `committed=true`
 5. `record_water` / `add_inventory` / `query_inventory` / `query_daily_summary` 各验证一次
 
 ---
