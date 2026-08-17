@@ -76,6 +76,26 @@ npm run install:local
 
 该命令构建、校验并使用 OpenClaw 官方 `plugins install --link` 注册当前插件目录。它不会替你设置私有数据根或 USDA key，也不会强制覆盖已有安装。
 
+## 备份与灾备
+
+同根备份（日常）：`backup` 把数据库连同已提交 WAL 快照成一个带 SHA-256 校验的独立文件，`restore` 在同一数据根内恢复，失败自动回滚。适合误删单次记录前的定期快照。
+
+```powershell
+cd E:\codx\skill\饮食管家\version-b-lite-plugin
+npm run build
+node dist/admin/cli.js backup  <private-root> <backup-file>
+node dist/admin/cli.js restore <private-root> <backup-file> <SHA256>
+```
+
+跨机加密备份（换机/灾备）：`backup-portable` 用 scrypt + AES-256-GCM 把数据库和 authority secret 一起加密打包，`restore-portable` 在**离线**的新数据根恢复，校验通过后才落库，任何一步失败都回滚到原状。口令只从真实终端逐键读取（不回显、不接受命令行/环境变量/管道），长度 12–1024 字节。
+
+```powershell
+node dist/admin/cli.js backup-portable  <private-root> <backup-file> 0.1.1
+node dist/admin/cli.js restore-portable <private-root> <backup-file> <SHA256> [--replace-existing]
+```
+
+恢复是离线的：目标根必须已停用、无活动 WAL 连接；恢复会写入与备份一致的 authority secret，不会复用目标旧口令。**用户必须同时保管备份文件和口令**——口令即数据，遗失口令则备份不可恢复，程序不做后门。
+
 ## 下一步
 
 1. 用户安装插件并在专用测试数据根验收餐食、库存、营养、查询和回执主链。
