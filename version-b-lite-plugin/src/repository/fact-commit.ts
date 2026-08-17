@@ -603,12 +603,14 @@ function insertCorrectionFact(
     (payload.base_revision as number) < 1 ||
     (payload.operation !== "change_amount" &&
       payload.operation !== "change_nutrition_source" &&
+      payload.operation !== "change_food_type" &&
       payload.operation !== "void_event" &&
       payload.operation !== "restore_event" &&
       payload.operation !== "change_time") ||
     (commandType === "correct_record" &&
       payload.operation !== "change_amount" &&
       payload.operation !== "change_nutrition_source" &&
+      payload.operation !== "change_food_type" &&
       payload.operation !== "change_time") ||
     (commandType === "undo_record" &&
       payload.operation !== "void_event" && payload.operation !== "restore_event") ||
@@ -617,7 +619,9 @@ function insertCorrectionFact(
     throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_payload");
   }
   const target = database.prepare(
-    "SELECT event_id FROM event_records WHERE event_id = ? AND event_type = 'diet_meal'",
+    payload.operation === "change_food_type"
+      ? "SELECT event_id FROM event_records WHERE event_id = ? AND event_type IN ('diet_meal','diet_water')"
+      : "SELECT event_id FROM event_records WHERE event_id = ? AND event_type = 'diet_meal'",
   ).get(payload.target_event_id) as { event_id: string } | undefined;
   const count = (database.prepare(
     "SELECT COUNT(*) AS count FROM correction_events WHERE target_event_id = ?",

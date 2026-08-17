@@ -69,6 +69,11 @@ import {
   prepareInventoryLocationCorrectionOperation,
   type MealOperationResult,
 } from "./effect-bundle.js";
+import {
+  applyWaterClassificationEffects,
+  prepareWaterClassificationOperation,
+  readAppliedWaterClassificationResult,
+} from "./water-correction.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import {
   PantryEvidenceAuthorityError,
@@ -91,6 +96,7 @@ import type {
   CorrectMealTimeOperation,
   CorrectNutritionSupplementOperation,
   CorrectRecordOperation,
+  CorrectWaterClassificationOperation,
   DomainEnvelopeInput,
   DomainExecutionResult,
   DomainOperation,
@@ -106,6 +112,14 @@ function isInventoryLocationCorrection(
   return operation.kind === "correct_record" &&
     Object.hasOwn(operation, "correction_kind") &&
     (operation as { correction_kind?: unknown }).correction_kind === "inventory_location";
+}
+
+function isWaterClassificationCorrection(
+  operation: CorrectRecordOperation | UndoRecordOperation,
+): operation is CorrectWaterClassificationOperation {
+  return operation.kind === "correct_record" &&
+    Object.hasOwn(operation, "correction_kind") &&
+    (operation as { correction_kind?: unknown }).correction_kind === "water_classification";
 }
 
 function storedInventoryLocationCorrection(
@@ -344,7 +358,7 @@ function validatePantryInventoryPolicy(value: unknown, field: string): void {
 function validateOperation(
   value: unknown,
   field: string,
-): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | CorrectMealTimeOperation | undefined {
+): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | CorrectMealTimeOperation | CorrectWaterClassificationOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -499,6 +513,20 @@ function validateOperation(
         timestamp(candidate.replacement_occurred_at, `${field}.replacement_occurred_at`);
         text(candidate.replacement_meal_slot, `${field}.replacement_meal_slot`);
         return Object.freeze({ ...candidate }) as unknown as CorrectMealTimeOperation;
+      }
+      if ((operation as Record<string, unknown>).correction_kind === "water_classification") {
+        const candidate = record(value, [
+          "kind", "operation_id", "correction_kind", "target_event_id", "base_revision",
+          "replacement_kind", "replacement_name",
+        ], field);
+        text(candidate.operation_id, `${field}.operation_id`);
+        enumValue(candidate.correction_kind, ["water_classification"], `${field}.correction_kind`);
+        text(candidate.target_event_id, `${field}.target_event_id`);
+        const baseRevision = safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+        if (baseRevision < 1) return invalid(`${field}.base_revision`);
+        enumValue(candidate.replacement_kind, ["nutritious_drink"], `${field}.replacement_kind`);
+        text(candidate.replacement_name, `${field}.replacement_name`);
+        return Object.freeze({ ...candidate }) as unknown as CorrectWaterClassificationOperation;
       }
       const candidate = record(value, [
         "kind", "operation_id", "correction_kind", "batch_id", "base_revision",
@@ -1934,6 +1962,156 @@ export function createDietDomainService(
           dataRevision: execution.data_revision,
           traceId,
           resultStatus: "committed",
+          receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt: committedAt,
+          frozenAt: committedAt,
+          payload: correctionExecution,
+          mixedItems: Object.freeze([]),
+        }).payload as DomainExecutionResult;
+      }
+      if (operation.kind === "correct_record" && isWaterClassificationCorrection(operation)) {
+        const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
+        if (authority.envelope_state === "finalized") {
+          const row = options.database.prepare(
+            "SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?",
+          ).get(envelope.envelope_id) as { payload_json: string } | undefined;
+          if (!row) throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_missing");
+          const parsed = JSON.parse(row.payload_json) as DomainExecutionResult;
+          if (
+            canonicalJson(parsed) !== row.payload_json ||
+            (parsed.status !== "committed" && parsed.status !== "committed_with_issues")
+          ) {
+            throw new Error("DIET_DOMAIN_RESULT_INVALID:finalization_payload");
+          }
+          return finalize({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            resultStatus: parsed.status,
+            receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+            finalizedAt: committedAt,
+            frozenAt: committedAt,
+            payload: parsed,
+            mixedItems: Object.freeze([]),
+          }).payload as DomainExecutionResult;
+        }
+        if (
+          authority.envelope_state !== "received" &&
+          authority.envelope_state !== "effects_stable"
+        ) {
+          throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        }
+        const existingFact = options.database.prepare(
+          `SELECT event_id, event_type FROM event_records
+           WHERE envelope_id = ? AND operation_id = ?`,
+        ).get(envelope.envelope_id, operation.operation_id) as {
+          event_id: string;
+          event_type: string;
+        } | undefined;
+        if (existingFact) {
+          if (
+            existingFact.event_id !== deriveDomainId("event", envelope.idempotency_key, 0) ||
+            existingFact.event_type !== "diet_correction"
+          ) {
+            throw new Error("DIET_DOMAIN_RESULT_INVALID:correction_fact_identity");
+          }
+        } else if (authority.envelope_state === "received") {
+          const preparedWaterClassification = prepareWaterClassificationOperation({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            dataRevision: execution.data_revision,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            idempotencyKey: envelope.idempotency_key,
+            sourceMessageId: envelope.source_message_id,
+            conversationId: envelope.conversation_id,
+            receivedAt: envelope.received_at,
+            committedAt,
+            sequence: 0,
+            operation,
+          });
+          if (options.fault === "before_fact_commit") {
+            emitFailure(options.failureSink, {
+              stage: "FactCommit",
+              error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+              trace_id: traceId,
+              input_digest: inputDigest,
+            });
+            throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+          }
+          appendFactWithFailure(preparedWaterClassification.fact, options.failureSink);
+        }
+        let correctionResult;
+        if (authority.envelope_state === "effects_stable") {
+          correctionResult = readAppliedWaterClassificationResult({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id,
+            operationSequence: 0,
+            idempotencyKey: envelope.idempotency_key,
+          });
+        } else {
+          try {
+            correctionResult = applyWaterClassificationEffects({
+              database: options.database,
+              envelopeId: envelope.envelope_id,
+              operationId: operation.operation_id,
+              operationSequence: 0,
+              idempotencyKey: envelope.idempotency_key,
+              now: committedAt,
+            });
+          } catch (error) {
+            const code = (error instanceof Error ? error.message : "CORRECTION_EFFECT_FAILED")
+              .split(":", 1)[0];
+            emitFailure(options.failureSink, {
+              stage: "EffectBundle",
+              error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "CORRECTION_EFFECT_FAILED",
+              trace_id: traceId,
+              input_digest: inputDigest,
+            });
+            throw error;
+          }
+          sealPreparedEnvelopeFacts({
+            database: options.database,
+            secret: options.secret,
+            token: execution.token,
+            inputDigest,
+            subjectScope: envelope.subject_scope,
+            commandType: envelope.command_type,
+            dataRevision: execution.data_revision,
+            traceId,
+            expectedOperationIds: Object.freeze([operation.operation_id]),
+            sealedAt: committedAt,
+          });
+        }
+        const correctionExecution: DomainExecutionResult = Object.freeze({
+          envelope_id: envelope.envelope_id,
+          input_digest: inputDigest,
+          status: correctionResult.status,
+          items: Object.freeze([correctionResult]),
+          payload: Object.freeze({
+            authority_kind: "diet-manager/domain-execution/v1",
+            daily_progress: correctionResult.daily_progress,
+            daily_progress_by_date: correctionResult.daily_progress_by_date,
+          }),
+        });
+        return finalize({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          dataRevision: execution.data_revision,
+          traceId,
+          resultStatus: correctionResult.status,
           receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
           finalizedAt: committedAt,
           frozenAt: committedAt,

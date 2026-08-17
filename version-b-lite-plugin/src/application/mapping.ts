@@ -22,6 +22,7 @@ import type {
   CoreMealTimeCorrectionCandidate,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
+  CoreWaterClassificationCorrectionCandidate,
 } from "../parser/types.js";
 
 export interface ResolvedCorePurchaseItem {
@@ -56,6 +57,11 @@ export interface ResolvedCoreMealAmountCorrection {
 }
 
 export interface ResolvedCoreMealTimeCorrection {
+  readonly target_event_id: string;
+  readonly base_revision: number;
+}
+
+export interface ResolvedCoreWaterClassification {
   readonly target_event_id: string;
   readonly base_revision: number;
 }
@@ -432,11 +438,30 @@ function mealTimeCorrectionOperation(
   });
 }
 
+function waterClassificationOperation(
+  command: Readonly<CoreWaterClassificationCorrectionCandidate>,
+  resolution: Readonly<ResolvedCoreWaterClassification> | undefined,
+): DomainOperation {
+  if (resolution === undefined) {
+    throw new Error("CORE_APPLICATION_MAPPING_INVALID:water_classification_resolution");
+  }
+  return Object.freeze({
+    kind: "correct_record" as const,
+    operation_id: command.operation_id,
+    correction_kind: "water_classification" as const,
+    target_event_id: resolution.target_event_id,
+    base_revision: resolution.base_revision,
+    replacement_kind: command.replacement_kind,
+    replacement_name: command.replacement_name,
+  });
+}
+
 function correctionOperation(
   command: Extract<CoreCommandCandidate, { action: "correct_record" }>,
   correctionResolution?: Readonly<
     ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
     | ResolvedCoreMealAmountCorrection | ResolvedCoreMealTimeCorrection
+    | ResolvedCoreWaterClassification
   >,
 ): DomainOperation {
   if ("kind" in command) {
@@ -449,6 +474,12 @@ function correctionOperation(
     return locationCorrectionOperation(
       command,
       correctionResolution as Readonly<ResolvedCoreInventoryLocationCorrection> | undefined,
+    );
+  }
+  if (command.correction_kind === "water_classification") {
+    return waterClassificationOperation(
+      command,
+      correctionResolution as Readonly<ResolvedCoreWaterClassification> | undefined,
     );
   }
   if (command.correction_kind === "meal_amount") {
@@ -476,6 +507,7 @@ export function mapCoreCandidateToEnvelope(
   correctionResolution?: Readonly<
     ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
     | ResolvedCoreMealAmountCorrection | ResolvedCoreMealTimeCorrection
+    | ResolvedCoreWaterClassification
   >,
   nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): Readonly<DomainEnvelopeInput> {

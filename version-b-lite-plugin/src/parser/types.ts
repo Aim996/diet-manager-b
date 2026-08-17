@@ -218,16 +218,22 @@ export interface CorePurchaseCommandCandidate {
   readonly items: readonly Readonly<CorePurchaseItemCandidate>[];
 }
 
+export type CoreInventoryLocation = "refrigerator" | "freezer" | "room_temperature_cabinet";
+
+export type CoreInventoryBatchReference =
+  | Readonly<{ readonly kind: "deictic" }>
+  | Readonly<{ readonly kind: "batch_id"; readonly batch_id: string }>;
+
 export interface CoreInventoryLocationCorrectionCandidate {
   readonly action: "correct_record";
   readonly operation_id: string;
   readonly source_text: string;
   readonly parser_version: "diet-manager/core-parser-v1";
   readonly correction_kind: "inventory_location";
-  readonly product_reference: "milk";
-  readonly batch_reference: "this_batch";
-  readonly previous_location: "room_temperature_cabinet";
-  readonly next_location: "refrigerator";
+  readonly product_reference: string;
+  readonly batch_reference: CoreInventoryBatchReference;
+  readonly previous_location: CoreInventoryLocation;
+  readonly next_location: CoreInventoryLocation;
   readonly matched_span: string;
   readonly rule_version: "diet-manager/location-correction/v1";
 }
@@ -246,7 +252,8 @@ export interface CoreNutritionSupplementCandidate {
 
 export type CoreCorrectionTargetReference =
   | Readonly<{ readonly kind: "event_id"; readonly event_id: string }>
-  | Readonly<{ readonly kind: "latest_meal_in_conversation" }>;
+  | Readonly<{ readonly kind: "latest_meal_in_conversation" }>
+  | Readonly<{ readonly kind: "latest_water_in_conversation" }>;
 
 export interface CoreUndoCommandCandidate {
   readonly action: "undo_record";
@@ -282,6 +289,17 @@ export interface CoreMealTimeCorrectionCandidate {
   readonly replacement_meal_slot: CoreMealSlotToken;
 }
 
+export interface CoreWaterClassificationCorrectionCandidate {
+  readonly action: "correct_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly correction_kind: "water_classification";
+  readonly target: CoreCorrectionTargetReference;
+  readonly replacement_kind: "nutritious_drink";
+  readonly replacement_name: string;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
@@ -291,7 +309,8 @@ export type CoreCommandCandidate =
   | Readonly<CoreNutritionSupplementCandidate>
   | Readonly<CoreUndoCommandCandidate>
   | Readonly<CoreMealAmountCorrectionCandidate>
-  | Readonly<CoreMealTimeCorrectionCandidate>;
+  | Readonly<CoreMealTimeCorrectionCandidate>
+  | Readonly<CoreWaterClassificationCorrectionCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;

@@ -162,6 +162,49 @@ function resolveCommonDish(request: Readonly<SourceRequest>): Readonly<SourceRes
   });
 }
 
+export interface BuiltinNutrientVector {
+  readonly energy_kcal_milli: number | null;
+  readonly protein_mg: number | null;
+  readonly fat_mg: number | null;
+  readonly carbohydrate_mg: number | null;
+  readonly fiber_mg: number | null;
+  readonly water_ml_milli: number | null;
+}
+
+/**
+ * 同步解析 builtin 常见食物的营养向量（微单位）。COMMON_FOODS 全部按
+ * per_100g/per_100ml 登记，故 basis 恒为 100：总微单位 = round(raw * amountMicrounits / 100)，
+ * 其中 raw 为每 100 basis 单位的克/千卡值，amountMicrounits 为消耗量的微单位
+ * （milli-ml / milli-g）。白水分类纠正需同步取得牛奶营养，故保持有界：未知名抛错。
+ */
+export function resolveBuiltinNutrientVector(
+  normalizedName: string,
+  amountMicrounits: number,
+): BuiltinNutrientVector {
+  const entry = COMMON_FOODS[normalizedName];
+  if (entry === undefined) {
+    throw new Error(`BUILTIN_NUTRITION_INVALID:unknown_food:${normalizedName}`);
+  }
+  if (!Number.isSafeInteger(amountMicrounits) || amountMicrounits < 0) {
+    throw new Error("BUILTIN_NUTRITION_INVALID:amount");
+  }
+  const scaled = (
+    field: "energy_kcal" | "protein_g" | "fat_g" | "carbohydrate_g" | "fiber_g" | "water_ml",
+  ): number | null => {
+    const raw = entry.nutrient_values[field];
+    if (raw === null || raw === undefined) return null;
+    return Math.round(Number(raw) * amountMicrounits / 100);
+  };
+  return Object.freeze({
+    energy_kcal_milli: scaled("energy_kcal"),
+    protein_mg: scaled("protein_g"),
+    fat_mg: scaled("fat_g"),
+    carbohydrate_mg: scaled("carbohydrate_g"),
+    fiber_mg: scaled("fiber_g"),
+    water_ml_milli: scaled("water_ml"),
+  });
+}
+
 export function createBuiltinNutritionAdapters(): readonly NutritionSourceAdapter[] {
   return Object.freeze([
     new LocalEvidenceAdapter({

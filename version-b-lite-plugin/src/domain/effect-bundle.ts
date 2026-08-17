@@ -228,7 +228,7 @@ export interface CorrectionOperationResult {
   readonly correction_id: string;
   readonly target_event_id: string;
   readonly revision: number;
-  readonly operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event" | "change_time";
+  readonly operation: "change_amount" | "change_nutrition_source" | "change_food_type" | "void_event" | "restore_event" | "change_time";
   readonly compensation_transaction_id: string | null;
   readonly issue_codes: readonly "inventory_insufficient"[];
   readonly daily_progress: DailyProgressResult;

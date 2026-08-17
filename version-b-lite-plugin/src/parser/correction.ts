@@ -17,6 +17,12 @@ const MEAL_AMOUNT_CORRECTION = /^把\s*刚才(?:的)?\s*(.+?)\s*改成\s*(\d+(?:
 // 只接受"相对日 + 餐次"形态（不接具体钟点），餐次按口语别名映射到中文 token。
 const MEAL_TIME_CORRECTION = /^刚才(?:那顿|这顿|那条|这条)?\s*(?:其实|应该)?\s*是\s*(今天|昨天|前天)?\s*(早饭|早餐|午饭|午餐|晚饭|晚餐|夜宵|宵夜|加餐)\s*[。.]?$/u;
 
+// 有界白水分类纠正：刚才那杯不是白水，是牛奶。目标固定为 latest_water_in_conversation，
+// 只接受把白水改判为已注册营养饮品（目前仅牛奶），名称映射到 builtin 词表。该句会被
+// 既有 record_meal 词表（「牛奶」lexeme）误判，故必须在本文件（parseCorrectionCommand
+// 优先于 meal 判定）短路。
+const WATER_CLASSIFICATION_CORRECTION = /^刚才(?:那杯|这杯)\s*(?:其实\s*)?不是白水[，,]?\s*是\s*牛奶\s*[。.]?$/u;
+
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
 
 const MEAL_SLOT_ALIASES: Readonly<Record<string, CoreMealSlotToken>> = {
@@ -120,6 +126,22 @@ export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CorePar
     }
 
     return undefined;
+  }
+
+  if (WATER_CLASSIFICATION_CORRECTION.test(source)) {
+    return frozenRecord({
+      disposition: "candidate",
+      command: frozenRecord({
+        action: "correct_record",
+        operation_id: input.operation_id,
+        source_text: input.source_text,
+        parser_version: PARSER_VERSION,
+        correction_kind: "water_classification",
+        target: frozenRecord({ kind: "latest_water_in_conversation" }),
+        replacement_kind: "nutritious_drink",
+        replacement_name: "milk",
+      }),
+    });
   }
 
   const amount = MEAL_AMOUNT_CORRECTION.exec(source);

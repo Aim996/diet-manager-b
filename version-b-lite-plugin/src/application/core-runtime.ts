@@ -38,6 +38,7 @@ import {
 } from "../domain/inventory-service.js";
 import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
 import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
+import { readAppliedWaterClassificationResult } from "../domain/water-correction.js";
 import { createDietDomainService, type DietDomainService } from "../domain/service.js";
 import type {
   DomainEnvelopeInput,
@@ -65,6 +66,7 @@ import { listInventoryProjection, listWaterEvents } from "../repository/query.js
 import {
   readEffectiveMealState,
   resolveCorrectionTarget,
+  resolveWaterCorrectionTarget,
   type ResolvedCorrectionTarget,
 } from "../repository/correction-target.js";
 import { normalizeMealLexeme } from "../parser/meal.js";
@@ -78,6 +80,7 @@ import {
   type ResolvedCoreMealTimeCorrection,
   type ResolvedCoreNutritionSupplement,
   type ResolvedCorePurchaseItem,
+  type ResolvedCoreWaterClassification,
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
@@ -839,6 +842,20 @@ function resolvePurchaseItems(
   return Object.freeze({ status: "resolved", items: Object.freeze(resolved) });
 }
 
+function locationCorrectionClarification(
+  candidates: readonly Readonly<{ row: { readonly batch_id: string } }>[],
+): Readonly<ProductIdentityClarification> {
+  const keys = ["A", "B", "C", "D"] as const;
+  return Object.freeze({
+    kind: "product_identity",
+    options: Object.freeze(candidates.slice(0, 4).map((candidate, index) => Object.freeze({
+      key: keys[index]!,
+      label: `批次 ${candidate.row.batch_id}`,
+    }))),
+    free_text_allowed: true,
+  });
+}
+
 function resolveLocationCorrection(
   database: DatabaseSync,
   authoritySecret: Uint8Array,
@@ -846,15 +863,22 @@ function resolveLocationCorrection(
 ): Readonly<
   | { status: "resolved"; resolution: Readonly<ResolvedCoreInventoryLocationCorrection> }
   | { status: "already_current" }
+  | { status: "needs_clarification"; clarification: ProductIdentityClarification }
 > {
+  const referenceColumn = command.batch_reference.kind === "batch_id"
+    ? "i.batch_id"
+    : "p.normalized_name";
+  const referenceValue = command.batch_reference.kind === "batch_id"
+    ? command.batch_reference.batch_id
+    : command.product_reference;
   const rows = database.prepare(
     `SELECT i.batch_id, i.payload_json, b.stocked_at, p.normalized_name
      FROM inventory_batch_projections i
      JOIN inventory_batches b ON b.batch_id = i.batch_id
      JOIN products p ON p.product_id = b.product_id
-     WHERE p.normalized_name = ?
+     WHERE ${referenceColumn} = ?
      ORDER BY i.batch_id`,
-  ).all(command.product_reference) as Array<{
+  ).all(referenceValue) as Array<{
     batch_id: string;
     payload_json: string;
     stocked_at: string;
@@ -877,34 +901,40 @@ function resolveLocationCorrection(
   });
   const candidates = available.filter(({ projection }) =>
     projection.pantry_evidence!.location.value === command.previous_location);
-  if (candidates.length !== 1) {
-    if (
-      candidates.length === 0 && available.length === 1 &&
-      available[0]!.projection.pantry_evidence!.location.value === command.next_location
-    ) return Object.freeze({ status: "already_current" as const });
-    throw new Error(candidates.length === 0
-      ? "CORE_APPLICATION_TARGET_INVALID:location_correction_missing"
-      : "CORE_APPLICATION_TARGET_INVALID:location_correction_ambiguous");
+  if (candidates.length === 1) {
+    const selected = candidates[0]!;
+    return Object.freeze({
+      status: "resolved" as const,
+      resolution: Object.freeze({
+        batch_id: selected.row.batch_id,
+        base_revision: selected.revision,
+        previous_location: selected.projection.pantry_evidence!.location,
+        previous_expiration: selected.projection.pantry_evidence!.expiration,
+        expected_expiration: selected.projection.pantry_evidence!.expiration.basis === "explicit"
+          ? selected.projection.pantry_evidence!.expiration
+          : resolveExpiration({
+              reliability: "reliable_rule",
+              explicit_at: null,
+              duration_days: 7,
+              anchor_at: selected.row.stocked_at,
+              rule_version: "diet-manager/fresh-milk-shelf-life-v1",
+            }),
+      }),
+    });
   }
-  const selected = candidates[0]!;
-  return Object.freeze({
-    status: "resolved" as const,
-    resolution: Object.freeze({
-      batch_id: selected.row.batch_id,
-      base_revision: selected.revision,
-      previous_location: selected.projection.pantry_evidence!.location,
-      previous_expiration: selected.projection.pantry_evidence!.expiration,
-      expected_expiration: selected.projection.pantry_evidence!.expiration.basis === "explicit"
-        ? selected.projection.pantry_evidence!.expiration
-        : resolveExpiration({
-            reliability: "reliable_rule",
-            explicit_at: null,
-            duration_days: 7,
-            anchor_at: selected.row.stocked_at,
-            rule_version: "diet-manager/fresh-milk-shelf-life-v1",
-          }),
-    }),
-  });
+  if (candidates.length > 1) {
+    return Object.freeze({
+      status: "needs_clarification" as const,
+      clarification: locationCorrectionClarification(candidates),
+    });
+  }
+  if (
+    available.length === 1 &&
+    available[0]!.projection.pantry_evidence!.location.value === command.next_location
+  ) {
+    return Object.freeze({ status: "already_current" as const });
+  }
+  throw new Error("CORE_APPLICATION_TARGET_INVALID:location_correction_missing");
 }
 
 function resolveMealCorrection(
@@ -1263,6 +1293,15 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
             "location_correction_already_current",
           );
         }
+        if (resolution.status === "needs_clarification") {
+          return nonWritingOutcome(
+            request.action,
+            request.operation_id,
+            "needs_clarification",
+            "location_correction_ambiguous",
+            resolution.clarification,
+          );
+        }
         const result = executeCandidate(
           runtime,
           request,
@@ -1272,6 +1311,85 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           resolution.resolution,
         );
         return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+      }
+      if (parsed.command.correction_kind === "water_classification") {
+        const resolvedTarget = resolveWaterCorrectionTarget({
+          database: session.database,
+          authoritySecret: session.authoritySecret,
+          conversationId: request.conversation_id,
+          reference: parsed.command.target,
+        });
+        if (!resolvedTarget.active) {
+          return nonWritingOutcome(
+            request.action,
+            request.operation_id,
+            "ignored",
+            "already_voided",
+          );
+        }
+        const correctionResolution: ResolvedCoreWaterClassification = Object.freeze({
+          target_event_id: resolvedTarget.target_event_id,
+          base_revision: resolvedTarget.base_revision,
+        });
+        const envelope = mapCoreCandidateToEnvelope(
+          request,
+          parsed.command,
+          Object.freeze([]),
+          correctionResolution,
+        );
+        const preview = session.service.preview(envelope);
+        let result;
+        try {
+          result = session.service.execute({
+            envelope,
+            token: preview.token,
+            input_digest: preview.input_digest,
+            data_revision: preview.data_revision,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (
+            message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
+            message.startsWith("PREVIEW_STALE:data_revision")
+          ) {
+            return failedOutcome(request.action, request.operation_id, "correction_conflict");
+          }
+          throw error;
+        }
+        if (
+          envelope.operations.length !== 1 ||
+          result.items.length !== 1 ||
+          (result.status !== "committed" && result.status !== "committed_with_issues") ||
+          result.items[0]?.operation_id !== envelope.operations[0]?.operation_id ||
+          (result.items[0]?.status !== "committed" && result.items[0]?.status !== "committed_with_issues")
+        ) {
+          throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
+        }
+        const correctionResult = readAppliedWaterClassificationResult({
+          database: session.database,
+          envelopeId: envelope.envelope_id,
+          operationId: parsed.command.operation_id,
+          operationSequence: 0,
+          idempotencyKey: envelope.idempotency_key,
+        });
+        const correctionView: CorrectionOutcomeView = {
+          correction_id: correctionResult.correction_id,
+          target_event_id: correctionResult.target_event_id,
+          revision: correctionResult.revision,
+          operation: "change_water_classification",
+          current_active: true,
+          compensation_transaction_id: correctionResult.compensation_transaction_id,
+        };
+        return committedOutcome(
+          request.action,
+          request.operation_id,
+          correctionResult.status,
+          recordId(session.database, envelope, envelope.operations[0]!),
+          undefined,
+          undefined,
+          undefined,
+          correctionView,
+        );
       }
       const resolvedTarget = resolveCorrectionTarget({
         database: session.database,

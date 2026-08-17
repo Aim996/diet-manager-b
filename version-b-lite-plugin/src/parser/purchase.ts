@@ -1,4 +1,6 @@
 import type {
+  CoreInventoryBatchReference,
+  CoreInventoryLocation,
   CoreInventoryLocationCorrectionCandidate,
   CoreParseInput,
   CoreClarificationResult,
@@ -363,26 +365,99 @@ export function resolvePantryClarification(
   return null;
 }
 
-/** Parse only the frozen SEL-PANTRY purchase and location-correction grammar. */
+// 有界库存位置纠正语法：位置只接受已登记的冷藏/冷冻/常温三类（及其口语别名），
+// 批次引用要么是指示词（这批/这盒/…），要么是显式批次编号。识别两种句式：
+// “放在 X，不是 Y”（next=X, previous=Y）与“不是 Y，是 X”（previous=Y, next=X）。
+const DEICTIC_BATCH_ALT = "这批|这盒|这箱|这罐|这些";
+const BATCH_ID_SOURCE = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+// 别名按“长词在前”排列，避免“冷藏”抢先吃掉“冷藏室”。
+const LOCATION_ALT = "冷藏室|冷冻室|冷冻柜|冷藏|冷冻|冰柜|冰箱|常温柜|常温|室温";
+
+const LOCATION_VALUE: Readonly<Record<string, CoreInventoryLocation>> = {
+  冷藏室: "refrigerator",
+  冷藏: "refrigerator",
+  冰箱: "refrigerator",
+  冷冻室: "freezer",
+  冷冻柜: "freezer",
+  冷冻: "freezer",
+  冰柜: "freezer",
+  常温柜: "room_temperature_cabinet",
+  常温: "room_temperature_cabinet",
+  室温: "room_temperature_cabinet",
+};
+
+const LOCATION_CORRECTION_PLACED = new RegExp(
+  `^更正[：:](?:(${DEICTIC_BATCH_ALT})牛奶|批次\\s*(${BATCH_ID_SOURCE}))\\s*(?:其实\\s*)?放在\\s*(${LOCATION_ALT})[，,](?:不是|不在)\\s*(${LOCATION_ALT})[。.]?$`,
+  "u",
+);
+const LOCATION_CORRECTION_NEGATED = new RegExp(
+  `^更正[：:](?:(${DEICTIC_BATCH_ALT})牛奶|批次\\s*(${BATCH_ID_SOURCE}))\\s*(?:其实\\s*)?(?:不是|不在)\\s*(${LOCATION_ALT})[，,](?:是|放在|在)\\s*(${LOCATION_ALT})[。.]?$`,
+  "u",
+);
+
+function resolveLocationBatchReference(
+  deictic: string | undefined,
+  batchId: string | undefined,
+): CoreInventoryBatchReference | null {
+  if (batchId !== undefined) return Object.freeze({ kind: "batch_id", batch_id: batchId });
+  if (deictic !== undefined) return Object.freeze({ kind: "deictic" });
+  return null;
+}
+
+function locationCorrectionCandidate(
+  input: Readonly<CoreParseInput>,
+  batchReference: CoreInventoryBatchReference,
+  previous: CoreInventoryLocation,
+  next: CoreInventoryLocation,
+  matchedSpan: string,
+): Readonly<CoreInventoryLocationCorrectionCandidate> {
+  return Object.freeze({
+    action: "correct_record",
+    operation_id: input.operation_id,
+    source_text: input.source_text,
+    parser_version: PARSER_VERSION,
+    correction_kind: "inventory_location",
+    product_reference: "milk",
+    batch_reference: batchReference,
+    previous_location: previous,
+    next_location: next,
+    matched_span: matchedSpan,
+    rule_version: "diet-manager/location-correction/v1",
+  });
+}
+
+function parseInventoryLocationCorrection(
+  input: Readonly<CoreParseInput>,
+): Readonly<CoreInventoryLocationCorrectionCandidate> | null {
+  const source = input.source_text.trim();
+  const placed = LOCATION_CORRECTION_PLACED.exec(source);
+  if (placed !== null && placed[3] !== undefined && placed[4] !== undefined) {
+    const batchReference = resolveLocationBatchReference(placed[1], placed[2]);
+    if (batchReference === null) return null;
+    const next = LOCATION_VALUE[placed[3]];
+    const previous = LOCATION_VALUE[placed[4]];
+    if (next === undefined || previous === undefined || next === previous) return null;
+    return locationCorrectionCandidate(input, batchReference, previous, next, `${placed[3]}，不是${placed[4]}`);
+  }
+  const negated = LOCATION_CORRECTION_NEGATED.exec(source);
+  if (negated !== null && negated[3] !== undefined && negated[4] !== undefined) {
+    const batchReference = resolveLocationBatchReference(negated[1], negated[2]);
+    if (batchReference === null) return null;
+    const previous = LOCATION_VALUE[negated[3]];
+    const next = LOCATION_VALUE[negated[4]];
+    if (next === undefined || previous === undefined || next === previous) return null;
+    return locationCorrectionCandidate(input, batchReference, previous, next, `不是${negated[3]}，是${negated[4]}`);
+  }
+  return null;
+}
+
+/** Parse only the frozen SEL-PANTRY purchase and the bounded location-correction grammar. */
 export function resolvePantryCommand(
   input: Readonly<CoreParseInput>,
 ): Readonly<CorePurchaseCommandCandidate | CoreInventoryLocationCorrectionCandidate> | null {
   const source = input.source_text.trim();
-  if (/^更正[：:]这批牛奶放在冷藏室[，,]不是常温柜[。.]?$/u.test(source)) {
-    return Object.freeze({
-      action: "correct_record",
-      operation_id: input.operation_id,
-      source_text: input.source_text,
-      parser_version: PARSER_VERSION,
-      correction_kind: "inventory_location",
-      product_reference: "milk",
-      batch_reference: "this_batch",
-      previous_location: "room_temperature_cabinet",
-      next_location: "refrigerator",
-      matched_span: "冷藏室，不是常温柜",
-      rule_version: "diet-manager/location-correction/v1",
-    });
-  }
+  const locationCorrection = parseInventoryLocationCorrection(input);
+  if (locationCorrection !== null) return locationCorrection;
   {
     const single = parseSinglePurchaseItem(input, 0);
     if (single.status === "candidate") {

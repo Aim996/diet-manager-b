@@ -293,11 +293,22 @@ export interface CorrectMealTimeOperation {
   readonly replacement_meal_slot: string;
 }
 
+export interface CorrectWaterClassificationOperation {
+  readonly kind: "correct_record";
+  readonly operation_id: string;
+  readonly correction_kind: "water_classification";
+  readonly target_event_id: string;
+  readonly base_revision: number;
+  readonly replacement_kind: "nutritious_drink";
+  readonly replacement_name: string;
+}
+
 export type CorrectRecordOperation =
   | CorrectMealRecordOperation
   | CorrectInventoryLocationOperation
   | CorrectNutritionSupplementOperation
-  | CorrectMealTimeOperation;
+  | CorrectMealTimeOperation
+  | CorrectWaterClassificationOperation;
 
 export interface InventoryLocationCorrectionResult {
   readonly sequence: number;
