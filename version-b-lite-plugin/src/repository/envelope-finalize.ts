@@ -411,6 +411,22 @@ function nextProgressGeneratedAt(
   return authorityInvalid("daily_progress_timestamp");
 }
 
+function zeroDailyProgress(date: string, timezone: "Asia/Shanghai"): FrozenDailyProgress {
+  return Object.freeze({
+    date,
+    timezone,
+    coverage_status: "complete",
+    nutrients: Object.freeze({
+      energy_kcal_milli: 0,
+      protein_mg: 0,
+      fat_mg: 0,
+      carbohydrate_mg: 0,
+      fiber_mg: 0,
+      water_ml_milli: 0,
+    }),
+  });
+}
+
 function freezeMealDailyProgress(
   input: FrozenInput,
   envelopeId: string,
@@ -717,9 +733,13 @@ function freezeCorrectionDailyProgress(
   );
   if (
     !Array.isArray(domainPayload.daily_progress_by_date) ||
-    domainPayload.daily_progress_by_date.length !== 1 ||
+    domainPayload.daily_progress_by_date.length === 0 ||
     canonicalJson(domainPayload.daily_progress_by_date[0]) !== canonicalJson(replacement)
   ) return authorityInvalid("correction_progress_by_date");
+  const replacementsByDate = Object.freeze(
+    domainPayload.daily_progress_by_date.map((candidate) =>
+      parseDailyProgress(candidate, "correction_progress_by_date")),
+  );
   const bundleRows = input.database.prepare(
     `SELECT operation_id, effect_state, result_status, completed_at, payload_json
      FROM effect_bundle_commits WHERE envelope_id = ?`,
@@ -776,17 +796,18 @@ function freezeCorrectionDailyProgress(
     state: string;
   }>;
   if (
-    outboxes.length < 2 || bundlePayload.effects.length !== outboxes.length ||
-    outboxes.filter((outbox) => outbox.effect_kind === "daily_progress_replacement").length !== 1 ||
+    bundlePayload.effects.length !== outboxes.length ||
+    outboxes.filter((outbox) => outbox.effect_kind === "daily_progress_replacement").length !==
+      replacementsByDate.length ||
     outboxes.some((outbox) =>
       outbox.effect_kind !== "daily_progress_replacement" &&
       outbox.effect_kind !== "correction_inventory_compensation")
   ) {
     return authorityInvalid("correction_progress_bundle");
   }
-  let boundReplacement: FrozenDailyProgress | null = null;
-  let boundBefore: FrozenDailyProgress | null = null;
-  let boundAfter: FrozenDailyProgress | null = null;
+  const boundReplacements: FrozenDailyProgress[] = [];
+  const boundBefores: FrozenDailyProgress[] = [];
+  const boundAfters: FrozenDailyProgress[] = [];
   for (let index = 0; index < outboxes.length; index += 1) {
     const outbox = outboxes[index];
     const progress = outbox.effect_kind === "daily_progress_replacement";
@@ -802,76 +823,97 @@ function freezeCorrectionDailyProgress(
       (outbox.state !== "succeeded" && outbox.state !== "permanent_business_skip")
     ) return authorityInvalid("correction_progress_bundle");
     if (progress) {
-      if (outbox.state !== "succeeded" || boundReplacement !== null) {
+      if (outbox.state !== "succeeded") {
         return authorityInvalid("correction_progress_bundle");
       }
-      boundReplacement = parseDailyProgress(effect.replacement, "correction_progress_bundle");
+      boundReplacements.push(parseDailyProgress(effect.replacement, "correction_progress_bundle"));
       const delta = plainRecord(
         effect.delta,
         ["after", "before"],
         "correction_progress_delta",
       );
-      boundBefore = parseDailyProgress(delta.before, "correction_progress_delta");
-      boundAfter = parseDailyProgress(delta.after, "correction_progress_delta");
+      boundBefores.push(parseDailyProgress(delta.before, "correction_progress_delta"));
+      boundAfters.push(parseDailyProgress(delta.after, "correction_progress_delta"));
     }
   }
   if (
-    boundReplacement === null || boundBefore === null || boundAfter === null ||
-    canonicalJson(boundReplacement) !== canonicalJson(replacement)
+    boundReplacements.length !== replacementsByDate.length ||
+    boundBefores.length !== replacementsByDate.length ||
+    boundAfters.length !== replacementsByDate.length ||
+    canonicalJson(boundReplacements) !== canonicalJson(replacementsByDate)
   ) return authorityInvalid("correction_progress_bundle");
-  const previousRow = input.database.prepare(
-    `SELECT generated_at, payload_json FROM daily_progress_snapshots
-     WHERE date = ? AND timezone = ? ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
-  ).get(replacement.date, replacement.timezone) as {
-    generated_at: string;
-    payload_json: string;
-  } | undefined;
-  if (!previousRow) return authorityInvalid("correction_progress_previous");
-  let previousValue: unknown;
-  try {
-    previousValue = JSON.parse(previousRow.payload_json) as unknown;
-  } catch {
-    return authorityInvalid("correction_progress_previous");
+  const finalizedReplacements: FrozenDailyProgress[] = [];
+  for (let index = 0; index < boundReplacements.length; index += 1) {
+    const boundReplacement = boundReplacements[index]!;
+    const boundBefore = boundBefores[index]!;
+    const boundAfter = boundAfters[index]!;
+    const previousRow = input.database.prepare(
+      `SELECT generated_at, payload_json FROM daily_progress_snapshots
+       WHERE date = ? AND timezone = ? ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
+    ).get(boundReplacement.date, boundReplacement.timezone) as {
+      generated_at: string;
+      payload_json: string;
+    } | undefined;
+    let previous: FrozenDailyProgress;
+    let previousGeneratedAt: string | null;
+    if (previousRow === undefined) {
+      // Cross-date change_time can move a meal into a previously-empty day; the
+      // replacement delta then applies against an implicit all-zero baseline.
+      previous = zeroDailyProgress(boundReplacement.date, boundReplacement.timezone);
+      previousGeneratedAt = null;
+    } else {
+      let previousValue: unknown;
+      try {
+        previousValue = JSON.parse(previousRow.payload_json) as unknown;
+      } catch {
+        return authorityInvalid("correction_progress_previous");
+      }
+      if (canonicalJson(previousValue) !== previousRow.payload_json) {
+        return authorityInvalid("correction_progress_previous");
+      }
+      const previousRecord = plainRecord(
+        previousValue,
+        ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+        "correction_progress_previous",
+      );
+      if (previousRecord.authority_kind !== "diet-manager/daily-progress/v1") {
+        return authorityInvalid("correction_progress_previous");
+      }
+      previous = parseDailyProgress({
+        coverage_status: previousRecord.coverage_status,
+        date: previousRecord.date,
+        nutrients: previousRecord.nutrients,
+        timezone: previousRecord.timezone,
+      }, "correction_progress_previous");
+      previousGeneratedAt = previousRow.generated_at;
+    }
+    const finalizedReplacement = applyDailyProgressDelta(previous, boundBefore, boundAfter);
+    if (canonicalJson(finalizedReplacement) !== canonicalJson(boundReplacement)) {
+      return authorityInvalid("correction_progress_bundle");
+    }
+    const generatedAt = nextProgressGeneratedAt(
+      input.database,
+      finalizedReplacement.date,
+      finalizedReplacement.timezone,
+      input.finalizedAt,
+      previousGeneratedAt,
+    );
+    input.database.prepare(
+      `INSERT INTO daily_progress_snapshots(
+        progress_snapshot_id, idempotency_result_id, date, timezone,
+        goal_version_id, coverage_status, generated_at, payload_json
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+    ).run(
+      deriveDomainId("progress", idempotencyKey, index),
+      idempotencyKey,
+      finalizedReplacement.date,
+      finalizedReplacement.timezone,
+      finalizedReplacement.coverage_status,
+      generatedAt,
+      canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...finalizedReplacement }),
+    );
+    finalizedReplacements.push(finalizedReplacement);
   }
-  if (canonicalJson(previousValue) !== previousRow.payload_json) {
-    return authorityInvalid("correction_progress_previous");
-  }
-  const previousRecord = plainRecord(
-    previousValue,
-    ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
-    "correction_progress_previous",
-  );
-  if (previousRecord.authority_kind !== "diet-manager/daily-progress/v1") {
-    return authorityInvalid("correction_progress_previous");
-  }
-  const previous = parseDailyProgress({
-    coverage_status: previousRecord.coverage_status,
-    date: previousRecord.date,
-    nutrients: previousRecord.nutrients,
-    timezone: previousRecord.timezone,
-  }, "correction_progress_previous");
-  const finalizedReplacement = applyDailyProgressDelta(previous, boundBefore, boundAfter);
-  const generatedAt = nextProgressGeneratedAt(
-    input.database,
-    finalizedReplacement.date,
-    finalizedReplacement.timezone,
-    input.finalizedAt,
-    previousRow.generated_at,
-  );
-  input.database.prepare(
-    `INSERT INTO daily_progress_snapshots(
-      progress_snapshot_id, idempotency_result_id, date, timezone,
-      goal_version_id, coverage_status, generated_at, payload_json
-    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
-  ).run(
-    deriveDomainId("progress", idempotencyKey, 0),
-    idempotencyKey,
-    finalizedReplacement.date,
-    finalizedReplacement.timezone,
-    finalizedReplacement.coverage_status,
-    generatedAt,
-    canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...finalizedReplacement }),
-  );
   if (!Array.isArray(execution.items) || execution.items.length !== 1) {
     return authorityInvalid("correction_progress_items");
   }
@@ -895,22 +937,24 @@ function freezeCorrectionDailyProgress(
   );
   if (
     canonicalJson(item.daily_progress) !== canonicalJson(replacement) ||
-    !Array.isArray(item.daily_progress_by_date) || item.daily_progress_by_date.length !== 1 ||
-    canonicalJson(item.daily_progress_by_date[0]) !== canonicalJson(replacement) ||
+    !Array.isArray(item.daily_progress_by_date) ||
+    item.daily_progress_by_date.length !== replacementsByDate.length ||
+    canonicalJson(item.daily_progress_by_date) !== canonicalJson(replacementsByDate) ||
     item.status !== input.resultStatus ||
     canonicalJson(item) !== canonicalJson(authoritativeResult)
   ) return authorityInvalid("correction_progress_item");
+  const finalizedByDate = Object.freeze(finalizedReplacements);
   const finalExecution = {
     ...execution,
     items: [{
       ...item,
-      daily_progress: finalizedReplacement,
-      daily_progress_by_date: [finalizedReplacement],
+      daily_progress: finalizedByDate[0],
+      daily_progress_by_date: finalizedByDate,
     }],
     payload: {
       authority_kind: "diet-manager/domain-execution/v1",
-      daily_progress: finalizedReplacement,
-      daily_progress_by_date: [finalizedReplacement],
+      daily_progress: finalizedByDate[0],
+      daily_progress_by_date: finalizedByDate,
     },
     status: input.resultStatus,
   };

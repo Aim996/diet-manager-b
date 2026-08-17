@@ -71,7 +71,9 @@ export interface ContributionProgressReservation {
 export interface ReplacementProgressReservation {
   readonly after: ReservedDailyProgress;
   readonly authority_kind: "diet-manager/progress-reservation/v1";
-  readonly base_generated_at: string;
+  // null only when the target date had no prior daily_progress_snapshots row
+  // (cross-date change_time moving a meal into a previously-empty day).
+  readonly base_generated_at: string | null;
   readonly before: ReservedDailyProgress;
   readonly date: string;
   readonly mode: "replacement";
@@ -213,8 +215,7 @@ export function parseProgressReservation(value: unknown): ProgressReservation {
       reserved.date !== reservationDate || before.timezone !== record.timezone ||
       after.timezone !== record.timezone || reserved.timezone !== record.timezone
     ) return invalid("binding");
-    const base = generatedAt(record.base_generated_at, false);
-    if (base === null) return invalid("base_generated_at");
+    const base = generatedAt(record.base_generated_at, true);
     return Object.freeze({
       after,
       authority_kind: "diet-manager/progress-reservation/v1",
@@ -252,6 +253,22 @@ function add(
       : "partial",
     date: contribution.date,
     nutrients: Object.freeze(nutrients),
+    timezone: "Asia/Shanghai",
+  });
+}
+
+function zeroProgress(progressDate: string): ReservedDailyProgress {
+  return Object.freeze({
+    coverage_status: "complete",
+    date: progressDate,
+    nutrients: Object.freeze({
+      energy_kcal_milli: 0,
+      protein_mg: 0,
+      fat_mg: 0,
+      carbohydrate_mg: 0,
+      fiber_mg: 0,
+      water_ml_milli: 0,
+    }),
     timezone: "Asia/Shanghai",
   });
 }
@@ -347,19 +364,57 @@ export function createReplacementProgressReservation(
   const before = progress(beforeValue, "before");
   const after = progress(afterValue, "after");
   const previous = latest(database, date(progressDate, "date"));
-  if (previous.progress === null || previous.generated_at === null) {
-    return invalid("daily_progress_missing");
-  }
+  const baseGeneratedAt = previous.progress === null ? null : previous.generated_at;
+  const reserved = previous.progress === null
+    ? replace(zeroProgress(progressDate), before, after)
+    : replace(previous.progress, before, after);
   return Object.freeze({
     after,
     authority_kind: "diet-manager/progress-reservation/v1",
-    base_generated_at: previous.generated_at,
+    base_generated_at: baseGeneratedAt,
     before,
     date: progressDate,
     mode: "replacement",
-    reserved_progress: replace(previous.progress, before, after),
+    reserved_progress: reserved,
     timezone: "Asia/Shanghai",
   });
+}
+
+export function correctionReservations(
+  value: unknown,
+): readonly ReplacementProgressReservation[] {
+  const payload = exactRecord(value, CORRECTION_FACT_FIELDS, "correction_fact");
+  const deltaValue = payload.nutrition_delta;
+  const delta = exactRecord(deltaValue, ["items", "progress_reservations"], "correction_fact");
+  if (
+    !Array.isArray(delta.items) ||
+    !Array.isArray(delta.progress_reservations) ||
+    !Array.isArray(payload.affected_dates) ||
+    delta.progress_reservations.length !== payload.affected_dates.length
+  ) return invalid("correction_reservation_date");
+  const reservations = delta.progress_reservations.map((candidate) => {
+    const reservation = parseProgressReservation(candidate);
+    if (reservation.mode !== "replacement") return invalid("correction_reservation_mode");
+    return reservation;
+  });
+  for (let index = 0; index < reservations.length; index += 1) {
+    if (
+      date(Object.getOwnPropertyDescriptor(payload.affected_dates, String(index))?.value, "correction_fact") !==
+      reservations[index]!.date
+    ) return invalid("correction_reservation_date");
+  }
+  return Object.freeze(reservations);
+}
+
+export function reservationsFromEventPayload(
+  value: unknown,
+  eventType: string,
+): readonly ProgressReservation[] {
+  if (eventType === "diet_correction" || eventType === "nutrition_supplemented") {
+    return correctionReservations(value);
+  }
+  const single = reservationFromEventPayload(value, eventType);
+  return single === undefined ? Object.freeze([]) : Object.freeze([single]);
 }
 
 export function reservationFromEventPayload(
@@ -439,28 +494,9 @@ export function reservationFromEventPayload(
     (eventType === "diet_correction" || eventType === "nutrition_supplemented") &&
     authorityKind === "diet-manager/correction-fact/v1"
   ) {
-    const payload = exactRecord(value, CORRECTION_FACT_FIELDS, "correction_fact");
-    const deltaValue = payload.nutrition_delta;
-    if (typeof deltaValue !== "object" || deltaValue === null || Array.isArray(deltaValue)) {
-      return invalid("correction_fact");
-    }
-    const hasReservation = Reflect.ownKeys(deltaValue).includes("progress_reservation");
-    const delta = exactRecord(
-      deltaValue,
-      hasReservation ? ["items", "progress_reservation"] : ["items"],
-      "correction_fact",
-    );
-    if (!hasReservation) return undefined;
-    const reservation = parseProgressReservation(delta.progress_reservation);
-    if (reservation.mode !== "replacement") return invalid("correction_reservation_mode");
-    if (
-      !Array.isArray(payload.affected_dates) ||
-      payload.affected_dates.length !== 1 ||
-      !Object.hasOwn(payload.affected_dates, 0) ||
-      date(Object.getOwnPropertyDescriptor(payload.affected_dates, "0")?.value, "correction_fact") !==
-        reservation.date
-    ) return invalid("correction_reservation_date");
-    return reservation;
+    const reservations = correctionReservations(value);
+    if (reservations.length !== 1) return invalid("correction_reservation_date");
+    return reservations[0];
   }
   if (
     keys.includes("progress_reservation") ||
@@ -471,11 +507,11 @@ export function reservationFromEventPayload(
   return undefined;
 }
 
-function parseEventPayload(
+function parseEventPayloads(
   payloadJson: string,
   eventType: string,
   occurredAtText: string | null,
-): ProgressReservation | undefined {
+): readonly ProgressReservation[] {
   let payload: unknown;
   try {
     payload = JSON.parse(payloadJson) as unknown;
@@ -497,7 +533,7 @@ function parseEventPayload(
       return invalid("water_fact");
     }
   }
-  return reservationFromEventPayload(payload, eventType);
+  return reservationsFromEventPayload(payload, eventType);
 }
 
 interface StoredReservation {
@@ -515,8 +551,9 @@ function activeReservations(database: DatabaseSync): StoredReservation[] {
   ).all() as Array<{ envelope_id: string; event_type: string; occurred_at_text: string | null; payload_json: string }>;
   const reservations: StoredReservation[] = [];
   for (const row of rows) {
-    const reservation = parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text);
-    if (reservation) reservations.push({ envelope_id: row.envelope_id, reservation });
+    for (const reservation of parseEventPayloads(row.payload_json, row.event_type, row.occurred_at_text)) {
+      reservations.push({ envelope_id: row.envelope_id, reservation });
+    }
   }
   return reservations;
 }
@@ -532,11 +569,8 @@ function naturalDate(occurredAt: string): string {
 function unfinalizedProgressOwners(
   database: DatabaseSync,
 ): Array<{ envelope_id: string; date: string }> {
-  const owners = new Map(
-    activeReservations(database).map(({ envelope_id, reservation }) => [
-      envelope_id,
-      { envelope_id, date: reservation.date },
-    ]),
+  const owners: Array<{ envelope_id: string; date: string }> = activeReservations(database).map(
+    ({ envelope_id, reservation }) => ({ envelope_id, date: reservation.date }),
   );
   const envelopeRows = database.prepare(
     `SELECT DISTINCT o.envelope_id
@@ -547,10 +581,10 @@ function unfinalizedProgressOwners(
      ORDER BY o.envelope_id`,
   ).all() as Array<{ envelope_id: string }>;
   for (const { envelope_id } of envelopeRows) {
-    if (owners.has(envelope_id)) continue;
-    const reservation = readEnvelopeProgressReservation(database, envelope_id);
-    if (reservation) {
-      owners.set(envelope_id, { envelope_id, date: reservation.date });
+    if (owners.some((owner) => owner.envelope_id === envelope_id)) continue;
+    const reservations = readEnvelopeProgressReservations(database, envelope_id);
+    if (reservations.length > 0) {
+      for (const reservation of reservations) owners.push({ envelope_id, date: reservation.date });
       continue;
     }
     const row = database.prepare(
@@ -571,7 +605,7 @@ function unfinalizedProgressOwners(
       if ((row.event_type !== "diet_meal" && row.event_type !== "diet_water") || row.occurred_at_text === null) {
         return invalid("progress_owner");
       }
-      owners.set(envelope_id, { envelope_id, date: naturalDate(row.occurred_at_text) });
+      owners.push({ envelope_id, date: naturalDate(row.occurred_at_text) });
       continue;
     }
     let payload: unknown;
@@ -584,14 +618,13 @@ function unfinalizedProgressOwners(
     const correction = exactRecord(payload, CORRECTION_FACT_FIELDS, "progress_owner");
     if (
       (row.event_type !== "diet_correction" && row.event_type !== "nutrition_supplemented") ||
-      !Array.isArray(correction.affected_dates) || correction.affected_dates.length !== 1
+      !Array.isArray(correction.affected_dates) || correction.affected_dates.length === 0
     ) return invalid("progress_owner");
-    owners.set(envelope_id, {
-      envelope_id,
-      date: date(correction.affected_dates[0], "progress_owner"),
-    });
+    for (const affectedDate of correction.affected_dates) {
+      owners.push({ envelope_id, date: date(affectedDate, "progress_owner") });
+    }
   }
-  return [...owners.values()];
+  return owners;
 }
 
 function assertCurrentProjection(
@@ -603,7 +636,9 @@ function assertCurrentProjection(
   const projected = reservation.mode === "contribution"
     ? add(previous.progress, reservation.contribution)
     : previous.progress === null
-      ? invalid("daily_progress_missing")
+      ? reservation.base_generated_at === null
+        ? replace(zeroProgress(reservation.date), reservation.before, reservation.after)
+        : invalid("daily_progress_missing")
       : replace(previous.progress, reservation.before, reservation.after);
   if (canonicalJson(projected) !== canonicalJson(reservation.reserved_progress)) {
     return invalid("projection");
@@ -624,25 +659,41 @@ export function assertProgressReservationFactCommitAuthority(
   assertCurrentProjection(database, reservation);
 }
 
-export function readEnvelopeProgressReservation(
+export function readEnvelopeProgressReservations(
   database: DatabaseSync,
   envelopeId: string,
-): ProgressReservation | undefined {
+): readonly ProgressReservation[] {
   const rows = database.prepare(
     `SELECT event_type, occurred_at_text, payload_json FROM event_records
      WHERE envelope_id = ? ORDER BY committed_at, event_id`,
   ).all(envelopeId) as Array<{ event_type: string; occurred_at_text: string | null; payload_json: string }>;
-  const reservations = rows
-    .map((row) => parseEventPayload(row.payload_json, row.event_type, row.occurred_at_text))
-    .filter((candidate): candidate is ProgressReservation => candidate !== undefined);
+  const reservations = rows.flatMap((row) =>
+    parseEventPayloads(row.payload_json, row.event_type, row.occurred_at_text));
+  return Object.freeze(reservations);
+}
+
+export function readEnvelopeProgressReservation(
+  database: DatabaseSync,
+  envelopeId: string,
+): ProgressReservation | undefined {
+  const reservations = readEnvelopeProgressReservations(database, envelopeId);
   if (reservations.length > 1) return invalid("reservation_count");
   return reservations[0];
 }
 
-function terminalProgressBinding(
+interface TerminalProgressBinding {
+  readonly date: string;
+  readonly mode: "contribution" | "replacement";
+  readonly contribution?: unknown;
+  readonly before?: unknown;
+  readonly after?: unknown;
+  readonly replacement?: unknown;
+}
+
+function terminalProgressBindings(
   database: DatabaseSync,
   envelopeId: string,
-): { date: string; mode: "contribution" | "replacement"; contribution?: unknown; before?: unknown; after?: unknown; replacement?: unknown } | undefined {
+): readonly TerminalProgressBinding[] {
   const rows = database.prepare(
     `SELECT b.payload_json, o.effect_id, o.effect_kind
      FROM effect_bundle_commits b
@@ -651,80 +702,86 @@ function terminalProgressBinding(
      WHERE b.envelope_id = ?
        AND o.effect_kind IN ('daily_progress_contribution', 'daily_progress_replacement')`,
   ).all(envelopeId) as Array<{ payload_json: string; effect_id: string; effect_kind: string }>;
-  if (rows.length === 0) return undefined;
-  if (rows.length !== 1) return invalid("terminal_progress_count");
-  const row = rows[0];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(row.payload_json) as unknown;
-  } catch {
-    return invalid("terminal_bundle");
-  }
-  if (canonicalJson(parsed) !== row.payload_json) return invalid("terminal_bundle");
-  const bundle = exactRecord(
-    parsed,
-    ["authority_kind", "data_revision", "effects", "operation_sequence"],
-    "terminal_bundle",
-  );
-  if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" || !Array.isArray(bundle.effects)) {
-    return invalid("terminal_bundle");
-  }
-  const effectValue = bundle.effects.find((candidate) =>
-    typeof candidate === "object" && candidate !== null && !Array.isArray(candidate) &&
-      Object.getOwnPropertyDescriptor(candidate, "effect_id")?.value === row.effect_id,
-  );
-  if (row.effect_kind === "daily_progress_contribution") {
+  const bindings: TerminalProgressBinding[] = [];
+  for (const row of rows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.payload_json) as unknown;
+    } catch {
+      return invalid("terminal_bundle");
+    }
+    if (canonicalJson(parsed) !== row.payload_json) return invalid("terminal_bundle");
+    const bundle = exactRecord(
+      parsed,
+      ["authority_kind", "data_revision", "effects", "operation_sequence"],
+      "terminal_bundle",
+    );
+    if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" || !Array.isArray(bundle.effects)) {
+      return invalid("terminal_bundle");
+    }
+    const effectValue = bundle.effects.find((candidate) =>
+      typeof candidate === "object" && candidate !== null && !Array.isArray(candidate) &&
+        Object.getOwnPropertyDescriptor(candidate, "effect_id")?.value === row.effect_id,
+    );
+    if (row.effect_kind === "daily_progress_contribution") {
+      const effect = exactRecord(
+        effectValue,
+        ["contribution", "effect_id", "state"],
+        "terminal_effect",
+      );
+      const contribution = progress(effect.contribution, "terminal_effect");
+      bindings.push({ date: contribution.date, mode: "contribution", contribution });
+      continue;
+    }
     const effect = exactRecord(
       effectValue,
-      ["contribution", "effect_id", "state"],
+      ["delta", "effect_id", "replacement", "state"],
       "terminal_effect",
     );
-    const contribution = progress(effect.contribution, "terminal_effect");
-    return { date: contribution.date, mode: "contribution", contribution };
+    const delta = exactRecord(effect.delta, ["after", "before"], "terminal_effect");
+    const replacement = progress(effect.replacement, "terminal_effect");
+    bindings.push({
+      after: progress(delta.after, "terminal_effect"),
+      before: progress(delta.before, "terminal_effect"),
+      date: replacement.date,
+      mode: "replacement",
+      replacement,
+    });
   }
-  const effect = exactRecord(
-    effectValue,
-    ["delta", "effect_id", "replacement", "state"],
-    "terminal_effect",
-  );
-  const delta = exactRecord(effect.delta, ["after", "before"], "terminal_effect");
-  const replacement = progress(effect.replacement, "terminal_effect");
-  return {
-    after: progress(delta.after, "terminal_effect"),
-    before: progress(delta.before, "terminal_effect"),
-    date: replacement.date,
-    mode: "replacement",
-    replacement,
-  };
+  return Object.freeze(bindings);
 }
 
 export function assertProgressReservationFinalizerAuthority(
   database: DatabaseSync,
   envelopeId: string,
 ): void {
-  const binding = terminalProgressBinding(database, envelopeId);
-  if (!binding) return;
-  const reservation = readEnvelopeProgressReservation(database, envelopeId);
+  const bindings = terminalProgressBindings(database, envelopeId);
+  if (bindings.length === 0) return;
+  const reservations = readEnvelopeProgressReservations(database, envelopeId);
+  const bindingDates = new Set(bindings.map((binding) => binding.date));
   const conflicts = activeReservations(database).filter(
     (candidate) => candidate.envelope_id !== envelopeId &&
-      candidate.reservation.date === binding.date,
+      bindingDates.has(candidate.reservation.date),
   );
   if (conflicts.length > 0) throw new Error("PROGRESS_RESERVATION_CONFLICT:active");
-  if (!reservation) return;
-  if (reservation.mode !== binding.mode || reservation.date !== binding.date) {
-    return invalid("terminal_binding");
+  if (reservations.length === 0) return;
+  if (reservations.length !== bindings.length) return invalid("terminal_binding");
+  for (const reservation of reservations) {
+    const binding = bindings.find((candidate) =>
+      candidate.date === reservation.date && candidate.mode === reservation.mode);
+    if (!binding) return invalid("terminal_binding");
+    assertCurrentProjection(database, reservation);
+    if (
+      reservation.mode === "contribution" &&
+      canonicalJson(reservation.contribution) !== canonicalJson(binding.contribution)
+    ) return invalid("terminal_binding");
+    if (
+      reservation.mode === "replacement" &&
+      (canonicalJson(reservation.before) !== canonicalJson(binding.before) ||
+        canonicalJson(reservation.after) !== canonicalJson(binding.after) ||
+        canonicalJson(reservation.reserved_progress) !== canonicalJson(binding.replacement))
+    ) return invalid("terminal_binding");
   }
-  assertCurrentProjection(database, reservation);
-  if (
-    reservation.mode === "contribution" &&
-    canonicalJson(reservation.contribution) !== canonicalJson(binding.contribution)
-  ) return invalid("terminal_binding");
-  if (
-    reservation.mode === "replacement" &&
-    (canonicalJson(reservation.before) !== canonicalJson(binding.before) ||
-      canonicalJson(reservation.after) !== canonicalJson(binding.after) ||
-      canonicalJson(reservation.reserved_progress) !== canonicalJson(binding.replacement))
-  ) return invalid("terminal_binding");
 }
 
 export function cloneProgressReservation<T extends ProgressReservation>(value: T): T {

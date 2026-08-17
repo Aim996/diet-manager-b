@@ -39,6 +39,13 @@ const LEXICON = Object.freeze([
 ]);
 const MAX_MEAL_OCCURRENCES = 256;
 
+// 把有界纠正命令里的中文条目文本（如「苹果」）映射回餐食词表的规范化名（如「apple」）。
+// 与 LEXICON 共用同一张冻结表，保证「把刚才苹果改成…」能定位到存储里的 apple 条目。
+export function normalizeMealLexeme(rawText: string): string | null {
+  const lexeme = LEXICON.find((candidate) => candidate.raw_text === rawText);
+  return lexeme === undefined ? null : lexeme.normalized_name;
+}
+
 export interface PositionedMealItem extends ProposedSubjectItem {
   readonly event_id: string;
   readonly occurrence_id: string;

@@ -1453,7 +1453,7 @@ describe("B-STOR-002 FactCommit", () => {
           inventory_compensation_intent: { items: [] },
           nutrition_delta: {
             items: [],
-            progress_reservation: contributionReservationFixture,
+            progress_reservations: [contributionReservationFixture],
           },
           operation: "change_amount",
           request_id: "request-authority-test",

@@ -1,4 +1,4 @@
-import type { CoreParseInput, CoreParseResult } from "./types.js";
+import type { CoreParseInput, CoreParseResult, CoreMealSlotToken } from "./types.js";
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
 
@@ -9,52 +9,173 @@ const EVENT_ID_UNDO = /^撤销\s*记录\s*([A-Za-z0-9][A-Za-z0-9._:-]{0,127})[�
 // 指示词指向某条记录、但未绑定到"刚才那条"或具体编号 —— 目标不唯一，需澄清。
 const DEICTIC_UNBOUNDED_UNDO = /^撤销\s*(?:那条|这条|那一条|这一条)\s*(?:饮食)?记录[。.]?$/u;
 
+// 有界餐食数量纠正：把刚才苹果改成200克。目标固定为 latest_meal，数量必须是
+// 正数，单位限制在既有餐食解析器认可的普通单位集合内。
+const MEAL_AMOUNT_CORRECTION = /^把\s*刚才(?:的)?\s*(.+?)\s*改成\s*(\d+(?:\.\d+)?)\s*(克|个|ml|毫升|份|杯|斤|两)\s*[。.]?$/u;
+
+// 有界餐食发生时间纠正：刚才那顿其实是昨天晚饭。目标固定为 latest_meal，
+// 只接受"相对日 + 餐次"形态（不接具体钟点），餐次按口语别名映射到中文 token。
+const MEAL_TIME_CORRECTION = /^刚才(?:那顿|这顿|那条|这条)?\s*(?:其实|应该)?\s*是\s*(今天|昨天|前天)?\s*(早饭|早餐|午饭|午餐|晚饭|晚餐|夜宵|宵夜|加餐)\s*[。.]?$/u;
+
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+
+const MEAL_SLOT_ALIASES: Readonly<Record<string, CoreMealSlotToken>> = {
+  早饭: "早餐",
+  早餐: "早餐",
+  午饭: "午餐",
+  午餐: "午餐",
+  晚饭: "晚餐",
+  晚餐: "晚餐",
+  夜宵: "夜宵",
+  宵夜: "夜宵",
+  加餐: "加餐",
+};
+
+// 餐次 → 上海时区整点（用于把"昨天晚饭"等无钟点短语落成确定性时间戳）。
+const MEAL_SLOT_HOURS: Readonly<Record<CoreMealSlotToken, number>> = {
+  早餐: 8,
+  午餐: 12,
+  晚餐: 18,
+  加餐: 15,
+  夜宵: 22,
+};
+
+const DAY_OFFSETS: Readonly<Record<string, number>> = {
+  今天: 0,
+  昨天: -1,
+  前天: -2,
+};
+
 function frozenRecord<const T extends object>(entries: T): Readonly<T> {
   return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
 }
 
 /**
- * 解析有界撤销命令。仅在输入以"撤销"开头且命中上述三种有界语法时产出结果，
- * 其余一律返回 undefined，交由 meal/water 等既有解析器继续判定。
+ * 把"相对日 + 上海时区整点"换算成 UTC ISO 时间戳（如 昨天 18:00 上海 → 昨日 10:00 UTC）。
+ * 与 parse-command.ts 的 shanghaiCalendarDate 采用同一昨日换算思路，但额外落一个
+ * 确定性钟点（mealSlot→整点），保证跨日期进度替换有稳定的 before/after 边界。
+ */
+function mealTimeOccurredAt(
+  receivedAt: string,
+  dayDelta: number,
+  hourShanghai: number,
+): string | null {
+  const epoch = new Date(receivedAt).valueOf();
+  if (!Number.isFinite(epoch)) return null;
+  const local = new Date(epoch + SHANGHAI_OFFSET_MS);
+  const calendarEpoch = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate(),
+  ) + dayDelta * 86_400_000;
+  const utcEpoch = calendarEpoch + (hourShanghai - 8) * 3_600_000;
+  const shifted = new Date(utcEpoch);
+  const year = shifted.getUTCFullYear();
+  if (year < 1_000 || year > 9_999) return null;
+  return shifted.toISOString();
+}
+
+/**
+ * 解析有界纠正命令。除"撤销"外，还识别餐食数量纠正（把刚才…改成 N 单位）与
+ * 餐食发生时间纠正（刚才那顿其实是…）。其余一律返回 undefined，交由既有解析器判定。
  */
 export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CoreParseResult | undefined {
   const source = input.source_text.trim();
-  if (!source.startsWith("撤销")) return undefined;
 
-  if (LATEST_MEAL_UNDO.test(source)) {
-    return frozenRecord({
-      disposition: "candidate",
-      command: frozenRecord({
+  if (source.startsWith("撤销")) {
+    if (LATEST_MEAL_UNDO.test(source)) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "undo_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          target: frozenRecord({ kind: "latest_meal_in_conversation" }),
+        }),
+      });
+    }
+
+    const eventId = EVENT_ID_UNDO.exec(source);
+    if (eventId !== null && eventId[1] !== undefined) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "undo_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          target: frozenRecord({ kind: "event_id", event_id: eventId[1] }),
+        }),
+      });
+    }
+
+    if (DEICTIC_UNBOUNDED_UNDO.test(source)) {
+      return frozenRecord({
+        disposition: "needs_clarification",
         action: "undo_record",
-        operation_id: input.operation_id,
-        source_text: input.source_text,
-        parser_version: PARSER_VERSION,
-        target: frozenRecord({ kind: "latest_meal_in_conversation" }),
-      }),
-    });
+        reason_code: "target_ambiguous",
+        question: "要撤销哪一条饮食记录？请说“刚才那条”或提供记录编号。",
+      });
+    }
+
+    return undefined;
   }
 
-  const eventId = EVENT_ID_UNDO.exec(source);
-  if (eventId !== null && eventId[1] !== undefined) {
-    return frozenRecord({
-      disposition: "candidate",
-      command: frozenRecord({
-        action: "undo_record",
-        operation_id: input.operation_id,
-        source_text: input.source_text,
-        parser_version: PARSER_VERSION,
-        target: frozenRecord({ kind: "event_id", event_id: eventId[1] }),
-      }),
-    });
+  const amount = MEAL_AMOUNT_CORRECTION.exec(source);
+  if (amount !== null && amount[1] !== undefined && amount[2] !== undefined && amount[3] !== undefined) {
+    const itemText = amount[1].trim();
+    const quantity = Number(amount[2]);
+    const microunits = Math.round(quantity * 1_000_000);
+    if (
+      itemText.length > 0 &&
+      Number.isFinite(quantity) &&
+      quantity > 0 &&
+      Number.isSafeInteger(microunits)
+    ) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "correct_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          correction_kind: "meal_amount",
+          target: frozenRecord({ kind: "latest_meal_in_conversation" }),
+          target_item_text: itemText,
+          replacement_quantity: quantity,
+          replacement_unit: amount[3],
+        }),
+      });
+    }
+    return undefined;
   }
 
-  if (DEICTIC_UNBOUNDED_UNDO.test(source)) {
-    return frozenRecord({
-      disposition: "needs_clarification",
-      action: "undo_record",
-      reason_code: "target_ambiguous",
-      question: "要撤销哪一条饮食记录？请说“刚才那条”或提供记录编号。",
-    });
+  const time = MEAL_TIME_CORRECTION.exec(source);
+  if (time !== null && time[2] !== undefined) {
+    const slot = MEAL_SLOT_ALIASES[time[2]];
+    if (slot !== undefined) {
+      const dayOffset = time[1] === undefined ? 0 : (DAY_OFFSETS[time[1]] ?? 0);
+      const hour = MEAL_SLOT_HOURS[slot];
+      const occurredAt = mealTimeOccurredAt(input.received_at, dayOffset, hour);
+      if (occurredAt !== null) {
+        return frozenRecord({
+          disposition: "candidate",
+          command: frozenRecord({
+            action: "correct_record",
+            operation_id: input.operation_id,
+            source_text: input.source_text,
+            parser_version: PARSER_VERSION,
+            correction_kind: "meal_time",
+            target: frozenRecord({ kind: "latest_meal_in_conversation" }),
+            replacement_time_text: time[2],
+            replacement_occurred_at: occurredAt,
+            replacement_meal_slot: slot,
+          }),
+        });
+      }
+    }
+    return undefined;
   }
 
   return undefined;

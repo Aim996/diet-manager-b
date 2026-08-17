@@ -18,7 +18,7 @@ import { computeRepositoryDataRevision } from "./revision.js";
 import {
   assertProgressReservationFactCommitAuthority,
   parseProgressReservation,
-  reservationFromEventPayload,
+  reservationsFromEventPayload,
   type ProgressReservation,
 } from "./progress-reservation.js";
 
@@ -55,6 +55,11 @@ const OPERATION_INPUT_FIELDS = [
 const RESERVED_OPERATION_INPUT_FIELDS = [
   ...OPERATION_INPUT_FIELDS,
   "progressReservation",
+] as const;
+
+const RESERVED_ARRAY_OPERATION_INPUT_FIELDS = [
+  ...OPERATION_INPUT_FIELDS,
+  "progressReservations",
 ] as const;
 
 const SEAL_INPUT_FIELDS = [
@@ -163,6 +168,7 @@ export interface PreparedEnvelopeOperation {
   readonly items: readonly PreparedMealItem[];
   readonly effects: readonly PreparedEffectIntent[];
   readonly progressReservation?: ProgressReservation;
+  readonly progressReservations?: readonly ProgressReservation[];
 }
 
 export interface PreparedEnvelopeSeal {
@@ -259,6 +265,7 @@ interface FrozenEnvelopeOperation extends FrozenFactCommit {
   sequence: number;
   operationId: string;
   progressReservation?: ProgressReservation;
+  progressReservations?: readonly ProgressReservation[];
 }
 
 interface FrozenEnvelopeSeal {
@@ -597,9 +604,12 @@ function insertCorrectionFact(
     (payload.operation !== "change_amount" &&
       payload.operation !== "change_nutrition_source" &&
       payload.operation !== "void_event" &&
-      payload.operation !== "restore_event") ||
+      payload.operation !== "restore_event" &&
+      payload.operation !== "change_time") ||
     (commandType === "correct_record" &&
-      payload.operation !== "change_amount" && payload.operation !== "change_nutrition_source") ||
+      payload.operation !== "change_amount" &&
+      payload.operation !== "change_nutrition_source" &&
+      payload.operation !== "change_time") ||
     (commandType === "undo_record" &&
       payload.operation !== "void_event" && payload.operation !== "restore_event") ||
     canonicalJson(payload.before_snapshot) === canonicalJson(payload.after_snapshot)
@@ -717,12 +727,23 @@ function freezeInput(value: PreparedFactCommit): FrozenFactCommit {
 function freezeOperation(value: PreparedEnvelopeOperation): FrozenEnvelopeOperation {
   const hasReservation = typeof value === "object" && value !== null &&
     Reflect.ownKeys(value).includes("progressReservation");
+  const hasReservations = typeof value === "object" && value !== null &&
+    Reflect.ownKeys(value).includes("progressReservations");
+  if (hasReservation && hasReservations) return requestInvalid("progress_reservation_fields");
   const fields = exactDataProperties(
     value,
-    hasReservation ? RESERVED_OPERATION_INPUT_FIELDS : OPERATION_INPUT_FIELDS,
+    hasReservations
+      ? RESERVED_ARRAY_OPERATION_INPUT_FIELDS
+      : hasReservation
+        ? RESERVED_OPERATION_INPUT_FIELDS
+        : OPERATION_INPUT_FIELDS,
   );
   const progressReservation = hasReservation
     ? parseProgressReservation(fields.progressReservation.value)
+    : undefined;
+  const progressReservations = hasReservations
+    ? Object.freeze(denseArray(fields.progressReservations.value, "progress_reservations", 32)
+        .map((candidate) => parseProgressReservation(candidate)))
     : undefined;
   const event = freezeEvent(fields.event.value);
   const items = freezeItems(fields.items.value);
@@ -741,12 +762,20 @@ function freezeOperation(value: PreparedEnvelopeOperation): FrozenEnvelopeOperat
   } catch {
     return requestInvalid("event_payload");
   }
-  const payloadReservation = reservationFromEventPayload(eventPayload, event.eventType);
-  if (
-    (progressReservation === undefined) !== (payloadReservation === undefined) ||
-    (progressReservation !== undefined &&
-      canonicalJson(progressReservation) !== canonicalJson(payloadReservation))
-  ) return requestInvalid("progress_reservation_binding");
+  const payloadReservations = reservationsFromEventPayload(eventPayload, event.eventType);
+  const declaredReservations = progressReservations !== undefined
+    ? progressReservations
+    : progressReservation !== undefined
+      ? Object.freeze([progressReservation])
+      : undefined;
+  if (declaredReservations === undefined) {
+    if (payloadReservations.length !== 0) return requestInvalid("progress_reservation_binding");
+  } else if (
+    declaredReservations.length !== payloadReservations.length ||
+    canonicalJson(declaredReservations) !== canonicalJson(payloadReservations)
+  ) {
+    return requestInvalid("progress_reservation_binding");
+  }
   return Object.freeze({
     database: database(fields.database.value),
     secret: secret(fields.secret.value),
@@ -762,6 +791,7 @@ function freezeOperation(value: PreparedEnvelopeOperation): FrozenEnvelopeOperat
     items,
     effects,
     ...(progressReservation === undefined ? {} : { progressReservation }),
+    ...(progressReservations === undefined ? {} : { progressReservations }),
   });
 }
 
@@ -1315,15 +1345,22 @@ function appendOperationFacts(
     authority.binding.data_revision,
     events,
   );
-  if (frozen.progressReservation !== undefined) {
+  const declaredReservations = frozen.progressReservations !== undefined
+    ? frozen.progressReservations
+    : frozen.progressReservation !== undefined
+      ? Object.freeze([frozen.progressReservation])
+      : undefined;
+  if (declaredReservations !== undefined) {
     if (frozen.sequence !== 0 || events.length !== 0) {
       throw new Error("FACT_COMMIT_AUTHORITY_INVALID:progress_reservation_sequence");
     }
-    assertProgressReservationFactCommitAuthority(
-      frozen.database,
-      authority.binding.preview_id,
-      frozen.progressReservation,
-    );
+    for (const reservation of declaredReservations) {
+      assertProgressReservationFactCommitAuthority(
+        frozen.database,
+        authority.binding.preview_id,
+        reservation,
+      );
+    }
   }
 
   const event = frozen.event;

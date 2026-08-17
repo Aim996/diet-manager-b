@@ -16,7 +16,10 @@ import { computeRepositoryDataRevision } from "../repository/revision.js";
 import {
   createReplacementProgressReservation,
   reservationFromEventPayload,
+  reservationsFromEventPayload,
   type ProgressReservation,
+  type ReplacementProgressReservation,
+  type ReservedDailyProgress,
 } from "../repository/progress-reservation.js";
 import {
   readEffectiveMealState,
@@ -67,6 +70,7 @@ import type {
   AddInventoryOperation,
   CorrectInventoryLocationOperation,
   CorrectMealRecordOperation,
+  CorrectMealTimeOperation,
   CorrectNutritionSupplementOperation,
   InventoryLocationCorrectionFactPayload,
   InventoryLocationCorrectionResult,
@@ -204,13 +208,13 @@ export interface WaterOperationResult {
 }
 
 export interface PrepareCorrectionInput extends Omit<PreparePurchaseInput, "operation"> {
-  readonly operation: CorrectMealRecordOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
 }
 
 export interface PreparedCorrection {
   readonly fact: PreparedEnvelopeOperation;
   readonly correction_id: string;
-  readonly operation: CorrectMealRecordOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
   readonly progress_date: string;
   readonly progress_before: NutritionVector;
   readonly progress_after: NutritionVector;
@@ -224,11 +228,11 @@ export interface CorrectionOperationResult {
   readonly correction_id: string;
   readonly target_event_id: string;
   readonly revision: number;
-  readonly operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
+  readonly operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event" | "change_time";
   readonly compensation_transaction_id: string | null;
   readonly issue_codes: readonly "inventory_insufficient"[];
   readonly daily_progress: DailyProgressResult;
-  readonly daily_progress_by_date: readonly [DailyProgressResult];
+  readonly daily_progress_by_date: readonly DailyProgressResult[];
 }
 
 function freezeJson<T>(value: T): T {
@@ -241,6 +245,42 @@ function freezeJson<T>(value: T): T {
     return Object.freeze(value);
   }
   return value;
+}
+
+function makeReplacementReservation(
+  database: DatabaseSync,
+  progressDate: string,
+  beforeNutrients: NutritionVector,
+  afterNutrients: NutritionVector,
+): ReplacementProgressReservation {
+  const before: ReservedDailyProgress = Object.freeze({
+    coverage_status: Object.values(beforeNutrients).every((value) => value !== null)
+      ? "complete" as const
+      : "partial" as const,
+    date: progressDate,
+    nutrients: beforeNutrients,
+    timezone: "Asia/Shanghai" as const,
+  });
+  const after: ReservedDailyProgress = Object.freeze({
+    coverage_status: Object.values(afterNutrients).every((value) => value !== null)
+      ? "complete" as const
+      : "partial" as const,
+    date: progressDate,
+    nutrients: afterNutrients,
+    timezone: "Asia/Shanghai" as const,
+  });
+  try {
+    return createReplacementProgressReservation(database, progressDate, before, after);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_delta" ||
+        error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_missing")
+    ) {
+      throw new Error("CORRECTION_EFFECT_INVALID:daily_progress");
+    }
+    throw error;
+  }
 }
 
 export function prepareCorrectionOperation(
@@ -263,9 +303,17 @@ export function prepareCorrectionOperation(
     throw new Error("CORRECTION_TARGET_INVALID:inactive");
   }
   let afterSnapshot: EffectiveMealSnapshot;
-  let operationKind: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
+  let operationKind: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event" | "change_time";
   let itemOrder = 0;
-  if (operation.kind === "correct_record") {
+  if (operation.kind === "correct_record" && "correction_kind" in operation &&
+      operation.correction_kind === "meal_time") {
+    afterSnapshot = freezeJson({
+      ...current.snapshot,
+      occurred_at: operation.replacement_occurred_at,
+      meal_slot: operation.replacement_meal_slot,
+    }) as EffectiveMealSnapshot;
+    operationKind = "change_time";
+  } else if (operation.kind === "correct_record") {
     itemOrder = operation.item_order;
     if (!Number.isSafeInteger(itemOrder) || itemOrder < 0 || itemOrder >= current.snapshot.items.length) {
       throw new Error("CORRECTION_TARGET_INVALID:item_order");
@@ -313,78 +361,91 @@ export function prepareCorrectionOperation(
   if (canonicalJson(afterSnapshot) === canonicalJson(current.snapshot)) {
     throw new Error("CORRECTION_TARGET_INVALID:no_change");
   }
-  const affectedItemOrders = operationKind === "change_amount" || operationKind === "change_nutrition_source"
-    ? [itemOrder]
-    : current.snapshot.items.map((item) => item.item_order);
+  const affectedItemOrders = operationKind === "change_time"
+    ? (Object.freeze([]) as readonly number[])
+    : operationKind === "change_amount" || operationKind === "change_nutrition_source"
+      ? [itemOrder]
+      : current.snapshot.items.map((item) => item.item_order);
   const beforeAmount = current.snapshot.items[itemOrder].amount;
   const afterAmount = afterSnapshot.items[itemOrder].amount;
-  const progressPreflight = operationKind === "change_nutrition_source"
-    ? preflightNutritionSupplement(input.database, current.snapshot, afterSnapshot, itemOrder)
-    : preflightCorrectionNutrition(
-        input.database,
-        current.snapshot,
-        afterSnapshot,
-        affectedItemOrders,
-      );
   const correctionId = deriveDomainId("correction", input.idempotencyKey, input.sequence);
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const date = toNaturalDate(current.snapshot.occurred_at, "Asia/Shanghai");
-  const beforeProgress = Object.freeze({
-    coverage_status: Object.values(progressPreflight.before).every((value) => value !== null)
-      ? "complete" as const
-      : "partial" as const,
-    date,
-    nutrients: progressPreflight.before,
-    timezone: "Asia/Shanghai" as const,
+  const zeroVector: NutritionVector = Object.freeze({
+    energy_kcal_milli: 0, protein_mg: 0, fat_mg: 0,
+    carbohydrate_mg: 0, fiber_mg: 0, water_ml_milli: 0,
   });
-  const afterProgress = Object.freeze({
-    coverage_status: Object.values(progressPreflight.after).every((value) => value !== null)
-      ? "complete" as const
-      : "partial" as const,
-    date,
-    nutrients: progressPreflight.after,
-    timezone: "Asia/Shanghai" as const,
-  });
-  let progressReservation: ProgressReservation;
-  try {
-    progressReservation = createReplacementProgressReservation(
+  let progressReservations: readonly ReplacementProgressReservation[];
+  let affectedDates: readonly string[];
+  let progressBefore: NutritionVector;
+  let progressAfter: NutritionVector;
+  if (operationKind === "change_time") {
+    // The meal moves as a whole: its full applied nutrition shifts between dates.
+    const allItemOrders = current.snapshot.items.map((item) => item.item_order);
+    const mealNutrition = preflightCorrectionNutrition(
       input.database,
-      date,
-      beforeProgress,
-      afterProgress,
-    );
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_delta" ||
-        error.message === "PROGRESS_RESERVATION_AUTHORITY_INVALID:daily_progress_missing")
-    ) {
-      throw new Error("CORRECTION_EFFECT_INVALID:daily_progress");
+      current.snapshot,
+      current.snapshot,
+      allItemOrders,
+    ).before;
+    const newDate = toNaturalDate(afterSnapshot.occurred_at, "Asia/Shanghai");
+    if (newDate === date) {
+      affectedDates = Object.freeze([date]);
+      progressReservations = Object.freeze([
+        makeReplacementReservation(input.database, date, mealNutrition, mealNutrition),
+      ]);
+    } else {
+      affectedDates = Object.freeze([date, newDate]);
+      progressReservations = Object.freeze([
+        makeReplacementReservation(input.database, date, mealNutrition, zeroVector),
+        makeReplacementReservation(input.database, newDate, zeroVector, mealNutrition),
+      ]);
     }
-    throw error;
+    progressBefore = mealNutrition;
+    progressAfter = newDate === date ? mealNutrition : zeroVector;
+  } else {
+    const progressPreflight = operationKind === "change_nutrition_source"
+      ? preflightNutritionSupplement(input.database, current.snapshot, afterSnapshot, itemOrder)
+      : preflightCorrectionNutrition(
+          input.database,
+          current.snapshot,
+          afterSnapshot,
+          affectedItemOrders,
+        );
+    affectedDates = Object.freeze([date]);
+    progressReservations = Object.freeze([
+      makeReplacementReservation(input.database, date, progressPreflight.before, progressPreflight.after),
+    ]);
+    progressBefore = progressPreflight.before;
+    progressAfter = progressPreflight.after;
   }
   const payload = freezeJson({
-    affected_dates: [date],
+    affected_dates: affectedDates,
     after_snapshot: afterSnapshot,
     authority_kind: "diet-manager/correction-fact/v1",
     base_revision: current.revision,
     before_snapshot: current.snapshot,
-    change_set: operationKind === "change_amount" || operationKind === "change_nutrition_source"
-      ? operationKind === "change_nutrition_source"
-        ? [
-            {
-              after: afterSnapshot.items[itemOrder].nutrition_sources,
-              before: current.snapshot.items[itemOrder].nutrition_sources,
-              path: `/items/${itemOrder}/nutrition_sources`,
-            },
-            { after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` },
-          ]
-        : [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
-      : [{
-        after: afterSnapshot.active,
-        before: current.snapshot.active,
-        path: "/active",
-      }],
+    change_set: operationKind === "change_time"
+      ? [
+          { after: afterSnapshot.occurred_at, before: current.snapshot.occurred_at, path: "/occurred_at" },
+          { after: afterSnapshot.meal_slot, before: current.snapshot.meal_slot, path: "/meal_slot" },
+        ]
+      : operationKind === "change_amount" || operationKind === "change_nutrition_source"
+        ? operationKind === "change_nutrition_source"
+          ? [
+              {
+                after: afterSnapshot.items[itemOrder].nutrition_sources,
+                before: current.snapshot.items[itemOrder].nutrition_sources,
+                path: `/items/${itemOrder}/nutrition_sources`,
+              },
+              { after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` },
+            ]
+          : [{ after: afterAmount, before: beforeAmount, path: `/items/${itemOrder}/amount` }]
+        : [{
+          after: afterSnapshot.active,
+          before: current.snapshot.active,
+          path: "/active",
+        }],
     correction_id: correctionId,
     inventory_compensation_intent: {
       items: affectedItemOrders.map((affectedItemOrder) => ({
@@ -407,7 +468,7 @@ export function prepareCorrectionOperation(
           ? afterSnapshot.items[affectedItemOrder].amount.nutrition_adoption_microunits
           : 0,
       })),
-      progress_reservation: progressReservation,
+      progress_reservations: progressReservations,
     },
     operation: operationKind,
     request_id: operation.operation_id,
@@ -417,8 +478,8 @@ export function prepareCorrectionOperation(
     correction_id: correctionId,
     operation,
     progress_date: date,
-    progress_before: progressPreflight.before,
-    progress_after: progressPreflight.after,
+    progress_before: progressBefore,
+    progress_after: progressAfter,
     fact: Object.freeze({
       database: input.database,
       secret: Uint8Array.from(input.secret),
@@ -456,15 +517,15 @@ export function prepareCorrectionOperation(
           previousState: null,
           reason: null,
         })),
-        Object.freeze({
-          outboxId: deriveDomainId("outbox", input.idempotencyKey, affectedItemOrders.length),
-          effectId: deriveDomainId("effect", input.idempotencyKey, affectedItemOrders.length),
+        ...progressReservations.map((_, reservationIndex) => Object.freeze({
+          outboxId: deriveDomainId("outbox", input.idempotencyKey, affectedItemOrders.length + reservationIndex),
+          effectId: deriveDomainId("effect", input.idempotencyKey, affectedItemOrders.length + reservationIndex),
           effectKind: "daily_progress_replacement",
           previousState: null,
           reason: null,
-        }),
+        })),
       ]),
-      progressReservation,
+      progressReservations,
     }),
   });
 }
@@ -2978,7 +3039,8 @@ function preflightCorrectionNutrition(
     const item = beforeSnapshot.items[itemOrder];
     const previousNutrition = database.prepare(
       `SELECT payload_json FROM nutrition_snapshots
-       WHERE intake_item_id = ? ORDER BY rowid DESC LIMIT 1`,
+       WHERE intake_item_id = ? AND schema_version = 'domain/v2'
+       ORDER BY rowid DESC LIMIT 1`,
     ).get(item.item_id) as { payload_json: string } | undefined;
     if (!previousNutrition) throw new Error("CORRECTION_EFFECT_INVALID:nutrition_missing");
     const payload = parseCanonical(previousNutrition.payload_json, "correction_nutrition");
@@ -3193,11 +3255,15 @@ export function applyCorrectionEffects(
     if (
       typeof checkpointInventoryIntent !== "object" || checkpointInventoryIntent === null ||
       Array.isArray(checkpointInventoryIntent) ||
-      !Array.isArray((checkpointInventoryIntent as Record<string, unknown>).items) ||
-      (checkpointInventoryIntent as { items: unknown[] }).items.length === 0
+      !Array.isArray((checkpointInventoryIntent as Record<string, unknown>).items)
     ) throw new Error("CORRECTION_EFFECT_INVALID:checkpoint_payload");
     const compensationEffectCount =
       (checkpointInventoryIntent as { items: unknown[] }).items.length;
+    const checkpointAffectedDates = checkpointCorrectionPayload?.affected_dates;
+    if (!Array.isArray(checkpointAffectedDates) || checkpointAffectedDates.length === 0) {
+      throw new Error("CORRECTION_EFFECT_INVALID:checkpoint_payload");
+    }
+    const progressReplacementCount = checkpointAffectedDates.length;
     const expectedKinds = new Map<string, string>();
     for (let index = 0; index < compensationEffectCount; index += 1) {
       expectedKinds.set(
@@ -3205,10 +3271,12 @@ export function applyCorrectionEffects(
         "correction_inventory_compensation",
       );
     }
-    expectedKinds.set(
-      deriveDomainId("effect", input.idempotencyKey, compensationEffectCount),
-      "daily_progress_replacement",
-    );
+    for (let index = 0; index < progressReplacementCount; index += 1) {
+      expectedKinds.set(
+        deriveDomainId("effect", input.idempotencyKey, compensationEffectCount + index),
+        "daily_progress_replacement",
+      );
+    }
     if (
       Object.keys(checkpointPayload).sort().join("\u0000") !==
         ["authority_kind", "data_revision", "effects", "operation_sequence"]
@@ -3262,12 +3330,17 @@ export function applyCorrectionEffects(
       correction_id: string;
       target_event_id: string;
       base_revision: number;
-      operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
+      operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event" | "change_time";
       payload_json: string;
     } | undefined;
     if (!correctionEvent || !correction) throw new Error("CORRECTION_EFFECT_INVALID:fact");
     const payload = parseCanonical(correction.payload_json, "correction_fact");
-    reservationFromEventPayload(payload, correctionEvent.event_type);
+    // For diet_correction / nutrition_supplemented facts, reservationsFromEventPayload
+    // delegates to correctionReservations, which already rejects non-replacement modes.
+    const reservations = reservationsFromEventPayload(
+      payload,
+      correctionEvent.event_type,
+    ) as readonly ReplacementProgressReservation[];
     if (
       payload.correction_id !== correction.correction_id ||
       payload.target_event_id !== correction.target_event_id ||
@@ -3278,7 +3351,9 @@ export function applyCorrectionEffects(
       typeof payload.inventory_compensation_intent !== "object" ||
       payload.inventory_compensation_intent === null ||
       typeof payload.nutrition_delta !== "object" || payload.nutrition_delta === null ||
-      !Array.isArray(payload.affected_dates) || payload.affected_dates.length !== 1
+      !Array.isArray(payload.affected_dates) ||
+      payload.affected_dates.length !== reservations.length ||
+      reservations.length === 0
     ) throw new Error("CORRECTION_EFFECT_INVALID:fact_payload");
     const beforeSnapshot = payload.before_snapshot as unknown as EffectiveMealSnapshot;
     const afterSnapshot = payload.after_snapshot as unknown as EffectiveMealSnapshot;
@@ -3287,17 +3362,17 @@ export function applyCorrectionEffects(
     if (
       Object.keys(inventoryIntent).join("\u0000") !== "items" ||
       Object.keys(nutritionDelta).sort().join("\u0000") !==
-        "items\u0000progress_reservation" ||
+        "items\u0000progress_reservations" ||
       !Array.isArray(inventoryIntent.items) || !Array.isArray(nutritionDelta.items) ||
-      inventoryIntent.items.length === 0 ||
       inventoryIntent.items.length !== nutritionDelta.items.length
     ) throw new Error("CORRECTION_EFFECT_INVALID:intents");
     const inventoryIntents = inventoryIntent.items as Array<Record<string, unknown>>;
     const nutritionIntents = nutritionDelta.items as Array<Record<string, unknown>>;
-    const expectedItemCount = correction.operation === "change_amount" ||
-        correction.operation === "change_nutrition_source"
-      ? 1
-      : beforeSnapshot.items.length;
+    const expectedItemCount = correction.operation === "change_time"
+      ? 0
+      : correction.operation === "change_amount" || correction.operation === "change_nutrition_source"
+        ? 1
+        : beforeSnapshot.items.length;
     if (inventoryIntents.length !== expectedItemCount) {
       throw new Error("CORRECTION_EFFECT_INVALID:intent_count");
     }
@@ -3674,28 +3749,13 @@ export function applyCorrectionEffects(
         assertNutritionRecordsPersisted(input.database, [records]);
       }
     }
-    const date = String(payload.affected_dates[0]);
-    const progressRow = input.database.prepare(
-      `SELECT coverage_status, payload_json FROM daily_progress_snapshots
-       WHERE date = ? AND timezone = 'Asia/Shanghai'
-       ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
-    ).get(date) as { coverage_status: string; payload_json: string } | undefined;
-    if (!progressRow) throw new Error("CORRECTION_EFFECT_INVALID:daily_progress_missing");
-    const progressPayload = parseCanonical(progressRow.payload_json, "correction_progress");
-    if (
-      progressPayload.authority_kind !== "diet-manager/daily-progress/v1" ||
-      progressPayload.date !== date || progressPayload.timezone !== "Asia/Shanghai" ||
-      typeof progressPayload.nutrients !== "object" || progressPayload.nutrients === null
-    ) throw new Error("CORRECTION_EFFECT_INVALID:daily_progress_payload");
-    const replacement = replaceDailyProgress(
+    const dailyProgressByDate: readonly DailyProgressResult[] = reservations.map((reservation) =>
       Object.freeze({
-        date,
-        timezone: "Asia/Shanghai" as const,
-        coverage_status: progressRow.coverage_status as "complete" | "partial",
-        nutrients: progressPayload.nutrients as unknown as NutritionVector,
+        date: reservation.date,
+        timezone: reservation.timezone,
+        coverage_status: reservation.reserved_progress.coverage_status,
+        nutrients: reservation.reserved_progress.nutrients as unknown as NutritionVector,
       }),
-      beforeNutrients,
-      afterNutrients,
     );
     if (input.fault === "after_nutrition_progress") {
       throw new Error("CORRECTION_EFFECT_FAILED:after_nutrition_progress");
@@ -3716,22 +3776,6 @@ export function applyCorrectionEffects(
       state: string;
     }>;
     const hasIssues = issueCodes.length > 0;
-    const deltaBefore = Object.freeze({
-      date,
-      timezone: "Asia/Shanghai" as const,
-      coverage_status: Object.values(beforeNutrients).every((value) => value !== null)
-        ? "complete" as const
-        : "partial" as const,
-      nutrients: Object.freeze(beforeNutrients),
-    });
-    const deltaAfter = Object.freeze({
-      date,
-      timezone: "Asia/Shanghai" as const,
-      coverage_status: Object.values(afterNutrients).every((value) => value !== null)
-        ? "complete" as const
-        : "partial" as const,
-      nutrients: Object.freeze(afterNutrients),
-    });
     const result = Object.freeze({
       sequence: input.operationSequence,
       operation_id: input.operationId,
@@ -3743,8 +3787,8 @@ export function applyCorrectionEffects(
       operation: correction.operation,
       compensation_transaction_id: compensationTransactionId,
       issue_codes: Object.freeze(issueCodes),
-      daily_progress: replacement,
-      daily_progress_by_date: Object.freeze([replacement]) as readonly [DailyProgressResult],
+      daily_progress: dailyProgressByDate[0]!,
+      daily_progress_by_date: Object.freeze(dailyProgressByDate),
     });
     input.database.prepare(
       `UPDATE effect_bundle_commits SET effect_state = ?, result_status = ?,
@@ -3757,14 +3801,29 @@ export function applyCorrectionEffects(
       canonicalJson({
         authority_kind: "diet-manager/effect-bundle/v1",
         data_revision: computeRepositoryDataRevision(input.database),
-        effects: terminalEffects.map((effect) => effect.effect_kind === "daily_progress_replacement"
-          ? {
-            delta: { after: deltaAfter, before: deltaBefore },
-            effect_id: effect.effect_id,
-            replacement,
-            state: effect.state,
+        effects: terminalEffects.map((effect) => {
+          if (effect.effect_kind !== "daily_progress_replacement") {
+            return { effect_id: effect.effect_id, state: effect.state };
           }
-          : { effect_id: effect.effect_id, state: effect.state }),
+          const reservationIndex = reservations.findIndex((reservation, index) =>
+            deriveDomainId("effect", input.idempotencyKey, compensationEffectCount + index) ===
+              effect.effect_id);
+          if (reservationIndex < 0) {
+            throw new Error("CORRECTION_EFFECT_INVALID:bundle_effect");
+          }
+          const reservation = reservations[reservationIndex]!;
+          return {
+            delta: { after: reservation.after, before: reservation.before },
+            effect_id: effect.effect_id,
+            replacement: {
+              date: reservation.date,
+              timezone: reservation.timezone,
+              coverage_status: reservation.reserved_progress.coverage_status,
+              nutrients: reservation.reserved_progress.nutrients,
+            },
+            state: effect.state,
+          };
+        }),
         operation_sequence: input.operationSequence,
       }),
       input.envelopeId,
@@ -3906,7 +3965,7 @@ export function readAppliedCorrectionResult(
     target_event_id: string;
     base_revision: number;
     request_id: string;
-    operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event";
+    operation: "change_amount" | "change_nutrition_source" | "void_event" | "restore_event" | "change_time";
     payload_json: string;
     event_id: string;
     event_type: "diet_correction" | "nutrition_supplemented";
@@ -3943,7 +4002,7 @@ export function readAppliedCorrectionResult(
     ],
     "terminal_fact",
   );
-  reservationFromEventPayload(fact, correction.event_type);
+  const reservations = reservationsFromEventPayload(fact, correction.event_type);
   if (
     fact.authority_kind !== "diet-manager/correction-fact/v1" ||
     fact.correction_id !== correction.correction_id ||
@@ -3957,7 +4016,7 @@ export function readAppliedCorrectionResult(
     ["items"],
     "terminal_fact",
   );
-  if (!Array.isArray(inventoryIntent.items) || inventoryIntent.items.length === 0) {
+  if (!Array.isArray(inventoryIntent.items)) {
     return correctionAuthorityInvalid("terminal_fact");
   }
   if (correction.operation === "change_nutrition_source") {
@@ -4008,11 +4067,14 @@ export function readAppliedCorrectionResult(
     effect_kind: string;
     state: string;
   }>;
-  if (outboxes.length !== bundle.effects.length || outboxes.length !== inventoryIntent.items.length + 1) {
+  if (
+    outboxes.length !== bundle.effects.length ||
+    outboxes.length !== inventoryIntent.items.length + reservations.length
+  ) {
     return correctionAuthorityInvalid("terminal_effects");
   }
   const outboxById = new Map(outboxes.map((outbox) => [outbox.effect_id, outbox]));
-  let progress: DailyProgressResult | null = null;
+  const progressByDate: DailyProgressResult[] = [];
   for (const effectValue of bundle.effects) {
     const candidate = effectValue as Record<string, unknown>;
     const effectId = typeof candidate?.effect_id === "string" ? candidate.effect_id : "";
@@ -4024,11 +4086,11 @@ export function readAppliedCorrectionResult(
         ["delta", "effect_id", "replacement", "state"],
         "terminal_effects",
       );
-      if (effect.state !== "succeeded" || outbox.state !== "succeeded" || progress !== null) {
+      if (effect.state !== "succeeded" || outbox.state !== "succeeded") {
         return correctionAuthorityInvalid("terminal_effects");
       }
       exactCorrectionRecord(effect.delta, ["after", "before"], "terminal_effects");
-      progress = parseCorrectionProgress(effect.replacement);
+      progressByDate.push(parseCorrectionProgress(effect.replacement));
     } else {
       const effect = exactCorrectionRecord(
         effectValue,
@@ -4043,7 +4105,7 @@ export function readAppliedCorrectionResult(
     }
     outboxById.delete(effectId);
   }
-  if (outboxById.size !== 0 || progress === null) {
+  if (outboxById.size !== 0 || progressByDate.length !== reservations.length) {
     return correctionAuthorityInvalid("terminal_effects");
   }
 
@@ -4125,8 +4187,8 @@ export function readAppliedCorrectionResult(
     operation: correction.operation,
     compensation_transaction_id: expectedCompensationId,
     issue_codes: expectedIssueCodes,
-    daily_progress: progress,
-    daily_progress_by_date: [progress],
+    daily_progress: progressByDate[0]!,
+    daily_progress_by_date: progressByDate,
   };
   exactCorrectionRecord(result, CORRECTION_RESULT_FIELDS, "terminal_result");
   return freezeJson(JSON.parse(canonicalJson(result)) as CorrectionOperationResult);

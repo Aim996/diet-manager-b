@@ -256,6 +256,32 @@ export interface CoreUndoCommandCandidate {
   readonly target: CoreCorrectionTargetReference;
 }
 
+export interface CoreMealAmountCorrectionCandidate {
+  readonly action: "correct_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly correction_kind: "meal_amount";
+  readonly target: CoreCorrectionTargetReference;
+  readonly target_item_text: string;
+  readonly replacement_quantity: number;
+  readonly replacement_unit: string;
+}
+
+export type CoreMealSlotToken = "早餐" | "午餐" | "晚餐" | "加餐" | "夜宵";
+
+export interface CoreMealTimeCorrectionCandidate {
+  readonly action: "correct_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly correction_kind: "meal_time";
+  readonly target: CoreCorrectionTargetReference;
+  readonly replacement_time_text: string;
+  readonly replacement_occurred_at: string;
+  readonly replacement_meal_slot: CoreMealSlotToken;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
@@ -263,7 +289,9 @@ export type CoreCommandCandidate =
   | Readonly<CorePurchaseCommandCandidate>
   | Readonly<CoreInventoryLocationCorrectionCandidate>
   | Readonly<CoreNutritionSupplementCandidate>
-  | Readonly<CoreUndoCommandCandidate>;
+  | Readonly<CoreUndoCommandCandidate>
+  | Readonly<CoreMealAmountCorrectionCandidate>
+  | Readonly<CoreMealTimeCorrectionCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;

@@ -88,6 +88,7 @@ import {
 import type {
   AddInventoryOperation,
   CorrectInventoryLocationOperation,
+  CorrectMealTimeOperation,
   CorrectNutritionSupplementOperation,
   CorrectRecordOperation,
   DomainEnvelopeInput,
@@ -343,7 +344,7 @@ function validatePantryInventoryPolicy(value: unknown, field: string): void {
 function validateOperation(
   value: unknown,
   field: string,
-): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | undefined {
+): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | CorrectMealTimeOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -484,6 +485,20 @@ function validateOperation(
         );
         validateAndFreezeResolvedNutritionEvidence(candidate.replacement_nutrition_evidence);
         return Object.freeze({ ...candidate }) as unknown as CorrectNutritionSupplementOperation;
+      }
+      if ((operation as Record<string, unknown>).correction_kind === "meal_time") {
+        const candidate = record(value, [
+          "kind", "operation_id", "correction_kind", "target_event_id", "base_revision",
+          "replacement_occurred_at", "replacement_meal_slot",
+        ], field);
+        text(candidate.operation_id, `${field}.operation_id`);
+        enumValue(candidate.correction_kind, ["meal_time"], `${field}.correction_kind`);
+        text(candidate.target_event_id, `${field}.target_event_id`);
+        const baseRevision = safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+        if (baseRevision < 1) return invalid(`${field}.base_revision`);
+        timestamp(candidate.replacement_occurred_at, `${field}.replacement_occurred_at`);
+        text(candidate.replacement_meal_slot, `${field}.replacement_meal_slot`);
+        return Object.freeze({ ...candidate }) as unknown as CorrectMealTimeOperation;
       }
       const candidate = record(value, [
         "kind", "operation_id", "correction_kind", "batch_id", "base_revision",

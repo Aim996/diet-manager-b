@@ -7,6 +7,7 @@ import type {
   CorrectNutritionSupplementOperation,
   DomainEnvelopeInput,
   DomainOperation,
+  KnownStructuredAmount,
   NutritionSourceCandidate,
   PantryPurchaseEvidence,
   ProductIdentityEvidence,
@@ -16,7 +17,9 @@ import type {
   CoreCommandCandidate,
   CoreInventoryCommandCandidate,
   CoreInventoryLocationCorrectionCandidate,
+  CoreMealAmountCorrectionCandidate,
   CoreMealCommandCandidate,
+  CoreMealTimeCorrectionCandidate,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
 } from "../parser/types.js";
@@ -43,6 +46,18 @@ export interface ResolvedCoreNutritionSupplement {
   readonly replacement_amount: Readonly<CorrectNutritionSupplementOperation["replacement_amount"]>;
   readonly replacement_nutrition_source: Readonly<NutritionSourceCandidate>;
   readonly replacement_nutrition_evidence: Readonly<ResolvedNutritionEvidence>;
+}
+
+export interface ResolvedCoreMealAmountCorrection {
+  readonly target_event_id: string;
+  readonly base_revision: number;
+  readonly item_order: number;
+  readonly replacement_amount: Readonly<KnownStructuredAmount>;
+}
+
+export interface ResolvedCoreMealTimeCorrection {
+  readonly target_event_id: string;
+  readonly base_revision: number;
 }
 
 function identity(request: Readonly<CoreApplicationRequest>): string {
@@ -382,6 +397,72 @@ function nutritionSupplementOperation(
   });
 }
 
+function mealAmountCorrectionOperation(
+  command: Readonly<CoreMealAmountCorrectionCandidate>,
+  resolution: Readonly<ResolvedCoreMealAmountCorrection> | undefined,
+): DomainOperation {
+  if (resolution === undefined) {
+    throw new Error("CORE_APPLICATION_MAPPING_INVALID:meal_amount_resolution");
+  }
+  return Object.freeze({
+    kind: "correct_record" as const,
+    operation_id: command.operation_id,
+    target_event_id: resolution.target_event_id,
+    base_revision: resolution.base_revision,
+    item_order: resolution.item_order,
+    replacement_amount: resolution.replacement_amount,
+  });
+}
+
+function mealTimeCorrectionOperation(
+  command: Readonly<CoreMealTimeCorrectionCandidate>,
+  resolution: Readonly<ResolvedCoreMealTimeCorrection> | undefined,
+): DomainOperation {
+  if (resolution === undefined) {
+    throw new Error("CORE_APPLICATION_MAPPING_INVALID:meal_time_resolution");
+  }
+  return Object.freeze({
+    kind: "correct_record" as const,
+    operation_id: command.operation_id,
+    correction_kind: "meal_time" as const,
+    target_event_id: resolution.target_event_id,
+    base_revision: resolution.base_revision,
+    replacement_occurred_at: command.replacement_occurred_at,
+    replacement_meal_slot: command.replacement_meal_slot,
+  });
+}
+
+function correctionOperation(
+  command: Extract<CoreCommandCandidate, { action: "correct_record" }>,
+  correctionResolution?: Readonly<
+    ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
+    | ResolvedCoreMealAmountCorrection | ResolvedCoreMealTimeCorrection
+  >,
+): DomainOperation {
+  if ("kind" in command) {
+    return nutritionSupplementOperation(
+      command,
+      correctionResolution as Readonly<ResolvedCoreNutritionSupplement> | undefined,
+    );
+  }
+  if (command.correction_kind === "inventory_location") {
+    return locationCorrectionOperation(
+      command,
+      correctionResolution as Readonly<ResolvedCoreInventoryLocationCorrection> | undefined,
+    );
+  }
+  if (command.correction_kind === "meal_amount") {
+    return mealAmountCorrectionOperation(
+      command,
+      correctionResolution as Readonly<ResolvedCoreMealAmountCorrection> | undefined,
+    );
+  }
+  return mealTimeCorrectionOperation(
+    command,
+    correctionResolution as Readonly<ResolvedCoreMealTimeCorrection> | undefined,
+  );
+}
+
 function deepFreeze(value: unknown): void {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) return;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -394,6 +475,7 @@ export function mapCoreCandidateToEnvelope(
   purchaseResolutions: readonly Readonly<ResolvedCorePurchaseItem>[] = Object.freeze([]),
   correctionResolution?: Readonly<
     ResolvedCoreInventoryLocationCorrection | ResolvedCoreNutritionSupplement
+    | ResolvedCoreMealAmountCorrection | ResolvedCoreMealTimeCorrection
   >,
   nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): Readonly<DomainEnvelopeInput> {
@@ -401,15 +483,7 @@ export function mapCoreCandidateToEnvelope(
   const operations = command.action === "add_inventory"
     ? purchaseOperations(request, command, purchaseResolutions)
     : command.action === "correct_record"
-      ? Object.freeze(["correction_kind" in command
-          ? locationCorrectionOperation(
-              command,
-              correctionResolution as Readonly<ResolvedCoreInventoryLocationCorrection> | undefined,
-            )
-          : nutritionSupplementOperation(
-              command,
-              correctionResolution as Readonly<ResolvedCoreNutritionSupplement> | undefined,
-            )])
+      ? Object.freeze([correctionOperation(command, correctionResolution)])
       : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
   const envelope = JSON.parse(canonicalJson({
     envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,

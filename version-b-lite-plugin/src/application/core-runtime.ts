@@ -62,13 +62,20 @@ import {
   parseProjectionPayloadJson,
 } from "../storage/inventory-repository.js";
 import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
-import { resolveCorrectionTarget } from "../repository/correction-target.js";
+import {
+  readEffectiveMealState,
+  resolveCorrectionTarget,
+  type ResolvedCorrectionTarget,
+} from "../repository/correction-target.js";
+import { normalizeMealLexeme } from "../parser/meal.js";
 import {
   mapResolvedNutritionAmountMicrounits,
   mapResolvedNutritionEvidenceToDomainSource,
   mapCoreCandidateToEnvelope,
   mapUndoCandidateToEnvelope,
   type ResolvedCoreInventoryLocationCorrection,
+  type ResolvedCoreMealAmountCorrection,
+  type ResolvedCoreMealTimeCorrection,
   type ResolvedCoreNutritionSupplement,
   type ResolvedCorePurchaseItem,
 } from "./mapping.js";
@@ -900,6 +907,59 @@ function resolveLocationCorrection(
   });
 }
 
+function resolveMealCorrection(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  target: Readonly<ResolvedCorrectionTarget>,
+  command: Extract<CoreCommandCandidate, {
+    action: "correct_record";
+    correction_kind: "meal_amount" | "meal_time";
+  }>,
+): Readonly<ResolvedCoreMealAmountCorrection | ResolvedCoreMealTimeCorrection> {
+  if (command.correction_kind === "meal_time") {
+    return Object.freeze({
+      target_event_id: target.target_event_id,
+      base_revision: target.base_revision,
+    });
+  }
+  const normalizedName = normalizeMealLexeme(command.target_item_text);
+  if (normalizedName === null) {
+    throw new Error("MEAL_CORRECTION_TARGET_INVALID:item_missing");
+  }
+  const state = readEffectiveMealState(database, authoritySecret, target.target_event_id);
+  const matches = state.snapshot.items.filter((item) => item.normalized_name === normalizedName);
+  if (matches.length !== 1) {
+    throw new Error(matches.length === 0
+      ? "MEAL_CORRECTION_TARGET_INVALID:item_missing"
+      : "MEAL_CORRECTION_TARGET_INVALID:item_ambiguous");
+  }
+  const item = matches[0]!;
+  const newObserved = Math.round(command.replacement_quantity * 1_000_000);
+  const previousObserved = item.amount.observed_microunits;
+  const scale = previousObserved !== null && previousObserved > 0
+    ? newObserved / previousObserved
+    : null;
+  const newAdoption = scale === null || item.amount.nutrition_adoption_microunits === null
+    ? null
+    : Math.round(item.amount.nutrition_adoption_microunits * scale);
+  const newDeduction = scale === null || item.amount.inventory_deduction_microunits === null
+    ? null
+    : Math.round(item.amount.inventory_deduction_microunits * scale);
+  return Object.freeze({
+    target_event_id: target.target_event_id,
+    base_revision: target.base_revision,
+    item_order: item.item_order,
+    replacement_amount: Object.freeze({
+      unit: command.replacement_unit,
+      observed_microunits: newObserved,
+      nutrition_adoption_microunits: newAdoption,
+      inventory_deduction_microunits: newDeduction,
+      template_reference_microunits: null,
+      evidence: "explicit" as const,
+    }),
+  });
+}
+
 function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operation: DomainOperation): string {
   const rows = database.prepare(`SELECT event_id, event_type, fact_kind, operation_id
     FROM event_records WHERE envelope_id = ? AND operation_id = ?`)
@@ -1189,28 +1249,109 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
       }
       const session = acquireSession(runtime);
-      const resolution = resolveLocationCorrection(
-        session.database,
-        session.authoritySecret,
-        parsed.command,
-      );
-      if (resolution.status === "already_current") {
+      if (parsed.command.correction_kind === "inventory_location") {
+        const resolution = resolveLocationCorrection(
+          session.database,
+          session.authoritySecret,
+          parsed.command,
+        );
+        if (resolution.status === "already_current") {
+          return nonWritingOutcome(
+            request.action,
+            request.operation_id,
+            "ignored",
+            "location_correction_already_current",
+          );
+        }
+        const result = executeCandidate(
+          runtime,
+          request,
+          parsed.command,
+          Object.freeze([]),
+          session,
+          resolution.resolution,
+        );
+        return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+      }
+      const resolvedTarget = resolveCorrectionTarget({
+        database: session.database,
+        authoritySecret: session.authoritySecret,
+        conversationId: request.conversation_id,
+        reference: parsed.command.target,
+      });
+      if (!resolvedTarget.active) {
         return nonWritingOutcome(
           request.action,
           request.operation_id,
           "ignored",
-          "location_correction_already_current",
+          "already_voided",
         );
       }
-      const result = executeCandidate(
-        runtime,
+      const correctionResolution = resolveMealCorrection(
+        session.database,
+        session.authoritySecret,
+        resolvedTarget,
+        parsed.command,
+      );
+      const envelope = mapCoreCandidateToEnvelope(
         request,
         parsed.command,
         Object.freeze([]),
-        session,
-        resolution.resolution,
+        correctionResolution,
       );
-      return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+      const preview = session.service.preview(envelope);
+      let result;
+      try {
+        result = session.service.execute({
+          envelope,
+          token: preview.token,
+          input_digest: preview.input_digest,
+          data_revision: preview.data_revision,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (
+          message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
+          message.startsWith("PREVIEW_STALE:data_revision")
+        ) {
+          return failedOutcome(request.action, request.operation_id, "correction_conflict");
+        }
+        throw error;
+      }
+      if (
+        envelope.operations.length !== 1 ||
+        result.items.length !== 1 ||
+        (result.status !== "committed" && result.status !== "committed_with_issues") ||
+        result.items[0]?.operation_id !== envelope.operations[0]?.operation_id ||
+        (result.items[0]?.status !== "committed" && result.items[0]?.status !== "committed_with_issues")
+      ) {
+        throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
+      }
+      const correctionResult = readAppliedCorrectionResult({
+        database: session.database,
+        envelopeId: envelope.envelope_id,
+        operationId: parsed.command.operation_id,
+        operationSequence: 0,
+        idempotencyKey: envelope.idempotency_key,
+      });
+      const correctionView: CorrectionOutcomeView = {
+        correction_id: correctionResult.correction_id,
+        target_event_id: correctionResult.target_event_id,
+        revision: correctionResult.revision,
+        operation: parsed.command.correction_kind === "meal_amount" ? "change_amount" : "change_time",
+        current_active: true,
+        compensation_transaction_id: correctionResult.compensation_transaction_id,
+      };
+      return committedOutcome(
+        request.action,
+        request.operation_id,
+        correctionResult.status,
+        recordId(session.database, envelope, envelope.operations[0]!),
+        undefined,
+        undefined,
+        undefined,
+        correctionView,
+      );
     }
     if (parsed.command.action === "undo_record") {
       const session = acquireSession(runtime);

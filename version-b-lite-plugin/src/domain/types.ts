@@ -283,10 +283,21 @@ export interface CorrectNutritionSupplementOperation {
   readonly replacement_nutrition_evidence: Readonly<ResolvedNutritionEvidence>;
 }
 
+export interface CorrectMealTimeOperation {
+  readonly kind: "correct_record";
+  readonly operation_id: string;
+  readonly correction_kind: "meal_time";
+  readonly target_event_id: string;
+  readonly base_revision: number;
+  readonly replacement_occurred_at: string;
+  readonly replacement_meal_slot: string;
+}
+
 export type CorrectRecordOperation =
   | CorrectMealRecordOperation
   | CorrectInventoryLocationOperation
-  | CorrectNutritionSupplementOperation;
+  | CorrectNutritionSupplementOperation
+  | CorrectMealTimeOperation;
 
 export interface InventoryLocationCorrectionResult {
   readonly sequence: number;
