@@ -10,6 +10,7 @@ import {
   lstatSync,
   openSync,
   readSync,
+  renameSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -425,15 +426,14 @@ function unlinkOnlyIdentity(path: string, saved: Identity | undefined): void {
   if (sameIdentity(current, saved)) unlinkSync(path);
 }
 
-function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array {
+function writeAuthoritySecretFile(
+  authority: RuntimeRootAuthority,
+  bytes: Uint8Array,
+  replace: boolean,
+): void {
   assertRuntimeRootAuthority(authority);
+  if (bytes.length !== 32) return invalid("secret", "length");
   const finalPath = join(authority.root, CORE_RUNTIME_SECRET_FILENAME);
-  try {
-    return readSecret(finalPath, authority);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-
   const candidatePath = join(
     authority.root,
     `.${CORE_RUNTIME_SECRET_FILENAME}.candidate-${randomUUID()}`,
@@ -458,7 +458,6 @@ function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array 
     const protectedStat = fdStat(descriptor);
     if (!sameIdentity(candidateIdentity, protectedStat) ||
         !pathMatchesFd(candidatePath, protectedStat)) return invalid("secret", "identity");
-    const bytes = randomBytes(32);
     let offset = 0;
     while (offset < bytes.length) {
       offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
@@ -468,10 +467,17 @@ function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array 
     validateFileStat(beforeAcl);
     if (!pathMatchesFd(candidatePath, beforeAcl)) return invalid("secret", "identity");
     assertRuntimeRootAuthority(authority);
-    try {
-      linkSync(candidatePath, finalPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    closeSync(descriptor);
+    descriptor = undefined;
+    if (replace) {
+      renameSync(candidatePath, finalPath);
+      candidateIdentity = undefined;
+    } else {
+      try {
+        linkSync(candidatePath, finalPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
     }
     assertRuntimeRootAuthority(authority);
   } catch (error) {
@@ -485,7 +491,28 @@ function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array 
     unlinkOnlyIdentity(candidatePath, candidateIdentity);
   }
   assertRuntimeRootAuthority(authority);
+}
+
+function loadOrCreateRuntimeSecret(authority: RuntimeRootAuthority): Uint8Array {
+  assertRuntimeRootAuthority(authority);
+  const finalPath = join(authority.root, CORE_RUNTIME_SECRET_FILENAME);
+  try {
+    return readSecret(finalPath, authority);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  writeAuthoritySecretFile(authority, randomBytes(32), false);
+  assertRuntimeRootAuthority(authority);
   return readSecret(finalPath, authority);
+}
+
+// 便携灾备恢复：把已解密的 32 字节 authority secret 写入目标根，复用 core-runtime 的
+// 独占 ACL/身份保护，确保恢复后的根能被 readSecret 重新打开。
+export function installAuthoritySecret(root: string, bytes: Uint8Array): void {
+  if (bytes.length !== 32) return invalid("secret", "length");
+  const authority = createRuntimeRootAuthority(root);
+  writeAuthoritySecretFile(authority, Uint8Array.from(bytes), true);
+  assertRuntimeRootAuthority(authority);
 }
 
 export interface CreateCoreRuntimeOptions {

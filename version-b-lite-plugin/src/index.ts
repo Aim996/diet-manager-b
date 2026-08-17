@@ -22,3 +22,10 @@ export {
 
 export { backupDietDatabase, restoreDietDatabase } from "./storage/backup.js";
 export type { DietDatabaseBackupResult } from "./storage/backup.js";
+
+export { createPortableBackup, restorePortableBackup } from "./storage/portable-backup.js";
+export type {
+  CreatePortableBackupInput,
+  PortableBackupResult,
+  RestorePortableBackupInput,
+} from "./storage/portable-backup.js";
