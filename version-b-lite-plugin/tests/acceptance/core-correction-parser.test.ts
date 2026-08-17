@@ -38,4 +38,27 @@ describe("core correction parser", () => {
       question: "要撤销哪一条饮食记录？请说“刚才那条”或提供记录编号。",
     });
   });
+
+  it.each([
+    ["把刚才米饭改成2碗", "米饭", 2, "碗"],
+    ["把刚才炒饭改成2盘", "炒饭", 2, "盘"],
+    ["把刚才鸡胸肉改成2块", "鸡胸肉", 2, "块"],
+    ["把刚才面包改成2片", "面包", 2, "片"],
+    ["把刚才牛奶改成2瓶", "牛奶", 2, "瓶"],
+    ["把刚才牛奶改成2盒", "牛奶", 2, "盒"],
+    ["把刚才牛奶改成200mL", "牛奶", 200, "mL"],
+    ["把刚才牛奶改成200ML", "牛奶", 200, "ML"],
+    ["把刚才苹果改成200克", "苹果", 200, "克"],
+  ])("parses meal-amount correction for the meal unit set: %s", (sourceText, itemText, quantity, unit) => {
+    expect(parseCoreCommand(input({ source_text: sourceText, operation_id: "operation-correction-001" }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "correct_record",
+        correction_kind: "meal_amount",
+        target_item_text: itemText,
+        replacement_quantity: quantity,
+        replacement_unit: unit,
+      },
+    });
+  });
 });

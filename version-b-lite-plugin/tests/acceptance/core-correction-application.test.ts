@@ -145,6 +145,47 @@ it("corrects the latest meal amount to an explicit new amount", async () => {
   }
 });
 
+it("corrects a bowl-measured rice meal amount to a new bowl amount", () => {
+  const root = mkdtempSync(join(tmpdir(), `diet-manager-rice-correction-${randomUUID()}-`));
+  const runtime = createCoreRuntime({
+    officialDataRoot: root,
+    now: () => "2026-08-14T12:00:01.000Z",
+  });
+  try {
+    const meal = handleCoreRequest(runtime, {
+      action: "record_meal",
+      source_text: "我吃了1碗米饭",
+      received_at: "2026-08-14T12:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-rice-seed-001",
+      source_message_id: "message-rice-seed-001",
+      conversation_id: "conversation-rice-001",
+      prior_context: [],
+    });
+    expect(meal.committed, JSON.stringify(meal)).toBe(true);
+
+    const outcome = handleCoreRequest(runtime, {
+      action: "correct_record",
+      source_text: "把刚才米饭改成2碗",
+      received_at: "2026-08-14T12:05:00+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "operation-rice-correction-001",
+      source_message_id: "message-rice-correction-001",
+      conversation_id: "conversation-rice-001",
+      prior_context: [],
+    });
+    expect(outcome, JSON.stringify(outcome)).toMatchObject({
+      status: "committed",
+      correction: { operation: "change_amount", target_event_id: meal.record_id },
+    });
+    // 纠正面经 assertDietManagerOutcome 必须存活（碗单位回归）。
+    expect(assertDietManagerOutcome(outcome)).toBe(outcome);
+  } finally {
+    runtime.close();
+    rmSync(root, { recursive: true, force: false });
+  }
+});
+
 it("corrects the latest meal occurrence time to yesterday dinner", async () => {
   const { mealId, root, runtime } = await seedAppleMeal();
   try {
