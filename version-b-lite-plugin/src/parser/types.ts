@@ -355,6 +355,7 @@ export type CoreClarificationResult =
       action: "add_inventory";
       reason_code: "amount_ambiguous";
       question: string;
+      missing_items?: readonly string[];
       occurred_time?: never;
       context_id?: never;
     }>

@@ -1154,6 +1154,9 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
       undefined,
       undefined,
       parsed.disposition === "needs_clarification" ? parsed.question : undefined,
+      parsed.disposition === "needs_clarification" && "missing_items" in parsed
+        ? parsed.missing_items
+        : undefined,
     );
   }
   if (parsed.command.action !== request.action) {

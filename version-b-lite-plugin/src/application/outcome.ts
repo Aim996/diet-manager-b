@@ -52,6 +52,7 @@ export function nonWritingOutcome(
   mealHistory?: Readonly<MealHistoryView>,
   inventoryView?: Readonly<InventoryView>,
   question?: string,
+  missingItems?: readonly string[],
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -60,6 +61,7 @@ export function nonWritingOutcome(
     operation_id: operationId,
     reason_code: reasonCode,
     ...(question === undefined ? {} : { question }),
+    ...(missingItems === undefined ? {} : { missing_items: Object.freeze([...missingItems]) }),
     ...(clarification === undefined ? {} : { clarification }),
     ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
       date: dailyProgress.date,

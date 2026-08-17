@@ -74,6 +74,7 @@ export interface NonWritingOutcome {
   operation_id?: string;
   reason_code: string;
   question?: string;
+  missing_items?: readonly string[];
   clarification?: ProductIdentityClarification;
   daily_progress?: Readonly<DailyProgressView>;
   meal_history?: Readonly<MealHistoryView>;
@@ -563,7 +564,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "question", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
+      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt", "correction"]);
   }
@@ -574,6 +575,22 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.question !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("question_status");
     boundedText(candidate.question, "question", 512);
+  }
+  if (candidate.missing_items !== undefined) {
+    if (candidate.action !== "add_inventory" ||
+        candidate.status !== "needs_clarification" ||
+        candidate.reason_code !== "amount_ambiguous") {
+      return invalidOutcome("missing_items_status");
+    }
+    if (!Array.isArray(candidate.missing_items) ||
+        candidate.missing_items.length < 1 ||
+        candidate.missing_items.length > 16 ||
+        new Set(candidate.missing_items).size !== candidate.missing_items.length ||
+        candidate.missing_items.some((item) =>
+          typeof item !== "string" || item.length === 0 || item.length > 64 ||
+          /[ -]/u.test(item))) {
+      return invalidOutcome("missing_items");
+    }
   }
   if (candidate.record_ids !== undefined) {
     if (!hasCommittedStatus || !Array.isArray(candidate.record_ids) || candidate.record_ids.length < 2 ||

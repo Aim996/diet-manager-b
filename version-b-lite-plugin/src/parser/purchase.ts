@@ -129,26 +129,32 @@ function normalizeCapacityUnit(text: string): string | null {
   return CAPACITY_UNIT_ALIASES[text] ?? null;
 }
 
+type PurchaseItemParse =
+  | Readonly<{ readonly status: "candidate"; readonly item: Readonly<CorePurchaseItemCandidate> }>
+  | Readonly<{ readonly status: "missing_amount"; readonly raw_name: string }>
+  | Readonly<{ readonly status: "amount_ambiguous" }>
+  | Readonly<{ readonly status: "not_purchase" }>;
+
 type SingleItemParse =
   | Readonly<{ readonly status: "candidate"; readonly item: Readonly<CorePurchaseItemCandidate> }>
   | Readonly<{ readonly status: "amount_ambiguous" }>
   | Readonly<{ readonly status: "not_purchase" }>;
 
 /**
- * Parse one bounded single-layer purchase item, e.g. "买了2盒牛奶，每盒250ml",
- * "买了3袋苹果" or "买了1盒鸡蛋，每盒12个". It never invents an unknown inner
- * count or capacity; an unparseable or out-of-range quantity becomes amount_ambiguous.
+ * Parse one "买了"-stripped purchase item body, e.g. "2盒牛奶，每盒250ml",
+ * "3袋苹果" or a bare product name "牛奶". It never invents an unknown inner
+ * count or capacity; an out-of-range quantity becomes amount_ambiguous and a
+ * bare name becomes missing_amount.
  */
-function parseSinglePurchaseItem(
-  input: Readonly<CoreParseInput>,
-  order: number,
-): SingleItemParse {
-  const body = input.source_text.trim().replace(/[。.]$/u, "");
-  if (!PURCHASE_PREFIX.test(body)) return Object.freeze({ status: "not_purchase" });
-  const after = body.replace(PURCHASE_PREFIX, "");
-
-  const countMatch = NUMERIC_TOKEN.exec(after);
-  if (countMatch === null) return Object.freeze({ status: "not_purchase" });
+function parsePurchaseItemBody(body: string, order: number): PurchaseItemParse {
+  const trimmed = body.trim();
+  const countMatch = NUMERIC_TOKEN.exec(trimmed);
+  if (countMatch === null) {
+    if (trimmed.length > 0 && !/每/u.test(trimmed)) {
+      return Object.freeze({ status: "missing_amount", raw_name: trimmed });
+    }
+    return Object.freeze({ status: "not_purchase" });
+  }
   const outerCount = parsePositiveInteger(countMatch[1]!, MAX_PURCHASE_ITEMS);
   if (outerCount === null) return Object.freeze({ status: "amount_ambiguous" });
 
@@ -242,6 +248,76 @@ function parseSinglePurchaseItem(
   return Object.freeze({ status: "candidate", item: candidate });
 }
 
+/** Parse one single-layer purchase item from the full source text. */
+function parseSinglePurchaseItem(
+  input: Readonly<CoreParseInput>,
+  order: number,
+): SingleItemParse {
+  const body = input.source_text.trim().replace(/[。.]$/u, "");
+  if (!PURCHASE_PREFIX.test(body)) return Object.freeze({ status: "not_purchase" });
+  const after = body.replace(PURCHASE_PREFIX, "");
+  const parsed = parsePurchaseItemBody(after, order);
+  if (parsed.status === "missing_amount") return Object.freeze({ status: "not_purchase" });
+  return parsed;
+}
+
+const MULTI_ITEM_SEPARATOR = /[、和与]/u;
+
+const MISSING_UNIT_HINTS = Object.freeze<Readonly<Record<string, Readonly<[string, string]>>>>({
+  牛奶: Object.freeze(["盒", "袋"]),
+  鲜牛奶: Object.freeze(["盒", "袋"]),
+  奶: Object.freeze(["盒", "袋"]),
+  鸡蛋: Object.freeze(["盒", "个"]),
+  蛋: Object.freeze(["盒", "个"]),
+  苹果: Object.freeze(["个", "袋"]),
+});
+
+function missingAmountPrompt(rawName: string): string {
+  const hints = MISSING_UNIT_HINTS[rawName] ?? Object.freeze(["盒", "袋"]);
+  return `${rawName}买了几${hints[0]}或几${hints[1]}`;
+}
+
+function missingAmountsQuestion(missing: readonly string[]): string {
+  return `还需要这些数量：${missing.map(missingAmountPrompt).join("；")}。请一次回复完整。`;
+}
+
+type PurchaseItemsParse =
+  | Readonly<{ readonly status: "candidate"; readonly items: readonly Readonly<CorePurchaseItemCandidate>[] }>
+  | Readonly<{ readonly status: "missing_amounts"; readonly missing_items: readonly string[] }>
+  | Readonly<{ readonly status: "amount_ambiguous" }>
+  | Readonly<{ readonly status: "not_purchase" }>;
+
+/**
+ * Parse a bounded multi-item purchase list separated by 、, 和 or 与. It returns
+ * the complete candidate only when every item is complete; otherwise it collects
+ * the missing amount prompts in source order.
+ */
+function parsePurchaseItems(input: Readonly<CoreParseInput>): PurchaseItemsParse {
+  const body = input.source_text.trim().replace(/[。.]$/u, "");
+  if (!PURCHASE_PREFIX.test(body)) return Object.freeze({ status: "not_purchase" });
+  const after = body.replace(PURCHASE_PREFIX, "").trim();
+  if (after.length === 0) return Object.freeze({ status: "not_purchase" });
+
+  const segments = after.split(MULTI_ITEM_SEPARATOR)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  if (segments.length === 0) return Object.freeze({ status: "not_purchase" });
+
+  const items: Readonly<CorePurchaseItemCandidate>[] = [];
+  const missing: string[] = [];
+  for (let index = 0; index < segments.length; index++) {
+    const parsed = parsePurchaseItemBody(segments[index]!, index);
+    if (parsed.status === "amount_ambiguous") return Object.freeze({ status: "amount_ambiguous" });
+    if (parsed.status === "not_purchase") return Object.freeze({ status: "not_purchase" });
+    if (parsed.status === "missing_amount") { missing.push(parsed.raw_name); continue; }
+    items.push(parsed.item);
+  }
+  if (missing.length > 0) {
+    return Object.freeze({ status: "missing_amounts", missing_items: Object.freeze(missing) });
+  }
+  return Object.freeze({ status: "candidate", items: Object.freeze(items) });
+}
+
 export function resolvePantryClarification(
   input: Readonly<CoreParseInput>,
 ): Extract<CoreClarificationResult, { action: "add_inventory" }> | null {
@@ -262,13 +338,27 @@ export function resolvePantryClarification(
       question: "还没有记录。请分别说明牛奶每箱的盒数和每盒规格，以及鸡蛋每袋的数量。",
     });
   }
-  if (parseSinglePurchaseItem(input, 0).status === "amount_ambiguous") {
+  const multi = parsePurchaseItems(input);
+  if (multi.status === "amount_ambiguous") {
     return Object.freeze({
       disposition: "needs_clarification",
       action: "add_inventory",
       reason_code: "amount_ambiguous",
       question: "购买数量无效或超出可安全记录的范围，请重新说明（1–64 个包装）。",
     });
+  }
+  if (multi.status === "missing_amounts") {
+    const after = source.replace(/^(?:我\s*)?买了/u, "");
+    const frozenAllBare = /^买了牛奶[、,，]鸡蛋和苹果[。.]?$/u.test(source);
+    if (/[、和与]/u.test(after) && !frozenAllBare) {
+      return Object.freeze({
+        disposition: "needs_clarification",
+        action: "add_inventory",
+        reason_code: "amount_ambiguous",
+        question: missingAmountsQuestion(multi.missing_items),
+        missing_items: multi.missing_items,
+      });
+    }
   }
   return null;
 }
@@ -359,6 +449,12 @@ export function resolvePantryCommand(
         rule_version: "diet-manager/opening-evidence/v1",
       }),
     })]);
+  }
+  {
+    const multi = parsePurchaseItems(input);
+    if (multi.status === "candidate" && multi.items.length >= 2) {
+      return purchase(input, multi.items);
+    }
   }
   return null;
 }
