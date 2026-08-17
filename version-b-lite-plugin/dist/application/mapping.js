@@ -192,6 +192,13 @@ function purchaseAmount(item) {
             evidence: "explicit",
         });
     }
+    if (quantity.total_capacity !== null && quantity.capacity_unit !== null) {
+        return Object.freeze({
+            unit: quantity.capacity_unit,
+            observed_microunits: quantity.total_capacity * 1_000_000,
+            evidence: "explicit",
+        });
+    }
     if (item.opening !== null && quantity.outer_count !== null &&
         quantity.outer_unit === "瓶") {
         return Object.freeze({

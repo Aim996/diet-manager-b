@@ -30,10 +30,10 @@
 E:\codx\skill\饮食管家\version-b-lite-plugin\diet-manager-b-0.1.0.tgz
 ```
 
-- 大小 211.8 kB，74 个文件，解包约 1.2 MB。
-- npm shasum（SHA-1）：`c126c211e2c5e7cd1966fc590e5baeb247a5f9c8`
-- SHA-256：`e91defe24df477aee8411e33c6bf40f2c1ac84c467014f281e355d01e3cdbc16`
-- 内容：`dist/`（编译产物，含修复）、`skills/diet-manager-b/`（SKILL.md）、`openclaw.plugin.json`、`package.json`。`.npmignore` 已排除 `src/ tests/ scripts/ data/ docs/ node_modules/` 等。
+- 大小 211,797 bytes（npm 显示 211.8 kB），74 个文件，解包约 1.2 MB。
+- npm shasum（SHA-1）：`0a1e94dc7229d5545cc946a95a4362325a48a7cc`
+- SHA-256：`f523b29c83ecada404cbce08cd783e38828a46f60668de1473a288e9e7669787`
+- 内容：`dist/`（编译产物，含已审阅的 PURCHASE-CAPACITY-001 修复）、`skills/diet-manager-b/`（SKILL.md）、`openclaw.plugin.json`、`package.json`。`.npmignore` 已排除 `src/ tests/ scripts/ data/ docs/ node_modules/` 等。
 
 > ⚠️ 宿主机 `192.168.100.10` 的 `/tmp/diet-manager-b-0.1.0.tgz` 是**旧包**（含临时探针日志的脏版本），已废弃，勿再用。
 
