@@ -7,7 +7,10 @@ import {
   dietManagerActions,
   type DietManagerAction,
 } from "../contracts.js";
-import { authorizeRepositoryPreview } from "../preview/store.js";
+import {
+  authorizeRepositoryPreview,
+  type AuthorizedRepositoryPreview,
+} from "../preview/store.js";
 import { assertEnvelopeTransition } from "../state/transition-guard.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import { pendingMealInventoryAllocationBatchIds } from "../storage/inventory-repository.js";
@@ -1225,15 +1228,7 @@ export function appendPreparedOperationFact(
     frozen.database.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
     assertCurrentMigrationAuthority(frozen.database);
-    const authority = authorizeRepositoryPreview({
-      database: frozen.database,
-      secret: frozen.secret,
-      token: frozen.token,
-      inputDigest: frozen.inputDigest,
-      subjectScope: frozen.subjectScope,
-      commandType: frozen.commandType,
-      dataRevision: frozen.dataRevision,
-    });
+    const authority = authorizeOperationAuthority(frozen);
     if (authority.envelope_state !== "received") {
       throw new Error("FACT_COMMIT_AUTHORITY_INVALID:envelope_sealed");
     }
@@ -1249,92 +1244,7 @@ export function appendPreparedOperationFact(
       transactionOpen = false;
       return replay;
     }
-    assertOperationRevisionHandoff(
-      frozen,
-      authority.binding.preview_id,
-      authority.binding.data_revision,
-      events,
-    );
-    if (frozen.progressReservation !== undefined) {
-      if (frozen.sequence !== 0 || events.length !== 0) {
-        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:progress_reservation_sequence");
-      }
-      assertProgressReservationFactCommitAuthority(
-        frozen.database,
-        authority.binding.preview_id,
-        frozen.progressReservation,
-      );
-    }
-
-    const event = frozen.event;
-    assertInventoryLocationCorrectionFact(frozen.database, event, frozen.commandType);
-    frozen.database
-      .prepare(
-        `INSERT INTO event_records(
-          event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
-          source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
-          result_status, lifecycle_status, meal_id, meal_slot, payload_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        event.eventId,
-        authority.binding.preview_id,
-        event.operationId,
-        event.schemaVersion,
-        event.eventType,
-        event.factKind,
-        event.sourceMessageId,
-        event.conversationId,
-        event.receivedAt,
-        event.committedAt,
-        event.occurredAtText,
-        "facts_committed_effects_pending",
-        "active",
-        event.mealId,
-        event.mealSlot,
-        event.payloadJson,
-      );
-    insertCorrectionFact(frozen.database, event, frozen.commandType);
-    injectFault(frozenOptions, "after_event");
-    const insertItem = frozen.database.prepare(
-      `INSERT INTO meal_items(
-        item_id, event_id, item_order, item_type, normalized_name, payload_json
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    );
-    for (const item of frozen.items) {
-      insertItem.run(
-        item.itemId,
-        event.eventId,
-        item.itemOrder,
-        item.itemType,
-        item.normalizedName,
-        item.payloadJson,
-      );
-    }
-    injectFault(frozenOptions, "after_items");
-    const insertEffect = frozen.database.prepare(
-      `INSERT INTO effect_outbox(
-        outbox_id, envelope_id, operation_id, effect_id, effect_kind,
-        previous_state, state, attempt_count, reason, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`,
-    );
-    for (const effect of frozen.effects) {
-      insertEffect.run(
-        effect.outboxId,
-        authority.binding.preview_id,
-        event.operationId,
-        effect.effectId,
-        effect.effectKind,
-        effect.previousState,
-        effect.reason,
-        event.committedAt,
-        event.committedAt,
-      );
-    }
-    injectFault(frozenOptions, "after_effects");
-    frozenOptions.beforeCommit?.();
-    insertOperationCheckpoint(frozen, authority.binding.preview_id);
-    injectFault(frozenOptions, "before_commit");
+    appendOperationFacts(frozen, frozenOptions, authority);
     frozen.database.exec("COMMIT");
     transactionOpen = false;
     transactionCommitted = true;
@@ -1360,187 +1270,143 @@ export function appendPreparedOperationFact(
   }
 }
 
+export function appendPreparedOperationFactInOpenTransaction(
+  input: PreparedEnvelopeOperation,
+  options?: FactCommitOptions,
+): OperationFactResult {
+  const frozen = freezeOperation(input);
+  const frozenOptions = exactOptions(options);
+  assertCurrentMigrationAuthority(frozen.database);
+  const authority = authorizeOperationAuthority(frozen);
+  if (authority.envelope_state !== "received") {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:envelope_sealed");
+  }
+  appendOperationFacts(frozen, frozenOptions, authority);
+  return operationResultFor(
+    frozen,
+    authority.binding.preview_id,
+    authority.idempotency_key,
+  );
+}
+
+function authorizeOperationAuthority(
+  frozen: FrozenEnvelopeOperation,
+): AuthorizedRepositoryPreview {
+  return authorizeRepositoryPreview({
+    database: frozen.database,
+    secret: frozen.secret,
+    token: frozen.token,
+    inputDigest: frozen.inputDigest,
+    subjectScope: frozen.subjectScope,
+    commandType: frozen.commandType,
+    dataRevision: frozen.dataRevision,
+  });
+}
+
+function appendOperationFacts(
+  frozen: FrozenEnvelopeOperation,
+  frozenOptions: Readonly<FactCommitOptions>,
+  authority: AuthorizedRepositoryPreview,
+): void {
+  const events = orderedEnvelopeEvents(frozen.database, authority.binding.preview_id);
+  assertOperationRevisionHandoff(
+    frozen,
+    authority.binding.preview_id,
+    authority.binding.data_revision,
+    events,
+  );
+  if (frozen.progressReservation !== undefined) {
+    if (frozen.sequence !== 0 || events.length !== 0) {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:progress_reservation_sequence");
+    }
+    assertProgressReservationFactCommitAuthority(
+      frozen.database,
+      authority.binding.preview_id,
+      frozen.progressReservation,
+    );
+  }
+
+  const event = frozen.event;
+  assertInventoryLocationCorrectionFact(frozen.database, event, frozen.commandType);
+  frozen.database
+    .prepare(
+      `INSERT INTO event_records(
+        event_id, envelope_id, operation_id, schema_version, event_type, fact_kind,
+        source_message_id, conversation_id, received_at, committed_at, occurred_at_text,
+        result_status, lifecycle_status, meal_id, meal_slot, payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      event.eventId,
+      authority.binding.preview_id,
+      event.operationId,
+      event.schemaVersion,
+      event.eventType,
+      event.factKind,
+      event.sourceMessageId,
+      event.conversationId,
+      event.receivedAt,
+      event.committedAt,
+      event.occurredAtText,
+      "facts_committed_effects_pending",
+      "active",
+      event.mealId,
+      event.mealSlot,
+      event.payloadJson,
+    );
+  insertCorrectionFact(frozen.database, event, frozen.commandType);
+  injectFault(frozenOptions, "after_event");
+  const insertItem = frozen.database.prepare(
+    `INSERT INTO meal_items(
+      item_id, event_id, item_order, item_type, normalized_name, payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const item of frozen.items) {
+    insertItem.run(
+      item.itemId,
+      event.eventId,
+      item.itemOrder,
+      item.itemType,
+      item.normalizedName,
+      item.payloadJson,
+    );
+  }
+  injectFault(frozenOptions, "after_items");
+  const insertEffect = frozen.database.prepare(
+    `INSERT INTO effect_outbox(
+      outbox_id, envelope_id, operation_id, effect_id, effect_kind,
+      previous_state, state, attempt_count, reason, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`,
+  );
+  for (const effect of frozen.effects) {
+    insertEffect.run(
+      effect.outboxId,
+      authority.binding.preview_id,
+      event.operationId,
+      effect.effectId,
+      effect.effectKind,
+      effect.previousState,
+      effect.reason,
+      event.committedAt,
+      event.committedAt,
+    );
+  }
+  injectFault(frozenOptions, "after_effects");
+  frozenOptions.beforeCommit?.();
+  insertOperationCheckpoint(frozen, authority.binding.preview_id);
+  injectFault(frozenOptions, "before_commit");
+}
+
 export function sealPreparedEnvelopeFacts(input: PreparedEnvelopeSeal): EnvelopeFactsResult {
   const frozen = freezeSeal(input);
   let transactionOpen = false;
   try {
     frozen.database.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
-    assertCurrentMigrationAuthority(frozen.database);
-    const authority = authorizeRepositoryPreview({
-      database: frozen.database,
-      secret: frozen.secret,
-      token: frozen.token,
-      inputDigest: frozen.inputDigest,
-      subjectScope: frozen.subjectScope,
-      commandType: frozen.commandType,
-      dataRevision: frozen.dataRevision,
-    });
-    const events = orderedEnvelopeEvents(frozen.database, authority.binding.preview_id);
-    const operationIds = events.map((event) => event.operation_id);
-    if (
-      operationIds.length !== frozen.expectedOperationIds.length ||
-      operationIds.some((operationId, index) => operationId !== frozen.expectedOperationIds[index])
-    ) {
-      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:operation_sequence");
-    }
-    const checkpointRows = frozen.database
-      .prepare(
-        `SELECT operation_id, effect_state, result_status, completed_at, payload_json
-         FROM effect_bundle_commits
-         WHERE envelope_id = ?
-         ORDER BY operation_id`,
-      )
-      .all(authority.binding.preview_id) as unknown as OperationBundleRow[];
-    if (checkpointRows.length !== events.length) {
-      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:bundle_count");
-    }
-    const checkpointByOperation = new Map(
-      checkpointRows.map((row) => [row.operation_id, row]),
-    );
-    let latestCheckpointRevision = authority.binding.data_revision;
-    events.forEach((event, index) => {
-      const checkpoint = checkpointByOperation.get(event.operation_id);
-      if (!checkpoint) throw new Error("FACT_COMMIT_AUTHORITY_INVALID:bundle_count");
-      if (checkpoint.completed_at === null) {
-        if (index !== events.length - 1) {
-          throw new Error("FACT_COMMIT_AUTHORITY_INVALID:previous_operation_not_stable");
-        }
-        latestCheckpointRevision = parsePendingBundleRevision(checkpoint, index);
-      } else {
-        latestCheckpointRevision = parseTerminalBundleRevision(checkpoint, index);
-      }
-    });
-    if (computeRepositoryDataRevision(frozen.database) !== latestCheckpointRevision) {
-      throw new Error("PREVIEW_STALE:data_revision");
-    }
-    const outboxes = frozen.database
-      .prepare("SELECT operation_id, state FROM effect_outbox WHERE envelope_id = ?")
-      .all(authority.binding.preview_id) as Array<{ operation_id: string; state: string }>;
-    const allTerminal = outboxes.every(
-      (row) => row.state === "succeeded" || row.state === "permanent_business_skip",
-    );
-    const bundleOperations = frozen.database
-      .prepare(
-        `SELECT operation_id FROM effect_bundle_commits
-         WHERE envelope_id = ? AND completed_at IS NOT NULL
-         ORDER BY operation_id`,
-      )
-      .all(authority.binding.preview_id) as Array<{ operation_id: string }>;
-    const everyOperationBundled =
-      bundleOperations.length === operationIds.length &&
-      new Set(bundleOperations.map((row) => row.operation_id)).size === operationIds.length &&
-      operationIds.every((operationId) =>
-        bundleOperations.some((row) => row.operation_id === operationId),
-      );
-    const stable = allTerminal && everyOperationBundled;
-
-    if (authority.envelope_state === "received") {
-      assertEnvelopeTransition("received", "facts_committed");
-      frozen.database
-        .prepare(
-          `UPDATE command_envelopes
-           SET state = 'facts_committed', result_status = 'facts_committed', committed_at = ?
-           WHERE envelope_id = ? AND state = 'received' AND result_status = 'preview_ready'`,
-        )
-        .run(frozen.sealedAt, authority.binding.preview_id);
-      if (changed(frozen.database) !== 1) {
-        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:received_compare_and_set");
-      }
-      assertEnvelopeTransition("facts_committed", "effects_pending");
-      frozen.database
-        .prepare(
-          `UPDATE command_envelopes
-           SET state = 'effects_pending', result_status = 'facts_committed_effects_pending'
-           WHERE envelope_id = ? AND state = 'facts_committed' AND result_status = 'facts_committed'`,
-        )
-        .run(authority.binding.preview_id);
-      if (changed(frozen.database) !== 1) {
-        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:effects_compare_and_set");
-      }
-      frozen.database
-        .prepare(
-          `UPDATE idempotency_records
-           SET state = 'effects_pending', updated_at = ?
-           WHERE idempotency_key = ? AND operation_id = ? AND input_digest = ?
-             AND state = 'preview_ready' AND terminal_result_json IS NULL`,
-        )
-        .run(
-          frozen.sealedAt,
-          authority.idempotency_key,
-          authority.binding.preview_id,
-          frozen.inputDigest,
-        );
-      if (changed(frozen.database) !== 1) {
-        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:idempotency_compare_and_set");
-      }
-      if (stable) {
-        assertEnvelopeTransition("effects_pending", "effects_stable");
-        frozen.database
-          .prepare(
-            `UPDATE command_envelopes
-             SET state = 'effects_stable', result_status = 'effects_stable'
-             WHERE envelope_id = ? AND state = 'effects_pending'
-               AND result_status = 'facts_committed_effects_pending'`,
-          )
-          .run(authority.binding.preview_id);
-        if (changed(frozen.database) !== 1) {
-          throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_compare_and_set");
-        }
-        frozen.database
-          .prepare(
-            `UPDATE idempotency_records
-             SET state = 'effects_stable', updated_at = ?
-             WHERE operation_id = ? AND state = 'effects_pending'
-               AND terminal_result_json IS NULL`,
-          )
-          .run(frozen.sealedAt, authority.binding.preview_id);
-        if (changed(frozen.database) !== 1) {
-          throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_idempotency_compare_and_set");
-        }
-      }
-    } else {
-      if (authority.envelope_state === "effects_pending" && stable) {
-        assertEnvelopeTransition("effects_pending", "effects_stable");
-        frozen.database
-          .prepare(
-            `UPDATE command_envelopes
-             SET state = 'effects_stable', result_status = 'effects_stable'
-             WHERE envelope_id = ? AND state = 'effects_pending'
-               AND result_status = 'facts_committed_effects_pending'`,
-          )
-          .run(authority.binding.preview_id);
-        if (changed(frozen.database) !== 1) {
-          throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_compare_and_set");
-        }
-        frozen.database
-          .prepare(
-            `UPDATE idempotency_records
-             SET state = 'effects_stable', updated_at = ?
-             WHERE operation_id = ? AND state = 'effects_pending'
-               AND terminal_result_json IS NULL`,
-          )
-          .run(frozen.sealedAt, authority.binding.preview_id);
-        if (changed(frozen.database) !== 1) {
-          throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_idempotency_compare_and_set");
-        }
-      } else if (
-        authority.envelope_state !== (stable ? "effects_stable" : "effects_pending")
-      ) {
-        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:seal_replay_state");
-      }
-    }
-
+    const result = sealPreparedEnvelopeFactsInOpenTransaction(input);
     frozen.database.exec("COMMIT");
     transactionOpen = false;
-    return Object.freeze({
-      envelope_id: authority.binding.preview_id,
-      idempotency_key: authority.idempotency_key,
-      input_digest: frozen.inputDigest,
-      envelope_state: stable ? "effects_stable" : "effects_pending",
-      result_status: stable ? "effects_stable" : "facts_committed_effects_pending",
-      operation_ids: Object.freeze(operationIds),
-    });
+    return result;
   } catch (error) {
     if (transactionOpen) {
       try {
@@ -1551,6 +1417,185 @@ export function sealPreparedEnvelopeFacts(input: PreparedEnvelopeSeal): Envelope
     }
     throw error;
   }
+}
+
+export function sealPreparedEnvelopeFactsInOpenTransaction(
+  input: PreparedEnvelopeSeal,
+): EnvelopeFactsResult {
+  const frozen = freezeSeal(input);
+  assertCurrentMigrationAuthority(frozen.database);
+  const authority = authorizeRepositoryPreview({
+    database: frozen.database,
+    secret: frozen.secret,
+    token: frozen.token,
+    inputDigest: frozen.inputDigest,
+    subjectScope: frozen.subjectScope,
+    commandType: frozen.commandType,
+    dataRevision: frozen.dataRevision,
+  });
+  const events = orderedEnvelopeEvents(frozen.database, authority.binding.preview_id);
+  const operationIds = events.map((event) => event.operation_id);
+  if (
+    operationIds.length !== frozen.expectedOperationIds.length ||
+    operationIds.some((operationId, index) => operationId !== frozen.expectedOperationIds[index])
+  ) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:operation_sequence");
+  }
+  const checkpointRows = frozen.database
+    .prepare(
+      `SELECT operation_id, effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits
+       WHERE envelope_id = ?
+       ORDER BY operation_id`,
+    )
+    .all(authority.binding.preview_id) as unknown as OperationBundleRow[];
+  if (checkpointRows.length !== events.length) {
+    throw new Error("FACT_COMMIT_AUTHORITY_INVALID:bundle_count");
+  }
+  const checkpointByOperation = new Map(
+    checkpointRows.map((row) => [row.operation_id, row]),
+  );
+  let latestCheckpointRevision = authority.binding.data_revision;
+  events.forEach((event, index) => {
+    const checkpoint = checkpointByOperation.get(event.operation_id);
+    if (!checkpoint) throw new Error("FACT_COMMIT_AUTHORITY_INVALID:bundle_count");
+    if (checkpoint.completed_at === null) {
+      if (index !== events.length - 1) {
+        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:previous_operation_not_stable");
+      }
+      latestCheckpointRevision = parsePendingBundleRevision(checkpoint, index);
+    } else {
+      latestCheckpointRevision = parseTerminalBundleRevision(checkpoint, index);
+    }
+  });
+  if (computeRepositoryDataRevision(frozen.database) !== latestCheckpointRevision) {
+    throw new Error("PREVIEW_STALE:data_revision");
+  }
+  const outboxes = frozen.database
+    .prepare("SELECT operation_id, state FROM effect_outbox WHERE envelope_id = ?")
+    .all(authority.binding.preview_id) as Array<{ operation_id: string; state: string }>;
+  const allTerminal = outboxes.every(
+    (row) => row.state === "succeeded" || row.state === "permanent_business_skip",
+  );
+  const bundleOperations = frozen.database
+    .prepare(
+      `SELECT operation_id FROM effect_bundle_commits
+       WHERE envelope_id = ? AND completed_at IS NOT NULL
+       ORDER BY operation_id`,
+    )
+    .all(authority.binding.preview_id) as Array<{ operation_id: string }>;
+  const everyOperationBundled =
+    bundleOperations.length === operationIds.length &&
+    new Set(bundleOperations.map((row) => row.operation_id)).size === operationIds.length &&
+    operationIds.every((operationId) =>
+      bundleOperations.some((row) => row.operation_id === operationId),
+    );
+  const stable = allTerminal && everyOperationBundled;
+
+  if (authority.envelope_state === "received") {
+    assertEnvelopeTransition("received", "facts_committed");
+    frozen.database
+      .prepare(
+        `UPDATE command_envelopes
+         SET state = 'facts_committed', result_status = 'facts_committed', committed_at = ?
+         WHERE envelope_id = ? AND state = 'received' AND result_status = 'preview_ready'`,
+      )
+      .run(frozen.sealedAt, authority.binding.preview_id);
+    if (changed(frozen.database) !== 1) {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:received_compare_and_set");
+    }
+    assertEnvelopeTransition("facts_committed", "effects_pending");
+    frozen.database
+      .prepare(
+        `UPDATE command_envelopes
+         SET state = 'effects_pending', result_status = 'facts_committed_effects_pending'
+         WHERE envelope_id = ? AND state = 'facts_committed' AND result_status = 'facts_committed'`,
+      )
+      .run(authority.binding.preview_id);
+    if (changed(frozen.database) !== 1) {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:effects_compare_and_set");
+    }
+    frozen.database
+      .prepare(
+        `UPDATE idempotency_records
+         SET state = 'effects_pending', updated_at = ?
+         WHERE idempotency_key = ? AND operation_id = ? AND input_digest = ?
+           AND state = 'preview_ready' AND terminal_result_json IS NULL`,
+      )
+      .run(
+        frozen.sealedAt,
+        authority.idempotency_key,
+        authority.binding.preview_id,
+        frozen.inputDigest,
+      );
+    if (changed(frozen.database) !== 1) {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:idempotency_compare_and_set");
+    }
+    if (stable) {
+      assertEnvelopeTransition("effects_pending", "effects_stable");
+      frozen.database
+        .prepare(
+          `UPDATE command_envelopes
+           SET state = 'effects_stable', result_status = 'effects_stable'
+           WHERE envelope_id = ? AND state = 'effects_pending'
+             AND result_status = 'facts_committed_effects_pending'`,
+        )
+        .run(authority.binding.preview_id);
+      if (changed(frozen.database) !== 1) {
+        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_compare_and_set");
+      }
+      frozen.database
+        .prepare(
+          `UPDATE idempotency_records
+           SET state = 'effects_stable', updated_at = ?
+           WHERE operation_id = ? AND state = 'effects_pending'
+             AND terminal_result_json IS NULL`,
+        )
+        .run(frozen.sealedAt, authority.binding.preview_id);
+      if (changed(frozen.database) !== 1) {
+        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_idempotency_compare_and_set");
+      }
+    }
+  } else {
+    if (authority.envelope_state === "effects_pending" && stable) {
+      assertEnvelopeTransition("effects_pending", "effects_stable");
+      frozen.database
+        .prepare(
+          `UPDATE command_envelopes
+           SET state = 'effects_stable', result_status = 'effects_stable'
+           WHERE envelope_id = ? AND state = 'effects_pending'
+             AND result_status = 'facts_committed_effects_pending'`,
+        )
+        .run(authority.binding.preview_id);
+      if (changed(frozen.database) !== 1) {
+        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_compare_and_set");
+      }
+      frozen.database
+        .prepare(
+          `UPDATE idempotency_records
+           SET state = 'effects_stable', updated_at = ?
+           WHERE operation_id = ? AND state = 'effects_pending'
+             AND terminal_result_json IS NULL`,
+        )
+        .run(frozen.sealedAt, authority.binding.preview_id);
+      if (changed(frozen.database) !== 1) {
+        throw new Error("FACT_COMMIT_AUTHORITY_INVALID:stable_idempotency_compare_and_set");
+      }
+    } else if (
+      authority.envelope_state !== (stable ? "effects_stable" : "effects_pending")
+    ) {
+      throw new Error("FACT_COMMIT_AUTHORITY_INVALID:seal_replay_state");
+    }
+  }
+
+  return Object.freeze({
+    envelope_id: authority.binding.preview_id,
+    idempotency_key: authority.idempotency_key,
+    input_digest: frozen.inputDigest,
+    envelope_state: stable ? "effects_stable" : "effects_pending",
+    result_status: stable ? "effects_stable" : "facts_committed_effects_pending",
+    operation_ids: Object.freeze(operationIds),
+  });
 }
 
 export function commitPreparedFact(

@@ -32,6 +32,7 @@ import {
   appendPreparedOperationFact,
   sealPreparedEnvelopeFacts,
 } from "../repository/fact-commit.js";
+import { commitPreparedPurchaseEnvelope } from "../repository/purchase-envelope-commit.js";
 import {
   finalizeEnvelope,
   type EnvelopeFinalizeOptions,
@@ -1743,35 +1744,33 @@ export function createDietDomainService(
             });
             throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
           }
-          preparedPurchases.forEach((preparedPurchase, sequence) => {
-            appendFactWithFailure(preparedPurchase.fact, options.failureSink);
-            runEffectWithFailure(
-              () => applyPurchaseEffect(
-                options.database,
-                preparedPurchase.outbox_id,
-                timestampAfter(committedAt, sequence),
-                sequence === 0 && options.fault === "after_inventory_business_writes"
-                  ? "after_business_writes"
-                  : undefined,
-              ),
-              options.failureSink,
-              traceId,
-              inputDigest,
-              "INVENTORY_EFFECT_FAILED",
-            );
-          });
-          sealPreparedEnvelopeFacts({
-            database: options.database,
-            secret: options.secret,
-            token: execution.token,
-            inputDigest,
-            subjectScope: envelope.subject_scope,
-            commandType: envelope.command_type,
-            dataRevision: execution.data_revision,
+          runEffectWithFailure(
+            () => commitPreparedPurchaseEnvelope(
+              {
+                operations: Object.freeze(preparedPurchases.map((preparedPurchase) => preparedPurchase.fact)),
+                seal: {
+                  database: options.database,
+                  secret: options.secret,
+                  token: execution.token,
+                  inputDigest,
+                  subjectScope: envelope.subject_scope,
+                  commandType: envelope.command_type,
+                  dataRevision: execution.data_revision,
+                  traceId,
+                  expectedOperationIds: Object.freeze(purchaseOperations.map((operation) => operation.operation_id)),
+                  sealedAt: finalizedAt,
+                },
+                effect_times: Object.freeze(preparedPurchases.map((_, sequence) => timestampAfter(committedAt, sequence))),
+              },
+              options.fault === "after_inventory_business_writes"
+                ? { fault: "after_operation_effect", faultSequence: 0 }
+                : undefined,
+            ),
+            options.failureSink,
             traceId,
-            expectedOperationIds: Object.freeze(purchaseOperations.map((operation) => operation.operation_id)),
-            sealedAt: finalizedAt,
-          });
+            inputDigest,
+            "INVENTORY_EFFECT_FAILED",
+          );
         }
         const result = frozenPurchaseExecutionResult(
           envelope,
