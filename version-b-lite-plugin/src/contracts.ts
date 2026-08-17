@@ -645,7 +645,9 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   }
 
   if (candidate.correction !== undefined) {
-    if (candidate.action !== "undo_record") return invalidOutcome("correction_action");
+    if (candidate.action !== "correct_record" && candidate.action !== "undo_record") {
+      return invalidOutcome("correction_action");
+    }
     assertCorrection(candidate.correction);
   }
 

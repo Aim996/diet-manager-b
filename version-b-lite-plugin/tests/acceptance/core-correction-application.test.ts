@@ -12,6 +12,7 @@ import { createCoreRuntime } from "../../src/application/runtime.js";
 import { cloneNutritionRuntimeConfig } from "../../src/nutrition/config.js";
 import type { NutritionSourceAdapter } from "../../src/nutrition/types.js";
 import { openDietDatabase } from "../../src/storage/database.js";
+import { assertDietManagerOutcome } from "../../src/contracts.js";
 
 // A nutrition adapter that always resolves a per-100g apple profile with an
 // explicit adopted amount, so the seeded meal carries non-null nutrition
@@ -126,6 +127,9 @@ it("corrects the latest meal amount to an explicit new amount", async () => {
       status: "committed",
       correction: { operation: "change_amount", target_event_id: mealId },
     });
+    // The plugin publishes every outcome through assertDietManagerOutcome; the
+    // correct_record correction view must survive that contract validation.
+    expect(assertDietManagerOutcome(outcome)).toBe(outcome);
 
     const after = openDietDatabase({ privateRuntimeRoot: root });
     try {
@@ -167,6 +171,7 @@ it("corrects the latest meal occurrence time to yesterday dinner", async () => {
       status: "committed",
       correction: { operation: "change_time", target_event_id: mealId },
     });
+    expect(assertDietManagerOutcome(outcome)).toBe(outcome);
 
     const after = openDietDatabase({ privateRuntimeRoot: root });
     try {
