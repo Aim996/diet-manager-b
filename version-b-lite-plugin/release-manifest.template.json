@@ -1,0 +1,18 @@
+{
+  "schema_version": "diet-manager/release-manifest/v1",
+  "product_version": "{{product_version}}",
+  "plugin_version": "{{plugin_version}}",
+  "contract_version": "2",
+  "domain_schema_version": "domain/v2",
+  "source_commit": "{{source_commit}}",
+  "v1_0_document_sha256": "{{v1_0_document_sha256}}",
+  "acceptance_assets_sha256": "{{acceptance_assets_sha256}}",
+  "node_version": "{{node_version}}",
+  "openclaw_version": "{{openclaw_version}}",
+  "archive": {
+    "path": "artifacts/diet-manager-b-0.1.1.zip",
+    "bytes": {{archive_bytes}},
+    "sha256": "{{archive_sha256}}"
+  },
+  "source_modules": {{source_modules_json}}
+}
