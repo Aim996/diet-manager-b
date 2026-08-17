@@ -76,6 +76,29 @@ npm run install:local
 
 该命令构建、校验并使用 OpenClaw 官方 `plugins install --link` 注册当前插件目录。它不会替你设置私有数据根或 USDA key，也不会强制覆盖已有安装。
 
+## 产品安装、升级与卸载
+
+事务式安装 / 升级 / 卸载入口是 `scripts/install-diet-manager.ps1`（要求 PowerShell 7）。所有预检都是只读的，在全部通过之前不会 `New-Item`、装依赖、改插件或改配置；升级失败会回滚旧程序、旧配置与数据库备份，卸载默认保留数据库、authority secret 和备份。
+
+```powershell
+cd E:\codx\skill\饮食管家\version-b-lite-plugin
+npm run build   # 先构建 dist 产物（安装/升级会把 dist 与 skills 复制到版本目录）
+
+# 全新安装：初始化官方数据根（空 schema + authority secret + 零业务行），再链接、配置、启用并重启网关
+pwsh -NoProfile -File scripts/install-diet-manager.ps1 -Action Install -OfficialDataRoot <root> -BackupRoot <root>
+
+# 升级：先做并校验备份，再暂存新版本、重链接并切换 current.json；任何失败自动回滚
+pwsh -NoProfile -File scripts/install-diet-manager.ps1 -Action Upgrade -OfficialDataRoot <root> -BackupRoot <root>
+
+# 卸载（保留数据）：只禁用并移除插件，数据库、authority secret 与备份均保留
+pwsh -NoProfile -File scripts/install-diet-manager.ps1 -Action Uninstall -OfficialDataRoot <root>
+
+# 卸载并删除数据：必须 -DeleteData 且 -ConfirmDataRoot 与官方数据根逐字符一致，另有二次确认
+pwsh -NoProfile -File scripts/install-diet-manager.ps1 -Action Uninstall -OfficialDataRoot <root> -DeleteData -ConfirmDataRoot <root>
+```
+
+`ProgramRoot` 默认 `$env:LOCALAPPDATA\DietManager`；安装版本落于 `ProgramRoot\versions\0.1.1`，`current.json` 原子记录当前版本路径与数据根。authority secret 只存在于官方数据根，安装 / 升级 / 卸载过程不会把它写入日志、Git 或发布包。
+
 ## 备份与灾备
 
 同根备份（日常）：`backup` 把数据库连同已提交 WAL 快照成一个带 SHA-256 校验的独立文件，`restore` 在同一数据根内恢复，失败自动回滚。适合误删单次记录前的定期快照。

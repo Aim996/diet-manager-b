@@ -2,7 +2,7 @@
   "id": "diet-manager-b",
   "name": "Diet Manager B",
   "description": "A deterministic meal and plain-water recording tool.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "skills": [
     "./skills"
   ],

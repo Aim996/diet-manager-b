@@ -1,3 +1,6 @@
+# install-local.ps1
+# 开发入口：构建 + 元数据校验 + 开发链接（直接链接工作目录，不复制、不建版本目录、不初始化数据根）。
+# 产品级事务式安装 / 升级 / 回滚 / 卸载见 install-diet-manager.ps1（要求 PowerShell 7）。
 [CmdletBinding()]
 param(
     [switch]$ValidateOnly

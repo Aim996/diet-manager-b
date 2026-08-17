@@ -1,7 +1,7 @@
 {
   "name": "diet-manager-b",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "engines": {
     "node": ">=24.15.0 <25"
@@ -17,8 +17,11 @@
     "admin:restore": "node dist/admin/cli.js restore",
     "admin:backup-portable": "node dist/admin/cli.js backup-portable",
     "admin:restore-portable": "node dist/admin/cli.js restore-portable",
+    "admin:init-root": "node dist/admin/cli.js init-root",
     "test:admin-cli": "npm run build && node tests/admin-cli-harness.mjs",
     "install:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-local.ps1",
+    "install:product": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-diet-manager.ps1",
+    "test:install-lifecycle": "npm run build && vitest run tests/install-lifecycle.test.ts --maxWorkers=1 --minWorkers=1",
     "product:validate": "pwsh -NoProfile -File ../shared/validate-product-0.1.ps1",
     "build": "tsc -p tsconfig.json",
     "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",

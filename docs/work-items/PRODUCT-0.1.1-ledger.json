@@ -27,14 +27,14 @@
     {
       "id": 3,
       "name": "安装、升级与灾备闭环",
-      "status": "IN_PROGRESS",
-      "gate_evidence": [],
+      "status": "DONE",
+      "gate_evidence": ["docs/evidence/product-0.1.1/stage-3-ops-gate.json"],
       "reopened_by": []
     },
     {
       "id": 4,
       "name": "真实环境产品验收",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "gate_evidence": [],
       "reopened_by": []
     },
