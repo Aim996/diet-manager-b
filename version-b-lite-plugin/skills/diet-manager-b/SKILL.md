@@ -44,11 +44,11 @@ description: Use when a user reports completed food, water, or inventory activit
 
 ## 结果处理
 
-- `committed=true` 且状态为 `committed`：明确告知已记录，并引用返回的记录标识。
+- `committed=true` 且状态为 `committed`：按动作分别回执——`record_meal`/`record_water`/`add_inventory` 告知“已记录”，`correct_record` 告知“已更正”，`undo_record` 告知“已撤销”，并引用返回的记录标识。
 - `committed=true` 且状态为 `committed_with_issues`：告知事实已记录，同时说明后续效果仍待处理；不要重复提交事实。
 - `committed=false` 且状态为 `needs_clarification`：明确告知尚未记录，只追问完成记录所缺少的最少信息。不要猜测食物、数量或时间，也不要说“记下了”。
 - `committed=false` 且状态为 `ignored`：明确告知没有写入饮食记录，并根据 `reason_code` 简短说明这是计划、否定、查询或其他非写入内容。不要说“记下了”或“已记录”。
-- `committed=false` 且状态为 `failed`：明确告知未记录。可以说明存在技术故障日志，但不要把日志说成记录成功。
+- `committed=false` 且状态为 `failed`：明确告知未记录。可以说明存在技术故障日志，但不要把日志说成记录成功；只有确实缺少数量、规格或时间等必要信息时才追问，否则不要建议用户重发或改写后补交。
 - 状态与 `committed` 相互矛盾：视为无效结果，报告未确认成功，不要猜测。
 
 以上任一结果都是本条消息的终点。不得为了“帮用户解决”而再次调用、搜索插件代码或尝试其他存储。
@@ -66,3 +66,4 @@ description: Use when a user reports completed food, water, or inventory activit
 - 因为返回冲突或未实现，就连续重试、读取插件源码或运行命令。
 - 用户只是说未来计划或明确否定时，擅自创建提醒、备注或记忆。
 - 正确返回业务结果后，再追问名字、身份设定或其他无关事项。
+- 不宣传能力：不主动罗列工具能做什么，只针对当前请求选择动作。

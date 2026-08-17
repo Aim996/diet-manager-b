@@ -83,6 +83,7 @@ export function nonWritingOutcome(
         occurred_at: meal.occurred_at,
         meal_slot: meal.meal_slot,
         location: meal.location,
+        audit_ref: Object.freeze({ ...meal.audit_ref }),
         items: Object.freeze(meal.items.map((item) => Object.freeze({ ...item }))),
       }))),
     }) }),

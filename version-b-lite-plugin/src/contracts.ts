@@ -91,6 +91,10 @@ export interface MealHistoryView {
     readonly occurred_at: string;
     readonly meal_slot: string;
     readonly location: "home" | "outside";
+    readonly audit_ref: Readonly<{
+      readonly original_event_id: string;
+      readonly latest_correction_id: string | null;
+    }>;
     readonly items: readonly Readonly<{
       readonly item_order: number;
       readonly item_type: string;
@@ -426,11 +430,21 @@ function assertMealHistory(value: unknown): asserts value is MealHistoryView {
       return invalidOutcome("meal_history_meal");
     }
     const meal = mealValue as Record<string, unknown>;
-    if (Object.keys(meal).sort().join("\0") !== "items\0location\0meal_slot\0occurred_at" ||
+    if (Object.keys(meal).sort().join("\0") !== "audit_ref\0items\0location\0meal_slot\0occurred_at" ||
         !Number.isFinite(Date.parse(String(meal.occurred_at))) ||
         !["home", "outside"].includes(String(meal.location)) ||
         !Array.isArray(meal.items) || meal.items.length > 64) return invalidOutcome("meal_history_meal");
     boundedText(meal.meal_slot, "meal_history_slot", 64);
+    const auditRef = meal.audit_ref as Record<string, unknown> | undefined;
+    if (typeof auditRef !== "object" || auditRef === null || Array.isArray(auditRef) ||
+        Object.keys(auditRef).sort().join("\0") !== "latest_correction_id\0original_event_id" ||
+        typeof auditRef.original_event_id !== "string" || auditRef.original_event_id.length === 0 ||
+        auditRef.original_event_id.length > 128 ||
+        (auditRef.latest_correction_id !== null &&
+          (typeof auditRef.latest_correction_id !== "string" ||
+           auditRef.latest_correction_id.length === 0 || auditRef.latest_correction_id.length > 128))) {
+      return invalidOutcome("meal_history_meal");
+    }
     for (const [index, itemValue] of meal.items.entries()) {
       if (typeof itemValue !== "object" || itemValue === null || Array.isArray(itemValue)) {
         return invalidOutcome("meal_history_item");
@@ -588,7 +602,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
         new Set(candidate.missing_items).size !== candidate.missing_items.length ||
         candidate.missing_items.some((item) =>
           typeof item !== "string" || item.length === 0 || item.length > 64 ||
-          /[ -]/u.test(item))) {
+          /[\u0000-\u001F\u007F]/u.test(item))) {
       return invalidOutcome("missing_items");
     }
   }
