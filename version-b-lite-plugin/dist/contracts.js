@@ -224,12 +224,22 @@ function assertMealHistory(value) {
             return invalidOutcome("meal_history_meal");
         }
         const meal = mealValue;
-        if (Object.keys(meal).sort().join("\0") !== "items\0location\0meal_slot\0occurred_at" ||
+        if (Object.keys(meal).sort().join("\0") !== "audit_ref\0items\0location\0meal_slot\0occurred_at" ||
             !Number.isFinite(Date.parse(String(meal.occurred_at))) ||
             !["home", "outside"].includes(String(meal.location)) ||
             !Array.isArray(meal.items) || meal.items.length > 64)
             return invalidOutcome("meal_history_meal");
         boundedText(meal.meal_slot, "meal_history_slot", 64);
+        const auditRef = meal.audit_ref;
+        if (typeof auditRef !== "object" || auditRef === null || Array.isArray(auditRef) ||
+            Object.keys(auditRef).sort().join("\0") !== "latest_correction_id\0original_event_id" ||
+            typeof auditRef.original_event_id !== "string" || auditRef.original_event_id.length === 0 ||
+            auditRef.original_event_id.length > 128 ||
+            (auditRef.latest_correction_id !== null &&
+                (typeof auditRef.latest_correction_id !== "string" ||
+                    auditRef.latest_correction_id.length === 0 || auditRef.latest_correction_id.length > 128))) {
+            return invalidOutcome("meal_history_meal");
+        }
         for (const [index, itemValue] of meal.items.entries()) {
             if (typeof itemValue !== "object" || itemValue === null || Array.isArray(itemValue)) {
                 return invalidOutcome("meal_history_item");
@@ -349,7 +359,7 @@ export function assertDietManagerOutcome(value) {
         exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
     }
     else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
-        exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "question", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
+        exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"], ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
     }
     else {
         exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt", "correction"]);
@@ -363,6 +373,21 @@ export function assertDietManagerOutcome(value) {
         if (candidate.status !== "needs_clarification")
             return invalidOutcome("question_status");
         boundedText(candidate.question, "question", 512);
+    }
+    if (candidate.missing_items !== undefined) {
+        if (candidate.action !== "add_inventory" ||
+            candidate.status !== "needs_clarification" ||
+            candidate.reason_code !== "amount_ambiguous") {
+            return invalidOutcome("missing_items_status");
+        }
+        if (!Array.isArray(candidate.missing_items) ||
+            candidate.missing_items.length < 1 ||
+            candidate.missing_items.length > 16 ||
+            new Set(candidate.missing_items).size !== candidate.missing_items.length ||
+            candidate.missing_items.some((item) => typeof item !== "string" || item.length === 0 || item.length > 64 ||
+                /[\u0000-\u001F\u007F]/u.test(item))) {
+            return invalidOutcome("missing_items");
+        }
     }
     if (candidate.record_ids !== undefined) {
         if (!hasCommittedStatus || !Array.isArray(candidate.record_ids) || candidate.record_ids.length < 2 ||
@@ -408,8 +433,9 @@ export function assertDietManagerOutcome(value) {
         assertInventoryView(candidate.inventory_view);
     }
     if (candidate.correction !== undefined) {
-        if (candidate.action !== "undo_record")
+        if (candidate.action !== "correct_record" && candidate.action !== "undo_record") {
             return invalidOutcome("correction_action");
+        }
         assertCorrection(candidate.correction);
     }
     return candidate;

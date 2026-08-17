@@ -235,7 +235,7 @@ export function listMealProjection(input) {
                     throw error;
                 return invalid("meal_event_identity");
             }
-            const latestCorrection = query.database.prepare(`SELECT c.base_revision, c.payload_json
+            const latestCorrection = query.database.prepare(`SELECT c.correction_id, c.base_revision, c.payload_json
          FROM correction_events c
          JOIN event_records e ON e.operation_id = c.request_id
            AND e.event_type IN ('diet_correction','nutrition_supplemented')
@@ -279,6 +279,10 @@ export function listMealProjection(input) {
                         occurred_at: snapshot.occurred_at,
                         meal_slot: snapshot.meal_slot,
                         location: snapshot.location,
+                        audit_ref: Object.freeze({
+                            original_event_id: row.event_id,
+                            latest_correction_id: latestCorrection.correction_id,
+                        }),
                         items: Object.freeze(items),
                     })];
             }
@@ -301,6 +305,10 @@ export function listMealProjection(input) {
                     occurred_at: row.occurred_at_text,
                     meal_slot: row.meal_slot,
                     location: eventPayload.location,
+                    audit_ref: Object.freeze({
+                        original_event_id: row.event_id,
+                        latest_correction_id: null,
+                    }),
                     items: Object.freeze(items),
                 })];
         }));
@@ -318,7 +326,7 @@ export function listWaterEvents(input) {
        WHERE event_type = 'diet_water' AND fact_kind = 'water' AND lifecycle_status = 'active'
          AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
        ORDER BY e.occurred_at_text, e.event_id`).all(query.start, query.end);
-        return Object.freeze(rows.map((row) => {
+        return Object.freeze(rows.flatMap((row) => {
             if (row.meal_id !== null || row.meal_slot !== null)
                 return invalid("water_event_meal");
             const payload = parseCanonicalRecord(row.payload_json, "water_event");
@@ -372,13 +380,43 @@ export function listWaterEvents(input) {
                 storedSet[0]?.event_type !== "diet_water" ||
                 storedSet[0]?.fact_kind !== "water")
                 return invalid("water_event_identity");
-            return Object.freeze({
-                occurred_at: row.occurred_at_text,
-                source_text: payload.source_text,
-                plain_water_ml_milli: payload.plain_water_ml_milli,
-                estimated: false,
-                amount_evidence: Object.freeze(JSON.parse(canonicalJson(payload.amount_evidence))),
-            });
+            const latestCorrection = query.database.prepare(`SELECT c.correction_id, c.base_revision, c.payload_json
+         FROM correction_events c
+         JOIN event_records e ON e.operation_id = c.request_id
+           AND e.event_type IN ('diet_correction','nutrition_supplemented')
+         JOIN effect_bundle_commits b
+           ON b.envelope_id = e.envelope_id AND b.operation_id = e.operation_id
+         WHERE c.target_event_id = ? AND (
+           (b.effect_state = 'succeeded' AND b.result_status = 'applied') OR
+           (b.effect_state = 'permanent_business_skip' AND b.result_status = 'applied_with_issues')
+         )
+         ORDER BY c.base_revision DESC LIMIT 1`).get(row.event_id);
+            if (latestCorrection) {
+                const correction = parseCanonicalRecord(latestCorrection.payload_json, "water_correction");
+                if (correction.authority_kind !== "diet-manager/correction-fact/v1" ||
+                    correction.target_event_id !== row.event_id ||
+                    correction.base_revision !== latestCorrection.base_revision ||
+                    correction.operation !== "change_food_type" ||
+                    typeof correction.after_snapshot !== "object" || correction.after_snapshot === null ||
+                    Array.isArray(correction.after_snapshot))
+                    return invalid("water_correction_authority");
+                const snapshot = correction.after_snapshot;
+                if (snapshot.occurred_at !== row.occurred_at_text ||
+                    snapshot.timezone !== "Asia/Shanghai" ||
+                    typeof snapshot.active !== "boolean" ||
+                    (snapshot.classification !== "plain_water" && snapshot.classification !== "nutritious_drink")) {
+                    return invalid("water_correction_snapshot");
+                }
+                if (!snapshot.active || snapshot.classification !== "plain_water")
+                    return [];
+            }
+            return [Object.freeze({
+                    occurred_at: row.occurred_at_text,
+                    source_text: payload.source_text,
+                    plain_water_ml_milli: payload.plain_water_ml_milli,
+                    estimated: false,
+                    amount_evidence: Object.freeze(JSON.parse(canonicalJson(payload.amount_evidence))),
+                })];
         }));
     });
 }

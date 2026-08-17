@@ -167,8 +167,20 @@ function validatePackageQuantity(value, path) {
         return record;
     }
     if (innerPerOuter === null) {
-        if ([capacityPerInner, totalInner, totalCapacity, formula].some((item) => item !== null))
-            return invalid(path);
+        if (capacityPerInner === null) {
+            if ([totalInner, totalCapacity, formula].some((item) => item !== null))
+                return invalid(path);
+            return record;
+        }
+        // Single-layer capacity: outer packages each carry a capacity, no inner layer.
+        if (totalInner !== null)
+            return invalid(`${path}.total_inner`);
+        const expectedCapacity = safeProduct(outerCount, capacityPerInner, `${path}.total_capacity`);
+        if (totalCapacity !== expectedCapacity)
+            return invalid(`${path}.total_capacity`);
+        if (formula !== `${outerCount}*${capacityPerInner}=${expectedCapacity}`) {
+            return invalid(`${path}.formula`);
+        }
         return record;
     }
     const expectedInner = safeProduct(outerCount, innerPerOuter, `${path}.total_inner`);
@@ -408,19 +420,39 @@ export function resolvePackageQuantity(input) {
         });
     }
     if (innerPerOuter === null) {
-        if (capacityPerInner !== null || suppliedTotalInner !== null || suppliedTotalCapacity !== null) {
-            return invalid("package_quantity_input");
+        if (capacityPerInner === null) {
+            if (suppliedTotalInner !== null || suppliedTotalCapacity !== null) {
+                return invalid("package_quantity_input");
+            }
+            return Object.freeze({
+                outer_count: outerCount,
+                outer_unit: outerUnit,
+                inner_per_outer: null,
+                inner_unit: null,
+                capacity_per_inner: null,
+                capacity_unit: null,
+                total_inner: null,
+                total_capacity: null,
+                formula: null,
+            });
+        }
+        // Single-layer capacity: outer packages each carry a capacity, no inner layer.
+        if (suppliedTotalInner !== null)
+            return invalid("package_quantity_input.total_inner");
+        const singleCapacity = safeProduct(outerCount, capacityPerInner, "package_quantity_input.total_capacity");
+        if (suppliedTotalCapacity !== null && suppliedTotalCapacity !== singleCapacity) {
+            return invalid("package_quantity_input.total_capacity");
         }
         return Object.freeze({
             outer_count: outerCount,
             outer_unit: outerUnit,
             inner_per_outer: null,
             inner_unit: null,
-            capacity_per_inner: null,
-            capacity_unit: null,
+            capacity_per_inner: capacityPerInner,
+            capacity_unit: capacityUnit,
             total_inner: null,
-            total_capacity: null,
-            formula: null,
+            total_capacity: singleCapacity,
+            formula: `${outerCount}*${capacityPerInner}=${singleCapacity}`,
         });
     }
     const totalInner = safeProduct(outerCount, innerPerOuter, "package_quantity_input.total_inner");

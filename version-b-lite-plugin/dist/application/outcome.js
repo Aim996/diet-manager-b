@@ -22,7 +22,7 @@ export function failedOutcome(action, operationId, errorCode) {
         error_code: errorCode,
     });
 }
-export function nonWritingOutcome(action, operationId, status, reasonCode, clarification, dailyProgress, mealHistory, inventoryView, question) {
+export function nonWritingOutcome(action, operationId, status, reasonCode, clarification, dailyProgress, mealHistory, inventoryView, question, missingItems) {
     return Object.freeze({
         action,
         status,
@@ -30,6 +30,7 @@ export function nonWritingOutcome(action, operationId, status, reasonCode, clari
         operation_id: operationId,
         reason_code: reasonCode,
         ...(question === undefined ? {} : { question }),
+        ...(missingItems === undefined ? {} : { missing_items: Object.freeze([...missingItems]) }),
         ...(clarification === undefined ? {} : { clarification }),
         ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
                 date: dailyProgress.date,
@@ -51,6 +52,7 @@ export function nonWritingOutcome(action, operationId, status, reasonCode, clari
                     occurred_at: meal.occurred_at,
                     meal_slot: meal.meal_slot,
                     location: meal.location,
+                    audit_ref: Object.freeze({ ...meal.audit_ref }),
                     items: Object.freeze(meal.items.map((item) => Object.freeze({ ...item }))),
                 }))),
             }) }),

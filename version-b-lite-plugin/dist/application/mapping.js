@@ -297,6 +297,62 @@ function nutritionSupplementOperation(command, resolution) {
         replacement_nutrition_evidence: resolution.replacement_nutrition_evidence,
     });
 }
+function mealAmountCorrectionOperation(command, resolution) {
+    if (resolution === undefined) {
+        throw new Error("CORE_APPLICATION_MAPPING_INVALID:meal_amount_resolution");
+    }
+    return Object.freeze({
+        kind: "correct_record",
+        operation_id: command.operation_id,
+        target_event_id: resolution.target_event_id,
+        base_revision: resolution.base_revision,
+        item_order: resolution.item_order,
+        replacement_amount: resolution.replacement_amount,
+    });
+}
+function mealTimeCorrectionOperation(command, resolution) {
+    if (resolution === undefined) {
+        throw new Error("CORE_APPLICATION_MAPPING_INVALID:meal_time_resolution");
+    }
+    return Object.freeze({
+        kind: "correct_record",
+        operation_id: command.operation_id,
+        correction_kind: "meal_time",
+        target_event_id: resolution.target_event_id,
+        base_revision: resolution.base_revision,
+        replacement_occurred_at: command.replacement_occurred_at,
+        replacement_meal_slot: command.replacement_meal_slot,
+    });
+}
+function waterClassificationOperation(command, resolution) {
+    if (resolution === undefined) {
+        throw new Error("CORE_APPLICATION_MAPPING_INVALID:water_classification_resolution");
+    }
+    return Object.freeze({
+        kind: "correct_record",
+        operation_id: command.operation_id,
+        correction_kind: "water_classification",
+        target_event_id: resolution.target_event_id,
+        base_revision: resolution.base_revision,
+        replacement_kind: command.replacement_kind,
+        replacement_name: command.replacement_name,
+    });
+}
+function correctionOperation(command, correctionResolution) {
+    if ("kind" in command) {
+        return nutritionSupplementOperation(command, correctionResolution);
+    }
+    if (command.correction_kind === "inventory_location") {
+        return locationCorrectionOperation(command, correctionResolution);
+    }
+    if (command.correction_kind === "water_classification") {
+        return waterClassificationOperation(command, correctionResolution);
+    }
+    if (command.correction_kind === "meal_amount") {
+        return mealAmountCorrectionOperation(command, correctionResolution);
+    }
+    return mealTimeCorrectionOperation(command, correctionResolution);
+}
 function deepFreeze(value) {
     if (typeof value !== "object" || value === null || Object.isFrozen(value))
         return;
@@ -309,9 +365,7 @@ export function mapCoreCandidateToEnvelope(request, command, purchaseResolutions
     const operations = command.action === "add_inventory"
         ? purchaseOperations(request, command, purchaseResolutions)
         : command.action === "correct_record"
-            ? Object.freeze(["correction_kind" in command
-                    ? locationCorrectionOperation(command, correctionResolution)
-                    : nutritionSupplementOperation(command, correctionResolution)])
+            ? Object.freeze([correctionOperation(command, correctionResolution)])
             : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
     const envelope = JSON.parse(canonicalJson({
         envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,

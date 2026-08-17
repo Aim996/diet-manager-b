@@ -1109,3 +1109,39 @@ export function processInventoryEffect(input, options) {
         throw error;
     }
 }
+export function processInventoryEffectInOpenTransaction(input, options) {
+    const frozen = freezeInput(input);
+    const frozenOptions = freezeOptions(options);
+    assertCurrentMigrationAuthority(frozen.database);
+    const row = readOutbox(frozen.database, frozen.outboxId);
+    if (row.state !== "pending" && row.state !== "retryable_failed") {
+        return authorityInvalid("state");
+    }
+    if (frozenOptions.deferEnvelopeStability ||
+        readBundleCheckpoint(frozen.database, row) !== undefined) {
+        assertDeferredRevisionCheckpoint(frozen.database, row);
+    }
+    assertEffectTransition(row.state, "processing");
+    frozen.database
+        .prepare(`UPDATE effect_outbox
+       SET state = 'processing', attempt_count = attempt_count + 1, updated_at = ?
+       WHERE outbox_id = ? AND state = ?`)
+        .run(frozen.now, row.outbox_id, row.state);
+    const changes = frozen.database.prepare("SELECT changes() AS count").get();
+    if (changes.count !== 1)
+        return authorityInvalid("claim_compare_and_set");
+    injectFault(frozenOptions, "after_claim");
+    const intent = parseIntent(row);
+    const result = intent.kind === "inventory_add"
+        ? applyAdd(frozen.database, row, intent, frozen.now)
+        : intent.kind === "inventory_location_correction"
+            ? applyLocationCorrection(frozen.database, row, intent, frozen.now)
+            : applyDeduct(frozen.database, row, intent, frozen.now);
+    injectFault(frozenOptions, "after_business_writes");
+    updateOutbox(frozen.database, result, frozen.now);
+    injectFault(frozenOptions, "after_outbox");
+    finalizeBundleIfTerminal(frozen.database, row, frozen.now, frozenOptions.deferEnvelopeStability);
+    injectFault(frozenOptions, "after_bundle");
+    injectFault(frozenOptions, "before_commit");
+    return result;
+}
