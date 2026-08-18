@@ -437,7 +437,7 @@ describe("SEL-PANTRY-001 purchase evidence authority", () => {
   it("characterizes v1 schema as sufficient for canonical pantry evidence without migration drift", () => {
     expect(MIGRATION_V1_ID).toBe("diet-manager/b-sqlite-migration/0001");
     expect(MIGRATION_V1_MAPPING_SHA256).toBe(
-      "19A74F1FB131CDCC1799653043EE707F6CC765369F4997811E62815ABED99D2F",
+      "C8B8D2DEB9B013222F71D90B29BB2ED7E7662A0F543190BE43B8052A0045CE5A",
     );
     expect(MIGRATION_V1_TABLE_STATEMENTS.find((sql) => sql.includes('CREATE TABLE "products"'))).toContain('"payload_json" TEXT NOT NULL');
     expect(MIGRATION_V1_TABLE_STATEMENTS.find((sql) => sql.includes('CREATE TABLE "inventory_batches"'))).toContain('"payload_json" TEXT NOT NULL');

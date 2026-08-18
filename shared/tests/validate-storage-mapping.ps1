@@ -18,7 +18,7 @@ $ExpectedTables = @(
     'schema_migrations', 'command_envelopes', 'idempotency_records',
     'event_records', 'meal_items', 'products', 'inventory_batches',
     'inventory_batch_projections', 'inventory_transactions',
-    'nutrition_profiles', 'nutrition_snapshots', 'goal_versions',
+    'nutrition_profiles', 'nutrition_snapshots', 'goal_versions', 'user_profiles',
     'daily_progress_snapshots', 'issues', 'issue_resolution_events',
     'correction_events', 'effect_outbox', 'effect_bundle_commits',
     'envelope_finalizations', 'mixed_item_results'
@@ -30,7 +30,7 @@ $ExpectedIndexes = @(
     'ux_effect_outbox_effect', 'ix_effect_outbox_state',
     'ux_inventory_transaction_idempotency', 'ix_inventory_transaction_batch_time',
     'ux_nutrition_profile_version', 'ix_nutrition_snapshot_meal_item',
-    'ux_goal_version_effective', 'ux_daily_progress_date_generation',
+    'ux_goal_version_effective', 'ux_user_profile_effective', 'ux_daily_progress_date_generation',
     'ix_issue_status_priority', 'ux_issue_resolution_request',
     'ux_correction_request', 'ux_envelope_idempotency_terminal',
     'ux_mixed_item_operation', 'ux_mixed_item_idempotency'
@@ -38,22 +38,22 @@ $ExpectedIndexes = @(
 $ExpectedTransactionTables = [ordered]@{
     fact_commit = [ordered]@{
         allowed = @('command_envelopes','idempotency_records','event_records','meal_items','correction_events','effect_outbox')
-        forbidden = @('schema_migrations','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','daily_progress_snapshots','issues','issue_resolution_events','effect_bundle_commits','envelope_finalizations','mixed_item_results')
+        forbidden = @('schema_migrations','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','user_profiles','daily_progress_snapshots','issues','issue_resolution_events','effect_bundle_commits','envelope_finalizations','mixed_item_results')
     }
     effect_bundle = [ordered]@{
         allowed = @('command_envelopes','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','issues','issue_resolution_events','effect_outbox','effect_bundle_commits')
-        forbidden = @('schema_migrations','idempotency_records','event_records','meal_items','correction_events','goal_versions','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
+        forbidden = @('schema_migrations','idempotency_records','event_records','meal_items','correction_events','goal_versions','user_profiles','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
     }
     envelope_finalize = [ordered]@{
         allowed = @('command_envelopes','idempotency_records','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
-        forbidden = @('schema_migrations','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits')
+        forbidden = @('schema_migrations','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','user_profiles','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits')
     }
     migration = [ordered]@{
-        allowed = @('schema_migrations','command_envelopes','idempotency_records','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','daily_progress_snapshots','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits','envelope_finalizations','mixed_item_results')
+        allowed = @('schema_migrations','command_envelopes','idempotency_records','event_records','meal_items','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','user_profiles','daily_progress_snapshots','issues','issue_resolution_events','correction_events','effect_outbox','effect_bundle_commits','envelope_finalizations','mixed_item_results')
         forbidden = @()
     }
 }
-$ExpectedPhysicalContractSha256 = '4D18C9EC30F6768930637B375C8F7F90F6299A3E399313B4F1B528DBE6D964B6'
+$ExpectedPhysicalContractSha256 = '8AD6AA9A252D42129648F94F9083EFF112E1AC55B206C9C2A583BED38273C39B'
 $ExpectedScalarStorageConstraints = @(
     [pscustomobject]@{ table = 'inventory_transactions'; column = 'direction'; type = 'TEXT'; required_check = "direction IN ('in','out','neutral')"; forbidden_check = "direction IN ('increase','decrease','no_change')" }
     [pscustomobject]@{ table = 'nutrition_profiles'; column = 'profile_version'; type = 'TEXT'; required_check = $null; forbidden_check = 'profile_version >= 1' }

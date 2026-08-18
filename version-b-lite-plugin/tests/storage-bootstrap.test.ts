@@ -52,9 +52,9 @@ function mappingContract(): Record<string, unknown> {
   );
   if (!match) throw new Error("storage mapping machine block missing");
   const bytes = Buffer.from(match[1], "utf8");
-  expect(bytes).toHaveLength(44_461);
+  expect(bytes).toHaveLength(45_881);
   expect(createHash("sha256").update(bytes).digest("hex").toUpperCase()).toBe(
-    "19A74F1FB131CDCC1799653043EE707F6CC765369F4997811E62815ABED99D2F",
+    "C8B8D2DEB9B013222F71D90B29BB2ED7E7662A0F543190BE43B8052A0045CE5A",
   );
   return JSON.parse(match[1]) as Record<string, unknown>;
 }
@@ -145,8 +145,8 @@ describe("B-STOR-001 database bootstrap", () => {
 
       expect(tableNames).toEqual(mapping.tables.map((table) => table.name).sort());
       expect(indexNames).toEqual(mapping.indexes.map((index) => index.name).sort());
-      expect(tableNames).toHaveLength(20);
-      expect(indexNames).toHaveLength(18);
+      expect(tableNames).toHaveLength(21);
+      expect(indexNames).toHaveLength(19);
       expect(foreignKeyCount).toBe(22);
 
       for (const table of mapping.tables) {

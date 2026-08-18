@@ -1,6 +1,6 @@
 export const MIGRATION_V1_ID = "diet-manager/b-sqlite-migration/0001";
 
-export const MIGRATION_V1_MAPPING_SHA256 = "19A74F1FB131CDCC1799653043EE707F6CC765369F4997811E62815ABED99D2F";
+export const MIGRATION_V1_MAPPING_SHA256 = "C8B8D2DEB9B013222F71D90B29BB2ED7E7662A0F543190BE43B8052A0045CE5A";
 
 export const MIGRATION_V1_TABLE_STATEMENTS = [
   "CREATE TABLE \"schema_migrations\" (\n  \"version\" INTEGER NOT NULL,\n  \"migration_id\" TEXT NOT NULL,\n  \"applied_at\" TEXT NOT NULL,\n  \"checksum\" TEXT NOT NULL,\n  PRIMARY KEY (\"version\"),\n  CHECK (version >= 1),\n  CHECK (length(checksum) = 64)\n) STRICT;",
@@ -15,6 +15,7 @@ export const MIGRATION_V1_TABLE_STATEMENTS = [
   "CREATE TABLE \"nutrition_profiles\" (\n  \"nutrition_profile_id\" TEXT NOT NULL,\n  \"schema_version\" TEXT NOT NULL,\n  \"subject_type\" TEXT NOT NULL,\n  \"subject_id\" TEXT NOT NULL,\n  \"profile_version\" TEXT NOT NULL,\n  \"source_type\" TEXT NOT NULL,\n  \"source_ref\" TEXT NOT NULL,\n  \"source_version\" TEXT NOT NULL,\n  \"retrieved_at\" TEXT NOT NULL,\n  \"coverage_status\" TEXT NOT NULL,\n  \"created_at\" TEXT NOT NULL,\n  \"supersedes_profile_id\" TEXT,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"nutrition_profile_id\"),\n  CHECK (json_valid(payload_json)),\n  FOREIGN KEY (\"supersedes_profile_id\") REFERENCES \"nutrition_profiles\"(\"nutrition_profile_id\") ON UPDATE RESTRICT ON DELETE RESTRICT\n) STRICT;",
   "CREATE TABLE \"nutrition_snapshots\" (\n  \"snapshot_id\" TEXT NOT NULL,\n  \"schema_version\" TEXT NOT NULL,\n  \"meal_event_id\" TEXT NOT NULL,\n  \"intake_item_id\" TEXT NOT NULL,\n  \"nutrition_profile_id\" TEXT NOT NULL,\n  \"profile_version\" TEXT NOT NULL,\n  \"source_type\" TEXT NOT NULL,\n  \"source_ref\" TEXT NOT NULL,\n  \"coverage_status\" TEXT NOT NULL,\n  \"created_at\" TEXT NOT NULL,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"snapshot_id\"),\n  CHECK (json_valid(payload_json)),\n  FOREIGN KEY (\"meal_event_id\") REFERENCES \"event_records\"(\"event_id\") ON UPDATE RESTRICT ON DELETE RESTRICT,\n  FOREIGN KEY (\"intake_item_id\") REFERENCES \"meal_items\"(\"item_id\") ON UPDATE RESTRICT ON DELETE RESTRICT,\n  FOREIGN KEY (\"nutrition_profile_id\") REFERENCES \"nutrition_profiles\"(\"nutrition_profile_id\") ON UPDATE RESTRICT ON DELETE RESTRICT\n) STRICT;",
   "CREATE TABLE \"goal_versions\" (\n  \"goal_version_id\" TEXT NOT NULL,\n  \"schema_version\" TEXT NOT NULL,\n  \"user_id\" TEXT NOT NULL,\n  \"timezone\" TEXT NOT NULL,\n  \"effective_from\" TEXT NOT NULL,\n  \"effective_to\" TEXT,\n  \"created_at\" TEXT NOT NULL,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"goal_version_id\"),\n  CHECK (effective_to IS NULL OR effective_to > effective_from),\n  CHECK (json_valid(payload_json))\n) STRICT;",
+  "CREATE TABLE \"user_profiles\" (\n  \"profile_id\" TEXT NOT NULL,\n  \"user_id\" TEXT NOT NULL,\n  \"schema_version\" TEXT NOT NULL,\n  \"height_cm\" REAL NOT NULL,\n  \"weight_kg\" REAL NOT NULL,\n  \"sex\" TEXT,\n  \"age\" INTEGER,\n  \"goal_state\" TEXT,\n  \"effective_from\" TEXT NOT NULL,\n  \"effective_to\" TEXT,\n  \"created_at\" TEXT NOT NULL,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"profile_id\"),\n  CHECK (height_cm > 0),\n  CHECK (weight_kg > 0),\n  CHECK (age IS NULL OR age > 0),\n  CHECK (sex IS NULL OR sex IN ('male','female')),\n  CHECK (goal_state IS NULL OR goal_state IN ('cut','maintain','bulk')),\n  CHECK (effective_to IS NULL OR effective_to > effective_from),\n  CHECK (json_valid(payload_json))\n) STRICT;",
   "CREATE TABLE \"daily_progress_snapshots\" (\n  \"progress_snapshot_id\" TEXT NOT NULL,\n  \"idempotency_result_id\" TEXT,\n  \"date\" TEXT NOT NULL,\n  \"timezone\" TEXT NOT NULL,\n  \"goal_version_id\" TEXT,\n  \"coverage_status\" TEXT NOT NULL,\n  \"generated_at\" TEXT NOT NULL,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"progress_snapshot_id\"),\n  CHECK (json_valid(payload_json)),\n  FOREIGN KEY (\"goal_version_id\") REFERENCES \"goal_versions\"(\"goal_version_id\") ON UPDATE RESTRICT ON DELETE RESTRICT,\n  FOREIGN KEY (\"idempotency_result_id\") REFERENCES \"idempotency_records\"(\"idempotency_key\") ON UPDATE RESTRICT ON DELETE RESTRICT\n) STRICT;",
   "CREATE TABLE \"issues\" (\n  \"issue_id\" TEXT NOT NULL,\n  \"issue_code\" TEXT NOT NULL,\n  \"issue_type\" TEXT NOT NULL,\n  \"priority\" TEXT NOT NULL,\n  \"entity_type\" TEXT NOT NULL,\n  \"entity_id\" TEXT,\n  \"field_path\" TEXT,\n  \"detected_at\" TEXT NOT NULL,\n  \"source_message_id\" TEXT,\n  \"status\" TEXT NOT NULL,\n  \"revision\" INTEGER NOT NULL,\n  \"last_presented_at\" TEXT,\n  \"resolved_at\" TEXT,\n  \"resolution_source\" TEXT,\n  \"resolution_reason\" TEXT,\n  \"resolution_event_id\" TEXT,\n  \"payload_json\" TEXT NOT NULL,\n  PRIMARY KEY (\"issue_id\"),\n  CHECK (revision >= 1),\n  CHECK (status IN ('open','awaiting_user','resolved','dismissed')),\n  CHECK (json_valid(payload_json))\n) STRICT;",
   "CREATE TABLE \"issue_resolution_events\" (\n  \"event_id\" TEXT NOT NULL,\n  \"issue_id\" TEXT NOT NULL,\n  \"request_id\" TEXT NOT NULL,\n  \"expected_revision\" INTEGER NOT NULL,\n  \"application_outcome\" TEXT NOT NULL,\n  \"resolution_reason\" TEXT,\n  \"rejection_reason\" TEXT,\n  \"resolution_source\" TEXT,\n  \"created_at\" TEXT NOT NULL,\n  PRIMARY KEY (\"event_id\"),\n  CHECK (expected_revision >= 1),\n  FOREIGN KEY (\"issue_id\") REFERENCES \"issues\"(\"issue_id\") ON UPDATE RESTRICT ON DELETE RESTRICT\n) STRICT;",
@@ -37,6 +38,7 @@ export const MIGRATION_V1_INDEX_STATEMENTS = [
   "CREATE UNIQUE INDEX \"ux_nutrition_profile_version\" ON \"nutrition_profiles\" (\"subject_type\", \"subject_id\", \"profile_version\");",
   "CREATE INDEX \"ix_nutrition_snapshot_meal_item\" ON \"nutrition_snapshots\" (\"meal_event_id\", \"intake_item_id\");",
   "CREATE UNIQUE INDEX \"ux_goal_version_effective\" ON \"goal_versions\" (\"user_id\", \"effective_from\");",
+  "CREATE UNIQUE INDEX \"ux_user_profile_effective\" ON \"user_profiles\" (\"user_id\", \"effective_from\");",
   "CREATE UNIQUE INDEX \"ux_daily_progress_date_generation\" ON \"daily_progress_snapshots\" (\"date\", \"timezone\", \"generated_at\");",
   "CREATE INDEX \"ix_issue_status_priority\" ON \"issues\" (\"status\", \"priority\", \"detected_at\");",
   "CREATE UNIQUE INDEX \"ux_issue_resolution_request\" ON \"issue_resolution_events\" (\"request_id\");",
@@ -59,6 +61,7 @@ export const MIGRATION_V1_TABLE_NAMES = [
   "nutrition_profiles",
   "nutrition_snapshots",
   "goal_versions",
+  "user_profiles",
   "daily_progress_snapshots",
   "issues",
   "issue_resolution_events",
@@ -81,6 +84,7 @@ export const MIGRATION_V1_INDEX_NAMES = [
   "ux_nutrition_profile_version",
   "ix_nutrition_snapshot_meal_item",
   "ux_goal_version_effective",
+  "ux_user_profile_effective",
   "ux_daily_progress_date_generation",
   "ix_issue_status_priority",
   "ux_issue_resolution_request",

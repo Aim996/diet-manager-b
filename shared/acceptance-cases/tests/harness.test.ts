@@ -37,7 +37,7 @@ const expectedContracts = [
   {
     contract_id: "diet-manager/storage-mapping-v1",
     path: "shared/contracts/storage-mapping.md",
-    sha256: "6BEAC0DD2126A680DAD995E9889388BE980DEBE557D05CF1ADAF4F47B77D5A47",
+    sha256: "0F12923848FBDEE928F60A7191DCF9988C291FE632793F44231F9D94F379ED66",
   },
   {
     contract_id: "diet-manager/nutrition-source-capability-v1",
