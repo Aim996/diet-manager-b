@@ -172,7 +172,7 @@
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 2 },
-        { "table": "products", "where": {}, "expect_delta": 1 },
+        { "table": "products", "where": {}, "expect_delta": 2 },
         { "table": "inventory_batches", "where": {}, "expect_delta": 2 }
       ]
     },
