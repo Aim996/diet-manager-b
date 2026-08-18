@@ -9,6 +9,7 @@ import {
 } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
+import { parseProfileCommand } from "./profile.js";
 import { resolvePantryClarification, resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 import type {
@@ -316,6 +317,8 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   if (nutritionSupplement !== null) {
     return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
   }
+  const profile = parseProfileCommand(input);
+  if (profile !== undefined) return profile;
   const pantryClarification = resolvePantryClarification(input);
   if (pantryClarification !== null) return detachedFrozen(pantryClarification);
   const pantry = resolvePantryCommand(input);

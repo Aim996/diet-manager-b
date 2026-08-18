@@ -300,6 +300,18 @@ export interface CoreWaterClassificationCorrectionCandidate {
   readonly replacement_name: string;
 }
 
+export interface CoreProfileCommandCandidate {
+  readonly action: "set_profile";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly height_cm: number;
+  readonly weight_kg: number;
+  readonly sex: "male" | "female" | null;
+  readonly age: number | null;
+  readonly goal_state: "cut" | "maintain" | "bulk" | null;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
@@ -310,7 +322,8 @@ export type CoreCommandCandidate =
   | Readonly<CoreUndoCommandCandidate>
   | Readonly<CoreMealAmountCorrectionCandidate>
   | Readonly<CoreMealTimeCorrectionCandidate>
-  | Readonly<CoreWaterClassificationCorrectionCandidate>;
+  | Readonly<CoreWaterClassificationCorrectionCandidate>
+  | Readonly<CoreProfileCommandCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;
@@ -332,10 +345,11 @@ export type CoreClarificationReason =
   | "occurred_date_ambiguous"
   | "unsupported_command"
   | "amount_ambiguous"
-  | "target_ambiguous";
+  | "target_ambiguous"
+  | "profile_incomplete";
 
 export type CoreRecognizedAction =
-  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record">
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record" | "set_profile">
   | "health_advice";
 
 export type CoreIgnoredResult =
@@ -418,6 +432,14 @@ export type CoreClarificationResult =
       disposition: "needs_clarification";
       action: "undo_record";
       reason_code: "target_ambiguous";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "set_profile";
+      reason_code: "profile_incomplete";
       question: string;
       occurred_time?: never;
       context_id?: never;
