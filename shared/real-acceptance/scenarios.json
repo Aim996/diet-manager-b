@@ -17,7 +17,7 @@
       "id": "REAL-0.1.1-meal-multi",
       "category": "meal",
       "title": "多食物餐食记录",
-      "input": "午餐吃了米饭和炒青菜。",
+      "input": "午饭吃了米饭和鸡胸肉。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
@@ -100,7 +100,7 @@
       "id": "REAL-0.1.1-nutrition-hit",
       "category": "nutrition",
       "title": "USDA 联网命中",
-      "input": "吃了200毫升纯牛奶。",
+      "input": "吃了200毫升牛奶。",
       "expected_outcome_status": "committed",
       "requires_fdc_key": true,
       "database_assertions": [
@@ -112,7 +112,7 @@
       "id": "REAL-0.1.1-nutrition-no-result",
       "category": "nutrition",
       "title": "USDA 无结果降级为 unknown",
-      "input": "吃了一种叫xyzzy的食物。",
+      "input": "吃了两个香蕉。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
@@ -123,7 +123,7 @@
       "id": "REAL-0.1.1-nutrition-missing-key",
       "category": "nutrition",
       "title": "缺失 FDC_API_KEY 降级为 unknown",
-      "input": "吃了200毫升纯牛奶。",
+      "input": "吃了200毫升牛奶。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
@@ -134,7 +134,7 @@
       "id": "REAL-0.1.1-nutrition-offline",
       "category": "nutrition",
       "title": "断网降级为 unknown",
-      "input": "吃了200毫升纯牛奶。",
+      "input": "吃了200毫升牛奶。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
@@ -145,7 +145,7 @@
       "id": "REAL-0.1.1-nutrition-timeout",
       "category": "nutrition",
       "title": "超时降级为 unknown",
-      "input": "吃了200毫升纯牛奶。",
+      "input": "吃了200毫升牛奶。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
@@ -168,7 +168,7 @@
       "id": "REAL-0.1.1-inventory-multiple",
       "category": "inventory",
       "title": "多商品一次采购",
-      "input": "买了牛奶和酸奶。",
+      "input": "买了2盒牛奶和1盒鸡蛋。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
@@ -192,13 +192,13 @@
       "id": "REAL-0.1.1-inventory-multi-purchase",
       "category": "inventory",
       "title": "同商品再次采购复用产品",
-      "setup": ["买了一瓶牛奶。"],
-      "input": "又买了一瓶牛奶。",
+      "setup": ["买了一瓶牛奶，每瓶250ml。"],
+      "input": "又买了同品牌同口味同规格的250ml牛奶。",
       "expected_outcome_status": "committed",
       "database_assertions": [
-        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
-        { "table": "products", "where": {}, "expect_delta": 0 },
-        { "table": "inventory_batches", "where": {}, "expect_delta": 1 }
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 2 },
+        { "table": "products", "where": {}, "expect_delta": 1 },
+        { "table": "inventory_batches", "where": {}, "expect_delta": 2 }
       ]
     },
     {
@@ -218,7 +218,7 @@
       "category": "inventory",
       "title": "库存位置纠正",
       "setup": ["买了一瓶牛奶。"],
-      "input": "更正：那瓶牛奶其实放在冰箱里，不是常温。",
+      "input": "更正：这批牛奶放在常温柜，不是冷藏室。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "inventory_adjusted" }, "expect_delta": 1 }
@@ -296,7 +296,7 @@
       "category": "query",
       "title": "库存查询快照一致",
       "setup": ["买了一瓶牛奶。"],
-      "input": "我家里还有什么？",
+      "input": "查一下我的库存。",
       "expected_outcome_status": "ignored",
       "snapshot_equality": true,
       "database_assertions": [
@@ -332,7 +332,7 @@
       "title": "网关重启后数据持久",
       "setup": ["早餐吃了一个苹果。"],
       "restart_gateway": true,
-      "input": "午餐吃了米饭。",
+      "input": "午饭吃了米饭。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
@@ -344,7 +344,7 @@
       "title": "插件重载后数据持久",
       "setup": ["早餐吃了一个苹果。"],
       "reload_plugin": true,
-      "input": "午餐吃了米饭。",
+      "input": "午饭吃了米饭。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
@@ -356,7 +356,7 @@
       "title": "同根备份恢复",
       "setup": ["早餐吃了一个苹果。"],
       "restore_kind": "same_root",
-      "input": "午餐吃了米饭。",
+      "input": "午饭吃了米饭。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
@@ -368,7 +368,7 @@
       "title": "跨机便携加密恢复",
       "setup": ["早餐吃了一个苹果。"],
       "restore_kind": "portable",
-      "input": "午餐吃了米饭。",
+      "input": "午饭吃了米饭。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
