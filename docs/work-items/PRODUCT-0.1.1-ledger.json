@@ -100,6 +100,14 @@
       "root": ".tmp/release-candidate/0.1.1/candidate-007",
       "source_commit": "0e627036f74c91c01d0196c3726aee8f47bfb8f3",
       "archive_sha256": "13A8A6F9430018ABD66B4AE1A33766A18D8309F9C9C9C51B6093F6D4BDAF197D",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 8,
+      "root": ".tmp/release-candidate/0.1.1/candidate-008",
+      "source_commit": "8ef4888e4419466379849d1f5ba57389341d917d",
+      "archive_sha256": "6E1701AD92057EBE753BA24CE2C27CD1F3D90679AAA58D3C0CF3CFC4E4583AF2",
       "status": "pending",
       "evidence_sha256": null
     }
