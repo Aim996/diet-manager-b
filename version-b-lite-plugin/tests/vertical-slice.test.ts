@@ -674,6 +674,31 @@ function undoEnvelope(options: {
   };
 }
 
+function restoreEnvelope(options: {
+  suffix: string;
+  targetEventId: string;
+  baseRevision: number;
+}): DomainEnvelopeInput {
+  return {
+    envelope_id: `envelope-restore-${options.suffix}`,
+    idempotency_key: `idem-restore-${options.suffix}`,
+    command_type: "restore_record",
+    subject_scope: "user:self",
+    source_message_id: `message-restore-${options.suffix}`,
+    conversation_id: "conversation-correction-matrix",
+    received_at: "2026-08-12T07:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: [
+      {
+        kind: "restore_record",
+        operation_id: `operation-restore-${options.suffix}`,
+        target_event_id: options.targetEventId,
+        base_revision: options.baseRevision,
+      },
+    ],
+  };
+}
+
 function seedPurchase(service: DietDomainService, envelope: DomainEnvelopeInput): void {
   expect(previewAndExecute(service, envelope).status).toBe("committed");
 }
@@ -3954,6 +3979,160 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
+    }
+  });
+
+  it("restore re-deducts the batch and skips inventory without negative stock when it was re-consumed", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T05:00:00.000Z",
+    });
+    try {
+      // Purchase exactly three eggs, then eat all three.
+      seedPurchase(service, purchaseStockEnvelope({
+        suffix: "restore-three-eggs",
+        productId: "product-restore-eggs",
+        normalizedName: "eggs",
+        batchId: "batch-restore-eggs",
+        quantityMicrounits: 3_000_000,
+        unit: "piece",
+      }));
+      const eggSource = nutritionSource(
+        "product_label",
+        "label-product-restore-eggs-v1",
+        1,
+        "product-restore-eggs",
+        { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+      );
+      const eggMeal = (suffix: string) => mealEnvelope({
+        suffix,
+        location: "home",
+        items: [mealItem({
+          name: "eggs",
+          unit: "piece",
+          observed: 3_000_000,
+          adopted: 3_000_000,
+          deducted: 3_000_000,
+          sources: [eggSource],
+        })],
+      });
+      const mealA = eggMeal("restore-meal-a");
+      previewAndExecute(service, mealA);
+      const targetEventId = deriveDomainId("event", mealA.idempotency_key, 0);
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(0);
+
+      // Undo restocks the batch, then a second meal consumes it again.
+      previewAndExecute(service, undoEnvelope({
+        suffix: "restore-undo-a",
+        targetEventId,
+        baseRevision: 1,
+      }));
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(3_000_000);
+      previewAndExecute(service, eggMeal("restore-meal-b"));
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(0);
+
+      // Restore re-deducts, but the batch is empty: skip inventory, never go negative.
+      const restore = restoreEnvelope({ suffix: "restore-a", targetEventId, baseRevision: 2 });
+      const restoreResult = previewAndExecute(service, restore);
+      expect(restoreResult.status).toBe("committed_with_issues");
+      expect(restoreResult.items).toMatchObject([{
+        status: "committed_with_issues",
+        issue_codes: ["inventory_insufficient"],
+      }]);
+      // The compensation effect is skipped, never a negative transaction or projection.
+      expect(runtime.database.prepare(
+        `SELECT effect_kind, state, reason FROM effect_outbox
+         WHERE envelope_id = ? AND effect_kind = 'correction_inventory_compensation'`,
+      ).get(restore.envelope_id)).toEqual({
+        effect_kind: "correction_inventory_compensation",
+        state: "permanent_business_skip",
+        reason: "inventory_insufficient",
+      });
+      expect(runtime.database.prepare(
+        "SELECT issue_code, status FROM issues WHERE entity_type = 'meal_item'",
+      ).get()).toEqual({ issue_code: "inventory_insufficient", status: "open" });
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(0);
+
+      // Nutrition and progress still restore: both meals are active again.
+      expect(service.query({
+        kind: "query_meals",
+        operation_id: "query-restored-eggs",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      }).meals).toHaveLength(2);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
+    }
+  });
+
+  it("restore re-deducts the batch normally when it is still available", () => {
+    const root = newTestRoot();
+    const runtime = openDietDatabase({ privateRuntimeRoot: root });
+    const service = createDietDomainService({
+      database: runtime.database,
+      secret,
+      now: () => "2026-08-12T05:00:00.000Z",
+    });
+    try {
+      seedPurchase(service, purchaseStockEnvelope({
+        suffix: "restore-available-eggs",
+        productId: "product-restore-available-eggs",
+        normalizedName: "eggs",
+        batchId: "batch-restore-available-eggs",
+        quantityMicrounits: 3_000_000,
+        unit: "piece",
+      }));
+      const meal = mealEnvelope({
+        suffix: "restore-available-meal",
+        location: "home",
+        items: [mealItem({
+          name: "eggs",
+          unit: "piece",
+          observed: 3_000_000,
+          adopted: 3_000_000,
+          deducted: 3_000_000,
+          sources: [nutritionSource(
+            "product_label",
+            "label-product-restore-available-eggs-v1",
+            1,
+            "product-restore-available-eggs",
+            { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+          )],
+        })],
+      });
+      previewAndExecute(service, meal);
+      const targetEventId = deriveDomainId("event", meal.idempotency_key, 0);
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(0);
+
+      // Undo restocks, then restore re-deducts without any issue.
+      previewAndExecute(service, undoEnvelope({ suffix: "restore-available-undo", targetEventId, baseRevision: 1 }));
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(3_000_000);
+      const restore = restoreEnvelope({ suffix: "restore-available", targetEventId, baseRevision: 2 });
+      const restoreResult = previewAndExecute(service, restore);
+      expect(restoreResult.status).toBe("committed");
+      expect(restoreResult.items).toMatchObject([{ status: "committed", issue_codes: [] }]);
+      expect(runtime.database.prepare(
+        `SELECT effect_kind, state, reason FROM effect_outbox
+         WHERE envelope_id = ? AND effect_kind = 'correction_inventory_compensation'`,
+      ).get(restore.envelope_id)).toEqual({
+        effect_kind: "correction_inventory_compensation",
+        state: "succeeded",
+        reason: null,
+      });
+      expect(service.query(queryInventory()).batches[0].quantity_microunits).toBe(0);
+      expect(service.query({
+        kind: "query_meals",
+        operation_id: "query-restore-available-meals",
+        date: "2026-08-12",
+        timezone: "Asia/Shanghai",
+      }).meals).toHaveLength(1);
+    } finally {
+      runtime.close();
+      removeOwnedRoot(root);
     }
   });
 
