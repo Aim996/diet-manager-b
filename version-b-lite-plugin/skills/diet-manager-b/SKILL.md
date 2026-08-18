@@ -41,10 +41,12 @@ description: Use when a user reports completed food, water, or inventory activit
 | 查询当天汇总 | `query_daily_summary` |
 | 更正已有记录 | `correct_record` |
 | 撤销指定记录 | `undo_record` |
+| 设置或更新个人档案（身高/体重/年龄/性别/状态） | `set_profile` |
+| 设置或更新六项目标（可单独清除某项目标） | `set_goal` |
 
 ## 结果处理
 
-- `committed=true` 且状态为 `committed`：按动作分别回执——`record_meal`/`record_water`/`add_inventory` 告知“已记录”，`correct_record` 告知“已更正”，`undo_record` 告知“已撤销”，并引用返回的记录标识。
+- `committed=true` 且状态为 `committed`：按动作分别回执——`record_meal`/`record_water`/`add_inventory` 告知“已记录”，`correct_record` 告知“已更正”，`undo_record` 告知“已撤销”，`set_profile` 告知“已保存个人档案”，`set_goal` 告知“已更新目标”，并引用返回的记录标识。
 - `committed=true` 且状态为 `committed_with_issues`：告知事实已记录，同时说明后续效果仍待处理；不要重复提交事实。
 - `committed=false` 且状态为 `needs_clarification`：明确告知尚未记录，只追问完成记录所缺少的最少信息。不要猜测食物、数量或时间，也不要说“记下了”。
 - `committed=false` 且状态为 `ignored`：明确告知没有写入饮食记录，并根据 `reason_code` 简短说明这是计划、否定、查询或其他非写入内容。不要说“记下了”或“已记录”。
@@ -52,6 +54,10 @@ description: Use when a user reports completed food, water, or inventory activit
 - 状态与 `committed` 相互矛盾：视为无效结果，报告未确认成功，不要猜测。
 
 以上任一结果都是本条消息的终点。不得为了“帮用户解决”而再次调用、搜索插件代码或尝试其他存储。
+
+## 进度条回执
+
+`query_daily_summary` 返回 `configured_goals`（六项目标，`null` 表示未配置）与 `progress`（仅已配置维度出现）。回执按固定顺序渲染两行进度条：`🔥热量 🥩蛋白质 🧈脂肪 🍚碳水 🥦膳食纤维 💧饮水`；每项两行，第一行 `Emoji 名称 ██████████ 103%`，第二行 `Emoji 当前量/目标 单位`。进度条满格 10 格，超出目标显示真实百分比（可超过 100%）且满格。未配置维度只标注“尚未配置目标”，不渲染进度条。六项目标均为“参考目标（公式估算，可覆盖）”，不构成医疗建议。
 
 ## 示例
 
