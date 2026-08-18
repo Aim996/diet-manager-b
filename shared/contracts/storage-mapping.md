@@ -31,9 +31,9 @@
     "selected_route_map_created": false
   },
   "schema_sources": [
-    {"schema_id":"https://diet-manager.local/schemas/event-and-amount/v1","path":"shared/schemas/event-and-amount.schema.json","sha256":"FD5F2B44C5AC1B8295F54774AA3425DD2DB4BA16915111A3E1B241104CEE47CA","definition_count":6},
+    {"schema_id":"https://diet-manager.local/schemas/event-and-amount/v1","path":"shared/schemas/event-and-amount.schema.json","sha256":"4E2BD0A50D3A145D616966A9F9AAAD7B49D980F564921771D645B66A8D55503A","definition_count":6},
     {"schema_id":"https://diet-manager.local/schemas/product-inventory/v1","path":"shared/schemas/product-inventory.schema.json","sha256":"681551FA18759AE3F993B0951C3A650FA8ABE16B28D7A9E7223E24F5E9B6613F","definition_count":6},
-    {"schema_id":"https://diet-manager.local/schemas/nutrition-progress/v1","path":"shared/schemas/nutrition-progress.schema.json","sha256":"E8F0C95006529D5D6F9C388E657EA1F834C567D975577C5903B2B28D79C26DE8","definition_count":10},
+    {"schema_id":"https://diet-manager.local/schemas/nutrition-progress/v1","path":"shared/schemas/nutrition-progress.schema.json","sha256":"D172E4B3282F6FC5EC884BEFA40A17536F5B773B5A54CEB27011AF493F5671D8","definition_count":10},
     {"schema_id":"https://diet-manager.local/schemas/issue-correction-mixed/v1","path":"shared/schemas/issue-correction-mixed.schema.json","sha256":"EDBB15A38543431DD66564B696F7EA956F725E241E628D8EF36E1B9B0D3B511F","definition_count":12}
   ],
   "object_mappings": [
