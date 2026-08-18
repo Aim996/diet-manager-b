@@ -80,9 +80,9 @@
     },
     "additionalProperties": false,
     "x-diet-manager-contract": {
-      "id": "diet-manager/contract-v2",
-      "version": 2,
-      "sha256": "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E"
+      "id": "diet-manager/contract-v3",
+      "version": 3,
+      "sha256": "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC"
     }
   },
   "activation": {

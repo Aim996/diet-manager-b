@@ -21,7 +21,7 @@ description: Use when a user reports completed food, water, or inventory activit
 
 不要用记忆文件、便签、聊天历史、表格或其他存储代替饮食记录。只有工具返回 `committed=true` 才能告诉用户“已记录”。若工具失败，直接告诉用户本次未记录，不创建便签、记忆或替代记录。技术日志可以说明失败原因，但不属于饮食记录。营养结果只复述工具返回值；工具没有返回热量或营养数值时，不自行估算。一次回复只包含本次饮食结果和一个确有必要的追问，不追加起名、身份档案、记忆初始化或无关建议。
 
-只接受冻结契约 `contract_id=diet-manager/contract-v2`、`contract_version=2`、`contract_sha256=632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E`。契约身份与工具 Schema 或运行时不一致时，把结果视为未确认成功，不要猜测或补写。
+只接受冻结契约 `contract_id=diet-manager/contract-v3`、`contract_version=3`、`contract_sha256=B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC`。契约身份与工具 Schema 或运行时不一致时，把结果视为未确认成功，不要猜测或补写。
 
 `official_data_root` 只由后端配置和管理。Skill 不创建、打开或替换该根，也不把便签、记忆文件或其他路径当作回退业务库。
 

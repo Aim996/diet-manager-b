@@ -16,9 +16,9 @@ const packagePath = resolve(projectDirectory, "package.json");
 const skillPath = resolve(projectDirectory, "skills", "diet-manager-b", "SKILL.md");
 const dataDirectory = resolve(projectDirectory, "data");
 const expectedContract = {
-  id: "diet-manager/contract-v2",
-  version: 2,
-  sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+  id: "diet-manager/contract-v3",
+  version: 3,
+  sha256: "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC",
 } as const;
 const expectedActions = [
   "record_meal",
@@ -29,6 +29,9 @@ const expectedActions = [
   "query_daily_summary",
   "correct_record",
   "undo_record",
+  "set_profile",
+  "set_goal",
+  "restore_record",
 ] as const;
 const expectedStatuses = [
   "committed",
@@ -269,7 +272,7 @@ describe("diet manager B core plugin boundary", () => {
     ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:failed_record_id");
   });
 
-  test("implements the exact CONTRACT-v2 command outcome boundary", () => {
+  test("implements the exact CONTRACT-v3 command outcome boundary", () => {
     const statuses = Reflect.get(foundation, "dietManagerStatuses") as
       | readonly string[]
       | undefined;
@@ -378,5 +381,56 @@ describe("diet manager B core plugin boundary", () => {
         record_ids: ["event-second", "event-first"],
       }),
     ).toThrowError("DIET_MANAGER_OUTCOME_INVALID:record_ids");
+  });
+
+  test("accepts CONTRACT-v3 extended daily_progress with configured goals and progress bars", () => {
+    const validator = Reflect.get(foundation, "assertDietManagerOutcome") as
+      | ((value: unknown) => unknown)
+      | undefined;
+    expect(() =>
+      validator?.({
+        action: "query_daily_summary",
+        status: "ignored",
+        committed: false,
+        reason_code: "read_only_result",
+        daily_progress: {
+          date: "2026-08-19",
+          timezone: "Asia/Shanghai",
+          meals: { count: 1 },
+          water: { count: 0, plain_water_ml_milli: 0 },
+          nutrition: {
+            coverage_status: "partial",
+            nutrients: {
+              energy_kcal_milli: 300000,
+              protein_mg: 20000,
+              fat_mg: 10000,
+              carbohydrate_mg: 40000,
+              fiber_mg: 5000,
+              water_ml_milli: 0,
+            },
+          },
+          inventory: { deduction_count: 0 },
+          purchases: { count: 0 },
+          corrections: { count: 0 },
+          configured_goals: {
+            energy_kcal: 2000,
+            protein_g: 100,
+            fat_g: 70,
+            carbohydrate_g: 200,
+            fiber_g: 28,
+            water_ml: 2450,
+          },
+          progress: {
+            energy_kcal: {
+              current: 300,
+              target: 2000,
+              percentage: 15,
+              filled_cells: 2,
+              bar_text: "██░░░░░░░░",
+            },
+          },
+        },
+      }),
+    ).not.toThrow();
   });
 });

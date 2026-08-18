@@ -1,8 +1,8 @@
-# CONTRACT-v2：饮食管家可移植 Skill 与 B 后端共同业务契约
+# CONTRACT-v3：饮食管家可移植 Skill 与 B 后端共同业务契约
 
 ## 1. 契约身份、适用范围与规范词
 
-本文件是饮食管家可移植 Skill、唯一 B 写入后端及其薄适配器共同遵守的 **CONTRACT-v2**。它把已确认的业务语义固定为可实现、可验证的边界；它不是可安装产品的承诺，也不替代后端实现、Schema、案例 Oracle、来源注册表或回执文案。A 只保留受控只读/无插件降级边界，C 不再形成独立产品，其服务端安全控制并入 B。
+本文件是饮食管家可移植 Skill、唯一 B 写入后端及其薄适配器共同遵守的 **CONTRACT-v3**。它把已确认的业务语义固定为可实现、可验证的边界；它不是可安装产品的承诺，也不替代后端实现、Schema、案例 Oracle、来源注册表或回执文案。A 只保留受控只读/无插件降级边界，C 不再形成独立产品，其服务端安全控制并入 B。
 
 - **MUST（必须）**表示 Skill、B 后端和所有适配器都必须实现或保留的可观察语义；**MUST NOT（不得）**表示禁止行为；**SHOULD（应）**只有存在已登记且生效的例外决定时才可偏离；**MAY（可以）**表示许可而非义务。
 - 实现 MUST NOT 以存储技术、智能体、UI、模型能力或便利性改变本契约的事实、审计、幂等、隐私或降级语义。OpenClaw、未来 MCP 和其他智能体集成只能是同一 B 后端的薄适配器，不能复制或重释业务提交逻辑。〔REQ-EVENT-004, REQ-EVENT-005, REQ-EVENT-007〕
@@ -10,13 +10,13 @@
 
 ### 1.1 机器可读协议摘要
 
-下面的 JSON 是 CONTRACT-v2 的机器可读协议摘要，供后续 Schema、SQLite mapping、共同 harness 和适配器校验使用。它冻结阶段、状态和失败边界，不冻结数据库表名或物理索引。
+下面的 JSON 是 CONTRACT-v3 的机器可读协议摘要，供后续 Schema、SQLite mapping、共同 harness 和适配器校验使用。它冻结阶段、状态和失败边界，不冻结数据库表名或物理索引。
 
-<!-- BEGIN CONTRACT-V2-MACHINE -->
+<!-- BEGIN CONTRACT-V3-MACHINE -->
 ```json
 {
-  "contract_id": "diet-manager/contract-v2",
-  "contract_version": 2,
+  "contract_id": "diet-manager/contract-v3",
+  "contract_version": 3,
   "product_write_route": "B",
   "skill_surface": "portable",
   "command_statuses": [
@@ -158,16 +158,47 @@
     "nutrition_source_model": "ordered_registry",
     "same_product_multi_batch_is_ambiguity": false,
     "nutrition_amount_drives_inventory": false
+  },
+  "profile_and_goals": {
+    "profile_fields": [
+      "height_cm",
+      "weight_kg",
+      "sex",
+      "age",
+      "goal_state"
+    ],
+    "goal_state": [
+      "cut",
+      "maintain",
+      "bulk"
+    ],
+    "goal_dimensions": [
+      "energy_kcal",
+      "protein_g",
+      "fat_g",
+      "carbohydrate_g",
+      "fiber_g",
+      "water_ml"
+    ],
+    "derivation_authority": "user_triggered_reference_estimates",
+    "derivation_is_medical_advice": false,
+    "manual_override": "set_goal_overrides_or_clears_subset"
+  },
+  "record_restore": {
+    "allowed": true,
+    "from": "voided",
+    "to": "active",
+    "inventory_insufficient_effect": "skipped_inventory"
   }
 }
 ```
-<!-- END CONTRACT-V2-MACHINE -->
+<!-- END CONTRACT-V3-MACHINE -->
 
 ## 2. 产品边界与非目标
 
 - 系统 MUST 只记录当前用户本人的饮食、白水和购买事实；MUST NOT 建立家庭成员、主体切换、多人账户或他人档案。用户明确说明为他人食用时，该事实 MUST NOT 写入本人账本。多人共同进食但本人份量不明时，只保存本人确实参与的事实，个人数量保持 `unknown` 或询问最少必要信息。家庭库存只是本人记录的默认库存来源，不构成多人能力。〔REQ-SCOPE-001, REQ-SCOPE-002, REQ-SCOPE-003〕
 - 产品是可靠的日常饮食账本与记录/回顾助手。它 MUST NOT 提供饮食评分、自动改善或减重方案，也 MUST NOT 提供诊断、治疗、用药建议或替代专业医疗意见；“0.3 非医疗健康管理助手”不在范围内。〔REQ-SCOPE-004, REQ-SCOPE-005, REQ-SCOPE-008〕
-- 用户目标仅用于已配置目标的进度记录；系统 MUST NOT 自行生成目标、百分比或据此评价用户。白水、追加式纠正及有目标时的进度属于产品能力，其细节由 companion contracts 冻结。〔REQ-SCOPE-006〕
+- 用户目标仅用于已配置目标的进度记录；系统 MUST NOT 在用户未显式提供个人信息时自行生成目标，也 MUST NOT 生成百分比或据此评价用户。用户在 `set_profile` 中显式提供个人信息时，系统 MAY 依公开参考公式派生出标注「参考目标（公式估算，可覆盖）」「非医疗建议」的六项参考目标，MUST 允许 `set_goal` 覆盖或清除任意子集；派生不构成医疗建议、诊断或对用户的评价。白水、追加式纠正、撤销恢复及有目标时的进度属于产品能力，其细节由 companion contracts 冻结。〔REQ-SCOPE-006〕
 - 云同步、多人、可穿戴/健康平台和图像、条码、发票识别不进入 0.1。未经授权的分享或上传 MUST NOT 发生；联网资料 MUST 有可信、可追溯且可版本化的来源；MUST NOT 无依据拆解内容不明的套餐、拼盘或自定义复合食品；MUST NOT 物理覆盖、静默删除或批量重写历史。〔REQ-SCOPE-007, REQ-SCOPE-009, REQ-SCOPE-010, REQ-SCOPE-011, REQ-SCOPE-012〕
 
 ## 3. 术语与领域边界
@@ -183,6 +214,7 @@
 - 每个正式事件 MUST 保存用户原话、消息来源、接收时间、提交时间、Schema 版本和稳定事件 ID；所有系统推导 MUST 有来源与规则版本。〔REQ-EVENT-004, REQ-EVENT-005〕
 - 对“已发生且至少一个食物可识别”的饮食，系统 MUST fact-first：先持久化核心事实。数量不清、库存多候选/不足/不可换算、营养未知只可使相应副作用处于稳定 `skipped_*`、`partial` 或 `unknown` 状态并登记问题，MUST NOT 导致该饮食事实丢失。〔REQ-EVENT-003, REQ-MEAL-005, REQ-MEAL-006, REQ-MEAL-009〕
 - 更正 MUST 以 `append-only correction/void` 中的 `correction` 追加，并保留原事实；冲销 MUST 以同一追加模型的 `void` 追加。任何改变有效摄入、数量、组成或库存效果的 correction/void，MUST 在单一可靠事务边界追加相应事件、执行适用的库存补偿和营养重算，并更新受影响日期的有效 `daily_progress`；原事件、旧营养快照及旧依据 MUST 保留可审计。〔REQ-SCOPE-012, REQ-EVENT-003, REQ-MEAL-018〕
+- 已 `voided` 记录 MAY 由 `restore_record` 恢复为 `active`（un-void），MUST NOT 用于新建事实；恢复 MUST 追加 `restore_event` 并保留完整 void 痕迹，重放既有事实、营养与白水贡献，并在适用时重新扣减库存；若目标批次已不足，该库存效果 MUST 稳定标记 `skipped_inventory` 且库存 MUST NOT 为负，营养、白水与进度照常恢复。〔REQ-SCOPE-012, REQ-EVENT-003, REQ-PANTRY-004〕
 - 存储不可用、事务回滚或提交结果未知且事实未明确持久化时 MUST 返回 `failed`、`committed=false`，MUST NOT 携带业务 `record_id` 或声称已记录。此失败 SHOULD 写入独立、脱敏且不进入业务查询的技术日志，但饮食/饮水事实、库存变化、营养快照、Issue、业务 outbox、日进度、成功回执和终态幂等结果必须全部为零。基础验证、构建和测试 MUST 使用明确的临时或隔离数据根，MUST NOT 接触正式数据路径。〔REQ-EVENT-011, REQ-EVENT-012, REQ-SAFE-002〕
 
 ## 5. 时间、餐次、上下文与数量
@@ -255,7 +287,7 @@
 
 本表的每个任务范围 ID 恰出现一次；`REQ-TIME-*` 为计划 §6.2、§10、§11.13、§20.5—§20.7 与 §28 需求台账的支撑性来源，已在正文引用，但不属于本任务要求的 77 条追踪范围。
 
-| REQ ID | CONTRACT-v2 正文小节 |
+| REQ ID | CONTRACT-v3 正文小节 |
 | --- | --- |
 | REQ-SCOPE-001 | §2 |
 | REQ-SCOPE-002 | §2 |

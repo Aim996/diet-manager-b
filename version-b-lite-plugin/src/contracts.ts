@@ -1,7 +1,7 @@
 export const dietManagerContract = Object.freeze({
-  id: "diet-manager/contract-v2",
-  version: 2,
-  sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+  id: "diet-manager/contract-v3",
+  version: 3,
+  sha256: "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC",
 } as const);
 
 export const dietManagerActions = [
@@ -13,6 +13,9 @@ export const dietManagerActions = [
   "query_daily_summary",
   "correct_record",
   "undo_record",
+  "set_profile",
+  "set_goal",
+  "restore_record",
 ] as const;
 
 export type DietManagerAction = (typeof dietManagerActions)[number];
@@ -121,6 +124,32 @@ export interface InventoryView {
   }>[];
 }
 
+export interface DailyProgressConfiguredGoalsView {
+  readonly energy_kcal: number | null;
+  readonly protein_g: number | null;
+  readonly fat_g: number | null;
+  readonly carbohydrate_g: number | null;
+  readonly fiber_g: number | null;
+  readonly water_ml: number | null;
+}
+
+export interface DailyProgressBarView {
+  readonly current: number;
+  readonly target: number;
+  readonly percentage: number;
+  readonly filled_cells: number;
+  readonly bar_text: string;
+}
+
+export interface DailyProgressBarsView {
+  readonly energy_kcal?: Readonly<DailyProgressBarView>;
+  readonly protein_g?: Readonly<DailyProgressBarView>;
+  readonly fat_g?: Readonly<DailyProgressBarView>;
+  readonly carbohydrate_g?: Readonly<DailyProgressBarView>;
+  readonly fiber_g?: Readonly<DailyProgressBarView>;
+  readonly water_ml?: Readonly<DailyProgressBarView>;
+}
+
 export interface DailyProgressView {
   readonly date: string;
   readonly timezone: "Asia/Shanghai";
@@ -140,6 +169,8 @@ export interface DailyProgressView {
   readonly inventory: Readonly<{ readonly deduction_count: number }>;
   readonly purchases: Readonly<{ readonly count: number }>;
   readonly corrections: Readonly<{ readonly count: number }>;
+  readonly configured_goals?: Readonly<DailyProgressConfiguredGoalsView>;
+  readonly progress?: Readonly<DailyProgressBarsView>;
 }
 
 export interface ProductIdentityClarificationOption {
@@ -207,7 +238,7 @@ export interface CorrectionOutcomeView {
   readonly correction_id: string;
   readonly target_event_id: string;
   readonly revision: number;
-  readonly operation: "void_event" | "change_amount" | "change_time" | "change_water_classification";
+  readonly operation: "void_event" | "change_amount" | "change_time" | "change_water_classification" | "restore_event";
   readonly current_active: boolean;
   readonly compensation_transaction_id: string | null;
 }
@@ -365,11 +396,50 @@ function assertMealReceipt(value: unknown): asserts value is MealReceipt {
   }
 }
 
+const GOAL_DIMENSIONS = ["energy_kcal", "protein_g", "fat_g", "carbohydrate_g", "fiber_g", "water_ml"] as const;
+
+function assertConfiguredGoals(value: unknown): asserts value is DailyProgressConfiguredGoalsView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("configured_goals");
+  const goals = value as Record<string, unknown>;
+  if (Object.keys(goals).sort().join("\0") !== [...GOAL_DIMENSIONS].sort().join("\0")) return invalidOutcome("configured_goals");
+  for (const field of GOAL_DIMENSIONS) {
+    const entry = goals[field];
+    if (entry !== null && (!Number.isFinite(entry) || Number(entry) <= 0)) return invalidOutcome("configured_goals_value");
+  }
+}
+
+function assertProgressBar(value: unknown): asserts value is DailyProgressBarView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("progress_bar");
+  const bar = value as Record<string, unknown>;
+  if (Object.keys(bar).sort().join("\0") !== "bar_text\0current\0filled_cells\0percentage\0target") {
+    return invalidOutcome("progress_bar");
+  }
+  if (!Number.isFinite(bar.current) || Number(bar.current) < 0 ||
+      !Number.isFinite(bar.target) || Number(bar.target) <= 0 ||
+      !Number.isFinite(bar.percentage) ||
+      !Number.isInteger(bar.filled_cells) || Number(bar.filled_cells) < 0 || Number(bar.filled_cells) > 10 ||
+      typeof bar.bar_text !== "string" || !/^[█░]{10}$/u.test(bar.bar_text)) {
+    return invalidOutcome("progress_bar");
+  }
+}
+
+function assertProgressBars(value: unknown): asserts value is DailyProgressBarsView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("progress");
+  const bars = value as Record<string, unknown>;
+  if (Object.keys(bars).some((key) => !GOAL_DIMENSIONS.includes(key as (typeof GOAL_DIMENSIONS)[number]))) {
+    return invalidOutcome("progress");
+  }
+  for (const key of Object.keys(bars)) assertProgressBar(bars[key]);
+}
+
 function assertDailyProgress(value: unknown): asserts value is DailyProgressView {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("daily_progress");
   const progress = value as Record<string, unknown>;
-  if (Object.keys(progress).sort().join("\0") !==
-      "corrections\0date\0inventory\0meals\0nutrition\0purchases\0timezone\0water" ||
+  const baseKeys = ["corrections", "date", "inventory", "meals", "nutrition", "purchases", "timezone", "water"];
+  const optionalKeys = ["configured_goals", "progress"];
+  const keys = Object.keys(progress).sort();
+  const expectedKeys = [...baseKeys, ...optionalKeys.filter((key) => Object.hasOwn(progress, key))].sort();
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index]) ||
       typeof progress.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(progress.date) ||
       progress.timezone !== "Asia/Shanghai") return invalidOutcome("daily_progress");
   const exactCount = (entry: unknown, key: "count" | "deduction_count"): number => {
@@ -409,6 +479,8 @@ function assertDailyProgress(value: unknown): asserts value is DailyProgressView
         (!Number.isSafeInteger(nutrients[field]) || Number(nutrients[field]) < 0))) {
     return invalidOutcome("daily_progress_nutrients");
   }
+  if (progress.configured_goals !== undefined) assertConfiguredGoals(progress.configured_goals);
+  if (progress.progress !== undefined) assertProgressBars(progress.progress);
 }
 
 function boundedText(value: unknown, reason: string, max = 512): string {
@@ -509,7 +581,7 @@ function assertCorrection(value: unknown): asserts value is CorrectionOutcomeVie
   if (!Number.isSafeInteger(candidate.revision) || (candidate.revision as number) < 1) {
     return invalidOutcome("correction_revision");
   }
-  if (!["void_event", "change_amount", "change_time", "change_water_classification"]
+  if (!["void_event", "change_amount", "change_time", "change_water_classification", "restore_event"]
     .includes(candidate.operation as string)) {
     return invalidOutcome("correction_operation");
   }
@@ -645,7 +717,8 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   }
 
   if (candidate.correction !== undefined) {
-    if (candidate.action !== "correct_record" && candidate.action !== "undo_record") {
+    if (candidate.action !== "correct_record" && candidate.action !== "undo_record" &&
+        candidate.action !== "restore_record") {
       return invalidOutcome("correction_action");
     }
     assertCorrection(candidate.correction);

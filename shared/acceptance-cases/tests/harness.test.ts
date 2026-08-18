@@ -20,9 +20,9 @@ const manifestPath = resolve(acceptanceRoot, "harness-manifest.json");
 
 const expectedContracts = [
   {
-    contract_id: "diet-manager/contract-v2",
+    contract_id: "diet-manager/contract-v3",
     path: "shared/business-contract.md",
-    sha256: "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+    sha256: "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC",
   },
   {
     contract_id: "diet-manager/receipt-date-contract-v2",
@@ -153,7 +153,7 @@ function sampleInput(): CaseExecutionInput {
     setup: { product: { kind: "nutritious_drink" } },
     contract_hashes: [
       {
-        contract_id: "diet-manager/contract-v2",
+        contract_id: "diet-manager/contract-v3",
         sha256: "A".repeat(64),
       },
     ],

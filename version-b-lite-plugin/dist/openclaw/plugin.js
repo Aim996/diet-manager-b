@@ -18,6 +18,9 @@ const actionSchema = Type.Union([
     Type.Literal("query_daily_summary"),
     Type.Literal("correct_record"),
     Type.Literal("undo_record"),
+    Type.Literal("set_profile"),
+    Type.Literal("set_goal"),
+    Type.Literal("restore_record"),
 ]);
 const legacyItemSchema = Type.Object({
     name: Type.String(),

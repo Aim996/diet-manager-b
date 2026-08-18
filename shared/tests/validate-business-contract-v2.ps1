@@ -35,13 +35,13 @@ function Assert-ContractArray {
 
 Assert-ContractTrue (Test-Path -LiteralPath $ContractPath -PathType Leaf) "Business contract is missing"
 $text = [System.IO.File]::ReadAllText($ContractPath, [System.Text.Encoding]::UTF8)
-$pattern = '(?s)<!-- BEGIN CONTRACT-V2-MACHINE -->\s*```json\s*(?<json>\{.*?\})\s*```\s*<!-- END CONTRACT-V2-MACHINE -->'
+$pattern = '(?s)<!-- BEGIN CONTRACT-V3-MACHINE -->\s*```json\s*(?<json>\{.*?\})\s*```\s*<!-- END CONTRACT-V3-MACHINE -->'
 $match = [System.Text.RegularExpressions.Regex]::Match($text, $pattern)
-Assert-ContractTrue $match.Success "CONTRACT-v2 machine block is missing"
+Assert-ContractTrue $match.Success "CONTRACT-v3 machine block is missing"
 
 $contract = $match.Groups["json"].Value | ConvertFrom-Json
-Assert-ContractEqual "diet-manager/contract-v2" ([string]$contract.contract_id) "Contract identity"
-Assert-ContractEqual 2 ([int]$contract.contract_version) "Contract version"
+Assert-ContractEqual "diet-manager/contract-v3" ([string]$contract.contract_id) "Contract identity"
+Assert-ContractEqual 3 ([int]$contract.contract_version) "Contract version"
 Assert-ContractEqual "B" ([string]$contract.product_write_route) "Only B may own product writes"
 Assert-ContractEqual "portable" ([string]$contract.skill_surface) "Skill surface"
 
@@ -148,4 +148,4 @@ Assert-ContractEqual "ordered_registry" ([string]$legacy.nutrition_source_model)
 Assert-ContractTrue (-not [bool]$legacy.same_product_multi_batch_is_ambiguity) "Same-product batches became ambiguity"
 Assert-ContractTrue (-not [bool]$legacy.nutrition_amount_drives_inventory) "Nutrition amount may not drive inventory"
 
-Write-Output "CONTRACT_V2|PASS|id=$($contract.contract_id)|statuses=$(@($contract.command_statuses).Count)|protocol=$(@($contract.protocol).Count)|legacy_guards=10"
+Write-Output "CONTRACT_V3|PASS|id=$($contract.contract_id)|statuses=$(@($contract.command_statuses).Count)|protocol=$(@($contract.protocol).Count)|legacy_guards=10"
