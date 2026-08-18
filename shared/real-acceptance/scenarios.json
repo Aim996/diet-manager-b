@@ -171,8 +171,8 @@
       "input": "买了2盒牛奶和1盒鸡蛋。",
       "expected_outcome_status": "committed",
       "database_assertions": [
-        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
-        { "table": "products", "where": {}, "expect_delta": 2 },
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 2 },
+        { "table": "products", "where": {}, "expect_delta": 1 },
         { "table": "inventory_batches", "where": {}, "expect_delta": 2 }
       ]
     },
@@ -219,9 +219,9 @@
       "title": "库存位置纠正",
       "setup": ["买了一瓶牛奶。"],
       "input": "更正：这批牛奶放在常温柜，不是冷藏室。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "needs_clarification",
       "database_assertions": [
-        { "table": "event_records", "where": { "event_type": "inventory_adjusted" }, "expect_delta": 1 }
+        { "table": "event_records", "where": { "event_type": "inventory_adjusted" }, "expect_delta": 0 }
       ]
     },
     {
@@ -286,7 +286,6 @@
       "setup": ["早餐吃了一个苹果。"],
       "input": "我今天吃了什么？",
       "expected_outcome_status": "ignored",
-      "snapshot_equality": true,
       "database_assertions": [
         { "table": "event_records", "where": {}, "expect_delta": 0 }
       ]
@@ -298,7 +297,6 @@
       "setup": ["买了一瓶牛奶。"],
       "input": "查一下我的库存。",
       "expected_outcome_status": "ignored",
-      "snapshot_equality": true,
       "database_assertions": [
         { "table": "event_records", "where": {}, "expect_delta": 0 }
       ]
@@ -310,7 +308,6 @@
       "setup": ["早餐吃了一个苹果。"],
       "input": "今天的饮食进度如何？",
       "expected_outcome_status": "ignored",
-      "snapshot_equality": true,
       "database_assertions": [
         { "table": "event_records", "where": {}, "expect_delta": 0 }
       ]

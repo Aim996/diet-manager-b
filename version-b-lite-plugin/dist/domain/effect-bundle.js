@@ -2914,7 +2914,7 @@ export function readAppliedCorrectionResult(input) {
         return correctionAuthorityInvalid("terminal_effects");
     }
     const outboxById = new Map(outboxes.map((outbox) => [outbox.effect_id, outbox]));
-    const progressByDate = [];
+    const replacementByEffectId = new Map();
     for (const effectValue of bundle.effects) {
         const candidate = effectValue;
         const effectId = typeof candidate?.effect_id === "string" ? candidate.effect_id : "";
@@ -2927,7 +2927,7 @@ export function readAppliedCorrectionResult(input) {
                 return correctionAuthorityInvalid("terminal_effects");
             }
             exactCorrectionRecord(effect.delta, ["after", "before"], "terminal_effects");
-            progressByDate.push(parseCorrectionProgress(effect.replacement));
+            replacementByEffectId.set(effectId, parseCorrectionProgress(effect.replacement));
         }
         else {
             const effect = exactCorrectionRecord(effectValue, ["effect_id", "state"], "terminal_effects");
@@ -2938,9 +2938,21 @@ export function readAppliedCorrectionResult(input) {
         }
         outboxById.delete(effectId);
     }
-    if (outboxById.size !== 0 || progressByDate.length !== reservations.length) {
+    if (outboxById.size !== 0 || replacementByEffectId.size !== reservations.length) {
         return correctionAuthorityInvalid("terminal_effects");
     }
+    // bundle.effects is ordered by effect_id (a content hash), which is not monotonic in the
+    // affected_dates sequence. Reconstruct progressByDate in reservations order by resolving each
+    // reservation's deterministic effect_id, so daily_progress_by_date matches the domain result
+    // (built in reservations order) regardless of effect_id ordering.
+    const compensationEffectCount = inventoryIntent.items.length;
+    const progressByDate = reservations.map((_reservation, reservationIndex) => {
+        const effectId = deriveDomainId("effect", input.idempotencyKey, compensationEffectCount + reservationIndex);
+        const replacement = replacementByEffectId.get(effectId);
+        if (replacement === undefined)
+            return correctionAuthorityInvalid("terminal_effects");
+        return replacement;
+    });
     const expectedIssueCodes = [];
     let expectedCompensationId = null;
     const expectedTransactionIds = new Set();

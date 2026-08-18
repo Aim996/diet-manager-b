@@ -528,16 +528,40 @@ function freezeCorrectionDailyProgress(input, envelopeId, idempotencyKey) {
             boundAfters.push(parseDailyProgress(delta.after, "correction_progress_delta"));
         }
     }
-    if (boundReplacements.length !== replacementsByDate.length ||
-        boundBefores.length !== replacementsByDate.length ||
-        boundAfters.length !== replacementsByDate.length ||
-        canonicalJson(boundReplacements) !== canonicalJson(replacementsByDate))
-        return authorityInvalid("correction_progress_bundle");
-    const finalizedReplacements = [];
+    // effect_id is a content hash, so `ORDER BY effect_id` is not monotonic in the
+    // affected_dates sequence: the bound effects may arrive in a different order than
+    // `replacementsByDate`. Re-key each bound effect by its date and align them to
+    // `replacementsByDate` order before comparing/applying, so cross-date change_time
+    // is independent of effect_id ordering.
+    const boundByDate = new Map();
     for (let index = 0; index < boundReplacements.length; index += 1) {
-        const boundReplacement = boundReplacements[index];
-        const boundBefore = boundBefores[index];
-        const boundAfter = boundAfters[index];
+        const replacement = boundReplacements[index];
+        boundByDate.set(replacement.date, {
+            replacement,
+            before: boundBefores[index],
+            after: boundAfters[index],
+        });
+    }
+    const alignedReplacements = [];
+    const alignedBefores = [];
+    const alignedAfters = [];
+    for (const byDate of replacementsByDate) {
+        const bound = boundByDate.get(byDate.date);
+        if (bound === undefined)
+            return authorityInvalid("correction_progress_bundle");
+        alignedReplacements.push(bound.replacement);
+        alignedBefores.push(bound.before);
+        alignedAfters.push(bound.after);
+    }
+    if (alignedReplacements.length !== replacementsByDate.length ||
+        canonicalJson(alignedReplacements) !== canonicalJson(replacementsByDate)) {
+        return authorityInvalid("correction_progress_bundle");
+    }
+    const finalizedReplacements = [];
+    for (let index = 0; index < alignedReplacements.length; index += 1) {
+        const boundReplacement = alignedReplacements[index];
+        const boundBefore = alignedBefores[index];
+        const boundAfter = alignedAfters[index];
         const previousRow = input.database.prepare(`SELECT generated_at, payload_json FROM daily_progress_snapshots
        WHERE date = ? AND timezone = ? ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`).get(boundReplacement.date, boundReplacement.timezone);
         let previous;

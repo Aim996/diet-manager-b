@@ -398,9 +398,8 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
        JOIN idempotency_records i
          ON i.operation_id = c.envelope_id AND i.idempotency_key = c.idempotency_key
        WHERE e.event_type = 'diet_meal' AND e.lifecycle_status = 'active'
-         AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
        ORDER BY e.occurred_at_text, e.event_id`,
-    ).all(query.start, query.end) as unknown as MealQueryRow[];
+    ).all() as unknown as MealQueryRow[];
     return Object.freeze(rows.flatMap((row) => {
       const parsedEventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
       let eventPayload: Readonly<Record<string, unknown>>;
@@ -462,13 +461,18 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
         ) return invalid("meal_correction_authority");
         const snapshot = correction.after_snapshot as unknown as EffectiveMealSnapshotRow;
         if (!snapshot.active) return [];
+        // A change_time correction moves the meal as a whole to a different
+        // occurred_at/meal_slot, so those fields legitimately diverge from the
+        // immutable event row; every other correction preserves them.
+        const isTimeChange = correction.operation === "change_time";
         if (
-          snapshot.occurred_at !== row.occurred_at_text ||
-          snapshot.meal_slot !== row.meal_slot ||
+          (!isTimeChange && (snapshot.occurred_at !== row.occurred_at_text ||
+            snapshot.meal_slot !== row.meal_slot)) ||
           snapshot.location !== eventPayload.location ||
           snapshot.timezone !== "Asia/Shanghai" ||
           !Array.isArray(snapshot.items)
         ) return invalid("meal_correction_snapshot");
+        if (snapshot.occurred_at < query.start || snapshot.occurred_at >= query.end) return [];
         const items = snapshot.items.map((item, index) => {
           if (
             item.item_order !== index || typeof item.item_type !== "string" ||
@@ -493,6 +497,7 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
           items: Object.freeze(items),
         }) as MealListItem];
       }
+      if (row.occurred_at_text < query.start || row.occurred_at_text >= query.end) return [];
       const items = itemRows.map((item, index) => {
         if (item.item_order !== index) return invalid("meal_item_order");
         const payload = parseCanonicalRecord(item.payload_json, "meal_item");

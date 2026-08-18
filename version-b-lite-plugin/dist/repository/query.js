@@ -197,8 +197,7 @@ export function listMealProjection(input) {
        JOIN idempotency_records i
          ON i.operation_id = c.envelope_id AND i.idempotency_key = c.idempotency_key
        WHERE e.event_type = 'diet_meal' AND e.lifecycle_status = 'active'
-         AND e.occurred_at_text >= ? AND e.occurred_at_text < ?
-       ORDER BY e.occurred_at_text, e.event_id`).all(query.start, query.end);
+       ORDER BY e.occurred_at_text, e.event_id`).all();
         return Object.freeze(rows.flatMap((row) => {
             const parsedEventPayload = parseCanonicalRecord(row.payload_json, "meal_event");
             let eventPayload;
@@ -257,12 +256,18 @@ export function listMealProjection(input) {
                 const snapshot = correction.after_snapshot;
                 if (!snapshot.active)
                     return [];
-                if (snapshot.occurred_at !== row.occurred_at_text ||
-                    snapshot.meal_slot !== row.meal_slot ||
+                // A change_time correction moves the meal as a whole to a different
+                // occurred_at/meal_slot, so those fields legitimately diverge from the
+                // immutable event row; every other correction preserves them.
+                const isTimeChange = correction.operation === "change_time";
+                if ((!isTimeChange && (snapshot.occurred_at !== row.occurred_at_text ||
+                    snapshot.meal_slot !== row.meal_slot)) ||
                     snapshot.location !== eventPayload.location ||
                     snapshot.timezone !== "Asia/Shanghai" ||
                     !Array.isArray(snapshot.items))
                     return invalid("meal_correction_snapshot");
+                if (snapshot.occurred_at < query.start || snapshot.occurred_at >= query.end)
+                    return [];
                 const items = snapshot.items.map((item, index) => {
                     if (item.item_order !== index || typeof item.item_type !== "string" ||
                         typeof item.normalized_name !== "string" || typeof item.amount !== "object" ||
@@ -286,6 +291,8 @@ export function listMealProjection(input) {
                         items: Object.freeze(items),
                     })];
             }
+            if (row.occurred_at_text < query.start || row.occurred_at_text >= query.end)
+                return [];
             const items = itemRows.map((item, index) => {
                 if (item.item_order !== index)
                     return invalid("meal_item_order");
