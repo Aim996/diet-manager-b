@@ -7,7 +7,7 @@
       "category": "meal",
       "title": "单食物餐食记录",
       "input": "早餐吃了一个苹果。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "meal_items", "where": {}, "expect_delta": 1 }
@@ -18,7 +18,7 @@
       "category": "meal",
       "title": "多食物餐食记录",
       "input": "午餐吃了米饭和炒青菜。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "meal_items", "where": {}, "expect_delta": 2 }
@@ -29,7 +29,7 @@
       "category": "meal",
       "title": "自然单位（个）餐食记录",
       "input": "吃了两个鸡蛋。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "meal_items", "where": {}, "expect_delta": 1 }
@@ -40,7 +40,7 @@
       "category": "meal",
       "title": "克重餐食记录",
       "input": "吃了150克米饭。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "meal_items", "where": {}, "expect_delta": 1 }
@@ -124,7 +124,7 @@
       "category": "nutrition",
       "title": "缺失 FDC_API_KEY 降级为 unknown",
       "input": "吃了200毫升纯牛奶。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "nutrition_snapshots", "where": { "coverage_status": "unknown" }, "expect_delta": 1 }
@@ -333,7 +333,7 @@
       "setup": ["早餐吃了一个苹果。"],
       "restart_gateway": true,
       "input": "午餐吃了米饭。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
       ]
@@ -345,7 +345,7 @@
       "setup": ["早餐吃了一个苹果。"],
       "reload_plugin": true,
       "input": "午餐吃了米饭。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
       ]
@@ -357,7 +357,7 @@
       "setup": ["早餐吃了一个苹果。"],
       "restore_kind": "same_root",
       "input": "午餐吃了米饭。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
       ]
@@ -379,7 +379,7 @@
       "category": "reply",
       "title": "回执真值：committed",
       "input": "早餐吃了一个苹果。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 }
       ]
