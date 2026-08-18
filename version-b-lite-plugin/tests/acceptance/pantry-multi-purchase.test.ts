@@ -96,6 +96,14 @@ describe("SEL-PANTRY-001 multi-item purchase grammar", () => {
   });
 
   it.each([
+    ["盒", "carton"],
+    ["袋", "bag"],
+    ["箱", "box"],
+    ["瓶", "bottle"],
+    ["罐", "can"],
+    ["包", "pack"],
+    ["桶", "bucket"],
+    ["个", "piece"],
     ["只", "piece"],
     ["颗", "piece"],
     ["枚", "piece"],

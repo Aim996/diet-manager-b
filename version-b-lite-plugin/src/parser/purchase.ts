@@ -110,8 +110,14 @@ const PRODUCT_ALIASES = Object.freeze<Readonly<Record<string, Readonly<{
 
 const PURCHASE_PREFIX = /^(?:我\s*)?买了/u;
 const NUMERIC_TOKEN = /^([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
-const PACKAGE_UNIT_TOKEN = /^([盒袋箱瓶罐包桶个只颗枚片支])([\s\S]*)$/u;
-const CLAUSE_TOKEN = /^([盒袋箱瓶罐包桶个只颗枚片支])([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
+// Single source of truth: the package-unit character class is derived from
+// PACKAGE_UNIT_ALIASES so the grammar token can never drift from the
+// normalization map. (b86838c fixed exactly this drift when 个只颗枚片支 were
+// missing from the two literal regexes below.) All alias keys are single
+// CJK characters with no regex metacharacters, so joining them inside [...] is safe.
+const PACKAGE_UNIT_CLASS = `[${Object.keys(PACKAGE_UNIT_ALIASES).join("")}]`;
+const PACKAGE_UNIT_TOKEN = new RegExp(`^(${PACKAGE_UNIT_CLASS})([\\s\\S]*)$`, "u");
+const CLAUSE_TOKEN = new RegExp(`^(${PACKAGE_UNIT_CLASS})([+-]?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\\s\\S]*)$`, "u");
 
 /** Parse a bounded positive integer: Chinese 一–十 (plus 两) or Arabic, 1..max. */
 function parsePositiveInteger(text: string, max: number): number | null {
