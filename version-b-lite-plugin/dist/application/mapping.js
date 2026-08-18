@@ -131,6 +131,13 @@ function profileOperation(command) {
         goal_state: command.goal_state,
     });
 }
+function goalOperation(command) {
+    return Object.freeze({
+        kind: "set_goal",
+        operation_id: command.operation_id,
+        goals: Object.freeze({ ...command.goals }),
+    });
+}
 function normalizedPackageUnit(value) {
     if (value === null)
         return null;
@@ -386,7 +393,9 @@ export function mapCoreCandidateToEnvelope(request, command, purchaseResolutions
             ? Object.freeze([correctionOperation(command, correctionResolution)])
             : command.action === "set_profile"
                 ? Object.freeze([profileOperation(command)])
-                : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
+                : command.action === "set_goal"
+                    ? Object.freeze([goalOperation(command)])
+                    : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
     const envelope = JSON.parse(canonicalJson({
         envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
         idempotency_key: `core-${digest}`, command_type: request.action,

@@ -312,6 +312,21 @@ export interface CoreProfileCommandCandidate {
   readonly goal_state: "cut" | "maintain" | "bulk" | null;
 }
 
+export interface CoreGoalCommandCandidate {
+  readonly action: "set_goal";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly goals: Readonly<{
+    readonly energy_kcal?: number | null;
+    readonly protein_g?: number | null;
+    readonly fat_g?: number | null;
+    readonly carbohydrate_g?: number | null;
+    readonly fiber_g?: number | null;
+    readonly water_ml?: number | null;
+  }>;
+}
+
 export type CoreCommandCandidate =
   | Readonly<CoreMealCommandCandidate>
   | Readonly<CoreWaterCommandCandidate>
@@ -323,7 +338,8 @@ export type CoreCommandCandidate =
   | Readonly<CoreMealAmountCorrectionCandidate>
   | Readonly<CoreMealTimeCorrectionCandidate>
   | Readonly<CoreWaterClassificationCorrectionCandidate>
-  | Readonly<CoreProfileCommandCandidate>;
+  | Readonly<CoreProfileCommandCandidate>
+  | Readonly<CoreGoalCommandCandidate>;
 
 export interface CoreParseInput {
   readonly source_text: string;
@@ -346,10 +362,11 @@ export type CoreClarificationReason =
   | "unsupported_command"
   | "amount_ambiguous"
   | "target_ambiguous"
-  | "profile_incomplete";
+  | "profile_incomplete"
+  | "goal_incomplete";
 
 export type CoreRecognizedAction =
-  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record" | "set_profile">
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record" | "set_profile" | "set_goal">
   | "health_advice";
 
 export type CoreIgnoredResult =
@@ -440,6 +457,14 @@ export type CoreClarificationResult =
       disposition: "needs_clarification";
       action: "set_profile";
       reason_code: "profile_incomplete";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "set_goal";
+      reason_code: "goal_incomplete";
       question: string;
       occurred_time?: never;
       context_id?: never;

@@ -21,6 +21,61 @@ export interface SixGoalValues {
   readonly water_ml: number;
 }
 
+// DEC-030 C-3：六项目标的「已配置」形态（每项 number | null，null = 未配置）。
+// set_profile 派生结果恒为 SixGoalValues（全非空）；set_goal 合并后可出现 null。
+export const GOAL_FIELDS = [
+  "energy_kcal",
+  "protein_g",
+  "fat_g",
+  "carbohydrate_g",
+  "fiber_g",
+  "water_ml",
+] as const;
+
+export type GoalField = (typeof GOAL_FIELDS)[number];
+
+export interface ConfiguredGoals {
+  readonly energy_kcal: number | null;
+  readonly protein_g: number | null;
+  readonly fat_g: number | null;
+  readonly carbohydrate_g: number | null;
+  readonly fiber_g: number | null;
+  readonly water_ml: number | null;
+}
+
+// set_goal 的任意子集覆盖：每项可选，null 清除该维度。
+export interface GoalOverrides {
+  readonly energy_kcal?: number | null;
+  readonly protein_g?: number | null;
+  readonly fat_g?: number | null;
+  readonly carbohydrate_g?: number | null;
+  readonly fiber_g?: number | null;
+  readonly water_ml?: number | null;
+}
+
+export function emptyConfiguredGoals(): ConfiguredGoals {
+  return Object.freeze({
+    energy_kcal: null,
+    protein_g: null,
+    fat_g: null,
+    carbohydrate_g: null,
+    fiber_g: null,
+    water_ml: null,
+  });
+}
+
+// 纯合并：当前已配置目标叠加任意子集覆盖（null 清除）。入参已由上层校验为非负有限值。
+export function mergeGoalOverrides(
+  current: Readonly<ConfiguredGoals>,
+  overrides: Readonly<GoalOverrides>,
+): ConfiguredGoals {
+  const merged: Record<GoalField, number | null> = { ...current };
+  for (const field of GOAL_FIELDS) {
+    if (Object.hasOwn(overrides, field)) merged[field] = overrides[field] as number | null;
+  }
+  return Object.freeze(merged);
+}
+
 function invalid(reason: string): never {
   throw new TypeError(`GOAL_DERIVATION_INVALID:${reason}`);
 }

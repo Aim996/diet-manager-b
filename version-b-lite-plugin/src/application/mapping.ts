@@ -208,6 +208,16 @@ function profileOperation(
   });
 }
 
+function goalOperation(
+  command: Extract<CoreCommandCandidate, { action: "set_goal" }>,
+): DomainOperation {
+  return Object.freeze({
+    kind: "set_goal" as const,
+    operation_id: command.operation_id,
+    goals: Object.freeze({ ...command.goals }),
+  });
+}
+
 function normalizedPackageUnit(value: string | null): string | null {
   if (value === null) return null;
   const units: Readonly<Record<string, string>> = Object.freeze({
@@ -540,7 +550,9 @@ export function mapCoreCandidateToEnvelope(
       ? Object.freeze([correctionOperation(command, correctionResolution)])
       : command.action === "set_profile"
         ? Object.freeze([profileOperation(command)])
-        : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
+        : command.action === "set_goal"
+          ? Object.freeze([goalOperation(command)])
+          : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
   const envelope = JSON.parse(canonicalJson({
     envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
     idempotency_key: `core-${digest}`, command_type: request.action,

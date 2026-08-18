@@ -57,7 +57,9 @@ import {
   applyPurchaseEffect,
   applyCorrectionEffects,
   assertStoredMealFactMatchesExpected,
+  applyGoalEffect,
   applyProfileEffect,
+  assertStoredGoalFactMatchesExpected,
   assertStoredProfileFactMatchesExpected,
   prepareCorrectionOperation,
   readAppliedMealResult,
@@ -68,6 +70,7 @@ import {
   prepareMealOperation,
   prepareWaterOperation,
   preparePurchaseOperation,
+  prepareGoalOperation,
   prepareProfileOperation,
   prepareInventoryLocationCorrectionOperation,
   type MealOperationResult,
@@ -78,6 +81,7 @@ import {
   readAppliedWaterClassificationResult,
 } from "./water-correction.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
+import { GOAL_FIELDS } from "./goal-derivation.js";
 import {
   PantryEvidenceAuthorityError,
   validateAndFreezeExpirationEvidence,
@@ -106,6 +110,8 @@ import type {
   DomainQueryOperation,
   RecordMealOperation,
   RecordWaterOperation,
+  SetGoalOperation,
+  SetGoalOperationResult,
   SetProfileOperation,
   UndoRecordOperation,
 } from "./types.js";
@@ -285,6 +291,12 @@ function boundedInteger(value: unknown, field: string, min: number, max: number)
   return value;
 }
 
+function nullablePositiveFinite(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return invalid(field);
+  return value;
+}
+
 function enumValue<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -376,7 +388,7 @@ function validatePantryInventoryPolicy(value: unknown, field: string): void {
 function validateOperation(
   value: unknown,
   field: string,
-): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | CorrectMealTimeOperation | CorrectWaterClassificationOperation | SetProfileOperation | undefined {
+): RecordWaterOperation | CorrectInventoryLocationOperation | CorrectNutritionSupplementOperation | CorrectMealTimeOperation | CorrectWaterClassificationOperation | SetProfileOperation | SetGoalOperation | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid(field);
   const operation = value as Record<string, unknown>;
   const kind = operation.kind;
@@ -634,6 +646,28 @@ function validateOperation(
       goal_state: goalState,
     }) as unknown as SetProfileOperation;
   }
+  if (kind === "set_goal") {
+    const candidate = record(value, ["kind", "operation_id", "goals"], field);
+    text(candidate.operation_id, `${field}.operation_id`);
+    const goalsRaw = candidate.goals;
+    if (typeof goalsRaw !== "object" || goalsRaw === null || Array.isArray(goalsRaw)) {
+      return invalid(`${field}.goals`);
+    }
+    const goals = goalsRaw as Record<string, unknown>;
+    const goalKeys = Object.keys(goals);
+    if (goalKeys.length === 0 || goalKeys.some((key) => !(GOAL_FIELDS as readonly string[]).includes(key))) {
+      return invalid(`${field}.goals`);
+    }
+    const validatedGoals: Record<string, number | null> = Object.create(null);
+    for (const key of goalKeys) {
+      validatedGoals[key] = nullablePositiveFinite(goals[key], `${field}.goals.${key}`);
+    }
+    return Object.freeze({
+      kind: "set_goal",
+      operation_id: candidate.operation_id,
+      goals: Object.freeze(validatedGoals),
+    }) as unknown as SetGoalOperation;
+  }
   return invalid(`${field}.kind`);
 }
 
@@ -737,7 +771,7 @@ function validateAndFreezeEnvelope(value: unknown): DomainEnvelopeInput {
   text(envelope.idempotency_key, "envelope.idempotency_key");
   enumValue(envelope.command_type, [
     "record_meal", "record_water", "add_inventory", "query_inventory", "query_meals",
-    "query_daily_summary", "correct_record", "undo_record", "set_profile",
+    "query_daily_summary", "correct_record", "undo_record", "set_profile", "set_goal",
   ], "envelope.command_type");
   text(envelope.subject_scope, "envelope.subject_scope");
   text(envelope.source_message_id, "envelope.source_message_id");
@@ -940,7 +974,8 @@ type WriteOperation =
   | RecordWaterOperation
   | CorrectRecordOperation
   | UndoRecordOperation
-  | SetProfileOperation;
+  | SetProfileOperation
+  | SetGoalOperation;
 
 type ValidatedWriteOperations = readonly WriteOperation[];
 
@@ -977,7 +1012,8 @@ function writeOperations(
     (envelope.command_type === "record_water" && operation.kind === "record_water") ||
     (envelope.command_type === "correct_record" && operation.kind === "correct_record") ||
     (envelope.command_type === "undo_record" && operation.kind === "undo_record") ||
-    (envelope.command_type === "set_profile" && operation.kind === "set_profile")
+    (envelope.command_type === "set_profile" && operation.kind === "set_profile") ||
+    (envelope.command_type === "set_goal" && operation.kind === "set_goal")
   ) return Object.freeze([operation]);
   return invalid("command_operation");
 }
@@ -2761,6 +2797,115 @@ export function createDietDomainService(
           dataRevision: execution.data_revision, traceId, resultStatus: "committed",
           receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
           finalizedAt: committedAt, frozenAt: committedAt, payload: profileExecution,
+          mixedItems: Object.freeze([]),
+        }).payload as DomainExecutionResult;
+      }
+      if (operation.kind === "set_goal") {
+        const preparedGoal = prepareGoalOperation({
+          database: options.database,
+          secret: options.secret,
+          token: execution.token,
+          inputDigest,
+          dataRevision: execution.data_revision,
+          subjectScope: envelope.subject_scope,
+          commandType: envelope.command_type,
+          idempotencyKey: envelope.idempotency_key,
+          sourceMessageId: envelope.source_message_id,
+          conversationId: envelope.conversation_id,
+          receivedAt: envelope.received_at,
+          committedAt,
+          sequence: 0,
+          operation,
+        });
+        const traceId = preparedGoal.fact.traceId;
+        if (authority.envelope_state !== "received") {
+          assertStoredGoalFactMatchesExpected({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id,
+            expectedFact: preparedGoal.fact,
+          });
+        }
+        if (authority.envelope_state === "finalized") {
+          const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
+          return finalize({
+            database: options.database, secret: options.secret, token: execution.token,
+            inputDigest, subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+            dataRevision: execution.data_revision, traceId, resultStatus: stored.resultStatus,
+            receiptId: stored.receiptId, finalizedAt: stored.finalizedAt, frozenAt: stored.frozenAt,
+            payload: stored.payload, mixedItems: Object.freeze([]),
+          }).payload as DomainExecutionResult;
+        }
+        if (authority.envelope_state !== "received" && authority.envelope_state !== "effects_pending" && authority.envelope_state !== "effects_stable") {
+          throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+        }
+        if (authority.envelope_state === "received" && options.fault === "before_fact_commit") {
+          emitFailure(options.failureSink, {
+            stage: "FactCommit",
+            error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+            trace_id: traceId,
+            input_digest: inputDigest,
+          });
+          throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+        }
+        const storedGoalFact = options.database.prepare(
+          "SELECT event_id FROM event_records WHERE envelope_id = ? AND operation_id = ?",
+        ).get(envelope.envelope_id, operation.operation_id) as { event_id: string } | undefined;
+        if (storedGoalFact) {
+          assertStoredGoalFactMatchesExpected({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id,
+            expectedFact: preparedGoal.fact,
+          });
+        }
+        if (authority.envelope_state === "received" && !storedGoalFact) {
+          appendFactWithFailure(preparedGoal.fact, options.failureSink);
+        }
+        let goalResult: SetGoalOperationResult;
+        try {
+          goalResult = applyGoalEffect({
+            database: options.database,
+            envelopeId: envelope.envelope_id,
+            operationId: operation.operation_id,
+            operationSequence: 0,
+            idempotencyKey: envelope.idempotency_key,
+            now: committedAt,
+          });
+        } catch (error) {
+          const code = (error instanceof Error ? error.message : "GOAL_EFFECT_FAILED").split(":", 1)[0];
+          emitFailure(options.failureSink, {
+            stage: "EffectBundle",
+            error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "GOAL_EFFECT_FAILED",
+            trace_id: traceId,
+            input_digest: inputDigest,
+          });
+          throw error;
+        }
+        if (authority.envelope_state !== "effects_stable") {
+          sealPreparedEnvelopeFacts({
+            database: options.database, secret: options.secret, token: execution.token, inputDigest,
+            subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+            dataRevision: execution.data_revision, traceId,
+            expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: committedAt,
+          });
+        }
+        const goalExecution: DomainExecutionResult = Object.freeze({
+          envelope_id: envelope.envelope_id,
+          input_digest: inputDigest,
+          status: "committed",
+          items: Object.freeze([goalResult]),
+          payload: Object.freeze({
+            authority_kind: "diet-manager/domain-execution/v1",
+            goal: goalResult,
+          }),
+        });
+        return finalize({
+          database: options.database, secret: options.secret, token: execution.token, inputDigest,
+          subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+          dataRevision: execution.data_revision, traceId, resultStatus: "committed",
+          receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+          finalizedAt: committedAt, frozenAt: committedAt, payload: goalExecution,
           mixedItems: Object.freeze([]),
         }).payload as DomainExecutionResult;
       }

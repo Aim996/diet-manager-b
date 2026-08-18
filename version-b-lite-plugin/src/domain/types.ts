@@ -5,7 +5,11 @@ import type {
   OccurredTimeEvidence,
 } from "../parser/types.js";
 import type { ResolvedNutritionEvidence } from "../nutrition/types.js";
-import type { SixGoalValues } from "./goal-derivation.js";
+import type {
+  ConfiguredGoals,
+  GoalOverrides,
+  SixGoalValues,
+} from "./goal-derivation.js";
 
 export interface NutritionVector {
   readonly energy_kcal_milli: number | null;
@@ -390,6 +394,22 @@ export interface SetProfileOperationResult {
   readonly goals: Readonly<SixGoalValues>;
 }
 
+export interface SetGoalOperation {
+  readonly kind: "set_goal";
+  readonly operation_id: string;
+  readonly goals: Readonly<GoalOverrides>;
+}
+
+export interface SetGoalOperationResult {
+  readonly sequence: number;
+  readonly operation_id: string;
+  readonly status: "committed";
+  readonly error_code: null;
+  readonly fact_status: "committed";
+  readonly goal_version_id: string;
+  readonly goals: Readonly<ConfiguredGoals>;
+}
+
 export interface QueryInventoryOperation {
   readonly kind: "query_inventory";
   readonly operation_id: string;
@@ -415,7 +435,8 @@ export type DomainWriteOperation =
   | RecordWaterOperation
   | CorrectRecordOperation
   | UndoRecordOperation
-  | SetProfileOperation;
+  | SetProfileOperation
+  | SetGoalOperation;
 
 export type DomainQueryOperation =
   | QueryInventoryOperation

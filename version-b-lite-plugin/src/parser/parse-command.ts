@@ -8,6 +8,7 @@ import {
   resolveWaterFrames,
 } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
+import { parseGoalCommand } from "./goal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
 import { parseProfileCommand } from "./profile.js";
 import { resolvePantryClarification, resolvePantryCommand } from "./purchase.js";
@@ -319,6 +320,8 @@ export function parseCoreCommand(value: unknown): CoreParseResult {
   }
   const profile = parseProfileCommand(input);
   if (profile !== undefined) return profile;
+  const goal = parseGoalCommand(input);
+  if (goal !== undefined) return goal;
   const pantryClarification = resolvePantryClarification(input);
   if (pantryClarification !== null) return detachedFrozen(pantryClarification);
   const pantry = resolvePantryCommand(input);

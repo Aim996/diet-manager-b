@@ -82,12 +82,22 @@ import type {
   PantryPurchaseEvidence,
   RecordMealOperation,
   RecordWaterOperation,
+  SetGoalOperation,
+  SetGoalOperationResult,
   SetProfileOperation,
   SetProfileOperationResult,
   StructuredAmount,
   UndoRecordOperation,
 } from "./types.js";
-import { deriveSixGoals, type SixGoalValues } from "./goal-derivation.js";
+import {
+  deriveSixGoals,
+  emptyConfiguredGoals,
+  GOAL_FIELDS,
+  mergeGoalOverrides,
+  type ConfiguredGoals,
+  type GoalOverrides,
+  type SixGoalValues,
+} from "./goal-derivation.js";
 
 export interface PurchaseOperationResult {
   readonly sequence: number;
@@ -4643,6 +4653,408 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
     input.database.exec("COMMIT");
     transactionOpen = false;
     return profileResult(input, intent);
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }
+    }
+    throw error;
+  }
+}
+
+// ── DEC-030 C-3：set_goal 领域写路径 ─────────────────────────────────────
+// prepareGoalOperation 冻结任意子集覆盖（不读可变状态，保证幂等可重放）；
+// applyGoalEffect 在 effect_bundle 事务内读取当前目标 → 合并覆盖 → 关闭旧版本
+// → 追加新 goal_versions 行。合并结果仅在 apply 时可知，故事实 payload 只冻结覆盖集。
+
+const GOAL_FACT_AUTHORITY_KIND = "diet-manager/goal-fact/v1" as const;
+const GOAL_EFFECT_KIND = "goal_effect" as const;
+
+function goalEffectError(reason: string): never {
+  throw new Error(`GOAL_EFFECT_AUTHORITY_INVALID:${reason}`);
+}
+
+function goalParseCanonical(value: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return goalEffectError(`${label}_json`);
+  }
+  if (
+    typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
+    canonicalJson(parsed) !== value
+  ) {
+    return goalEffectError(`${label}_canonical`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function goalExactKeys(value: Record<string, unknown>, fields: readonly string[], label: string): void {
+  if (Object.keys(value).sort().join(" ") !== [...fields].sort().join(" ")) {
+    goalEffectError(`${label}_keys`);
+  }
+}
+
+function goalPositive(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  if (!Number.isFinite(value) || (value as number) <= 0) return goalEffectError(label);
+  return value as number;
+}
+
+function parseGoalOverrides(value: unknown, label: string): GoalOverrides {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return goalEffectError(label);
+  const record = value as Record<string, unknown>;
+  const present = Object.keys(record);
+  if (present.length === 0 || present.some((key) => !(GOAL_FIELDS as readonly string[]).includes(key))) {
+    return goalEffectError(`${label}_keys`);
+  }
+  const result: Record<string, number | null> = Object.create(null);
+  for (const field of present) result[field] = goalPositive(record[field], `${label}.${field}`);
+  return Object.freeze(result) as GoalOverrides;
+}
+
+function parseConfiguredGoals(value: unknown, label: string): ConfiguredGoals {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return goalEffectError(label);
+  const record = value as Record<string, unknown>;
+  goalExactKeys(record, GOAL_FIELDS, label);
+  return Object.freeze({
+    energy_kcal: goalPositive(record.energy_kcal, `${label}.energy_kcal`),
+    protein_g: goalPositive(record.protein_g, `${label}.protein_g`),
+    fat_g: goalPositive(record.fat_g, `${label}.fat_g`),
+    carbohydrate_g: goalPositive(record.carbohydrate_g, `${label}.carbohydrate_g`),
+    fiber_g: goalPositive(record.fiber_g, `${label}.fiber_g`),
+    water_ml: goalPositive(record.water_ml, `${label}.water_ml`),
+  });
+}
+
+export interface PrepareGoalInput {
+  readonly database: DatabaseSync;
+  readonly secret: Uint8Array;
+  readonly token: string;
+  readonly inputDigest: string;
+  readonly dataRevision: string;
+  readonly subjectScope: string;
+  readonly commandType: DietManagerAction;
+  readonly idempotencyKey: string;
+  readonly sourceMessageId: string;
+  readonly conversationId: string;
+  readonly receivedAt: string;
+  readonly committedAt: string;
+  readonly sequence: number;
+  readonly operation: SetGoalOperation;
+}
+
+export interface PreparedGoal {
+  readonly fact: PreparedEnvelopeOperation;
+  readonly outbox_id: string;
+}
+
+export function prepareGoalOperation(input: PrepareGoalInput): PreparedGoal {
+  const { operation } = input;
+  if (operation.kind !== "set_goal") return invalid("goal_operation");
+  const goalVersionId = deriveDomainId("goal", input.idempotencyKey, input.sequence);
+  const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
+  const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
+  const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
+  const effectInput = Object.freeze({
+    kind: "goal_apply" as const,
+    goal_version_id: goalVersionId,
+    user_id: input.subjectScope,
+    timezone: "Asia/Shanghai" as const,
+    goals: operation.goals,
+  });
+  const factResult = Object.freeze({
+    sequence: input.sequence,
+    operation_id: operation.operation_id,
+    status: "committed" as const,
+    error_code: null,
+    fact_status: "committed" as const,
+    goal_version_id: goalVersionId,
+    goals: operation.goals,
+  });
+  return Object.freeze({
+    fact: Object.freeze({
+      database: input.database,
+      secret: Uint8Array.from(input.secret),
+      token: input.token,
+      inputDigest: input.inputDigest,
+      subjectScope: input.subjectScope,
+      commandType: input.commandType,
+      dataRevision: input.dataRevision,
+      traceId,
+      sequence: input.sequence,
+      operationId: operation.operation_id,
+      event: Object.freeze({
+        eventId,
+        operationId: operation.operation_id,
+        schemaVersion: "domain/v2",
+        eventType: "diet_goal",
+        factKind: "goal",
+        sourceMessageId: input.sourceMessageId,
+        conversationId: input.conversationId,
+        receivedAt: input.receivedAt,
+        committedAt: input.committedAt,
+        occurredAtText: input.receivedAt,
+        mealId: null,
+        mealSlot: null,
+        payload: Object.freeze({
+          authority_kind: GOAL_FACT_AUTHORITY_KIND,
+          effect_inputs: Object.freeze({ [effectId]: effectInput }),
+          result: factResult,
+        }),
+      }),
+      items: Object.freeze([]),
+      effects: Object.freeze([Object.freeze({
+        outboxId,
+        effectId,
+        effectKind: GOAL_EFFECT_KIND,
+        previousState: null,
+        reason: null,
+      })]),
+    }),
+    outbox_id: outboxId,
+  });
+}
+
+export function assertStoredGoalFactMatchesExpected(input: {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly expectedFact: PreparedEnvelopeOperation;
+}): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const row = input.database.prepare(
+      `SELECT event_id, operation_id, schema_version, event_type, fact_kind, source_message_id,
+       conversation_id, received_at, committed_at, occurred_at_text, meal_id, meal_slot, payload_json
+       FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as Record<string, unknown> | undefined;
+    const expected = input.expectedFact.event;
+    if (!row || Object.entries({
+      event_id: expected.eventId, operation_id: expected.operationId, schema_version: expected.schemaVersion,
+      event_type: expected.eventType, fact_kind: expected.factKind, source_message_id: expected.sourceMessageId,
+      conversation_id: expected.conversationId, received_at: expected.receivedAt, committed_at: expected.committedAt,
+      occurred_at_text: expected.occurredAtText, meal_id: null, meal_slot: null,
+    }).some(([key, value]) => row[key] !== value) || row.payload_json !== canonicalJson(expected.payload)) {
+      return goalEffectError("stored_fact");
+    }
+    const items = input.database.prepare("SELECT COUNT(*) AS count FROM meal_items WHERE event_id = ?").get(expected.eventId) as { count: number };
+    if (items.count !== 0) return goalEffectError("stored_items");
+    input.database.exec("ROLLBACK");
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) { try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ } }
+    throw error;
+  }
+}
+
+export interface ApplyGoalEffectsInput {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly operationSequence: number;
+  readonly idempotencyKey: string;
+  readonly now: string;
+}
+
+interface StoredGoalIntent {
+  readonly goalVersionId: string;
+  readonly userId: string;
+  readonly overrides: Readonly<GoalOverrides>;
+}
+
+function goalIntentFromStoredFact(
+  database: DatabaseSync,
+  envelopeId: string,
+  operationId: string,
+  idempotencyKey: string,
+): StoredGoalIntent {
+  const event = database.prepare(
+    `SELECT event_type, fact_kind, meal_id, meal_slot, payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(envelopeId, operationId) as {
+    event_type: string; fact_kind: string; meal_id: string | null; meal_slot: string | null; payload_json: string;
+  } | undefined;
+  if (
+    !event || event.event_type !== "diet_goal" || event.fact_kind !== "goal" ||
+    event.meal_id !== null || event.meal_slot !== null
+  ) return goalEffectError("event");
+  const payload = goalParseCanonical(event.payload_json, "goal_event");
+  goalExactKeys(payload, ["authority_kind", "effect_inputs", "result"], "goal_event");
+  if (payload.authority_kind !== GOAL_FACT_AUTHORITY_KIND) return goalEffectError("payload");
+  const effectInputs = payload.effect_inputs as Record<string, unknown>;
+  const effectId = deriveDomainId("effect", idempotencyKey, 0);
+  const intent = effectInputs[effectId] as Record<string, unknown>;
+  if (typeof intent !== "object" || intent === null || Array.isArray(intent)) return goalEffectError("effect_input");
+  goalExactKeys(intent, ["kind", "goal_version_id", "user_id", "timezone", "goals"], "goal_effect_input");
+  if (intent.kind !== "goal_apply" || intent.timezone !== "Asia/Shanghai") return goalEffectError("effect_input");
+  if (typeof intent.goal_version_id !== "string" || typeof intent.user_id !== "string") return goalEffectError("effect_input");
+  const overrides = parseGoalOverrides(intent.goals, "goal_effect_goals");
+  return {
+    goalVersionId: intent.goal_version_id,
+    userId: intent.user_id,
+    overrides,
+  };
+}
+
+function currentConfiguredGoals(database: DatabaseSync, userId: string): ConfiguredGoals {
+  const row = database.prepare(
+    `SELECT payload_json FROM goal_versions WHERE user_id = ? ORDER BY effective_from DESC LIMIT 1`,
+  ).get(userId) as { payload_json: string } | undefined;
+  if (!row) return emptyConfiguredGoals();
+  const payload = goalParseCanonical(row.payload_json, "goal_version");
+  goalExactKeys(payload, ["authority_kind", "goals"], "goal_version");
+  if (payload.authority_kind !== GOAL_VERSION_PAYLOAD_AUTHORITY_KIND) return goalEffectError("goal_version");
+  return parseConfiguredGoals(payload.goals, "goal_version_goals");
+}
+
+function assertPendingGoalAuthority(input: ApplyGoalEffectsInput): { readonly effectId: string } {
+  const checkpoint = input.database.prepare(
+    `SELECT effect_state, result_status, completed_at, payload_json FROM effect_bundle_commits
+     WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(input.envelopeId, input.operationId) as {
+    effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+  } | undefined;
+  if (!checkpoint || checkpoint.effect_state !== "pending" || checkpoint.result_status !== "facts_committed_effects_pending" || checkpoint.completed_at !== null) {
+    return goalEffectError("checkpoint");
+  }
+  const bundle = goalParseCanonical(checkpoint.payload_json, "goal_checkpoint");
+  goalExactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "goal_checkpoint");
+  if (bundle.authority_kind !== "diet-manager/effect-bundle-checkpoint/v1" || bundle.operation_sequence !== input.operationSequence ||
+      bundle.data_revision !== computeRepositoryDataRevision(input.database) || !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+    return goalEffectError("checkpoint");
+  }
+  const effectId = deriveDomainId("effect", input.idempotencyKey, 0);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, 0);
+  const expected = bundle.effects[0];
+  if (typeof expected !== "object" || expected === null || Array.isArray(expected)) return goalEffectError("checkpoint");
+  goalExactKeys(expected as Record<string, unknown>, ["effect_id", "state"], "goal_checkpoint");
+  const outboxes = input.database.prepare(
+    `SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+  if (outboxes.length !== 1 || outboxes[0]?.outbox_id !== outboxId || outboxes[0].effect_id !== effectId ||
+      outboxes[0].effect_kind !== GOAL_EFFECT_KIND ||
+      (outboxes[0].state !== "pending" && outboxes[0].state !== "retryable_failed") ||
+      (expected as Record<string, unknown>).effect_id !== effectId || (expected as Record<string, unknown>).state !== "pending") {
+    return goalEffectError("outbox");
+  }
+  return Object.freeze({ effectId });
+}
+
+function goalResult(
+  input: ApplyGoalEffectsInput,
+  intent: StoredGoalIntent,
+  goals: ConfiguredGoals,
+): SetGoalOperationResult {
+  return Object.freeze({
+    sequence: input.operationSequence,
+    operation_id: input.operationId,
+    status: "committed",
+    error_code: null,
+    fact_status: "committed",
+    goal_version_id: intent.goalVersionId,
+    goals,
+  });
+}
+
+export function applyGoalEffect(input: ApplyGoalEffectsInput): SetGoalOperationResult {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const checkpoint = input.database.prepare(
+      `SELECT effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as {
+      effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+    } | undefined;
+    if (!checkpoint) return goalEffectError("checkpoint");
+    const intent = goalIntentFromStoredFact(input.database, input.envelopeId, input.operationId, input.idempotencyKey);
+    if (checkpoint.effect_state !== "pending") {
+      if (checkpoint.effect_state !== "succeeded" || checkpoint.result_status !== "applied" || checkpoint.completed_at === null) {
+        return goalEffectError("checkpoint_state");
+      }
+      const bundle = goalParseCanonical(checkpoint.payload_json, "goal_terminal");
+      goalExactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "goal_terminal");
+      const effectId = deriveDomainId("effect", input.idempotencyKey, 0);
+      if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
+          typeof bundle.data_revision !== "string" || !/^repository-v1:[A-F0-9]{64}$/.test(bundle.data_revision) ||
+          bundle.operation_sequence !== input.operationSequence ||
+          !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+        return goalEffectError("terminal_bundle");
+      }
+      const effect = bundle.effects[0] as Record<string, unknown>;
+      if (typeof effect !== "object" || effect === null || Array.isArray(effect)) return goalEffectError("terminal_bundle");
+      goalExactKeys(effect, ["effect_id", "goals", "state"], "goal_terminal");
+      const outboxes = input.database.prepare(
+        "SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+      ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+      if (outboxes.length !== 1 || outboxes[0]?.effect_id !== effectId ||
+          outboxes[0].effect_kind !== GOAL_EFFECT_KIND || outboxes[0].state !== "succeeded" ||
+          effect.effect_id !== effectId || effect.state !== "succeeded") {
+        return goalEffectError("terminal_bundle");
+      }
+      const merged = parseConfiguredGoals(effect.goals, "goal_terminal_goals");
+      input.database.exec("ROLLBACK");
+      transactionOpen = false;
+      return goalResult(input, intent, merged);
+    }
+    const authority = assertPendingGoalAuthority(input);
+    const outbox = input.database.prepare(
+      "SELECT state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+    ).get(input.envelopeId, input.operationId) as { state: "pending" | "retryable_failed" };
+    assertEffectTransition(outbox.state, "processing");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+       reason = NULL, updated_at = ? WHERE envelope_id = ? AND operation_id = ?
+       AND state = ?`,
+    ).run(input.now, input.envelopeId, input.operationId, outbox.state);
+    if (changed(input.database) !== 1) return goalEffectError("claim");
+    const merged = mergeGoalOverrides(currentConfiguredGoals(input.database, intent.userId), intent.overrides);
+    input.database.prepare(
+      `UPDATE goal_versions SET effective_to = ? WHERE user_id = ? AND effective_to IS NULL AND effective_from < ?`,
+    ).run(input.now, intent.userId, input.now);
+    input.database.prepare(
+      `INSERT INTO goal_versions(
+        goal_version_id, schema_version, user_id, timezone, effective_from, effective_to, created_at, payload_json
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+    ).run(
+      intent.goalVersionId,
+      "domain/v2",
+      intent.userId,
+      "Asia/Shanghai",
+      input.now,
+      input.now,
+      canonicalJson({
+        authority_kind: GOAL_VERSION_PAYLOAD_AUTHORITY_KIND,
+        goals: merged,
+      }),
+    );
+    assertEffectTransition("processing", "succeeded");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
+    ).run(input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) return goalEffectError("complete");
+    input.database.prepare(
+      `UPDATE effect_bundle_commits SET effect_state = 'succeeded', result_status = 'applied',
+       completed_at = ?, payload_json = ? WHERE envelope_id = ? AND operation_id = ?
+       AND effect_state = 'pending'`,
+    ).run(input.now, canonicalJson({
+      authority_kind: "diet-manager/effect-bundle/v1",
+      data_revision: computeRepositoryDataRevision(input.database),
+      effects: [{ effect_id: authority.effectId, state: "succeeded", goals: merged }],
+      operation_sequence: input.operationSequence,
+    }), input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) return goalEffectError("bundle");
+    input.database.exec("COMMIT");
+    transactionOpen = false;
+    return goalResult(input, intent, merged);
   } catch (error) {
     if (transactionOpen) {
       try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }

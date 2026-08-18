@@ -1,5 +1,34 @@
 // DEC-030 §4 六项参考目标派生（Mifflin-St Jeor + 状态系数）。
 // 中间量一律不取整，只有六个最终目标值各自 round_half_up 到整数。
+// DEC-030 C-3：六项目标的「已配置」形态（每项 number | null，null = 未配置）。
+// set_profile 派生结果恒为 SixGoalValues（全非空）；set_goal 合并后可出现 null。
+export const GOAL_FIELDS = [
+    "energy_kcal",
+    "protein_g",
+    "fat_g",
+    "carbohydrate_g",
+    "fiber_g",
+    "water_ml",
+];
+export function emptyConfiguredGoals() {
+    return Object.freeze({
+        energy_kcal: null,
+        protein_g: null,
+        fat_g: null,
+        carbohydrate_g: null,
+        fiber_g: null,
+        water_ml: null,
+    });
+}
+// 纯合并：当前已配置目标叠加任意子集覆盖（null 清除）。入参已由上层校验为非负有限值。
+export function mergeGoalOverrides(current, overrides) {
+    const merged = { ...current };
+    for (const field of GOAL_FIELDS) {
+        if (Object.hasOwn(overrides, field))
+            merged[field] = overrides[field];
+    }
+    return Object.freeze(merged);
+}
 function invalid(reason) {
     throw new TypeError(`GOAL_DERIVATION_INVALID:${reason}`);
 }
