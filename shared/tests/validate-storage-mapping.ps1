@@ -41,8 +41,8 @@ $ExpectedTransactionTables = [ordered]@{
         forbidden = @('schema_migrations','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','user_profiles','daily_progress_snapshots','issues','issue_resolution_events','effect_bundle_commits','envelope_finalizations','mixed_item_results')
     }
     effect_bundle = [ordered]@{
-        allowed = @('command_envelopes','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','issues','issue_resolution_events','effect_outbox','effect_bundle_commits')
-        forbidden = @('schema_migrations','idempotency_records','event_records','meal_items','correction_events','goal_versions','user_profiles','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
+        allowed = @('command_envelopes','products','inventory_batches','inventory_batch_projections','inventory_transactions','nutrition_profiles','nutrition_snapshots','goal_versions','user_profiles','issues','issue_resolution_events','effect_outbox','effect_bundle_commits')
+        forbidden = @('schema_migrations','idempotency_records','event_records','meal_items','correction_events','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
     }
     envelope_finalize = [ordered]@{
         allowed = @('command_envelopes','idempotency_records','daily_progress_snapshots','envelope_finalizations','mixed_item_results')
@@ -53,7 +53,7 @@ $ExpectedTransactionTables = [ordered]@{
         forbidden = @()
     }
 }
-$ExpectedPhysicalContractSha256 = '8AD6AA9A252D42129648F94F9083EFF112E1AC55B206C9C2A583BED38273C39B'
+$ExpectedPhysicalContractSha256 = '964E34A8BEB1583EDE60B49C3C1DD51001882F5726CFE096CF0C6E428A2848CD'
 $ExpectedScalarStorageConstraints = @(
     [pscustomobject]@{ table = 'inventory_transactions'; column = 'direction'; type = 'TEXT'; required_check = "direction IN ('in','out','neutral')"; forbidden_check = "direction IN ('increase','decrease','no_change')" }
     [pscustomobject]@{ table = 'nutrition_profiles'; column = 'profile_version'; type = 'TEXT'; required_check = $null; forbidden_check = 'profile_version >= 1' }

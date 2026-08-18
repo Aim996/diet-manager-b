@@ -1,6 +1,6 @@
 export const MIGRATION_V1_ID = "diet-manager/b-sqlite-migration/0001";
 
-export const MIGRATION_V1_MAPPING_SHA256 = "C8B8D2DEB9B013222F71D90B29BB2ED7E7662A0F543190BE43B8052A0045CE5A";
+export const MIGRATION_V1_MAPPING_SHA256 = "380F15094AD9BB7A3AA26BD5F1938B9C184BBAA3A3AD4C226DF629F6E716FA34";
 
 export const MIGRATION_V1_TABLE_STATEMENTS = [
   "CREATE TABLE \"schema_migrations\" (\n  \"version\" INTEGER NOT NULL,\n  \"migration_id\" TEXT NOT NULL,\n  \"applied_at\" TEXT NOT NULL,\n  \"checksum\" TEXT NOT NULL,\n  PRIMARY KEY (\"version\"),\n  CHECK (version >= 1),\n  CHECK (length(checksum) = 64)\n) STRICT;",

@@ -82,9 +82,12 @@ import type {
   PantryPurchaseEvidence,
   RecordMealOperation,
   RecordWaterOperation,
+  SetProfileOperation,
+  SetProfileOperationResult,
   StructuredAmount,
   UndoRecordOperation,
 } from "./types.js";
+import { deriveSixGoals, type SixGoalValues } from "./goal-derivation.js";
 
 export interface PurchaseOperationResult {
   readonly sequence: number;
@@ -4207,4 +4210,443 @@ export function readAppliedCorrectionResult(
   };
   exactCorrectionRecord(result, CORRECTION_RESULT_FIELDS, "terminal_result");
   return freezeJson(JSON.parse(canonicalJson(result)) as CorrectionOperationResult);
+}
+
+// ── DEC-030 C-2：set_profile 领域写路径 ─────────────────────────────────────
+// prepareProfileOperation 冻结个人档案 + 六项目标派生为单个 profile_effect；
+// applyProfileEffect 在 effect_bundle 事务内追加落 user_profiles 与 goal_versions。
+
+const PROFILE_FACT_AUTHORITY_KIND = "diet-manager/profile-fact/v1" as const;
+const PROFILE_PAYLOAD_AUTHORITY_KIND = "diet-manager/profile/v1" as const;
+const GOAL_VERSION_PAYLOAD_AUTHORITY_KIND = "diet-manager/goal-version/v1" as const;
+const PROFILE_EFFECT_KIND = "profile_effect" as const;
+
+function profileEffectError(reason: string): never {
+  throw new Error(`PROFILE_EFFECT_AUTHORITY_INVALID:${reason}`);
+}
+
+function profileParseCanonical(value: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return profileEffectError(`${label}_json`);
+  }
+  if (
+    typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
+    canonicalJson(parsed) !== value
+  ) {
+    return profileEffectError(`${label}_canonical`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function profileExactKeys(value: Record<string, unknown>, fields: readonly string[], label: string): void {
+  if (Object.keys(value).sort().join(" ") !== [...fields].sort().join(" ")) {
+    profileEffectError(`${label}_keys`);
+  }
+}
+
+function profileSex(value: unknown): "male" | "female" | null {
+  if (value === null) return null;
+  if (value === "male" || value === "female") return value;
+  return profileEffectError("sex");
+}
+
+function profileGoalState(value: unknown): "cut" | "maintain" | "bulk" | null {
+  if (value === null) return null;
+  if (value === "cut" || value === "maintain" || value === "bulk") return value;
+  return profileEffectError("goal_state");
+}
+
+export interface PrepareProfileInput {
+  readonly database: DatabaseSync;
+  readonly secret: Uint8Array;
+  readonly token: string;
+  readonly inputDigest: string;
+  readonly dataRevision: string;
+  readonly subjectScope: string;
+  readonly commandType: DietManagerAction;
+  readonly idempotencyKey: string;
+  readonly sourceMessageId: string;
+  readonly conversationId: string;
+  readonly receivedAt: string;
+  readonly committedAt: string;
+  readonly sequence: number;
+  readonly operation: SetProfileOperation;
+}
+
+export interface PreparedProfile {
+  readonly fact: PreparedEnvelopeOperation;
+  readonly outbox_id: string;
+  readonly result: SetProfileOperationResult;
+}
+
+export function prepareProfileOperation(input: PrepareProfileInput): PreparedProfile {
+  const { operation } = input;
+  if (operation.kind !== "set_profile") return invalid("profile_operation");
+  const goals = deriveSixGoals({
+    height_cm: operation.height_cm,
+    weight_kg: operation.weight_kg,
+    sex: operation.sex,
+    age: operation.age,
+    goal_state: operation.goal_state,
+  });
+  const profileId = deriveDomainId("profile", input.idempotencyKey, input.sequence);
+  const goalVersionId = deriveDomainId("goal", input.idempotencyKey, input.sequence);
+  const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
+  const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
+  const traceId = deriveDomainId("trace", input.idempotencyKey, 0);
+  const effectInput = Object.freeze({
+    kind: "profile_apply" as const,
+    profile_id: profileId,
+    goal_version_id: goalVersionId,
+    user_id: input.subjectScope,
+    timezone: "Asia/Shanghai" as const,
+    height_cm: operation.height_cm,
+    weight_kg: operation.weight_kg,
+    sex: operation.sex,
+    age: operation.age,
+    goal_state: operation.goal_state,
+    goals,
+  });
+  const result: SetProfileOperationResult = Object.freeze({
+    sequence: input.sequence,
+    operation_id: operation.operation_id,
+    status: "committed",
+    error_code: null,
+    fact_status: "committed",
+    profile_id: profileId,
+    goal_version_id: goalVersionId,
+    goals,
+  });
+  return Object.freeze({
+    fact: Object.freeze({
+      database: input.database,
+      secret: Uint8Array.from(input.secret),
+      token: input.token,
+      inputDigest: input.inputDigest,
+      subjectScope: input.subjectScope,
+      commandType: input.commandType,
+      dataRevision: input.dataRevision,
+      traceId,
+      sequence: input.sequence,
+      operationId: operation.operation_id,
+      event: Object.freeze({
+        eventId,
+        operationId: operation.operation_id,
+        schemaVersion: "domain/v2",
+        eventType: "diet_profile",
+        factKind: "profile",
+        sourceMessageId: input.sourceMessageId,
+        conversationId: input.conversationId,
+        receivedAt: input.receivedAt,
+        committedAt: input.committedAt,
+        occurredAtText: input.receivedAt,
+        mealId: null,
+        mealSlot: null,
+        payload: Object.freeze({
+          authority_kind: PROFILE_FACT_AUTHORITY_KIND,
+          effect_inputs: Object.freeze({ [effectId]: effectInput }),
+          result,
+        }),
+      }),
+      items: Object.freeze([]),
+      effects: Object.freeze([Object.freeze({
+        outboxId,
+        effectId,
+        effectKind: PROFILE_EFFECT_KIND,
+        previousState: null,
+        reason: null,
+      })]),
+    }),
+    outbox_id: outboxId,
+    result,
+  });
+}
+
+export function assertStoredProfileFactMatchesExpected(input: {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly expectedFact: PreparedEnvelopeOperation;
+}): void {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN DEFERRED");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const row = input.database.prepare(
+      `SELECT event_id, operation_id, schema_version, event_type, fact_kind, source_message_id,
+       conversation_id, received_at, committed_at, occurred_at_text, meal_id, meal_slot, payload_json
+       FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as Record<string, unknown> | undefined;
+    const expected = input.expectedFact.event;
+    if (!row || Object.entries({
+      event_id: expected.eventId, operation_id: expected.operationId, schema_version: expected.schemaVersion,
+      event_type: expected.eventType, fact_kind: expected.factKind, source_message_id: expected.sourceMessageId,
+      conversation_id: expected.conversationId, received_at: expected.receivedAt, committed_at: expected.committedAt,
+      occurred_at_text: expected.occurredAtText, meal_id: null, meal_slot: null,
+    }).some(([key, value]) => row[key] !== value) || row.payload_json !== canonicalJson(expected.payload)) {
+      return profileEffectError("stored_fact");
+    }
+    const items = input.database.prepare("SELECT COUNT(*) AS count FROM meal_items WHERE event_id = ?").get(expected.eventId) as { count: number };
+    if (items.count !== 0) return profileEffectError("stored_items");
+    input.database.exec("ROLLBACK");
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) { try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ } }
+    throw error;
+  }
+}
+
+export interface ApplyProfileEffectsInput {
+  readonly database: DatabaseSync;
+  readonly envelopeId: string;
+  readonly operationId: string;
+  readonly operationSequence: number;
+  readonly idempotencyKey: string;
+  readonly now: string;
+}
+
+interface StoredProfileIntent {
+  readonly profileId: string;
+  readonly goalVersionId: string;
+  readonly userId: string;
+  readonly heightCm: number;
+  readonly weightKg: number;
+  readonly sex: "male" | "female" | null;
+  readonly age: number | null;
+  readonly goalState: "cut" | "maintain" | "bulk" | null;
+  readonly goals: Readonly<SixGoalValues>;
+}
+
+function profileIntentFromStoredFact(
+  database: DatabaseSync,
+  envelopeId: string,
+  operationId: string,
+  idempotencyKey: string,
+): StoredProfileIntent {
+  const event = database.prepare(
+    `SELECT event_type, fact_kind, meal_id, meal_slot, payload_json
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(envelopeId, operationId) as {
+    event_type: string; fact_kind: string; meal_id: string | null; meal_slot: string | null; payload_json: string;
+  } | undefined;
+  if (
+    !event || event.event_type !== "diet_profile" || event.fact_kind !== "profile" ||
+    event.meal_id !== null || event.meal_slot !== null
+  ) return profileEffectError("event");
+  const payload = profileParseCanonical(event.payload_json, "profile_event");
+  profileExactKeys(payload, ["authority_kind", "effect_inputs", "result"], "profile_event");
+  if (payload.authority_kind !== PROFILE_FACT_AUTHORITY_KIND) return profileEffectError("payload");
+  const effectInputs = payload.effect_inputs as Record<string, unknown>;
+  const effectId = deriveDomainId("effect", idempotencyKey, 0);
+  const intent = effectInputs[effectId] as Record<string, unknown>;
+  if (typeof intent !== "object" || intent === null || Array.isArray(intent)) return profileEffectError("effect_input");
+  profileExactKeys(intent, [
+    "kind", "profile_id", "goal_version_id", "user_id", "timezone", "height_cm",
+    "weight_kg", "sex", "age", "goal_state", "goals",
+  ], "profile_effect_input");
+  if (intent.kind !== "profile_apply" || intent.timezone !== "Asia/Shanghai") return profileEffectError("effect_input");
+  if (typeof intent.profile_id !== "string" || typeof intent.goal_version_id !== "string" ||
+      typeof intent.user_id !== "string") return profileEffectError("effect_input");
+  if (!Number.isFinite(intent.height_cm) || (intent.height_cm as number) <= 0 ||
+      !Number.isFinite(intent.weight_kg) || (intent.weight_kg as number) <= 0) return profileEffectError("effect_input");
+  const sex = profileSex(intent.sex);
+  const goalState = profileGoalState(intent.goal_state);
+  if (
+    intent.age !== null &&
+    (!Number.isInteger(intent.age) || (intent.age as number) <= 0)
+  ) return profileEffectError("effect_input");
+  const storedGoals = intent.goals as Record<string, unknown>;
+  const expectedGoals = deriveSixGoals({
+    height_cm: intent.height_cm as number,
+    weight_kg: intent.weight_kg as number,
+    sex,
+    age: intent.age as number | null,
+    goal_state: goalState,
+  });
+  if (canonicalJson(storedGoals) !== canonicalJson(expectedGoals)) return profileEffectError("goals");
+  return {
+    profileId: intent.profile_id,
+    goalVersionId: intent.goal_version_id,
+    userId: intent.user_id,
+    heightCm: intent.height_cm as number,
+    weightKg: intent.weight_kg as number,
+    sex,
+    age: intent.age as number | null,
+    goalState,
+    goals: expectedGoals,
+  };
+}
+
+function assertPendingProfileAuthority(input: ApplyProfileEffectsInput): { readonly effectId: string } {
+  const checkpoint = input.database.prepare(
+    `SELECT effect_state, result_status, completed_at, payload_json FROM effect_bundle_commits
+     WHERE envelope_id = ? AND operation_id = ?`,
+  ).get(input.envelopeId, input.operationId) as {
+    effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+  } | undefined;
+  if (!checkpoint || checkpoint.effect_state !== "pending" || checkpoint.result_status !== "facts_committed_effects_pending" || checkpoint.completed_at !== null) {
+    return profileEffectError("checkpoint");
+  }
+  const bundle = profileParseCanonical(checkpoint.payload_json, "profile_checkpoint");
+  profileExactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "profile_checkpoint");
+  if (bundle.authority_kind !== "diet-manager/effect-bundle-checkpoint/v1" || bundle.operation_sequence !== input.operationSequence ||
+      bundle.data_revision !== computeRepositoryDataRevision(input.database) || !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+    return profileEffectError("checkpoint");
+  }
+  const effectId = deriveDomainId("effect", input.idempotencyKey, 0);
+  const outboxId = deriveDomainId("outbox", input.idempotencyKey, 0);
+  const expected = bundle.effects[0];
+  if (typeof expected !== "object" || expected === null || Array.isArray(expected)) return profileEffectError("checkpoint");
+  profileExactKeys(expected as Record<string, unknown>, ["effect_id", "state"], "profile_checkpoint");
+  const outboxes = input.database.prepare(
+    `SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+  if (outboxes.length !== 1 || outboxes[0]?.outbox_id !== outboxId || outboxes[0].effect_id !== effectId ||
+      outboxes[0].effect_kind !== PROFILE_EFFECT_KIND ||
+      (outboxes[0].state !== "pending" && outboxes[0].state !== "retryable_failed") ||
+      (expected as Record<string, unknown>).effect_id !== effectId || (expected as Record<string, unknown>).state !== "pending") {
+    return profileEffectError("outbox");
+  }
+  return Object.freeze({ effectId });
+}
+
+function profileResult(input: ApplyProfileEffectsInput, intent: StoredProfileIntent): SetProfileOperationResult {
+  return Object.freeze({
+    sequence: input.operationSequence,
+    operation_id: input.operationId,
+    status: "committed",
+    error_code: null,
+    fact_status: "committed",
+    profile_id: intent.profileId,
+    goal_version_id: intent.goalVersionId,
+    goals: intent.goals,
+  });
+}
+
+export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileOperationResult {
+  let transactionOpen = false;
+  try {
+    input.database.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    assertCurrentMigrationAuthority(input.database);
+    const checkpoint = input.database.prepare(
+      `SELECT effect_state, result_status, completed_at, payload_json
+       FROM effect_bundle_commits WHERE envelope_id = ? AND operation_id = ?`,
+    ).get(input.envelopeId, input.operationId) as {
+      effect_state: string; result_status: string; completed_at: string | null; payload_json: string;
+    } | undefined;
+    if (!checkpoint) return profileEffectError("checkpoint");
+    const intent = profileIntentFromStoredFact(input.database, input.envelopeId, input.operationId, input.idempotencyKey);
+    if (checkpoint.effect_state !== "pending") {
+      if (checkpoint.effect_state !== "succeeded" || checkpoint.result_status !== "applied" || checkpoint.completed_at === null) {
+        return profileEffectError("checkpoint_state");
+      }
+      const bundle = profileParseCanonical(checkpoint.payload_json, "profile_terminal");
+      profileExactKeys(bundle, ["authority_kind", "data_revision", "effects", "operation_sequence"], "profile_terminal");
+      const effectId = deriveDomainId("effect", input.idempotencyKey, 0);
+      if (bundle.authority_kind !== "diet-manager/effect-bundle/v1" ||
+          typeof bundle.data_revision !== "string" || !/^repository-v1:[A-F0-9]{64}$/.test(bundle.data_revision) ||
+          bundle.operation_sequence !== input.operationSequence ||
+          !Array.isArray(bundle.effects) || bundle.effects.length !== 1) {
+        return profileEffectError("terminal_bundle");
+      }
+      const effect = bundle.effects[0] as Record<string, unknown>;
+      if (typeof effect !== "object" || effect === null || Array.isArray(effect)) return profileEffectError("terminal_bundle");
+      profileExactKeys(effect, ["effect_id", "goals", "state"], "profile_terminal");
+      const outboxes = input.database.prepare(
+        "SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+      ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
+      if (outboxes.length !== 1 || outboxes[0]?.effect_id !== effectId ||
+          outboxes[0].effect_kind !== PROFILE_EFFECT_KIND || outboxes[0].state !== "succeeded" ||
+          effect.effect_id !== effectId || effect.state !== "succeeded" ||
+          canonicalJson(effect.goals) !== canonicalJson(intent.goals)) {
+        return profileEffectError("terminal_bundle");
+      }
+      input.database.exec("ROLLBACK");
+      transactionOpen = false;
+      return profileResult(input, intent);
+    }
+    const authority = assertPendingProfileAuthority(input);
+    const outbox = input.database.prepare(
+      "SELECT state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
+    ).get(input.envelopeId, input.operationId) as { state: "pending" | "retryable_failed" };
+    assertEffectTransition(outbox.state, "processing");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'processing', attempt_count = attempt_count + 1,
+       reason = NULL, updated_at = ? WHERE envelope_id = ? AND operation_id = ?
+       AND state = ?`,
+    ).run(input.now, input.envelopeId, input.operationId, outbox.state);
+    if (changed(input.database) !== 1) return profileEffectError("claim");
+    input.database.prepare(
+      `INSERT INTO user_profiles(
+        profile_id, user_id, schema_version, height_cm, weight_kg, sex, age, goal_state,
+        effective_from, effective_to, created_at, payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+    ).run(
+      intent.profileId,
+      intent.userId,
+      "domain/v2",
+      intent.heightCm,
+      intent.weightKg,
+      intent.sex,
+      intent.age,
+      intent.goalState,
+      input.now,
+      input.now,
+      canonicalJson({
+        authority_kind: PROFILE_PAYLOAD_AUTHORITY_KIND,
+        height_cm: intent.heightCm,
+        weight_kg: intent.weightKg,
+        sex: intent.sex,
+        age: intent.age,
+        goal_state: intent.goalState,
+      }),
+    );
+    input.database.prepare(
+      `INSERT INTO goal_versions(
+        goal_version_id, schema_version, user_id, timezone, effective_from, effective_to, created_at, payload_json
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+    ).run(
+      intent.goalVersionId,
+      "domain/v2",
+      intent.userId,
+      "Asia/Shanghai",
+      input.now,
+      input.now,
+      canonicalJson({
+        authority_kind: GOAL_VERSION_PAYLOAD_AUTHORITY_KIND,
+        goals: intent.goals,
+      }),
+    );
+    assertEffectTransition("processing", "succeeded");
+    input.database.prepare(
+      `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
+       WHERE envelope_id = ? AND operation_id = ? AND state = 'processing'`,
+    ).run(input.now, input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) return profileEffectError("complete");
+    input.database.prepare(
+      `UPDATE effect_bundle_commits SET effect_state = 'succeeded', result_status = 'applied',
+       completed_at = ?, payload_json = ? WHERE envelope_id = ? AND operation_id = ?
+       AND effect_state = 'pending'`,
+    ).run(input.now, canonicalJson({
+      authority_kind: "diet-manager/effect-bundle/v1",
+      data_revision: computeRepositoryDataRevision(input.database),
+      effects: [{ effect_id: authority.effectId, state: "succeeded", goals: intent.goals }],
+      operation_sequence: input.operationSequence,
+    }), input.envelopeId, input.operationId);
+    if (changed(input.database) !== 1) return profileEffectError("bundle");
+    input.database.exec("COMMIT");
+    transactionOpen = false;
+    return profileResult(input, intent);
+  } catch (error) {
+    if (transactionOpen) {
+      try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }
+    }
+    throw error;
+  }
 }

@@ -13,7 +13,7 @@ import { finalizeEnvelope, } from "../repository/envelope-finalize.js";
 import { createContributionProgressReservation, readEnvelopeProgressReservation, } from "../repository/progress-reservation.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import { assertStoredPurchaseFactMatchesExpected } from "../storage/inventory-repository.js";
-import { applyMealEffects, applyRequiredMealInventoryInTransaction, applyWaterEffects, assertStoredWaterFactMatchesExpected, markWaterEffectsRetryable, markMealEffectsRetryable, applyPurchaseEffect, applyCorrectionEffects, assertStoredMealFactMatchesExpected, prepareCorrectionOperation, readAppliedMealResult, readAppliedCorrectionResult, prepareMealInventoryPlans, preflightMealOperation, preflightWaterOperation, prepareMealOperation, prepareWaterOperation, preparePurchaseOperation, prepareInventoryLocationCorrectionOperation, } from "./effect-bundle.js";
+import { applyMealEffects, applyRequiredMealInventoryInTransaction, applyWaterEffects, assertStoredWaterFactMatchesExpected, markWaterEffectsRetryable, markMealEffectsRetryable, applyPurchaseEffect, applyCorrectionEffects, assertStoredMealFactMatchesExpected, applyProfileEffect, assertStoredProfileFactMatchesExpected, prepareCorrectionOperation, readAppliedMealResult, readAppliedCorrectionResult, prepareMealInventoryPlans, preflightMealOperation, preflightWaterOperation, prepareMealOperation, prepareWaterOperation, preparePurchaseOperation, prepareProfileOperation, prepareInventoryLocationCorrectionOperation, } from "./effect-bundle.js";
 import { applyWaterClassificationEffects, prepareWaterClassificationOperation, readAppliedWaterClassificationResult, } from "./water-correction.js";
 import { deriveDomainId, digestDomainEnvelope } from "./identity.js";
 import { PantryEvidenceAuthorityError, validateAndFreezeExpirationEvidence, validateAndFreezeInventoryLocationCorrectionFactPayload, validateAndFreezePantryPurchaseEvidence, validateAndFreezeStorageLocationEvidence, } from "./inventory-service.js";
@@ -102,6 +102,18 @@ function safeNonnegativeInteger(value, field) {
 }
 function nullableSafeNonnegativeInteger(value, field) {
     return value === null ? null : safeNonnegativeInteger(value, field);
+}
+function finiteInRange(value, field, min, max) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+        return invalid(field);
+    }
+    return value;
+}
+function boundedInteger(value, field, min, max) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+        return invalid(field);
+    }
+    return value;
 }
 function enumValue(value, allowed, field) {
     if (typeof value !== "string" || !allowed.includes(value))
@@ -424,6 +436,34 @@ function validateOperation(value, field) {
         enumValue(candidate.timezone, ["Asia/Shanghai"], `${field}.timezone`);
         return;
     }
+    if (kind === "set_profile") {
+        const optionalKeys = ["sex", "age", "goal_state"]
+            .filter((key) => Object.hasOwn(operation, key));
+        const candidate = record(value, [
+            "kind", "operation_id", "height_cm", "weight_kg", ...optionalKeys,
+        ], field);
+        text(candidate.operation_id, `${field}.operation_id`);
+        const height = finiteInRange(candidate.height_cm, `${field}.height_cm`, 50, 300);
+        const weight = finiteInRange(candidate.weight_kg, `${field}.weight_kg`, 20, 500);
+        const sex = candidate.sex === undefined || candidate.sex === null
+            ? null
+            : enumValue(candidate.sex, ["male", "female"], `${field}.sex`);
+        const age = candidate.age === undefined || candidate.age === null
+            ? null
+            : boundedInteger(candidate.age, `${field}.age`, 1, 120);
+        const goalState = candidate.goal_state === undefined || candidate.goal_state === null
+            ? null
+            : enumValue(candidate.goal_state, ["cut", "maintain", "bulk"], `${field}.goal_state`);
+        return Object.freeze({
+            kind: "set_profile",
+            operation_id: candidate.operation_id,
+            height_cm: height,
+            weight_kg: weight,
+            sex,
+            age,
+            goal_state: goalState,
+        });
+    }
     return invalid(`${field}.kind`);
 }
 function unsafeClone(path, reason) {
@@ -530,7 +570,7 @@ function validateAndFreezeEnvelope(value) {
     text(envelope.idempotency_key, "envelope.idempotency_key");
     enumValue(envelope.command_type, [
         "record_meal", "record_water", "add_inventory", "query_inventory", "query_meals",
-        "query_daily_summary", "correct_record", "undo_record",
+        "query_daily_summary", "correct_record", "undo_record", "set_profile",
     ], "envelope.command_type");
     text(envelope.subject_scope, "envelope.subject_scope");
     text(envelope.source_message_id, "envelope.source_message_id");
@@ -702,7 +742,8 @@ function writeOperations(envelope) {
         (envelope.command_type === "record_meal" && operation.kind === "record_meal") ||
         (envelope.command_type === "record_water" && operation.kind === "record_water") ||
         (envelope.command_type === "correct_record" && operation.kind === "correct_record") ||
-        (envelope.command_type === "undo_record" && operation.kind === "undo_record"))
+        (envelope.command_type === "undo_record" && operation.kind === "undo_record") ||
+        (envelope.command_type === "set_profile" && operation.kind === "set_profile"))
         return Object.freeze([operation]);
     return invalid("command_operation");
 }
@@ -2174,6 +2215,113 @@ export function createDietDomainService(input) {
                     mixedItems: Object.freeze([]),
                 });
                 return finalizedMeal.payload;
+            }
+            if (operation.kind === "set_profile") {
+                const preparedProfile = prepareProfileOperation({
+                    database: options.database,
+                    secret: options.secret,
+                    token: execution.token,
+                    inputDigest,
+                    dataRevision: execution.data_revision,
+                    subjectScope: envelope.subject_scope,
+                    commandType: envelope.command_type,
+                    idempotencyKey: envelope.idempotency_key,
+                    sourceMessageId: envelope.source_message_id,
+                    conversationId: envelope.conversation_id,
+                    receivedAt: envelope.received_at,
+                    committedAt,
+                    sequence: 0,
+                    operation,
+                });
+                const traceId = preparedProfile.fact.traceId;
+                if (authority.envelope_state !== "received") {
+                    assertStoredProfileFactMatchesExpected({
+                        database: options.database,
+                        envelopeId: envelope.envelope_id,
+                        operationId: operation.operation_id,
+                        expectedFact: preparedProfile.fact,
+                    });
+                }
+                if (authority.envelope_state === "finalized") {
+                    const stored = storedFinalizedExecution(options.database, envelope.envelope_id);
+                    return finalize({
+                        database: options.database, secret: options.secret, token: execution.token,
+                        inputDigest, subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+                        dataRevision: execution.data_revision, traceId, resultStatus: stored.resultStatus,
+                        receiptId: stored.receiptId, finalizedAt: stored.finalizedAt, frozenAt: stored.frozenAt,
+                        payload: stored.payload, mixedItems: Object.freeze([]),
+                    }).payload;
+                }
+                if (authority.envelope_state !== "received" && authority.envelope_state !== "effects_pending" && authority.envelope_state !== "effects_stable") {
+                    throw new Error(`DIET_DOMAIN_EXECUTION_PENDING:${authority.envelope_state}`);
+                }
+                if (authority.envelope_state === "received" && options.fault === "before_fact_commit") {
+                    emitFailure(options.failureSink, {
+                        stage: "FactCommit",
+                        error_code: "DIET_DOMAIN_EXECUTION_FAILED",
+                        trace_id: traceId,
+                        input_digest: inputDigest,
+                    });
+                    throw new Error("DIET_DOMAIN_EXECUTION_FAILED:before_fact_commit");
+                }
+                const storedProfileFact = options.database.prepare("SELECT event_id FROM event_records WHERE envelope_id = ? AND operation_id = ?").get(envelope.envelope_id, operation.operation_id);
+                if (storedProfileFact) {
+                    assertStoredProfileFactMatchesExpected({
+                        database: options.database,
+                        envelopeId: envelope.envelope_id,
+                        operationId: operation.operation_id,
+                        expectedFact: preparedProfile.fact,
+                    });
+                }
+                if (authority.envelope_state === "received" && !storedProfileFact) {
+                    appendFactWithFailure(preparedProfile.fact, options.failureSink);
+                }
+                try {
+                    applyProfileEffect({
+                        database: options.database,
+                        envelopeId: envelope.envelope_id,
+                        operationId: operation.operation_id,
+                        operationSequence: 0,
+                        idempotencyKey: envelope.idempotency_key,
+                        now: committedAt,
+                    });
+                }
+                catch (error) {
+                    const code = (error instanceof Error ? error.message : "PROFILE_EFFECT_FAILED").split(":", 1)[0];
+                    emitFailure(options.failureSink, {
+                        stage: "EffectBundle",
+                        error_code: /^[A-Z][A-Z0-9_]*$/.test(code) ? code : "PROFILE_EFFECT_FAILED",
+                        trace_id: traceId,
+                        input_digest: inputDigest,
+                    });
+                    throw error;
+                }
+                if (authority.envelope_state !== "effects_stable") {
+                    sealPreparedEnvelopeFacts({
+                        database: options.database, secret: options.secret, token: execution.token, inputDigest,
+                        subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+                        dataRevision: execution.data_revision, traceId,
+                        expectedOperationIds: Object.freeze([operation.operation_id]), sealedAt: committedAt,
+                    });
+                }
+                const profileExecution = Object.freeze({
+                    envelope_id: envelope.envelope_id,
+                    input_digest: inputDigest,
+                    status: "committed",
+                    items: Object.freeze([preparedProfile.result]),
+                    payload: Object.freeze({
+                        authority_kind: "diet-manager/domain-execution/v1",
+                        profile: preparedProfile.result,
+                    }),
+                });
+                return finalize({
+                    database: options.database, secret: options.secret, token: execution.token, inputDigest,
+                    subjectScope: envelope.subject_scope, commandType: envelope.command_type,
+                    dataRevision: execution.data_revision, traceId, resultStatus: "committed",
+                    receiptId: deriveDomainId("receipt", envelope.idempotency_key, 0),
+                    finalizedAt: committedAt, frozenAt: committedAt, payload: profileExecution,
+                    mixedItems: Object.freeze([]),
+                }).payload;
             }
             const prepared = preparePurchaseOperation({
                 database: options.database,

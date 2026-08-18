@@ -120,6 +120,17 @@ function mealOrWaterOperation(command, nutritionEvidence = Object.freeze([])) {
         ...(command.context === undefined ? {} : { context: command.context }),
     };
 }
+function profileOperation(command) {
+    return Object.freeze({
+        kind: "set_profile",
+        operation_id: command.operation_id,
+        height_cm: command.height_cm,
+        weight_kg: command.weight_kg,
+        sex: command.sex,
+        age: command.age,
+        goal_state: command.goal_state,
+    });
+}
 function normalizedPackageUnit(value) {
     if (value === null)
         return null;
@@ -373,7 +384,9 @@ export function mapCoreCandidateToEnvelope(request, command, purchaseResolutions
         ? purchaseOperations(request, command, purchaseResolutions)
         : command.action === "correct_record"
             ? Object.freeze([correctionOperation(command, correctionResolution)])
-            : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
+            : command.action === "set_profile"
+                ? Object.freeze([profileOperation(command)])
+                : Object.freeze([mealOrWaterOperation(command, nutritionEvidence)]);
     const envelope = JSON.parse(canonicalJson({
         envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
         idempotency_key: `core-${digest}`, command_type: request.action,

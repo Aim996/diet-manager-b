@@ -5,6 +5,7 @@ import type {
   OccurredTimeEvidence,
 } from "../parser/types.js";
 import type { ResolvedNutritionEvidence } from "../nutrition/types.js";
+import type { SixGoalValues } from "./goal-derivation.js";
 
 export interface NutritionVector {
   readonly energy_kcal_milli: number | null;
@@ -368,6 +369,27 @@ export interface UndoRecordOperation {
   readonly base_revision: number;
 }
 
+export interface SetProfileOperation {
+  readonly kind: "set_profile";
+  readonly operation_id: string;
+  readonly height_cm: number;
+  readonly weight_kg: number;
+  readonly sex: "male" | "female" | null;
+  readonly age: number | null;
+  readonly goal_state: "cut" | "maintain" | "bulk" | null;
+}
+
+export interface SetProfileOperationResult {
+  readonly sequence: number;
+  readonly operation_id: string;
+  readonly status: "committed";
+  readonly error_code: null;
+  readonly fact_status: "committed";
+  readonly profile_id: string;
+  readonly goal_version_id: string;
+  readonly goals: Readonly<SixGoalValues>;
+}
+
 export interface QueryInventoryOperation {
   readonly kind: "query_inventory";
   readonly operation_id: string;
@@ -392,7 +414,8 @@ export type DomainWriteOperation =
   | RecordMealOperation
   | RecordWaterOperation
   | CorrectRecordOperation
-  | UndoRecordOperation;
+  | UndoRecordOperation
+  | SetProfileOperation;
 
 export type DomainQueryOperation =
   | QueryInventoryOperation

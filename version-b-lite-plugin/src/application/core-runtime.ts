@@ -1035,7 +1035,9 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
             : { event_type: "diet_correction", fact_kind: "correction" }
         : operation.kind === "undo_record"
           ? { event_type: "diet_correction", fact_kind: "correction" }
-          : { event_type: "diet_meal", fact_kind: "meal" };
+          : operation.kind === "set_profile"
+            ? { event_type: "diet_profile", fact_kind: "profile" }
+            : { event_type: "diet_meal", fact_kind: "meal" };
   if (rows.length !== 1 || rows[0]?.operation_id !== operation.operation_id ||
       rows[0]?.event_type !== expected.event_type || rows[0]?.fact_kind !== expected.fact_kind) {
     throw new Error("CORE_APPLICATION_RESULT_INVALID:event_identity");
@@ -1248,7 +1250,7 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
       return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
     }
   }
-  if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record"].includes(request.action)) {
+  if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record", "set_profile"].includes(request.action)) {
     return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
   }
   let parsed;

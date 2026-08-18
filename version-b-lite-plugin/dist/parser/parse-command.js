@@ -6,6 +6,7 @@ import { resolveInventoryDirective } from "./inventory-directive.js";
 import { classifyMealLiquid, resolveWaterFrames, } from "./liquid.js";
 import { resolveMealFrames } from "./meal.js";
 import { parseIngestionPredicateFrames } from "./predicate-frame.js";
+import { parseProfileCommand } from "./profile.js";
 import { resolvePantryClarification, resolvePantryCommand } from "./purchase.js";
 import { resolveOccurredTime } from "./time.js";
 const PARSER_VERSION = "diet-manager/core-parser-v1";
@@ -262,6 +263,9 @@ export function parseCoreCommand(value) {
     if (nutritionSupplement !== null) {
         return detachedFrozen({ disposition: "candidate", command: nutritionSupplement });
     }
+    const profile = parseProfileCommand(input);
+    if (profile !== undefined)
+        return profile;
     const pantryClarification = resolvePantryClarification(input);
     if (pantryClarification !== null)
         return detachedFrozen(pantryClarification);
