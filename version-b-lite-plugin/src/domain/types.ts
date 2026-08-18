@@ -373,6 +373,13 @@ export interface UndoRecordOperation {
   readonly base_revision: number;
 }
 
+export interface RestoreRecordOperation {
+  readonly kind: "restore_record";
+  readonly operation_id: string;
+  readonly target_event_id: string;
+  readonly base_revision: number;
+}
+
 export interface SetProfileOperation {
   readonly kind: "set_profile";
   readonly operation_id: string;
@@ -435,6 +442,7 @@ export type DomainWriteOperation =
   | RecordWaterOperation
   | CorrectRecordOperation
   | UndoRecordOperation
+  | RestoreRecordOperation
   | SetProfileOperation
   | SetGoalOperation;
 

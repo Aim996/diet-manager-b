@@ -632,7 +632,7 @@ function freezeCorrectionDailyProgress(
   envelopeId: string,
   idempotencyKey: string,
 ): FrozenInput {
-  if (input.commandType !== "correct_record" && input.commandType !== "undo_record") return input;
+  if (input.commandType !== "correct_record" && input.commandType !== "undo_record" && input.commandType !== "restore_record") return input;
   if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload)) {
     return authorityInvalid("correction_progress_execution");
   }
@@ -1310,7 +1310,7 @@ export function finalizeEnvelope(
         error.message.startsWith("PROGRESS_RESERVATION_AUTHORITY_INVALID:terminal_")
       ) {
         return authorityInvalid(
-          frozen.commandType === "correct_record" || frozen.commandType === "undo_record"
+          frozen.commandType === "correct_record" || frozen.commandType === "undo_record" || frozen.commandType === "restore_record"
             ? "correction_progress_bundle"
             : "daily_progress_bundle",
         );

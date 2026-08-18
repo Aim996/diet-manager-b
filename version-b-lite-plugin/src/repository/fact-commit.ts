@@ -566,7 +566,7 @@ function insertCorrectionFact(
   commandType: DietManagerAction,
 ): void {
   if (event.eventType !== "diet_correction" && event.eventType !== "nutrition_supplemented") return;
-  if (commandType !== "correct_record" && commandType !== "undo_record") {
+  if (commandType !== "correct_record" && commandType !== "undo_record" && commandType !== "restore_record") {
     throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_command");
   }
   let value: unknown;
@@ -614,6 +614,8 @@ function insertCorrectionFact(
       payload.operation !== "change_time") ||
     (commandType === "undo_record" &&
       payload.operation !== "void_event" && payload.operation !== "restore_event") ||
+    (commandType === "restore_record" &&
+      payload.operation !== "restore_event") ||
     canonicalJson(payload.before_snapshot) === canonicalJson(payload.after_snapshot)
   ) {
     throw new Error("FACT_COMMIT_AUTHORITY_INVALID:correction_payload");

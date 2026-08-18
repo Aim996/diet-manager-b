@@ -587,3 +587,27 @@ export function mapUndoCandidateToEnvelope(
   deepFreeze(envelope);
   return envelope;
 }
+
+export function mapRestoreCandidateToEnvelope(
+  request: Readonly<CoreApplicationRequest>,
+  command: Extract<CoreCommandCandidate, { action: "restore_record" }>,
+  targetEventId: string,
+  baseRevision: number,
+): Readonly<DomainEnvelopeInput> {
+  const digest = identity(request);
+  const operations = Object.freeze([Object.freeze({
+    kind: "restore_record" as const,
+    operation_id: command.operation_id,
+    target_event_id: targetEventId,
+    base_revision: baseRevision,
+  })]);
+  const envelope = JSON.parse(canonicalJson({
+    envelope_id: `envelope-${digest.slice(0, 32).toLowerCase()}`,
+    idempotency_key: `core-${digest}`, command_type: request.action,
+    subject_scope: "user:self", source_message_id: request.source_message_id,
+    conversation_id: request.conversation_id, received_at: request.received_at,
+    timezone: "Asia/Shanghai", operations,
+  })) as DomainEnvelopeInput;
+  deepFreeze(envelope);
+  return envelope;
+}

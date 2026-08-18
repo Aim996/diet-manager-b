@@ -61,8 +61,8 @@ function makeReplacementReservation(database, progressDate, beforeNutrients, aft
 }
 export function prepareCorrectionOperation(input) {
     const operation = input.operation;
-    if ((operation.kind !== "correct_record" && operation.kind !== "undo_record") ||
-        (input.commandType !== "correct_record" && input.commandType !== "undo_record") ||
+    if ((operation.kind !== "correct_record" && operation.kind !== "undo_record" && operation.kind !== "restore_record") ||
+        (input.commandType !== "correct_record" && input.commandType !== "undo_record" && input.commandType !== "restore_record") ||
         operation.kind !== input.commandType)
         return invalid("correction_operation");
     const current = readEffectiveMealState(input.database, input.secret, operation.target_event_id);
@@ -121,6 +121,16 @@ export function prepareCorrectionOperation(input) {
             });
             operationKind = "change_amount";
         }
+    }
+    else if (operation.kind === "restore_record") {
+        if (current.snapshot.active) {
+            throw new Error("CORRECTION_TARGET_INVALID:already_active");
+        }
+        afterSnapshot = freezeJson({
+            ...current.snapshot,
+            active: true,
+        });
+        operationKind = "restore_event";
     }
     else {
         if (!current.snapshot.active) {

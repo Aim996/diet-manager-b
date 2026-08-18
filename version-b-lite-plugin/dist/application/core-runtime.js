@@ -19,7 +19,7 @@ import { assertCurrentInventoryLocationCorrectionLineage, parseProductPayloadJso
 import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
 import { readEffectiveMealState, resolveCorrectionTarget, resolveWaterCorrectionTarget, } from "../repository/correction-target.js";
 import { normalizeMealLexeme } from "../parser/meal.js";
-import { mapResolvedNutritionAmountMicrounits, mapResolvedNutritionEvidenceToDomainSource, mapCoreCandidateToEnvelope, mapUndoCandidateToEnvelope, } from "./mapping.js";
+import { mapResolvedNutritionAmountMicrounits, mapResolvedNutritionEvidenceToDomainSource, mapCoreCandidateToEnvelope, mapUndoCandidateToEnvelope, mapRestoreCandidateToEnvelope, } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { resolveNutrition } from "../nutrition/source-client.js";
@@ -1049,7 +1049,7 @@ export function handleCoreRequest(runtime, value) {
             return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
         }
     }
-    if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record", "set_profile", "set_goal"].includes(request.action)) {
+    if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record", "restore_record", "set_profile", "set_goal"].includes(request.action)) {
         return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
     }
     let parsed;
@@ -1266,6 +1266,69 @@ export function handleCoreRequest(runtime, value) {
                 revision: correctionResult.revision,
                 operation: "void_event",
                 current_active: false,
+                compensation_transaction_id: correctionResult.compensation_transaction_id,
+            };
+            return committedOutcome(request.action, request.operation_id, correctionResult.status, recordId(session.database, envelope, envelope.operations[0]), undefined, undefined, undefined, correctionView);
+        }
+        if (parsed.command.action === "restore_record") {
+            const session = acquireSession(runtime);
+            const resolvedTarget = resolveCorrectionTarget({
+                database: session.database,
+                authoritySecret: session.authoritySecret,
+                conversationId: request.conversation_id,
+                reference: parsed.command.target,
+            });
+            if (resolvedTarget.active) {
+                return nonWritingOutcome(request.action, request.operation_id, "ignored", "already_active");
+            }
+            const envelope = mapRestoreCandidateToEnvelope(request, parsed.command, resolvedTarget.target_event_id, resolvedTarget.base_revision);
+            const preview = session.service.preview(envelope);
+            let result;
+            try {
+                result = session.service.execute({
+                    envelope,
+                    token: preview.token,
+                    input_digest: preview.input_digest,
+                    data_revision: preview.data_revision,
+                });
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : "";
+                if (message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
+                    message.startsWith("PREVIEW_STALE:data_revision")) {
+                    const rechecked = resolveCorrectionTarget({
+                        database: session.database,
+                        authoritySecret: session.authoritySecret,
+                        conversationId: request.conversation_id,
+                        reference: parsed.command.target,
+                    });
+                    if (rechecked.active) {
+                        return nonWritingOutcome(request.action, request.operation_id, "ignored", "already_active");
+                    }
+                    return failedOutcome(request.action, request.operation_id, "correction_conflict");
+                }
+                throw error;
+            }
+            if (envelope.operations.length !== 1 ||
+                result.items.length !== 1 ||
+                (result.status !== "committed" && result.status !== "committed_with_issues") ||
+                result.items[0]?.operation_id !== envelope.operations[0]?.operation_id ||
+                (result.items[0]?.status !== "committed" && result.items[0]?.status !== "committed_with_issues")) {
+                throw new Error("CORE_APPLICATION_RESULT_INVALID:terminal");
+            }
+            const correctionResult = readAppliedCorrectionResult({
+                database: session.database,
+                envelopeId: envelope.envelope_id,
+                operationId: parsed.command.operation_id,
+                operationSequence: 0,
+                idempotencyKey: envelope.idempotency_key,
+            });
+            const correctionView = {
+                correction_id: correctionResult.correction_id,
+                target_event_id: correctionResult.target_event_id,
+                revision: correctionResult.revision,
+                operation: "restore_event",
+                current_active: true,
                 compensation_transaction_id: correctionResult.compensation_transaction_id,
             };
             return committedOutcome(request.action, request.operation_id, correctionResult.status, recordId(session.database, envelope, envelope.operations[0]), undefined, undefined, undefined, correctionView);

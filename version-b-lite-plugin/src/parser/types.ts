@@ -263,6 +263,14 @@ export interface CoreUndoCommandCandidate {
   readonly target: CoreCorrectionTargetReference;
 }
 
+export interface CoreRestoreCommandCandidate {
+  readonly action: "restore_record";
+  readonly operation_id: string;
+  readonly source_text: string;
+  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly target: CoreCorrectionTargetReference;
+}
+
 export interface CoreMealAmountCorrectionCandidate {
   readonly action: "correct_record";
   readonly operation_id: string;
@@ -335,6 +343,7 @@ export type CoreCommandCandidate =
   | Readonly<CoreInventoryLocationCorrectionCandidate>
   | Readonly<CoreNutritionSupplementCandidate>
   | Readonly<CoreUndoCommandCandidate>
+  | Readonly<CoreRestoreCommandCandidate>
   | Readonly<CoreMealAmountCorrectionCandidate>
   | Readonly<CoreMealTimeCorrectionCandidate>
   | Readonly<CoreWaterClassificationCorrectionCandidate>
@@ -366,7 +375,7 @@ export type CoreClarificationReason =
   | "goal_incomplete";
 
 export type CoreRecognizedAction =
-  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record" | "set_profile" | "set_goal">
+  | Extract<DietManagerAction, "record_meal" | "record_water" | "add_inventory" | "correct_record" | "undo_record" | "restore_record" | "set_profile" | "set_goal">
   | "health_advice";
 
 export type CoreIgnoredResult =
@@ -448,6 +457,14 @@ export type CoreClarificationResult =
   | Readonly<{
       disposition: "needs_clarification";
       action: "undo_record";
+      reason_code: "target_ambiguous";
+      question: string;
+      occurred_time?: never;
+      context_id?: never;
+    }>
+  | Readonly<{
+      disposition: "needs_clarification";
+      action: "restore_record";
       reason_code: "target_ambiguous";
       question: string;
       occurred_time?: never;

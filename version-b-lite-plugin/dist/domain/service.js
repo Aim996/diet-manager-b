@@ -433,6 +433,13 @@ function validateOperation(value, field) {
         safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
         return;
     }
+    if (kind === "restore_record") {
+        const candidate = record(value, ["kind", "operation_id", "target_event_id", "base_revision"], field);
+        text(candidate.operation_id, `${field}.operation_id`);
+        text(candidate.target_event_id, `${field}.target_event_id`);
+        safeNonnegativeInteger(candidate.base_revision, `${field}.base_revision`);
+        return;
+    }
     if (kind === "query_inventory") {
         text(record(value, ["kind", "operation_id"], field).operation_id, `${field}.operation_id`);
         return;
@@ -773,6 +780,7 @@ function writeOperations(envelope) {
         (envelope.command_type === "record_water" && operation.kind === "record_water") ||
         (envelope.command_type === "correct_record" && operation.kind === "correct_record") ||
         (envelope.command_type === "undo_record" && operation.kind === "undo_record") ||
+        (envelope.command_type === "restore_record" && operation.kind === "restore_record") ||
         (envelope.command_type === "set_profile" && operation.kind === "set_profile") ||
         (envelope.command_type === "set_goal" && operation.kind === "set_goal"))
         return Object.freeze([operation]);
@@ -1790,7 +1798,7 @@ export function createDietDomainService(input) {
                     mixedItems: Object.freeze([]),
                 }).payload;
             }
-            if (operation.kind === "correct_record" || operation.kind === "undo_record") {
+            if (operation.kind === "correct_record" || operation.kind === "undo_record" || operation.kind === "restore_record") {
                 const traceId = deriveDomainId("trace", envelope.idempotency_key, 0);
                 if (authority.envelope_state === "finalized") {
                     const row = options.database.prepare("SELECT payload_json FROM envelope_finalizations WHERE envelope_id = ?").get(envelope.envelope_id);

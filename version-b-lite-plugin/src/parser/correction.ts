@@ -9,6 +9,11 @@ const EVENT_ID_UNDO = /^撤销\s*记录\s*([A-Za-z0-9][A-Za-z0-9._:-]{0,127})[�
 // 指示词指向某条记录、但未绑定到"刚才那条"或具体编号 —— 目标不唯一，需澄清。
 const DEICTIC_UNBOUNDED_UNDO = /^撤销\s*(?:那条|这条|那一条|这一条)\s*(?:饮食)?记录[。.]?$/u;
 
+// 有界恢复语法：与撤销同构，只接受"恢复"前缀。恢复仅对已 void 记录生效。
+const LATEST_MEAL_RESTORE = /^恢复\s*(?:刚才那条|刚才这条|上一条|刚刚那条|刚刚这条)\s*饮食记录[。.]?$/u;
+const EVENT_ID_RESTORE = /^恢复\s*记录\s*([A-Za-z0-9][A-Za-z0-9._:-]{0,127})[。.]?$/u;
+const DEICTIC_UNBOUNDED_RESTORE = /^恢复\s*(?:那条|这条|那一条|这一条)\s*(?:饮食)?记录[。.]?$/u;
+
 // 有界餐食数量纠正：把刚才苹果改成200克。目标固定为 latest_meal，数量必须是
 // 正数，单位严格对齐既有餐食解析器的普通单位集合（个/片/瓶/盒/碗/块/盘/克/
 // ml/mL/ML/毫升），不接受餐食解析器无法产出的单位（如份/杯/斤/两）。
@@ -123,6 +128,46 @@ export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CorePar
         action: "undo_record",
         reason_code: "target_ambiguous",
         question: "要撤销哪一条饮食记录？请说“刚才那条”或提供记录编号。",
+      });
+    }
+
+    return undefined;
+  }
+
+  if (source.startsWith("恢复")) {
+    if (LATEST_MEAL_RESTORE.test(source)) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "restore_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          target: frozenRecord({ kind: "latest_meal_in_conversation" }),
+        }),
+      });
+    }
+
+    const restoreEventId = EVENT_ID_RESTORE.exec(source);
+    if (restoreEventId !== null && restoreEventId[1] !== undefined) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "restore_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          target: frozenRecord({ kind: "event_id", event_id: restoreEventId[1] }),
+        }),
+      });
+    }
+
+    if (DEICTIC_UNBOUNDED_RESTORE.test(source)) {
+      return frozenRecord({
+        disposition: "needs_clarification",
+        action: "restore_record",
+        reason_code: "target_ambiguous",
+        question: "要恢复哪一条饮食记录？请说“刚才那条”或提供记录编号。",
       });
     }
 

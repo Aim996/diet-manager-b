@@ -40,6 +40,29 @@ describe("core correction parser", () => {
   });
 
   it.each([
+    ["恢复刚才那条饮食记录", { kind: "latest_meal_in_conversation" }],
+    ["恢复记录 event-meal-001", { kind: "event_id", event_id: "event-meal-001" }],
+  ])("parses restore target: %s", (source_text, target) => {
+    expect(parseCoreCommand(input({ source_text, operation_id: "operation-restore-001" }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "restore_record",
+        operation_id: "operation-restore-001",
+        target,
+      },
+    });
+  });
+
+  it("asks one question when the restore target is not bounded", () => {
+    expect(parseCoreCommand(input({ source_text: "恢复那条记录" }))).toEqual({
+      disposition: "needs_clarification",
+      action: "restore_record",
+      reason_code: "target_ambiguous",
+      question: "要恢复哪一条饮食记录？请说“刚才那条”或提供记录编号。",
+    });
+  });
+
+  it.each([
     ["把刚才米饭改成2碗", "米饭", 2, "碗"],
     ["把刚才炒饭改成2盘", "炒饭", 2, "盘"],
     ["把刚才鸡胸肉改成2块", "鸡胸肉", 2, "块"],

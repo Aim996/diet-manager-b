@@ -82,6 +82,7 @@ import type {
   PantryPurchaseEvidence,
   RecordMealOperation,
   RecordWaterOperation,
+  RestoreRecordOperation,
   SetGoalOperation,
   SetGoalOperationResult,
   SetProfileOperation,
@@ -221,13 +222,13 @@ export interface WaterOperationResult {
 }
 
 export interface PrepareCorrectionInput extends Omit<PreparePurchaseInput, "operation"> {
-  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation | RestoreRecordOperation;
 }
 
 export interface PreparedCorrection {
   readonly fact: PreparedEnvelopeOperation;
   readonly correction_id: string;
-  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation;
+  readonly operation: CorrectMealRecordOperation | CorrectMealTimeOperation | CorrectNutritionSupplementOperation | UndoRecordOperation | RestoreRecordOperation;
   readonly progress_date: string;
   readonly progress_before: NutritionVector;
   readonly progress_after: NutritionVector;
@@ -301,8 +302,8 @@ export function prepareCorrectionOperation(
 ): PreparedCorrection {
   const operation = input.operation;
   if (
-    (operation.kind !== "correct_record" && operation.kind !== "undo_record") ||
-    (input.commandType !== "correct_record" && input.commandType !== "undo_record") ||
+    (operation.kind !== "correct_record" && operation.kind !== "undo_record" && operation.kind !== "restore_record") ||
+    (input.commandType !== "correct_record" && input.commandType !== "undo_record" && input.commandType !== "restore_record") ||
     operation.kind !== input.commandType
   ) return invalid("correction_operation");
   const current = readEffectiveMealState(input.database, input.secret, operation.target_event_id);
@@ -361,6 +362,15 @@ export function prepareCorrectionOperation(
       }) as EffectiveMealSnapshot;
       operationKind = "change_amount";
     }
+  } else if (operation.kind === "restore_record") {
+    if (current.snapshot.active) {
+      throw new Error("CORRECTION_TARGET_INVALID:already_active");
+    }
+    afterSnapshot = freezeJson({
+      ...current.snapshot,
+      active: true,
+    }) as EffectiveMealSnapshot;
+    operationKind = "restore_event";
   } else {
     if (!current.snapshot.active) {
       throw new Error("CORRECTION_TARGET_INVALID:already_void");

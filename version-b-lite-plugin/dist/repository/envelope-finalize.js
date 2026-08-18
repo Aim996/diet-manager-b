@@ -392,7 +392,7 @@ function freezeMealDailyProgress(input, envelopeId, idempotencyKey) {
     });
 }
 function freezeCorrectionDailyProgress(input, envelopeId, idempotencyKey) {
-    if (input.commandType !== "correct_record" && input.commandType !== "undo_record")
+    if (input.commandType !== "correct_record" && input.commandType !== "undo_record" && input.commandType !== "restore_record")
         return input;
     if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload)) {
         return authorityInvalid("correction_progress_execution");
@@ -888,7 +888,7 @@ export function finalizeEnvelope(input, options) {
         catch (error) {
             if (error instanceof Error &&
                 error.message.startsWith("PROGRESS_RESERVATION_AUTHORITY_INVALID:terminal_")) {
-                return authorityInvalid(frozen.commandType === "correct_record" || frozen.commandType === "undo_record"
+                return authorityInvalid(frozen.commandType === "correct_record" || frozen.commandType === "undo_record" || frozen.commandType === "restore_record"
                     ? "correction_progress_bundle"
                     : "daily_progress_bundle");
             }
