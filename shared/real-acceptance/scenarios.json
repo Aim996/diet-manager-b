@@ -168,7 +168,7 @@
       "id": "REAL-0.1.1-inventory-multiple",
       "category": "inventory",
       "title": "多商品一次采购",
-      "input": "买了2盒牛奶和1盒鸡蛋。",
+      "input": "买了2盒鸡蛋和1个苹果。",
       "expected_outcome_status": "committed",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 2 },

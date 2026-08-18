@@ -236,9 +236,12 @@ if ($scenarios.Count -eq 0) { Fail 'REAL_ACCEPTANCE_NO_SCENARIOS' }
 $startedAt = [System.DateTime]::UtcNow.ToString('o')
 $scenarioResults = @()
 
+# 每次运行用独立会话后缀，避免跨运行残留会话历史被 agent 当成「重复购买/重复记录」。
+$runId = [Guid]::NewGuid().ToString('N').Substring(0, 12)
+
 foreach ($scenario in $scenarios) {
     $id = $scenario.id
-    $sessionKey = 'agent:main:diet-manager-real-0.1.1-' + $id
+    $sessionKey = 'agent:main:diet-manager-real-0.1.1-' + $runId + '-' + $id
     $assertions = @($scenario.database_assertions)
     $assertionsFile = Join-Path $workDir ($id + '.assertions.json')
     [System.IO.File]::WriteAllText($assertionsFile, ($assertions | ConvertTo-Json -Depth 8), [System.Text.UTF8Encoding]::new($false))
