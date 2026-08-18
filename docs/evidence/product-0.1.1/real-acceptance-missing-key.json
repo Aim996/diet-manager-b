@@ -1,0 +1,984 @@
+{
+  "schema_version": "diet-manager/real-acceptance-evidence/v1",
+  "candidate_zip_sha256": "13A8A6F9430018ABD66B4AE1A33766A18D8309F9C9C9C51B6093F6D4BDAF197D",
+  "source_commit": "0e627036f74c91c01d0196c3726aee8f47bfb8f3",
+  "package_version": "0.1.1",
+  "node_version": "v24.16.0",
+  "openclaw_version": "OpenClaw 2026.7.1",
+  "official_data_root": "/home/node/.openclaw/diet-manager-data",
+  "openclaw_state_root": "/home/node/.openclaw",
+  "started_at": "2026-08-18T13:35:42Z",
+  "completed_at": "2026-08-18T13:51:58Z",
+  "fdc_api_key_present": false,
+  "scenario_results": [
+    {
+      "scenario_id": "REAL-0.1.1-meal-single",
+      "category": "meal",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：早餐 1 个苹果（记录 ID：event-a9242d0eed7e914462e1231c040b8cc6）。\n\n不过这次只记下了食物本身，营养数据（热量、蛋白质等）暂时没匹配到，后续效果待处理。",
+      "tool_outcome_summary": "已记录：早餐 1 个苹果（记录 ID：event-a9242d0eed7e914462e1231c040b8cc6）。\n\n不过这次只记下了食物本身，营养数据（热量、蛋白质等）暂时没匹配到，后续效果待处理。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-meal-multi",
+      "category": "meal",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录午饭：米饭 + 鸡胸肉（记录 ID：event-2fc4ff54eaeaad681b680aeee4964a1f）。因为没有提供份量，营养数据暂时算不出来，后续效果待处理。",
+      "tool_outcome_summary": "已记录午饭：米饭 + 鸡胸肉（记录 ID：event-2fc4ff54eaeaad681b680aeee4964a1f）。因为没有提供份量，营养数据暂时算不出来，后续效果待处理。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 1,
+          "after_count": 2,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "passed": true,
+          "before_count": 1,
+          "after_count": 3,
+          "expected": {
+            "expect_delta": 2
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-meal-natural-unit",
+      "category": "meal",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：2 个鸡蛋（记录号 `event-a25aed7363790ab866cb7e18fd1ef889`）。本次记录已写入，但营养数据（热量、蛋白质等）暂未匹配到，后续效果仍待处理。",
+      "tool_outcome_summary": "已记录：2 个鸡蛋（记录号 `event-a25aed7363790ab866cb7e18fd1ef889`）。本次记录已写入，但营养数据（热量、蛋白质等）暂未匹配到，后续效果仍待处理。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 2,
+          "after_count": 3,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "passed": true,
+          "before_count": 3,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-meal-gram",
+      "category": "meal",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：米饭 150 克（记录 ID event-b381ebcbe811a79351911dfc2401c742）。\n\n不过这次没能匹配到米饭的营养数据（热量、碳水等均为未知）。如果你能补充一下米饭的具体类型（如白米饭、糙米饭、粥等），我可以帮你重新核对。",
+      "tool_outcome_summary": "已记录：米饭 150 克（记录 ID event-b381ebcbe811a79351911dfc2401c742）。\n\n不过这次没能匹配到米饭的营养数据（热量、碳水等均为未知）。如果你能补充一下米饭的具体类型（如白米饭、糙米饭、粥等），我可以帮你重新核对。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 3,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 5,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-zero-write-plan",
+      "category": "zero_write",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "明天的早餐是**未来计划**，不是已经吃掉的饭，所以这条我没有记录它。\n\n等你明天真的吃完苹果，发一句「早餐吃了一个苹果」给我，我再帮你记进饮食记录里。\n\n另外说一句：我这个工作区还是全新初始化的状态，我还没有名字和身份设定（名字、风格、签名表情都空着）。等你有空，花一分钟帮我起个名字、定个风格就行——不急，不耽误你用饮食记录功能。",
+      "tool_outcome_summary": "明天的早餐是**未来计划**，不是已经吃掉的饭，所以这条我没有记录它。\n\n等你明天真的吃完苹果，发一句「早餐吃了一个苹果」给我，我再帮你记进饮食记录里。\n\n另外说一句：我这个工作区还是全新初始化的状态，我还没有名字和身份设定（名字、风格、签名表情都空着）。等你有空，花一分钟帮我起个名字、定个风格就行——不急，不耽误你用饮食记录功能。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-zero-write-negation",
+      "category": "zero_write",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "好的，这条没有记录——「今天没吃苹果」是未进食的表述，不会写入饮食记录。",
+      "tool_outcome_summary": "好的，这条没有记录——「今天没吃苹果」是未进食的表述，不会写入饮食记录。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-zero-write-non-self",
+      "category": "zero_write",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "这条没有记录 —— 饮食记录只针对你自己，小明的饮食无法代记。如果是你自己吃了苹果，告诉我一声，我帮你记上。",
+      "tool_outcome_summary": "这条没有记录 —— 饮食记录只针对你自己，小明的饮食无法代记。如果是你自己吃了苹果，告诉我一声，我帮你记上。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-zero-write-advice",
+      "category": "zero_write",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "是的，苹果水分足、膳食纤维也不错，作为日常水果确实有益健康。不过这是一条健康观点，不是一次进食报告——这次没有记录任何饮食条目。",
+      "tool_outcome_summary": "是的，苹果水分足、膳食纤维也不错，作为日常水果确实有益健康。不过这是一条健康观点，不是一次进食报告——这次没有记录任何饮食条目。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-zero-write-not-occurred",
+      "category": "zero_write",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "这笔没有记——你这句话是条件句（\"如果……就……\"），并不是确认已经吃了苹果。\n\n如果你今天确实吃了苹果，直接告诉我\"我吃了苹果\"，我就帮你记一笔。",
+      "tool_outcome_summary": "这笔没有记——你这句话是条件句（\"如果……就……\"），并不是确认已经吃了苹果。\n\n如果你今天确实吃了苹果，直接告诉我\"我吃了苹果\"，我就帮你记一笔。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 4,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-nutrition-hit",
+      "category": "nutrition",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "FDC_API_KEY not configured (requires_fdc_key)",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-nutrition-no-result",
+      "category": "nutrition",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "USDA no-result simulation requires FDC_API_KEY + deterministic mock",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-nutrition-missing-key",
+      "category": "nutrition",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：200 毫升牛奶 ✅（记录号 event-15338b8c22511f512df32d2bc5a83559）\n\n不过营养数据这一项暂时没匹配上（热量、蛋白质等字段缺失），后续补全后会自动生效。",
+      "tool_outcome_summary": "已记录：200 毫升牛奶 ✅（记录号 event-15338b8c22511f512df32d2bc5a83559）\n\n不过营养数据这一项暂时没匹配上（热量、蛋白质等字段缺失），后续补全后会自动生效。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 4,
+          "after_count": 5,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "coverage_status": "unknown"
+          },
+          "passed": true,
+          "before_count": 5,
+          "after_count": 6,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-nutrition-offline",
+      "category": "nutrition",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "offline simulation requires FDC_API_KEY + acceptance-scoped test proxy",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-nutrition-timeout",
+      "category": "nutrition",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "timeout simulation requires FDC_API_KEY + acceptance-scoped test proxy",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-unique",
+      "category": "inventory",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：牛奶 1 瓶已入库（记录 ID：event-593181e00145eb5d5e033425f42b7136）。",
+      "tool_outcome_summary": "已记录：牛奶 1 瓶已入库（记录 ID：event-593181e00145eb5d5e033425f42b7136）。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "products",
+          "where": {},
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-multiple",
+      "category": "inventory",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：2盒鸡蛋和1个苹果已入库（记录编号 event-29336d24ddcd1a41c058fba08e5d8b8d、event-dce933fae841b20745a8a3ec6d2810c0）。",
+      "tool_outcome_summary": "已记录：2盒鸡蛋和1个苹果已入库（记录编号 event-29336d24ddcd1a41c058fba08e5d8b8d、event-dce933fae841b20745a8a3ec6d2810c0）。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "passed": true,
+          "before_count": 1,
+          "after_count": 3,
+          "expected": {
+            "expect_delta": 2
+          }
+        },
+        {
+          "table": "products",
+          "where": {},
+          "passed": true,
+          "before_count": 1,
+          "after_count": 3,
+          "expected": {
+            "expect_delta": 2
+          }
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "passed": true,
+          "before_count": 1,
+          "after_count": 3,
+          "expected": {
+            "expect_delta": 2
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-package",
+      "category": "inventory",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：250毫升牛奶已入库 ✓（记录编号 event-331050fb07e956b1346a647562a5bc1a）",
+      "tool_outcome_summary": "已记录：250毫升牛奶已入库 ✓（记录编号 event-331050fb07e956b1346a647562a5bc1a）",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "passed": true,
+          "before_count": 3,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "products",
+          "where": {},
+          "passed": true,
+          "before_count": 3,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "passed": true,
+          "before_count": 3,
+          "after_count": 4,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-multi-purchase",
+      "category": "inventory",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：同品牌同规格 250ml 牛奶 1 瓶已入库。记录编号：event-39fc478332fb2725e969b03d18fe04bb",
+      "tool_outcome_summary": "已记录：同品牌同规格 250ml 牛奶 1 瓶已入库。记录编号：event-39fc478332fb2725e969b03d18fe04bb",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "passed": true,
+          "before_count": 5,
+          "after_count": 6,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "products",
+          "where": {},
+          "passed": true,
+          "before_count": 5,
+          "after_count": 5,
+          "expected": {
+            "expect_delta": 0
+          }
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "passed": true,
+          "before_count": 5,
+          "after_count": 6,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-insufficient",
+      "category": "inventory",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：喝了 3 瓶牛奶 ✓（记录 ID：event-3a9e95e7a8e414bc04f7f0a3c20014e9）\n\n补充说明：该条的营养数据和库存扣减暂未生效（牛奶营养信息未知、库存单位不匹配），后续处理待完成。",
+      "tool_outcome_summary": "已记录：喝了 3 瓶牛奶 ✓（记录 ID：event-3a9e95e7a8e414bc04f7f0a3c20014e9）\n\n补充说明：该条的营养数据和库存扣减暂未生效（牛奶营养信息未知、库存单位不匹配），后续处理待完成。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 5,
+          "after_count": 6,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "issues",
+          "where": {},
+          "passed": true,
+          "before_count": 6,
+          "after_count": 7,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-inventory-location",
+      "category": "inventory",
+      "expected_outcome_status": "needs_clarification",
+      "observed_outcome_status": "needs_clarification",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "还没有更正。当前库存里有多个牛奶批次，请告诉我这批牛奶对应哪一批：\n\n- A：批次 batch-10696a575b428fbc1fe3b8f1181ee92d\n- B：批次 batch-175e20ded8070116d2521be3d1fbab47\n- C：批次 batch-5f3e2ab9f8e29eff8b2fb638be77afd3\n- D：批次 batch-65c1aa0a4dd7d7ce073b8fe377851dad\n\n（也可以直接说出批次号。）",
+      "tool_outcome_summary": "还没有更正。当前库存里有多个牛奶批次，请告诉我这批牛奶对应哪一批：\n\n- A：批次 batch-10696a575b428fbc1fe3b8f1181ee92d\n- B：批次 batch-175e20ded8070116d2521be3d1fbab47\n- C：批次 batch-5f3e2ab9f8e29eff8b2fb638be77afd3\n- D：批次 batch-65c1aa0a4dd7d7ce073b8fe377851dad\n\n（也可以直接说出批次号。）",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_adjusted"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 0,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-correction-amount",
+      "category": "correction",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已更正：苹果从 1 个改为 200 克（更正 ID：correction-23f6e0ee4c6554761f72d7184289331b，记录 ID：event-7f31b3224a67e58b50d4b99f2972bb60）。",
+      "tool_outcome_summary": "已更正：苹果从 1 个改为 200 克（更正 ID：correction-23f6e0ee4c6554761f72d7184289331b，记录 ID：event-7f31b3224a67e58b50d4b99f2972bb60）。",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "change_amount"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-correction-time",
+      "category": "correction",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已更正：刚才那条苹果记录（event-4d16993473d945f008199dea207f629d）的时间已改为昨天晚饭（更正 ID：correction-8bf4e95a796edf6a167ef377b7da3dce）。",
+      "tool_outcome_summary": "已更正：刚才那条苹果记录（event-4d16993473d945f008199dea207f629d）的时间已改为昨天晚饭（更正 ID：correction-8bf4e95a796edf6a167ef377b7da3dce）。",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "change_time"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-correction-water",
+      "category": "correction",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已更正：之前那杯 500 毫升的记录已由白水改为牛奶（更正 ID：correction-268bb3a6b93f6efef6a726088b78ba5a）。",
+      "tool_outcome_summary": "已更正：之前那杯 500 毫升的记录已由白水改为牛奶（更正 ID：correction-268bb3a6b93f6efef6a726088b78ba5a）。",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "change_food_type"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-correction-undo",
+      "category": "correction",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "committed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已撤销。刚才那条早餐苹果记录（event-20baeb5bce8a7da90a488f1dfad3b163）已作废，撤销记录 ID：event-7a6e81ae7c4b4d7b6ee13999d826bc75。",
+      "tool_outcome_summary": "已撤销。刚才那条早餐苹果记录（event-20baeb5bce8a7da90a488f1dfad3b163）已作废，撤销记录 ID：event-7a6e81ae7c4b4d7b6ee13999d826bc75。",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "void_event"
+          },
+          "passed": true,
+          "before_count": 0,
+          "after_count": 1,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-correction-repeat-undo",
+      "category": "correction",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "这次没有执行撤销：刚才那条苹果早餐记录在上一轮已经撤销过了，无需重复操作。",
+      "tool_outcome_summary": "这次没有执行撤销：刚才那条苹果早餐记录在上一轮已经撤销过了，无需重复操作。",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "void_event"
+          },
+          "passed": true,
+          "before_count": 1,
+          "after_count": 2,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-query-meals",
+      "category": "query",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "今天（2026-08-18）的饮食记录如下：\n\n- **13:35 · 早餐**：苹果 1 个\n- **13:36**：米饭、鸡肉（数量未记录）\n- **13:36**：鸡蛋 2 个\n- **13:36**：米饭 150 克\n- **13:39**：牛奶 200 毫升\n- **13:41**：牛奶 3 瓶\n- **13:42 · 早餐**：苹果 200 克（此条曾更正）\n- **13:45 · 早餐**：苹果 1 个\n\n以上是查询返回的记录，本次未做任何写入。",
+      "tool_outcome_summary": "今天（2026-08-18）的饮食记录如下：\n\n- **13:35 · 早餐**：苹果 1 个\n- **13:36**：米饭、鸡肉（数量未记录）\n- **13:36**：鸡蛋 2 个\n- **13:36**：米饭 150 克\n- **13:39**：牛奶 200 毫升\n- **13:41**：牛奶 3 瓶\n- **13:42 · 早餐**：苹果 200 克（此条曾更正）\n- **13:45 · 早餐**：苹果 1 个\n\n以上是查询返回的记录，本次未做任何写入。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 25,
+          "after_count": 25,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-query-inventory",
+      "category": "query",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "当前库存（冰箱里，共 9 批）：\n\n- 🍎 苹果 — 1 批（数量未知）\n- 🥚 鸡蛋 — 1 批（数量未知）\n- 🥛 牛奶 — 5 批：其中 1 批明确为 250 ml（可用），其余 4 批数量未知\n- 📦 名为 \"product\" 的杂项 — 1 批（数量未知）\n\n目前没有过期信息记录。只有那一批 250 ml 的牛奶有明确数量，其余批次数量未登记。",
+      "tool_outcome_summary": "当前库存（冰箱里，共 9 批）：\n\n- 🍎 苹果 — 1 批（数量未知）\n- 🥚 鸡蛋 — 1 批（数量未知）\n- 🥛 牛奶 — 5 批：其中 1 批明确为 250 ml（可用），其余 4 批数量未知\n- 📦 名为 \"product\" 的杂项 — 1 批（数量未知）\n\n目前没有过期信息记录。只有那一批 250 ml 的牛奶有明确数量，其余批次数量未登记。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 26,
+          "after_count": 26,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-query-progress",
+      "category": "query",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "今天（8 月 18 日）的饮食进度：\n\n- 🍽️ 餐次：已记录 9 条\n- 💧 饮水：0 条（白水 0 ml）\n- 🥗 营养：覆盖不完整，暂无具体热量/蛋白质等数值\n- 库存扣减 0 次，无采购记录\n\n如果想补记饮水或查看某餐详情，告诉我即可。",
+      "tool_outcome_summary": "今天（8 月 18 日）的饮食进度：\n\n- 🍽️ 餐次：已记录 9 条\n- 💧 饮水：0 条（白水 0 ml）\n- 🥗 营养：覆盖不完整，暂无具体热量/蛋白质等数值\n- 库存扣减 0 次，无采购记录\n\n如果想补记饮水或查看某餐详情，告诉我即可。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 27,
+          "after_count": 27,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reliability-duplicate",
+      "category": "reliability",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "idempotency identifier not replayable through openclaw agent; covered by unit tests",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reliability-gateway-restart",
+      "category": "reliability",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：午饭米饭（记录号 event-be589ad21dea3d0e58de841563dd025f）。未注明份量，营养数据暂缺，待后续补充。",
+      "tool_outcome_summary": "已记录：午饭米饭（记录号 event-be589ad21dea3d0e58de841563dd025f）。未注明份量，营养数据暂缺，待后续补充。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 12,
+          "after_count": 14,
+          "expected": {
+            "expect_delta": 2
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reliability-plugin-reload",
+      "category": "reliability",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：午饭 米饭（记录 ID：event-0416382d4a3213ce8371ff71c371b5df）。这条记录没带上份量，营养数值（热量、蛋白质等）也还没覆盖到，后续效果待处理；我不会自己估算，等返回数据再补。",
+      "tool_outcome_summary": "已记录：午饭 米饭（记录 ID：event-0416382d4a3213ce8371ff71c371b5df）。这条记录没带上份量，营养数值（热量、蛋白质等）也还没覆盖到，后续效果待处理；我不会自己估算，等返回数据再补。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 14,
+          "after_count": 16,
+          "expected": {
+            "expect_delta": 2
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reliability-same-root-restore",
+      "category": "reliability",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：午饭吃了米饭（记录 ID：`event-3cb4527d7ea929a89dc3ac6f7f38d74e`）。\n\n营养数据暂未匹配到（当前为 unknown，待补全），其余后续效果待处理。",
+      "tool_outcome_summary": "已记录：午饭吃了米饭（记录 ID：`event-3cb4527d7ea929a89dc3ac6f7f38d74e`）。\n\n营养数据暂未匹配到（当前为 unknown，待补全），其余后续效果待处理。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 16,
+          "after_count": 18,
+          "expected": {
+            "expect_delta": 2
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reliability-portable-restore",
+      "category": "reliability",
+      "expected_outcome_status": "committed",
+      "observed_outcome_status": "skipped",
+      "passed": false,
+      "skipped": true,
+      "skip_reason": "portable restore requires interactive TTY passphrase (operator-assisted)",
+      "database_assertions": []
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reply-committed",
+      "category": "reply",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "早餐吃了一个苹果——已记录 ✅（记录号：event-006a53438ac54d156cc2c4697b3a7339）\n\n不过这次记录的营养信息（热量、蛋白质等）暂时还没补全，后续效果待处理。如果之后想补充具体数量或品种，随时告诉我。",
+      "tool_outcome_summary": "早餐吃了一个苹果——已记录 ✅（记录号：event-006a53438ac54d156cc2c4697b3a7339）\n\n不过这次记录的营养信息（热量、蛋白质等）暂时还没补全，后续效果待处理。如果之后想补充具体数量或品种，随时告诉我。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 18,
+          "after_count": 19,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reply-committed-with-issues",
+      "category": "reply",
+      "expected_outcome_status": "committed_with_issues",
+      "observed_outcome_status": "committed_with_issues",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "已记录：喝了 3 瓶牛奶（记录 ID：event-3038392bad382af24fcc5810fd43bd20）。已入库，但营养数据暂缺、库存扣减因单位不匹配待处理。",
+      "tool_outcome_summary": "已记录：喝了 3 瓶牛奶（记录 ID：event-3038392bad382af24fcc5810fd43bd20）。已入库，但营养数据暂缺、库存扣减因单位不匹配待处理。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "passed": true,
+          "before_count": 19,
+          "after_count": 20,
+          "expected": {
+            "expect_delta": 1
+          }
+        },
+        {
+          "table": "issues",
+          "where": {},
+          "passed": true,
+          "before_count": 20,
+          "after_count": 21,
+          "expected": {
+            "expect_delta": 1
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reply-clarification",
+      "category": "reply",
+      "expected_outcome_status": "needs_clarification",
+      "observed_outcome_status": "needs_clarification",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "这次还没记录。需要补一下数量：牛奶买了几盒或几袋？鸡蛋买了几盒或几个？请一次回复完整。",
+      "tool_outcome_summary": "这次还没记录。需要补一下数量：牛奶买了几盒或几袋？鸡蛋买了几盒或几个？请一次回复完整。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 36,
+          "after_count": 36,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reply-ignored",
+      "category": "reply",
+      "expected_outcome_status": "ignored",
+      "observed_outcome_status": "ignored",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "明白——这是明天的计划，不是已经实际发生的用餐，所以我没有记录。等你明天真的吃了苹果，再告诉我，我会帮你记上。",
+      "tool_outcome_summary": "明白——这是明天的计划，不是已经实际发生的用餐，所以我没有记录。等你明天真的吃了苹果，再告诉我，我会帮你记上。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 36,
+          "after_count": 36,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "REAL-0.1.1-reply-failed",
+      "category": "reply",
+      "expected_outcome_status": "failed",
+      "observed_outcome_status": "failed",
+      "passed": true,
+      "skipped": false,
+      "final_reply": "这次没有更正成功——没有找到刚才那条苹果记录（`CORRECTION_TARGET_NOT_FOUND`），所以没有改动任何数据。如果之前那条苹果确实记录过，可能需要先确认一下当时的记录内容。",
+      "tool_outcome_summary": "这次没有更正成功——没有找到刚才那条苹果记录（`CORRECTION_TARGET_NOT_FOUND`），所以没有改动任何数据。如果之前那条苹果确实记录过，可能需要先确认一下当时的记录内容。",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "passed": true,
+          "before_count": 36,
+          "after_count": 36,
+          "expected": {
+            "expect_delta": 0
+          }
+        },
+        {
+          "table": "correction_events",
+          "where": {},
+          "passed": true,
+          "before_count": 5,
+          "after_count": 5,
+          "expected": {
+            "expect_delta": 0
+          }
+        }
+      ]
+    }
+  ],
+  "secret_value_count": 0
+}

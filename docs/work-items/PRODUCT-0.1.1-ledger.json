@@ -35,7 +35,7 @@
       "id": 4,
       "name": "真实环境产品验收",
       "status": "IN_PROGRESS",
-      "gate_evidence": [],
+      "gate_evidence": ["docs/evidence/product-0.1.1/real-acceptance-missing-key.json"],
       "reopened_by": []
     },
     {
@@ -46,6 +46,63 @@
       "reopened_by": []
     }
   ],
-  "candidates": [],
+  "candidates": [
+    {
+      "number": 1,
+      "root": ".tmp/release-candidate/0.1.1/candidate-001",
+      "source_commit": "0ede684827792c2341cacfa127733922a0aa3836",
+      "archive_sha256": "C7FF1D5253CE6EF85C0E27E03A08AF79441EAE189F299D7ECAA226588744028F",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 2,
+      "root": ".tmp/release-candidate/0.1.1/candidate-002",
+      "source_commit": "93ba8e01db6746fb5af67c1ba10385701d0fcccb",
+      "archive_sha256": "004F47BD953C091637B07B5177B29FD38EB718B246A043BEAC4A7F29A4D9EF56",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 3,
+      "root": ".tmp/release-candidate/0.1.1/candidate-003",
+      "source_commit": "2566efd415b9a9cc391052cbc16104e01d83edb5",
+      "archive_sha256": "A737272B1498785AB819C70FE4962CE9159EC2F486F3950F508F2AFBCBE45A8E",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 4,
+      "root": ".tmp/release-candidate/0.1.1/candidate-004",
+      "source_commit": "f2df29bde391d7e840c43eba3fbab2a1eb84780e",
+      "archive_sha256": "B5FF53862B0DDC3909E5F0127440070E575C3A275E26F18D821FE9FB198AFBEC",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 5,
+      "root": ".tmp/release-candidate/0.1.1/candidate-005",
+      "source_commit": "1387db751bd48703ece4af53748b563da34a3b89",
+      "archive_sha256": "9C6E6C0C3B7A58F6DD7AF9861623CC961C5921FA4A6C53C9BA3F7B26F68E2936",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 6,
+      "root": ".tmp/release-candidate/0.1.1/candidate-006",
+      "source_commit": "cac535c03f77371b9d1bf85b6c046aea2eae266c",
+      "archive_sha256": "97274E9267BFEBDC47AD4B564DC3E05AABD08EC7DE9D7448787A68028704EF5B",
+      "status": "rejected",
+      "evidence_sha256": null
+    },
+    {
+      "number": 7,
+      "root": ".tmp/release-candidate/0.1.1/candidate-007",
+      "source_commit": "0e627036f74c91c01d0196c3726aee8f47bfb8f3",
+      "archive_sha256": "13A8A6F9430018ABD66B4AE1A33766A18D8309F9C9C9C51B6093F6D4BDAF197D",
+      "status": "pending",
+      "evidence_sha256": null
+    }
+  ],
   "accepted_candidate": null
 }
