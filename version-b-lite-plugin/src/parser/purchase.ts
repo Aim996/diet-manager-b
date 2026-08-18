@@ -110,8 +110,8 @@ const PRODUCT_ALIASES = Object.freeze<Readonly<Record<string, Readonly<{
 
 const PURCHASE_PREFIX = /^(?:我\s*)?买了/u;
 const NUMERIC_TOKEN = /^([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
-const PACKAGE_UNIT_TOKEN = /^([盒袋箱瓶罐包桶])([\s\S]*)$/u;
-const CLAUSE_TOKEN = /^([盒袋箱瓶罐包桶])([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
+const PACKAGE_UNIT_TOKEN = /^([盒袋箱瓶罐包桶个只颗枚片支])([\s\S]*)$/u;
+const CLAUSE_TOKEN = /^([盒袋箱瓶罐包桶个只颗枚片支])([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
 
 /** Parse a bounded positive integer: Chinese 一–十 (plus 两) or Arabic, 1..max. */
 function parsePositiveInteger(text: string, max: number): number | null {

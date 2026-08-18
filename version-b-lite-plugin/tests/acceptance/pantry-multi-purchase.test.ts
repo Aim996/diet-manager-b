@@ -82,6 +82,37 @@ describe("SEL-PANTRY-001 multi-item purchase grammar", () => {
     });
   });
 
+  it("recognizes 个 as an outer package unit inside a multi-item purchase", () => {
+    expect(parse("买了2盒鸡蛋和1个苹果。")).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "add_inventory",
+        items: [
+          { order: 0, normalized_name: "egg", package_quantity: { outer_count: 2, outer_unit: "carton" } },
+          { order: 1, normalized_name: "apple", package_quantity: { outer_count: 1, outer_unit: "piece" } },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    ["只", "piece"],
+    ["颗", "piece"],
+    ["枚", "piece"],
+    ["片", "slice"],
+    ["支", "stick"],
+  ] as const)("recognizes %s as a package unit in a single-item purchase", (unit, outerUnit) => {
+    expect(parse(`买了2${unit}苹果。`)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "add_inventory",
+        items: [
+          { order: 0, normalized_name: "apple", package_quantity: { outer_count: 2, outer_unit: outerUnit } },
+        ],
+      },
+    });
+  });
+
   it("returns one concrete question and no candidate when two items are incomplete", () => {
     expect(parse("买了牛奶和鸡蛋")).toEqual({
       disposition: "needs_clarification",
