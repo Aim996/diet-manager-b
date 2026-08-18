@@ -3072,7 +3072,13 @@ function preflightCorrectionNutrition(
     }
     beforeNutrients = addNutritionVectors(
       beforeNutrients,
-      payload.nutrients as unknown as NutritionVector,
+      correctedNutrition(
+        payload,
+        beforeSnapshot.active
+          ? beforeSnapshot.items[itemOrder].amount.nutrition_adoption_microunits
+          : 0,
+        beforeSnapshot.active,
+      ),
     );
     afterNutrients = addNutritionVectors(
       afterNutrients,

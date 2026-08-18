@@ -2246,7 +2246,9 @@ function preflightCorrectionNutrition(database, beforeSnapshot, afterSnapshot, a
         if (typeof payload.nutrients !== "object" || payload.nutrients === null) {
             throw new Error("CORRECTION_EFFECT_INVALID:nutrition_payload");
         }
-        beforeNutrients = addNutritionVectors(beforeNutrients, payload.nutrients);
+        beforeNutrients = addNutritionVectors(beforeNutrients, correctedNutrition(payload, beforeSnapshot.active
+            ? beforeSnapshot.items[itemOrder].amount.nutrition_adoption_microunits
+            : 0, beforeSnapshot.active));
         afterNutrients = addNutritionVectors(afterNutrients, correctedNutrition(payload, afterSnapshot.active
             ? afterSnapshot.items[itemOrder].amount.nutrition_adoption_microunits
             : 0, afterSnapshot.active));

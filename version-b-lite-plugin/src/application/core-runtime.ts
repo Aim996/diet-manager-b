@@ -1035,7 +1035,7 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
           : "correction_kind" in operation && operation.correction_kind === "nutrition_supplement"
             ? { event_type: "nutrition_supplemented", fact_kind: "correction" }
             : { event_type: "diet_correction", fact_kind: "correction" }
-        : operation.kind === "undo_record"
+        : operation.kind === "undo_record" || operation.kind === "restore_record"
           ? { event_type: "diet_correction", fact_kind: "correction" }
           : operation.kind === "set_profile"
             ? { event_type: "diet_profile", fact_kind: "profile" }

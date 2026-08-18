@@ -607,7 +607,7 @@ function validateAndFreezeEnvelope(value) {
     text(envelope.idempotency_key, "envelope.idempotency_key");
     enumValue(envelope.command_type, [
         "record_meal", "record_water", "add_inventory", "query_inventory", "query_meals",
-        "query_daily_summary", "correct_record", "undo_record", "set_profile", "set_goal",
+        "query_daily_summary", "correct_record", "undo_record", "restore_record", "set_profile", "set_goal",
     ], "envelope.command_type");
     text(envelope.subject_scope, "envelope.subject_scope");
     text(envelope.source_message_id, "envelope.source_message_id");
