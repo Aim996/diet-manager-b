@@ -87,3 +87,29 @@ export function deriveSixGoals(profile) {
         water_ml: roundHalfUp(waterRaw),
     });
 }
+export function goalProgressBar(current, target) {
+    if (!Number.isFinite(current) || current < 0)
+        return invalid("progress_current");
+    if (!Number.isFinite(target) || target <= 0)
+        return invalid("progress_target");
+    const ratio = current / target;
+    const percentage = roundHalfUp(ratio * 100);
+    const filledCells = Math.min(10, Math.max(0, roundHalfUp(ratio * 10)));
+    return Object.freeze({
+        current,
+        target,
+        percentage,
+        filled_cells: filledCells,
+        bar_text: "█".repeat(filledCells) + "░".repeat(10 - filledCells),
+    });
+}
+// 仅对「已配置（目标非 null）」的维度生成进度条；未配置维度不出现。
+export function computeGoalProgressBars(configured, current) {
+    const bars = Object.create(null);
+    for (const field of GOAL_FIELDS) {
+        const target = configured[field];
+        if (target !== null)
+            bars[field] = goalProgressBar(current[field], target);
+    }
+    return Object.freeze(bars);
+}

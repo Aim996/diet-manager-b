@@ -75,6 +75,8 @@ export function nonWritingOutcome(
       inventory: Object.freeze({ ...dailyProgress.inventory }),
       purchases: Object.freeze({ ...dailyProgress.purchases }),
       corrections: Object.freeze({ ...dailyProgress.corrections }),
+      ...(dailyProgress.configured_goals === undefined ? {} : { configured_goals: Object.freeze({ ...dailyProgress.configured_goals }) }),
+      ...(dailyProgress.progress === undefined ? {} : { progress: Object.freeze({ ...dailyProgress.progress }) }),
     }) }),
     ...(mealHistory === undefined ? {} : { meal_history: Object.freeze({
       date: mealHistory.date,

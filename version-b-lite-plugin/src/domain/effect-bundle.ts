@@ -4901,7 +4901,7 @@ function goalIntentFromStoredFact(
   };
 }
 
-function currentConfiguredGoals(database: DatabaseSync, userId: string): ConfiguredGoals {
+export function currentConfiguredGoals(database: DatabaseSync, userId: string): ConfiguredGoals {
   const row = database.prepare(
     `SELECT payload_json FROM goal_versions WHERE user_id = ? ORDER BY effective_from DESC LIMIT 1`,
   ).get(userId) as { payload_json: string } | undefined;

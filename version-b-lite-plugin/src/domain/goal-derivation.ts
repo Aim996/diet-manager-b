@@ -144,3 +144,46 @@ export function deriveSixGoals(profile: PersonalProfile): SixGoalValues {
     water_ml: roundHalfUp(waterRaw),
   });
 }
+
+// DEC-030 §17.6 进度条渲染规则（唯一权威）：percentage = round_half_up(current/target×100)、
+// filled_cells = clamp(round_half_up(current/target×10), 0, 10)、bar_text = █×filled + ░×(10−filled)、
+// 超出目标显示真实百分比（可 >100），进度条满格。
+
+export interface GoalProgressBar {
+  readonly current: number;
+  readonly target: number;
+  readonly percentage: number;
+  readonly filled_cells: number;
+  readonly bar_text: string;
+}
+
+export function goalProgressBar(current: number, target: number): GoalProgressBar {
+  if (!Number.isFinite(current) || current < 0) return invalid("progress_current");
+  if (!Number.isFinite(target) || target <= 0) return invalid("progress_target");
+  const ratio = current / target;
+  const percentage = roundHalfUp(ratio * 100);
+  const filledCells = Math.min(10, Math.max(0, roundHalfUp(ratio * 10)));
+  return Object.freeze({
+    current,
+    target,
+    percentage,
+    filled_cells: filledCells,
+    bar_text: "█".repeat(filledCells) + "░".repeat(10 - filledCells),
+  });
+}
+
+// 各维度的「当前量」，单位为与目标一致的自然单位（kcal / g / ml），null 由调用方折算为 0。
+export type GoalCurrentValues = Readonly<Record<GoalField, number>>;
+
+// 仅对「已配置（目标非 null）」的维度生成进度条；未配置维度不出现。
+export function computeGoalProgressBars(
+  configured: Readonly<ConfiguredGoals>,
+  current: Readonly<GoalCurrentValues>,
+): Readonly<Partial<Record<GoalField, GoalProgressBar>>> {
+  const bars: Record<string, GoalProgressBar> = Object.create(null);
+  for (const field of GOAL_FIELDS) {
+    const target = configured[field];
+    if (target !== null) bars[field] = goalProgressBar(current[field], target);
+  }
+  return Object.freeze(bars) as Readonly<Partial<Record<GoalField, GoalProgressBar>>>;
+}

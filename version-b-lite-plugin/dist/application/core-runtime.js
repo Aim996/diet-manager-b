@@ -7,7 +7,8 @@ import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import { dietManagerActions, } from "../contracts.js";
 import { resolveProductIdentity, resolveExpiration, } from "../domain/inventory-service.js";
 import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
-import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
+import { currentConfiguredGoals, readAppliedCorrectionResult } from "../domain/effect-bundle.js";
+import { computeGoalProgressBars } from "../domain/goal-derivation.js";
 import { readAppliedWaterClassificationResult } from "../domain/water-correction.js";
 import { createDietDomainService } from "../domain/service.js";
 import { cloneCoreParseInput } from "../parser/input-authority.js";
@@ -929,6 +930,25 @@ function readDailyProgress(session, request) {
     const waterTotal = water.reduce((sum, item) => sum + item.plain_water_ml_milli, 0);
     if (!Number.isSafeInteger(waterTotal))
         throw new Error("CORE_APPLICATION_QUERY_INVALID:water_sum");
+    const configuredGoals = currentConfiguredGoals(session.database, "user:self");
+    const nutrients = summary.nutrients;
+    const current = Object.freeze({
+        energy_kcal: nutrients.energy_kcal_milli === null ? 0 : nutrients.energy_kcal_milli / 1_000,
+        protein_g: nutrients.protein_mg === null ? 0 : nutrients.protein_mg / 1_000,
+        fat_g: nutrients.fat_mg === null ? 0 : nutrients.fat_mg / 1_000,
+        carbohydrate_g: nutrients.carbohydrate_mg === null ? 0 : nutrients.carbohydrate_mg / 1_000,
+        fiber_g: nutrients.fiber_mg === null ? 0 : nutrients.fiber_mg / 1_000,
+        water_ml: nutrients.water_ml_milli === null ? 0 : nutrients.water_ml_milli / 1_000,
+    });
+    const configured_goals = Object.freeze({
+        energy_kcal: configuredGoals.energy_kcal,
+        protein_g: configuredGoals.protein_g,
+        fat_g: configuredGoals.fat_g,
+        carbohydrate_g: configuredGoals.carbohydrate_g,
+        fiber_g: configuredGoals.fiber_g,
+        water_ml: configuredGoals.water_ml,
+    });
+    const progress = computeGoalProgressBars(configuredGoals, current);
     return Object.freeze({
         date,
         timezone: "Asia/Shanghai",
@@ -941,6 +961,8 @@ function readDailyProgress(session, request) {
         inventory: Object.freeze({ deduction_count: deductionCount }),
         purchases: Object.freeze({ count: purchaseCount }),
         corrections: Object.freeze({ count: correctionCount }),
+        configured_goals,
+        progress,
     });
 }
 function readMealHistory(session, request) {

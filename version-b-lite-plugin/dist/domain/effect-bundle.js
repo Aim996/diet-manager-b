@@ -3556,7 +3556,7 @@ function goalIntentFromStoredFact(database, envelopeId, operationId, idempotency
         overrides,
     };
 }
-function currentConfiguredGoals(database, userId) {
+export function currentConfiguredGoals(database, userId) {
     const row = database.prepare(`SELECT payload_json FROM goal_versions WHERE user_id = ? ORDER BY effective_from DESC LIMIT 1`).get(userId);
     if (!row)
         return emptyConfiguredGoals();
