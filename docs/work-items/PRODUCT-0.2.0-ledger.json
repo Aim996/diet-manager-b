@@ -1,0 +1,65 @@
+{
+  "schema_version": "diet-manager/product-ledger/v1",
+  "product_version": "0.2.0",
+  "authority": "饮食管家-开发约束与需求-v1.0.md",
+  "flow": "dec-driven",
+  "decs": [
+    {
+      "id": "DEC-030",
+      "title": "个人档案 + 六项目标 + 进度条",
+      "status": "APPROVED",
+      "slices": "C-1..C-6",
+      "slices_status": "DONE",
+      "evidence": [
+        "docs/evidence/EV-20260819-040-candidate-009-build.md",
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+      ]
+    },
+    {
+      "id": "DEC-031",
+      "title": "restore_record（撤销后恢复）",
+      "status": "APPROVED",
+      "slices": "R-1..R-4",
+      "slices_status": "DONE",
+      "evidence": [
+        "docs/evidence/EV-20260819-040-candidate-009-build.md",
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+      ]
+    },
+    {
+      "id": "DEC-032",
+      "title": "离线营养数据集（去网络/代理依赖）",
+      "status": "APPROVED",
+      "slices": "O-1..O-5",
+      "slices_status": "DONE",
+      "evidence": [
+        "docs/evidence/EV-20260819-041-dec-032-offline-nutrition.md",
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "number": 9,
+      "root": ".tmp/release-candidate/0.2.0/candidate-009",
+      "source_commit": "523ba93b48bf3867aad1598e00f67ebb594358c1",
+      "archive_sha256": "7404F5DA3C9D5FE8CFB1F3BD31D94C34EC5F9D5B17D6A1F3C5FD5950897F6F83",
+      "status": "rejected",
+      "evidence_sha256": null,
+      "reject_reason": "superseded_by_candidate_010_dec_032"
+    },
+    {
+      "number": 10,
+      "root": ".tmp/release-candidate/0.2.0/candidate-010",
+      "source_commit": "9292579e11513738784a0d061fee20cd07e337b3",
+      "archive_sha256": "762027A2B3CE57F9BC6F3A79A2E939D59CCD0383E0313104039C89C4FA9F2315",
+      "status": "pending",
+      "evidence_sha256": null
+    }
+  ],
+  "accepted_candidate": null,
+  "release": {
+    "status": "AWAITING_SIGNOFF",
+    "note": "candidate-010 已通过构建+字节校验（EV-041）与 7 网关×8 场景真实验收（EV-042，56/56 全绿）。发布（逐字节晋级 releases/v0.2.0 + tag）需用户签收后进入阶段 5。"
+  }
+}
