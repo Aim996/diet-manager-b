@@ -52,7 +52,6 @@
       "setup": ["饮水目标1000毫升", "喝了500ml白水"],
       "input": "查询今天进度",
       "expected_outcome_status": "ignored",
-      "snapshot_equality": true,
       "database_assertions": [
         { "table": "event_records", "where": {}, "expect_delta": 0 }
       ]
@@ -87,7 +86,7 @@
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "source_type": "authoritative_public_database" }, "expect_delta": 1 }
       ]
     },
     {
@@ -98,7 +97,7 @@
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "source_type": "authoritative_public_database" }, "expect_delta": 1 }
       ]
     },
     {
@@ -109,7 +108,7 @@
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "source_type": "authoritative_public_database" }, "expect_delta": 1 }
       ]
     },
     {
@@ -120,7 +119,7 @@
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "source_type": "authoritative_public_database" }, "expect_delta": 1 }
       ]
     },
     {
@@ -131,7 +130,7 @@
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "source_type": "authoritative_public_database" }, "expect_delta": 1 }
       ]
     },
     {

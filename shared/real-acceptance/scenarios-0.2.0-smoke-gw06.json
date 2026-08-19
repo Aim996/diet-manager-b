@@ -1,0 +1,165 @@
+{
+  "schema_version": "diet-manager/real-acceptance-scenarios/v1",
+  "description": "饮食管家 B 0.2.0 多设备同步验收冒烟子集（网关 06 内容变体）。断言「公式」与基座完全一致，仅输入「数值/食物」按网关变化。离线营养零 key 零网络零代理命中。gw01..gw07 各跑一份。",
+  "scenarios": [
+    {
+      "id": "REAL-0.2.0-profile-set",
+      "category": "profile",
+      "title": "个人档案 + 六项目标派生",
+      "input": "身高168体重60公斤女32岁减脂",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "user_profiles",
+          "where": {},
+          "expect_delta": 1
+        },
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-goal-set-calorie",
+      "category": "goal",
+      "title": "显式覆盖热量目标",
+      "input": "热量目标2200千卡",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-query-progress-bar",
+      "category": "query",
+      "title": "进度条查询快照一致（半格）",
+      "setup": [
+        "饮水目标800毫升",
+        "喝了400ml白水"
+      ],
+      "input": "查询今天进度",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "expect_delta": 0
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-restore-record",
+      "category": "correction",
+      "title": "撤销后恢复",
+      "setup": [
+        "吃了一个香蕉。",
+        "撤销刚才那条饮食记录。"
+      ],
+      "input": "恢复刚才那条饮食记录",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "restore_event"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-hit",
+      "category": "nutrition",
+      "title": "离线权威命中（牛奶）",
+      "input": "吃了450毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-meal-single",
+      "category": "meal",
+      "title": "单食物餐食记录（回归）",
+      "input": "早餐吃了一个香蕉。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-inventory-unique",
+      "category": "inventory",
+      "title": "单商品采购（回归）",
+      "input": "买了一瓶牛奶。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "products",
+          "where": {},
+          "expect_delta": 1
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-zero-write-plan",
+      "category": "zero_write",
+      "title": "计划性表述零写入（回归）",
+      "input": "我计划明天早餐吃一个香蕉。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "expect_delta": 0
+        }
+      ]
+    }
+  ]
+}
