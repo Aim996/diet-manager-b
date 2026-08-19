@@ -303,7 +303,7 @@ it("resolves the offline core food table and adopts compatible gram amounts", as
     now: () => "2026-08-14T12:00:00.000Z",
     credential: () => undefined,
   });
-  for (const [normalizedName, amount] of [["rice", 200], ["chicken_breast", 150]] as const) {
+  for (const [normalizedName, amount] of [["rice", 200], ["chicken", 150]] as const) {
     const resolution = await adapter.resolve(Object.freeze({
       normalized_food_name: normalizedName,
       brand: null,

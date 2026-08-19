@@ -6,6 +6,8 @@ import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime } from "../application/runtime.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { createCommonDishTemplateAdapters } from "../nutrition/builtin.js";
+import { OfflineUsdaAdapter } from "../nutrition/offline-usda.js";
 import { FoodDataCentralAdapter } from "../nutrition/adapters/fooddata-central.js";
 import { FoodDataCentralHttpTransport } from "../nutrition/adapters/fooddata-central-http.js";
 import { assertDietManagerOutcome, dietManagerActions, dietManagerContract, } from "../contracts.js";
@@ -107,16 +109,19 @@ const CORE_REQUEST_FIELDS = Object.freeze([
 ]);
 const FDC_CREDENTIAL_REFERENCE = "env:FDC_API_KEY";
 function configuredNutritionAdapters(nutrition) {
+    const adapters = [
+        new OfflineUsdaAdapter(),
+        ...createCommonDishTemplateAdapters(),
+    ];
     const entry = nutrition.sources.find((candidate) => candidate.source_id === "public.usda_fooddata_central" && candidate.enabled);
-    if (entry === undefined)
-        return Object.freeze([]);
-    if (entry.backend_id !== "fooddata-central" || entry.backend_version !== "api-v1" ||
-        entry.credential_ref !== FDC_CREDENTIAL_REFERENCE) {
-        throw new TypeError("OPENCLAW_AUTHORITY_INVALID:nutrition_source");
+    if (entry !== undefined) {
+        if (entry.backend_id !== "fooddata-central" || entry.backend_version !== "api-v1" ||
+            entry.credential_ref !== FDC_CREDENTIAL_REFERENCE) {
+            throw new TypeError("OPENCLAW_AUTHORITY_INVALID:nutrition_source");
+        }
+        adapters.push(new FoodDataCentralAdapter(new FoodDataCentralHttpTransport(), FDC_CREDENTIAL_REFERENCE));
     }
-    return Object.freeze([
-        new FoodDataCentralAdapter(new FoodDataCentralHttpTransport(), FDC_CREDENTIAL_REFERENCE),
-    ]);
+    return Object.freeze(adapters);
 }
 const environmentNutritionCredential = (reference) => {
     if (reference !== FDC_CREDENTIAL_REFERENCE)

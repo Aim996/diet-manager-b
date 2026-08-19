@@ -10,6 +10,8 @@ import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { createCommonDishTemplateAdapters } from "../nutrition/builtin.js";
+import { OfflineUsdaAdapter } from "../nutrition/offline-usda.js";
 import { FoodDataCentralAdapter } from "../nutrition/adapters/fooddata-central.js";
 import { FoodDataCentralHttpTransport } from "../nutrition/adapters/fooddata-central-http.js";
 import type { NutritionRuntimeConfig, NutritionSourceAdapter, SourceContext } from "../nutrition/types.js";
@@ -154,16 +156,20 @@ const FDC_CREDENTIAL_REFERENCE = "env:FDC_API_KEY";
 function configuredNutritionAdapters(
   nutrition: Readonly<NutritionRuntimeConfig>,
 ): readonly NutritionSourceAdapter[] {
+  const adapters: NutritionSourceAdapter[] = [
+    new OfflineUsdaAdapter(),
+    ...createCommonDishTemplateAdapters(),
+  ];
   const entry = nutrition.sources.find((candidate) =>
     candidate.source_id === "public.usda_fooddata_central" && candidate.enabled);
-  if (entry === undefined) return Object.freeze([]);
-  if (entry.backend_id !== "fooddata-central" || entry.backend_version !== "api-v1" ||
-      entry.credential_ref !== FDC_CREDENTIAL_REFERENCE) {
-    throw new TypeError("OPENCLAW_AUTHORITY_INVALID:nutrition_source");
+  if (entry !== undefined) {
+    if (entry.backend_id !== "fooddata-central" || entry.backend_version !== "api-v1" ||
+        entry.credential_ref !== FDC_CREDENTIAL_REFERENCE) {
+      throw new TypeError("OPENCLAW_AUTHORITY_INVALID:nutrition_source");
+    }
+    adapters.push(new FoodDataCentralAdapter(new FoodDataCentralHttpTransport(), FDC_CREDENTIAL_REFERENCE));
   }
-  return Object.freeze([
-    new FoodDataCentralAdapter(new FoodDataCentralHttpTransport(), FDC_CREDENTIAL_REFERENCE),
-  ]);
+  return Object.freeze(adapters);
 }
 
 const environmentNutritionCredential: SourceContext["credential"] = (reference) => {

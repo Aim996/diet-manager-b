@@ -19,7 +19,7 @@ const COMMON_FOODS = freezeNutritionData({
             energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
         },
     },
-    chicken_breast: {
+    chicken: {
         basis_kind: "per_100g",
         basis_unit: "g",
         nutrient_values: {
@@ -59,6 +59,10 @@ const COMMON_DISHES = freezeNutritionData({
     },
     beef_noodle: {
         energy_kcal: "550", protein_g: "25", fat_g: "18", carbohydrate_g: "70", fiber_g: "4",
+        energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
+    },
+    soup: {
+        energy_kcal: "45", protein_g: "2", fat_g: "1.5", carbohydrate_g: "5", fiber_g: "0.5",
         energy_kj: null, sodium_mg: null, sugar_g: null, saturated_fat_g: null, water_ml: null,
     },
 });
@@ -177,7 +181,7 @@ export function resolveBuiltinNutrientVector(normalizedName, amountMicrounits) {
         water_ml_milli: scaled("water_ml"),
     });
 }
-export function createBuiltinNutritionAdapters() {
+export function createCommonDishTemplateAdapters() {
     return Object.freeze([
         new LocalEvidenceAdapter({
             source_id: "local.versioned_common_dish_template",
@@ -187,6 +191,11 @@ export function createBuiltinNutritionAdapters() {
             request_fields: Object.freeze(["normalized_food_name"]),
             resolve: resolveCommonDish,
         }),
+    ]);
+}
+export function createBuiltinNutritionAdapters() {
+    return Object.freeze([
+        ...createCommonDishTemplateAdapters(),
         new LocalEvidenceAdapter({
             source_id: "local.generic_estimate",
             tier: "generic_estimate",

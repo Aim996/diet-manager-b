@@ -14,6 +14,7 @@ export const REGISTERED_SOURCE_TIERS = Object.freeze({
     "conditional.manufacturer_exact": "manufacturer_or_exact_product",
     "local.confirmed_same_product_history": "confirmed_same_product_history",
     "public.usda_fooddata_central": "authoritative_public_database",
+    "public.usda_fooddata_central_bundled": "authoritative_public_database",
     "public.china_cdc_phscience_food_composition": "authoritative_public_database",
     "trusted.open_food_facts_read_only": "allowlisted_trusted_internet",
     "local.personal_template": "versioned_common_dish_template",
@@ -24,7 +25,9 @@ export const REGISTERED_SOURCE_TIERS = Object.freeze({
 const V1_ALLOWED_NUTRITION_SOURCE_TYPES = Object.freeze({
     "local.current_exact_label": "product_label",
     "local.personal_template": "personal_template",
+    "local.versioned_common_dish_template": "generic_template",
     "public.usda_fooddata_central": "authoritative_public_database",
+    "public.usda_fooddata_central_bundled": "authoritative_public_database",
     "public.china_cdc_phscience_food_composition": "authoritative_public_database",
     "terminal.unknown": "unknown",
 });

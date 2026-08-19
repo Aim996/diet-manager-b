@@ -99,10 +99,9 @@
     {
       "id": "REAL-0.1.1-nutrition-hit",
       "category": "nutrition",
-      "title": "USDA 联网命中",
+      "title": "离线权威命中（牛奶）",
       "input": "吃了200毫升牛奶。",
-      "expected_outcome_status": "committed",
-      "requires_fdc_key": true,
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
         { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
@@ -111,45 +110,45 @@
     {
       "id": "REAL-0.1.1-nutrition-no-result",
       "category": "nutrition",
-      "title": "USDA 无结果降级为 unknown",
+      "title": "香蕉离线命中（词表 + USDA bundle）",
       "input": "吃了两个香蕉。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": "unknown" }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
       ]
     },
     {
       "id": "REAL-0.1.1-nutrition-missing-key",
       "category": "nutrition",
-      "title": "缺失 FDC_API_KEY 降级为 unknown",
+      "title": "无 FDC_API_KEY 离线仍命中",
       "input": "吃了200毫升牛奶。",
       "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": "unknown" }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
       ]
     },
     {
       "id": "REAL-0.1.1-nutrition-offline",
       "category": "nutrition",
-      "title": "断网降级为 unknown",
+      "title": "断网离线仍命中",
       "input": "吃了200毫升牛奶。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": "unknown" }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
       ]
     },
     {
       "id": "REAL-0.1.1-nutrition-timeout",
       "category": "nutrition",
-      "title": "超时降级为 unknown",
+      "title": "无超时离线命中（离线零网络零超时）",
       "input": "吃了200毫升牛奶。",
-      "expected_outcome_status": "committed",
+      "expected_outcome_status": "committed_with_issues",
       "database_assertions": [
         { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
-        { "table": "nutrition_snapshots", "where": { "coverage_status": "unknown" }, "expect_delta": 1 }
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
       ]
     },
     {

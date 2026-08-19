@@ -23,7 +23,9 @@ function orderedAdapters(adapters: readonly NutritionSourceAdapter[]): readonly 
     const b = right.describe();
     const rank = a.rank - b.rank;
     if (rank !== 0) return rank;
-    if (a.network !== b.network) return a.network ? 1 : -1;
+    // 同等级下，显式配置的网络源（如可选 FDC 增强）先于离线 bundle 运行；
+    // 未配置的网络源由 resolveNutrition 的配置门跳过，离线 bundle 仍是无网络时的兜底权威。
+    if (a.network !== b.network) return a.network ? -1 : 1;
     return a.source_id.localeCompare(b.source_id, "en");
   }).map((adapter) => {
     const capability = adapter.describe();
@@ -92,7 +94,7 @@ export async function resolveNutrition(
       if (controller.signal.aborted) break;
       const capability = adapter.describe();
       const entry = configured?.get(capability.source_id);
-      if (configured !== undefined && (entry === undefined || !entry.enabled)) continue;
+      if (capability.network && configured !== undefined && (entry === undefined || !entry.enabled)) continue;
       if (entry !== undefined && (entry.backend_id !== capability.backend_id ||
           entry.backend_version !== capability.backend_version)) {
         continue;
