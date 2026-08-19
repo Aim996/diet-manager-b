@@ -1,0 +1,18 @@
+{
+  "schema_version": "diet-manager/release-manifest/v1",
+  "product_version": "0.2.0",
+  "plugin_version": "0.2.0",
+  "contract_version": "3",
+  "domain_schema_version": "domain/v2",
+  "source_commit": "9292579e11513738784a0d061fee20cd07e337b3",
+  "v1_0_document_sha256": "B1EC9E1CD8F4D6AE48AA572919CE9582433EE3F3129EAAA2F1A59E5BE9110B16",
+  "acceptance_assets_sha256": "2B5D36631C98D0C4B692186D450A84B5B69D62EB49ECD1BCC03AB71B6AFABF88",
+  "node_version": "v24.15.0",
+  "openclaw_version": "OpenClaw 2026.7.1 (2d2ddc4)",
+  "archive": {
+    "path": "artifacts/diet-manager-b-0.2.0.zip",
+    "bytes": 315296,
+    "sha256": "762027A2B3CE57F9BC6F3A79A2E939D59CCD0383E0313104039C89C4FA9F2315"
+  },
+  "source_modules": ["src/admin/cli.ts","src/admin/passphrase.ts","src/application/command-handler.ts","src/application/core-runtime.ts","src/application/mapping.ts","src/application/outcome.ts","src/application/runtime.ts","src/authority/canonical-json.ts","src/authority/inventory-adjustment-fact-identity.ts","src/authority/meal-fact-identity.ts","src/authority/meal-fact.ts","src/authority/offset-timestamp.ts","src/authority/purchase-fact-identity.ts","src/authority/water-fact-identity.ts","src/contracts.ts","src/domain/effect-bundle.ts","src/domain/goal-derivation.ts","src/domain/identity.ts","src/domain/inventory-service.ts","src/domain/read-model.ts","src/domain/receipt.ts","src/domain/rules.ts","src/domain/service.ts","src/domain/types.ts","src/domain/water-correction.ts","src/index.ts","src/nutrition/adapters/fooddata-central-http.ts","src/nutrition/adapters/fooddata-central.ts","src/nutrition/adapters/local-evidence.ts","src/nutrition/adapters/trusted-exact-product.ts","src/nutrition/builtin.ts","src/nutrition/config.ts","src/nutrition/doctor.ts","src/nutrition/nutrition-repository.ts","src/nutrition/nutrition-service.ts","src/nutrition/offline-usda.ts","src/nutrition/resolution-claim.ts","src/nutrition/source-client.ts","src/nutrition/types.ts","src/openclaw/plugin.ts","src/parser/completion.ts","src/parser/context.ts","src/parser/correction.ts","src/parser/goal.ts","src/parser/input-authority.ts","src/parser/inventory-directive.ts","src/parser/liquid.ts","src/parser/meal.ts","src/parser/parse-command.ts","src/parser/predicate-frame.ts","src/parser/profile.ts","src/parser/purchase.ts","src/parser/subject.ts","src/parser/time.ts","src/parser/types.ts","src/preview/store.ts","src/preview/token.ts","src/repository/correction-target.ts","src/repository/envelope-finalize.ts","src/repository/fact-commit.ts","src/repository/inventory-effects.ts","src/repository/inventory-location-correction-authority.ts","src/repository/progress-reservation.ts","src/repository/purchase-envelope-commit.ts","src/repository/purchase-event-authority.ts","src/repository/query.ts","src/repository/revision.ts","src/state/transition-guard.ts","src/storage/backup.ts","src/storage/database.ts","src/storage/inventory-repository.ts","src/storage/migration-guard.ts","src/storage/migration-v1.ts","src/storage/migrations.ts","src/storage/portable-backup.ts","src/storage/sqlite-runtime.ts"]
+}

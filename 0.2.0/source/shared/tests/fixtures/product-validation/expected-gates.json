@@ -1,0 +1,13 @@
+{
+  "schema_version": "diet-manager/product-validation-gates/v1",
+  "gates": [
+    "typescript_noemit",
+    "vitest_full",
+    "build",
+    "openclaw_build_check",
+    "openclaw_validate",
+    "governance"
+  ],
+  "min_test_files": 31,
+  "min_tests": 959
+}

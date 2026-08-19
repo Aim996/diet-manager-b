@@ -1,0 +1,828 @@
+{
+  "fixture_catalog_id": "diet-manager/core-fixtures-v1",
+  "version": "1.5.0",
+  "environments": [
+    {
+      "fixture_id": "env-zh-cn-20260811",
+      "clock": "2026-08-11T08:30:00+08:00",
+      "timezone": "Asia/Shanghai",
+      "locale": "zh-CN",
+      "week_start": "monday"
+    },
+    {
+      "fixture_id": "env-zh-cn-20260811-0100",
+      "clock": "2026-08-11T01:00:00+08:00",
+      "timezone": "Asia/Shanghai",
+      "locale": "zh-CN",
+      "week_start": "monday"
+    }
+  ],
+  "goals": [
+    {
+      "fixture_id": "goals-six-metric-v1",
+      "version": 1,
+      "timezone": "Asia/Shanghai",
+      "metrics": [
+        {"metric": "energy_kcal", "target": 2000, "unit": "kcal"},
+        {"metric": "protein_g", "target": 75, "unit": "g"},
+        {"metric": "fat_g", "target": 60, "unit": "g"},
+        {"metric": "carbohydrate_g", "target": 250, "unit": "g"},
+        {"metric": "fiber_g", "target": 25, "unit": "g"},
+        {"metric": "water_ml", "target": 2500, "unit": "ml"}
+      ]
+    }
+  ],
+  "query_views": [
+    {
+      "fixture_id": "query-current-day-meals-v1",
+      "date": "2026-08-11",
+      "timezone": "Asia/Shanghai",
+      "records": [
+        {
+          "fixture_record_id": "fixture-meal-active-breakfast",
+          "lifecycle": "active",
+          "occurred_at": "2026-08-11T07:30:00+08:00",
+          "display_time": "07:30",
+          "summary": "07:30 鸡蛋和面包"
+        },
+        {
+          "fixture_record_id": "fixture-meal-active-apple",
+          "lifecycle": "active",
+          "occurred_at": "2026-08-11T08:10:00+08:00",
+          "display_time": "08:10",
+          "summary": "08:10 苹果"
+        },
+        {
+          "fixture_record_id": "fixture-meal-superseded",
+          "lifecycle": "superseded",
+          "occurred_at": "2026-08-11T06:50:00+08:00",
+          "display_time": "06:50",
+          "summary": "superseded"
+        },
+        {
+          "fixture_record_id": "fixture-meal-voided",
+          "lifecycle": "voided",
+          "occurred_at": "2026-08-11T08:20:00+08:00",
+          "display_time": "08:20",
+          "summary": "voided"
+        }
+      ]
+    }
+  ],
+  "domain_scenarios": [
+    {
+      "fixture_id": "domain-purchase-milk-2x12x250-v1",
+      "scenario_type": "purchase_package",
+      "product": {
+        "product_id": "fixture-product-milk-whole-250",
+        "normalized_name": "milk",
+        "variant": "whole_milk_250ml"
+      },
+      "package": {
+        "outer_count": 2,
+        "outer_unit": "box",
+        "inner_per_outer": 12,
+        "inner_unit": "carton",
+        "capacity_per_inner": 250,
+        "capacity_unit": "ml",
+        "total_inner": 24,
+        "total_capacity": 6000,
+        "formula": "2*12*250=6000",
+        "expiry_date": null
+      }
+    },
+    {
+      "fixture_id": "domain-inventory-multiple-products-v1",
+      "scenario_type": "inventory_multiple_products",
+      "request": {
+        "normalized_name": "milk",
+        "quantity": 1,
+        "unit": "carton"
+      },
+      "candidates": [
+        {
+          "product_id": "fixture-product-milk-whole-250",
+          "variant": "whole_milk_250ml",
+          "batch_id": "fixture-batch-whole-001",
+          "before_quantity": 6,
+          "after_quantity": 6,
+          "unit": "carton"
+        },
+        {
+          "product_id": "fixture-product-milk-lowfat-250",
+          "variant": "lowfat_milk_250ml",
+          "batch_id": "fixture-batch-lowfat-001",
+          "before_quantity": 8,
+          "after_quantity": 8,
+          "unit": "carton"
+        }
+      ]
+    },
+    {
+      "fixture_id": "domain-nutrition-label-milk-v1",
+      "scenario_type": "exact_product_label",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "product": {
+        "product_id": "fixture-product-milk-whole-250",
+        "normalized_name": "milk",
+        "variant": "whole_milk_250ml",
+        "package_unit": "carton"
+      },
+      "label": {
+        "source_type": "product_label",
+        "source_ref": "fixture-label-whole-milk-250-v1",
+        "profile_version": 1,
+        "applicable_product_id": "fixture-product-milk-whole-250",
+        "coverage": "partial",
+        "raw_label": "每盒250ml；能量160kcal；蛋白质8g；脂肪8g；碳水化合物12g；钠120mg",
+        "parsed_values": {
+          "energy_kcal": 160,
+          "protein_g": 8,
+          "fat_g": 8,
+          "carbohydrate_g": 12,
+          "sodium_mg": 120
+        },
+        "missing_fields": ["fiber_g"]
+      }
+    },
+    {
+      "fixture_id": "domain-issue-amount-inventory-v1",
+      "scenario_type": "amount_and_inventory_ambiguity",
+      "quantity_estimate": {
+        "normalized_name": "oatmeal",
+        "quantity": 1,
+        "unit": "bowl",
+        "estimated": true
+      },
+      "inventory_candidates": [
+        "fixture-product-milk-whole-250",
+        "fixture-product-milk-lowfat-250"
+      ],
+      "issue_codes": ["quantity_estimated", "inventory_multiple_candidates"]
+    },
+    {
+      "fixture_id": "domain-correction-eggs-2-to-3-v1",
+      "scenario_type": "append_only_amount_correction",
+      "original_meal": {
+        "fixture_meal_id": "fixture-meal-eggs-two",
+        "normalized_name": "egg",
+        "quantity": 2,
+        "unit": "piece",
+        "affected_date": "2026-08-11"
+      },
+      "original_inventory": {
+        "batch_id": "fixture-batch-eggs-001",
+        "quantity_after_original": 10,
+        "unit": "piece"
+      },
+      "expected_delta": {
+        "effective_quantity": 3,
+        "quantity_delta": 1,
+        "nutrition_egg_delta": 1,
+        "inventory_egg_delta": 1
+      }
+    },
+    {
+      "fixture_id": "domain-mixed-purchase-drink-v1",
+      "scenario_type": "ordered_mixed_command",
+      "package": {
+        "product_id": "fixture-product-milk-whole-250",
+        "outer_count": 1,
+        "inner_per_outer": 24,
+        "unit": "carton"
+      },
+      "pre_inventory": {
+        "quantity": 0,
+        "unit": "carton"
+      },
+      "expected": {
+        "children": [
+          {"sequence": 0, "intent": "purchase", "quantity_delta": 24},
+          {"sequence": 1, "intent": "meal", "quantity_delta": -1}
+        ],
+        "final_quantity": 23,
+        "envelope_finalize_count": 1
+      }
+    },
+    {
+      "fixture_id": "domain-effect-nutrition-failure-v1",
+      "scenario_type": "effect_bundle_failure",
+      "failure_injection_point": "nutrition_snapshot_write",
+      "pre_state_vector": "meal_events=1|nutrition_snapshots=0|inventory_effects=0|issues=0|outbox=pending|envelope=fact_committed|receipt=0|daily_progress=0|terminal_idempotency=0",
+      "pre_state_hash": "389EA70606C4DE90C1E7821FC614DAC037E38E58522310A75A65416DA44D823A",
+      "expected_error_code": "nutrition_effect_write_failed",
+      "should_rollback": "effect_bundle_only",
+      "post_state_vector": "meal_events=1|nutrition_snapshots=0|inventory_effects=0|issues=0|outbox=retryable_failed|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0",
+      "post_state_hash": "6112F8CB61105FB25C41D0BE590A487CA514D673FE2C14BA9C6A2C4F70E6C47E",
+      "state_after_restart": {
+        "meal_fact_preserved": true,
+        "outbox_status": "retryable_failed",
+        "envelope_status": "effects_pending"
+      },
+      "same_key_retry_result": {
+        "action": "retry_missing_effect_only",
+        "nutrition_snapshot_writes": 1,
+        "envelope_finalize_count": 1
+      },
+      "official_business_data_diff": {
+        "meal_event_count_delta": 0,
+        "effect_bundle_business_write_count": 0,
+        "receipt_count": 0,
+        "daily_progress_count": 0,
+        "terminal_idempotency_count": 0
+      }
+    },
+    {
+      "fixture_id": "domain-finalizer-failure-concurrent-v1",
+      "scenario_type": "envelope_finalize_failure",
+      "failure_injection_point": "envelope_finalize_write",
+      "pre_state_vector": "meal_events=1|nutrition_snapshots=1|inventory_effects=1|issues=0|outbox=succeeded|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0|projection_energy=500",
+      "pre_state_hash": "885388007517BA51211C12727DA556612A656C7E61587C7D9C0EE8D5F2EFD259",
+      "expected_error_code": "envelope_finalize_write_failed",
+      "should_rollback": "envelope_finalize_only",
+      "post_state_vector": "meal_events=1|nutrition_snapshots=1|inventory_effects=1|issues=0|outbox=succeeded|envelope=effects_pending|receipt=0|daily_progress=0|terminal_idempotency=0|projection_energy=500",
+      "post_state_hash": "885388007517BA51211C12727DA556612A656C7E61587C7D9C0EE8D5F2EFD259",
+      "state_after_restart": {
+        "meal_fact_preserved": true,
+        "nutrition_snapshot_count": 1,
+        "inventory_effect_count": 1,
+        "envelope_status": "effects_pending"
+      },
+      "same_key_retry_result": {
+        "action": "finalize_once",
+        "current_turn_increments": {"energy_kcal": 100},
+        "projection_before_concurrent_write": {"energy_kcal": 500},
+        "concurrent_contribution": {"energy_kcal": 50},
+        "committed_totals": {"energy_kcal": 650},
+        "envelope_finalize_count": 1
+      },
+      "official_business_data_diff": {
+        "new_fact_count": 0,
+        "new_effect_count": 0,
+        "receipt_count_before_retry": 0,
+        "daily_progress_count_before_retry": 0,
+        "terminal_idempotency_count_before_retry": 0
+      }
+    },
+    {
+      "fixture_id": "domain-idempotency-conflict-v1",
+      "scenario_type": "idempotency_conflicts",
+      "original": {
+        "key": "idem-fixed-001",
+        "subject": "user:fixture",
+        "command": "record_meal",
+        "digest": "digest-apple-v1",
+        "result_ref": "fixture-result-apple-v1"
+      },
+      "conflicts": [
+        {"kind": "changed_digest", "key": "idem-fixed-001", "subject": "user:fixture", "command": "record_meal", "digest": "digest-apple-v2"},
+        {"kind": "changed_subject", "key": "idem-fixed-001", "subject": "user:other", "command": "record_meal", "digest": "digest-apple-v1"},
+        {"kind": "changed_command", "key": "idem-fixed-001", "subject": "user:fixture", "command": "record_water", "digest": "digest-apple-v1"}
+      ],
+      "pre_state_vector": "terminal_records=1|business_writes=0|frozen_key=idem-fixed-001|frozen_digest=digest-apple-v1|frozen_subject=user:fixture|frozen_command=record_meal",
+      "pre_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2",
+      "post_state_vector": "terminal_records=1|business_writes=0|frozen_key=idem-fixed-001|frozen_digest=digest-apple-v1|frozen_subject=user:fixture|frozen_command=record_meal",
+      "post_state_hash": "8914D877E31D0575BE22673F17E1F978488148DC28684DE4C3B34FF68711BFD2"
+    },
+    {
+      "fixture_id": "domain-purchase-default-location-v1",
+      "scenario_type": "purchase_default_location",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "configured_home_default": {"location": "refrigerator", "rule_version": "diet-manager/default-location-v1"}
+    },
+    {
+      "fixture_id": "domain-purchase-exact-identity-reuse-v1",
+      "scenario_type": "purchase_exact_identity_reuse",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_products": [{"product_id": "fixture-product-milk-whole-250", "brand": "fixture-brand", "flavour": "whole", "specification": "250ml"}],
+      "historical_batches": [{"batch_id": "fixture-batch-milk-exhausted-001", "product_id": "fixture-product-milk-whole-250", "quantity": 0, "nutrition_profile_version": 2}]
+    },
+    {
+      "fixture_id": "domain-inventory-unique-milk-v1",
+      "scenario_type": "inventory_unique_product",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-milk-unique-001", "product_id": "fixture-product-milk-whole-250", "quantity": 6, "unit": "carton", "expires_at": "2026-08-20T08:30:00+08:00"}]
+    },
+    {
+      "fixture_id": "domain-inventory-multi-batch-fefo-v1",
+      "scenario_type": "inventory_multi_batch_fefo_fifo",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-milk-fefo-001", "product_id": "fixture-product-milk-whole-250", "quantity": 1, "unit": "carton", "expires_at": "2026-08-12T08:30:00+08:00"}, {"batch_id": "fixture-batch-milk-fifo-001", "product_id": "fixture-product-milk-whole-250", "quantity": 1, "unit": "carton", "expires_at": "2026-08-13T08:30:00+08:00"}]
+    },
+    {
+      "fixture_id": "domain-inventory-unit-incompatible-rice-v1",
+      "scenario_type": "inventory_unit_incompatible",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-rice-001", "product_id": "fixture-product-rice", "quantity": 1, "unit": "bag"}],
+      "nutrition_amount_evidence": {"min_g": 75, "max_g": 125}
+    },
+    {
+      "fixture_id": "domain-inventory-insufficient-milk-v1",
+      "scenario_type": "inventory_insufficient",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-milk-insufficient-001", "product_id": "fixture-product-milk-whole-250", "quantity": 0.5, "unit": "carton"}]
+    },
+    {
+      "fixture_id": "domain-inventory-expired-and-fresh-v1",
+      "scenario_type": "inventory_expired_and_fresh",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-milk-expired-001", "product_id": "fixture-product-milk-whole-250", "quantity": 1, "unit": "carton", "expires_at": "2026-08-10T08:30:00+08:00"}, {"batch_id": "fixture-batch-milk-fresh-001", "product_id": "fixture-product-milk-whole-250", "quantity": 1, "unit": "carton", "expires_at": "2026-08-12T08:30:00+08:00"}]
+    },
+    {
+      "fixture_id": "domain-meal-company-apple-v1",
+      "scenario_type": "meal_outside_context",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "profiles": [{"profile_id": "fixture-profile-apple-v1", "product_id": "fixture-product-apple"}],
+      "context": {"scene": "company", "home_inventory_available": true}
+    },
+    {
+      "fixture_id": "domain-meal-explicit-inventory-skip-v1",
+      "scenario_type": "meal_explicit_inventory_skip",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "profiles": [{"profile_id": "fixture-profile-apple-v1", "product_id": "fixture-product-apple"}],
+      "directive": {"raw_text": "只记录，别扣库存", "action": "skip"}
+    },
+    {
+      "fixture_id": "domain-purchase-eggs-outer-only-v1",
+      "scenario_type": "purchase_outer_only",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "explicit_package": {"outer_count": 1, "outer_unit": "bag", "inner_count": null, "capacity": null, "total": null}
+    },
+    {
+      "fixture_id": "domain-purchase-unreliable-expiry-v1",
+      "scenario_type": "purchase_unreliable_expiry",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_products": [{"product_id": "fixture-product-generic-001"}],
+      "expiration": {"reliability": "unreliable", "explicit_expires_at": null}
+    },
+    {
+      "fixture_id": "domain-purchase-multi-product-v1",
+      "scenario_type": "purchase_multi_product",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_products": [{"product_id": "fixture-product-milk-whole-250"}, {"product_id": "fixture-product-eggs"}, {"product_id": "fixture-product-apple"}]
+    },
+    {
+      "fixture_id": "domain-purchase-identity-ambiguous-v1",
+      "scenario_type": "purchase_identity_ambiguous",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_products": [{"product_id": "fixture-product-milk-whole-250", "normalized_name": "milk"}, {"product_id": "fixture-product-milk-lowfat-250", "normalized_name": "milk"}]
+    },
+    {
+      "fixture_id": "domain-purchase-partially-opened-v1",
+      "scenario_type": "purchase_partially_opened",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_products": [{"product_id": "fixture-product-milk-bottle-001", "unit": "bottle"}],
+      "explicit_opening": {"previously_unopened": true, "partial_use": true}
+    },
+    {
+      "fixture_id": "domain-inventory-location-correction-v1",
+      "scenario_type": "inventory_location_correction",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "existing_batches": [{"batch_id": "fixture-batch-milk-location-001", "product_id": "fixture-product-milk-whole-250", "location": "room_temperature_cabinet", "expires_at": "2026-08-12T08:30:00+08:00"}],
+      "correction": {"new_location": "refrigerator", "idempotency_key": "fixture-location-correction-001"}
+    },
+    {
+      "fixture_id": "domain-nutrition-authoritative-basics-v1",
+      "scenario_type": "nutrition_authoritative_basics",
+      "received_at": "2026-08-11T08:30:00+08:00",
+      "foods": ["egg", "rice", "apple"],
+      "source": {"source_id":"fdc","tier":"authoritative_public_database","cache_state":"fresh"}
+    },
+    {
+      "fixture_id": "domain-nutrition-common-dish-v1",
+      "scenario_type": "nutrition_common_dish",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "template": {"template_id":"common-egg-fried-rice-v1","components":["rice","egg","oil"]}
+    },
+    {
+      "fixture_id": "domain-nutrition-unknown-custom-drink-v1",
+      "scenario_type": "nutrition_unknown_custom_drink",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "known_components": ["chia_seed", "avocado", "cucumber"],
+      "recipe_complete": false
+    },
+    {
+      "fixture_id": "domain-nutrition-profile-history-v1",
+      "scenario_type": "nutrition_profile_history",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "product_id": "fixture-product-milk-whole-250",
+      "profiles": [{"profile_id":"fixture-profile-milk-v1","version":"v1"},{"profile_id":"fixture-profile-milk-v2","version":"v2"}]
+    },
+    {
+      "fixture_id": "domain-nutrition-partial-fields-v1",
+      "scenario_type": "nutrition_partial_fields",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "nutrient_values": {"energy_kcal":"120","protein_g":"8","fat_g":null,"carbohydrate_g":null,"fiber_g":null}
+    },
+    {
+      "fixture_id": "domain-nutrition-orange-range-v1",
+      "scenario_type": "nutrition_natural_unit_range",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "range": {"min":"120","max":"150","adopted":"150","unit":"g","rule_version":"edible-orange-v1"}
+    },
+    {
+      "fixture_id": "domain-nutrition-explicit-rice-v1",
+      "scenario_type": "nutrition_explicit_amount",
+      "received_at": "2026-08-11T13:00:00+08:00",
+      "amount": {"value":"200","unit":"g","evidence":"explicit"},
+      "source": {"source_id":"fdc","label":"public_reference"}
+    },
+    {
+      "fixture_id": "domain-nutrition-bounded-rice-v1",
+      "scenario_type": "nutrition_bounded_amount",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "range": {"min":"100","max":"150","adopted":"150","unit":"g","rule_version":"portion-rice-bowl-v1"},
+      "inventory_conversion": null
+    },
+    {
+      "fixture_id": "domain-nutrition-explicit-meal-v1",
+      "scenario_type": "nutrition_explicit_multi_item",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "items": [{"name":"rice","amount":"200","unit":"g"},{"name":"chicken_breast","amount":"150","unit":"g"}]
+    },
+    {
+      "fixture_id": "domain-nutrition-beef-noodle-template-v1",
+      "scenario_type": "nutrition_common_dish",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "template": {"template_id":"common-beef-noodle-v1","components":["noodles","beef","broth"]}
+    },
+    {
+      "fixture_id": "domain-nutrition-unknown-combo-v1",
+      "scenario_type": "nutrition_unknown_combo",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "known_item": "roujiamo_combo",
+      "components_known": false
+    },
+    {
+      "fixture_id": "domain-source-tier-traversal-v1",
+      "scenario_type": "source_tier_traversal",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "ranks": [1,2,3,4,5,6,7,8],
+      "within_tier": ["local","cache","network"]
+    },
+    {
+      "fixture_id": "domain-source-doctor-health-v1",
+      "scenario_type": "source_doctor_health",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "sources": [{"source_id":"local","status":"ok"},{"source_id":"fdc","status":"skipped_unconfigured"},{"source_id":"trusted-exact-product","status":"source_disabled"}]
+    },
+    {
+      "fixture_id": "domain-source-offline-degradation-v1",
+      "scenario_type": "source_offline_degradation",
+      "received_at": "2026-08-11T12:30:00+08:00",
+      "deadline_ms": 2000,
+      "network_status": "timeout",
+      "expected_coverage": "unknown"
+    },
+    {
+      "fixture_id": "core-purchase-no-expiration-v1",
+      "scenario_type": "shelf_life_time_anchor",
+      "product": {
+        "normalized_name": "fresh_milk",
+        "explicit_expires_at": null
+      },
+      "time_anchors": {
+        "stocked_at": "2026-08-10T16:00:00+08:00",
+        "received_at": "2026-08-10T16:00:00+08:00",
+        "ingestion_at": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "shelf_life_rule": {
+        "rule_version": "diet-manager/fresh-milk-shelf-life-v1",
+        "days": 7,
+        "anchor_field": "stocked_at"
+      },
+      "expected": {
+        "estimated_expires_at": "2026-08-17T16:00:00+08:00",
+        "resolution_basis": "stocked_at",
+        "must_not_anchor_to": "ingestion_at"
+      }
+    }
+  ],
+  "ops_security_scenarios": [
+    {
+      "fixture_id": "ops-privacy-public-nutrition-v1",
+      "scenario_type": "privacy_external_allowlist",
+      "allowed_external_fields": ["normalized_name", "brand", "variant", "specification", "preparation_state", "region"],
+      "outbound_request": {
+        "normalized_name": "milk",
+        "brand": "fixture-brand",
+        "variant": "whole_milk",
+        "specification": "250ml_carton",
+        "preparation_state": "ready_to_drink",
+        "region": "CN"
+      },
+      "forbidden_context": {
+        "user_name": "fixture-user-secret",
+        "raw_chat": "fixture-raw-chat-secret",
+        "meal_history": "fixture-meal-history-secret",
+        "inventory_summary": "fixture-inventory-secret",
+        "goals": "fixture-goals-secret",
+        "api_token": "fixture-api-token-secret"
+      },
+      "ordinary_log": {
+        "operation": "nutrition_lookup",
+        "status": "degraded",
+        "source_type": "public",
+        "duration_ms": 12,
+        "error_code": "credential_missing",
+        "object_count": 1,
+        "raw_context_present": false,
+        "secret_present": false
+      },
+      "credential_state": "missing",
+      "fallback": {
+        "strategy": "cache_template_unknown",
+        "invented_nutrition_values": false
+      },
+      "business_write_count": 0
+    },
+    {
+      "fixture_id": "ops-foundation-zero-diff-v1",
+      "scenario_type": "foundation_zero_official_diff",
+      "official_files_before": [
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        },
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite-wal",
+          "bytes_base64": "d2FsLWZpeHR1cmUtdjEK",
+          "length": 15,
+          "sha256": "9528413EE4DB283FF0E565813A4243F216A4F5B97909ADBB7C6A9B919E7A5D55",
+          "last_write_utc": "2026-08-11T00:00:01Z"
+        }
+      ],
+      "official_files_after": [
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        },
+        {
+          "logical_path": "@OFFICIAL/diet.sqlite-wal",
+          "bytes_base64": "d2FsLWZpeHR1cmUtdjEK",
+          "length": 15,
+          "sha256": "9528413EE4DB283FF0E565813A4243F216A4F5B97909ADBB7C6A9B919E7A5D55",
+          "last_write_utc": "2026-08-11T00:00:01Z"
+        }
+      ],
+      "failure_stage": "plugin_validation",
+      "after_scan_completed": true,
+      "differences": {
+        "added": [],
+        "modified": [],
+        "deleted": [],
+        "path_escape_count": 0
+      },
+      "temporary_roots": ["@VALIDATION/run-001", "@OPENCLAW/run-001"],
+      "cleanup": {
+        "attempted": true,
+        "succeeded": true,
+        "residual_count": 0
+      },
+      "technical_log_channel": {
+        "logical_path": "@EVIDENCE/foundation-failure.json",
+        "redacted": true,
+        "counts_as_record": false,
+        "raw_context_present": false,
+        "secret_present": false
+      },
+      "business_write_count": 0
+    },
+    {
+      "fixture_id": "ops-clean-install-b-v1",
+      "scenario_type": "clean_install",
+      "package_manifest": {
+        "product_version": "0.1.0",
+        "route": "B",
+        "contract_version": 2,
+        "schema_version": 1,
+        "supported_environment": "win-x64-fixture",
+        "package_files": [
+          {
+            "logical_path": "@PACKAGE/plugin.bundle",
+            "bytes_base64": "cGx1Z2luLWJ1bmRsZS12MQo=",
+            "length": 17,
+            "sha256": "D5398DAC86B1524329C270934140657EF6DDDF7DE5653529C80810EF5F449922",
+            "last_write_utc": "2026-08-11T01:00:00Z"
+          },
+          {
+            "logical_path": "@PACKAGE/skill.bundle",
+            "bytes_base64": "c2tpbGwtYnVuZGxlLXYxCg==",
+            "length": 16,
+            "sha256": "7ED6128AC045C5B01F2999B862B891F556F1A3AAD461372207D10D3187991B1D",
+            "last_write_utc": "2026-08-11T01:00:01Z"
+          }
+        ],
+        "installer_version": "1.0.0",
+        "release_evidence_id": "EV-FIXTURE-RELEASE-001"
+      },
+      "supported_environment": {
+        "os": "windows",
+        "architecture": "x64",
+        "powershell": "5.1",
+        "node": "24.x",
+        "openclaw": "fixture-supported"
+      },
+      "preflight": {
+        "read_only": true,
+        "compatible": true,
+        "created_count": 0,
+        "migrated_count": 0,
+        "incompatible_items": []
+      },
+      "staging": {
+        "logical_root": "@BUILD/install-staging-001",
+        "package_verified": true,
+        "partial_final_file_count": 0
+      },
+      "initialized_schema": {
+        "storage": "sqlite",
+        "schema_version": 1,
+        "business_record_count": 0,
+        "formal_jsonl_count": 0
+      },
+      "isolated_smoke": {
+        "logical_root": "@ISOLATED/smoke-001",
+        "operations": ["load", "empty_query", "synthetic_meal", "synthetic_inventory", "idempotency_retry"],
+        "official_write_count": 0,
+        "cleanup_succeeded": true,
+        "residual_count": 0
+      },
+      "promotion": {
+        "method": "atomic_switch",
+        "activated": true,
+        "rebuild_after_verification": false
+      },
+      "receipt": {
+        "product_version": "0.1.0",
+        "route": "B",
+        "business_record_count": 0,
+        "official_data_impact_count": 0,
+        "foundation_presented_as_product": false
+      }
+    },
+    {
+      "fixture_id": "ops-migration-interrupted-v1",
+      "scenario_type": "migration_interrupted",
+      "source_state": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "readable": true,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "verified_backup": {
+        "backup_id": "backup-fixture-001",
+        "verified": true,
+        "restore_tested": true,
+        "data_file": {
+          "logical_path": "@BACKUP/backup-fixture-001/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "rehearsal": {
+        "completed": true,
+        "integrity_valid": true,
+        "record_count": 2
+      },
+      "failure": {
+        "injection_point": "formal_migration_after_begin",
+        "error_code": "migration_interrupted",
+        "candidate_activated": false,
+        "success_receipt_visible": false
+      },
+      "target_state": {
+        "visible": false,
+        "partial_file_count": 0,
+        "schema_version_active": false,
+        "product_version_active": false
+      },
+      "old_state_after_failure": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "readable": true,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "c3FsaXRlLWZpeHR1cmUtc2NoZW1hLTEtcmVjb3Jkcy0yCg==",
+          "length": 34,
+          "sha256": "08702B13E91E51044B189EC5874E30549D5EBF5481E1E301D927A5F2AEA6B95F",
+          "last_write_utc": "2026-08-11T02:00:00Z"
+        }
+      },
+      "retry_policy": {
+        "fresh_attempt_required": true,
+        "resume_partial_allowed": false
+      }
+    },
+    {
+      "fixture_id": "ops-candidate-byte-drift-v1",
+      "scenario_type": "candidate_byte_drift",
+      "frozen_candidate": {
+        "candidate_id": "candidate-fixture-001",
+        "status": "frozen",
+        "files": [
+          {
+            "logical_path": "@CANDIDATE/plugin.bundle",
+            "bytes_base64": "cGx1Z2luLWNhbmRpZGF0ZS12MQo=",
+            "length": 20,
+            "sha256": "A1F76240BECC09AA5DA27649576AD7826FBA9CCB013C3F862C5E30E78447B5B6",
+            "last_write_utc": "2026-08-11T03:00:00Z"
+          }
+        ],
+        "gates_status": "passed",
+        "evidence_id": "EV-FIXTURE-G3-001"
+      },
+      "changed_file": {
+        "logical_path": "@CANDIDATE/plugin.bundle",
+        "bytes_base64": "cGx1Z2luLWNhbmRpZGF0ZS12MS1ob3RmaXgK",
+        "length": 27,
+        "sha256": "1502B0E6A925440961349C5A7FED919B96B8D64FD4B56EBB179BBB076EAA90EC",
+        "last_write_utc": "2026-08-11T03:01:00Z"
+      },
+      "invalidation": {
+        "candidate_status": "invalidated",
+        "reason": "byte_changed_after_freeze",
+        "new_manifest_required": true,
+        "affected_gates_rerun": true
+      },
+      "evidence_state": {
+        "previous_evidence_authorizes_promotion": false
+      },
+      "promotion": {
+        "allowed": false,
+        "method": "none",
+        "rebuild_allowed": false,
+        "patch_allowed": false,
+        "substitution_allowed": false
+      }
+    },
+    {
+      "fixture_id": "ops-minimal-export-restore-reject-v1",
+      "scenario_type": "minimal_export_restore_rejected",
+      "export_manifest": {
+        "artifact_type": "minimal_user_export",
+        "export_version": 1,
+        "timezone": "Asia/Shanghai",
+        "record_count": 0,
+        "file": {
+          "logical_path": "@EXPORT/minimal-user-export.json",
+          "bytes_base64": "eyJleHBvcnRfdmVyc2lvbiI6MSwicmVjb3JkcyI6W119Cg==",
+          "length": 34,
+          "sha256": "775BEA8868EAC71F342C28CDE982C817401616E58EBCE387DFA80CD136400462",
+          "last_write_utc": "2026-08-11T04:00:00Z"
+        },
+        "restorable": false
+      },
+      "missing_backup_capabilities": ["backup_manifest", "complete_schema", "idempotency_state", "integrity_check"],
+      "restore_attempt": {
+        "status": "rejected",
+        "error_code": "not_restorable_backup",
+        "replacement_count": 0,
+        "deletion_count": 0,
+        "migration_count": 0,
+        "version_changed": false
+      },
+      "official_state_before": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        }
+      },
+      "official_state_after": {
+        "product_version": "0.1.0",
+        "schema_version": 1,
+        "record_count": 2,
+        "data_file": {
+          "logical_path": "@OFFICIAL/diet.sqlite",
+          "bytes_base64": "eyJzY2hlbWFfdmVyc2lvbiI6MSwicmVjb3JkX2NvdW50IjoyfQo=",
+          "length": 38,
+          "sha256": "DA14671BE3FDB61573D783AA68B054360B49B2BF62BCAAA849E0D734F63D22A3",
+          "last_write_utc": "2026-08-11T00:00:00Z"
+        }
+      }
+    }
+  ]
+}
