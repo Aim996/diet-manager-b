@@ -8,13 +8,13 @@
 
 ## 完整性校验
 
-本目录内的 `FILES.SHA256` 记录了除其自身外每个候选根文件的 SHA-256（大写十六进制，斜杠相对路径，字典序）。压缩包位于 `artifacts/diet-manager-b-0.1.1.zip`，其字节数与 SHA-256 记录于 `MANIFEST.json` 的 `archive` 字段。
+本目录内的 `FILES.SHA256` 记录了除其自身外每个候选根文件的 SHA-256（大写十六进制，斜杠相对路径，字典序）。压缩包位于 `artifacts/diet-manager-b-{{product_version}}.zip`，其字节数与 SHA-256 记录于 `MANIFEST.json` 的 `archive` 字段。
 
 安装前请先核对：
 
 ```powershell
 # 在候选根目录下核对全部文件哈希
-Get-FileHash -Algorithm SHA256 .\artifacts\diet-manager-b-0.1.1.zip
+Get-FileHash -Algorithm SHA256 .\artifacts\diet-manager-b-{{product_version}}.zip
 # 其 Hash 应与 MANIFEST.json 中 archive.sha256 完全一致
 ```
 
