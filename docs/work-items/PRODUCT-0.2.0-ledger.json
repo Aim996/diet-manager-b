@@ -12,7 +12,8 @@
       "slices_status": "DONE",
       "evidence": [
         "docs/evidence/EV-20260819-040-candidate-009-build.md",
-        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md",
+        "docs/evidence/EV-20260820-043-full-16-scenario-acceptance.md"
       ]
     },
     {
@@ -23,7 +24,8 @@
       "slices_status": "DONE",
       "evidence": [
         "docs/evidence/EV-20260819-040-candidate-009-build.md",
-        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md",
+        "docs/evidence/EV-20260820-043-full-16-scenario-acceptance.md"
       ]
     },
     {
@@ -34,7 +36,8 @@
       "slices_status": "DONE",
       "evidence": [
         "docs/evidence/EV-20260819-041-dec-032-offline-nutrition.md",
-        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md"
+        "docs/evidence/EV-20260820-042-multi-gateway-0.2.0.md",
+        "docs/evidence/EV-20260820-043-full-16-scenario-acceptance.md"
       ]
     }
   ],
@@ -60,6 +63,6 @@
   "accepted_candidate": null,
   "release": {
     "status": "AWAITING_SIGNOFF",
-    "note": "candidate-010 已通过构建+字节校验（EV-041）与 7 网关×8 场景真实验收（EV-042，56/56 全绿）。发布（逐字节晋级 releases/v0.2.0 + tag）需用户签收后进入阶段 5。"
+    "note": "candidate-010 已通过构建+字节校验（EV-041）、7 网关×8 场景冒烟真实验收（EV-042，56/56 全绿）与全量 16 场景真实验收（EV-043，112/112 全绿，gw03 首轮 1 处 LLM 抖动隔离复跑即绿）。发布（逐字节晋级 releases/v0.2.0 + tag）需用户签收后进入阶段 5。"
   }
 }
