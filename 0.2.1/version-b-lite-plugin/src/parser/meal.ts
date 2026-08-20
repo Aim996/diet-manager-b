@@ -157,6 +157,7 @@ const ALLOWED_UNITS: Readonly<Record<string, Readonly<Record<string, string>>>> 
 const AMOUNT_BEFORE_ITEM = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u;
 // 数量在食物词之后：`米饭 1 碗`（锚定在食物词之后，单位后须是分隔符或句尾）。
 const AMOUNT_AFTER_ITEM = /^\s*([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)(?=$|[\s、和与，,。；;！？!?])/u;
+const PUNCTUATED_SELF_CONFIRMATION_ITEM = /^\s*[，,]\s*((?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*(?:鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包)))(?=$|[\s，,。；;！？!?])/u;
 
 function resolveAmountEvidence(
   quantityText: string,
@@ -294,6 +295,33 @@ function objectFrontedItems(
   })]);
 }
 
+function selfConfirmationContinuationItems(
+  sourceText: string,
+  frame: Readonly<IngestionPredicateFrame>,
+  subject: Readonly<ResolvedSubjectEvidence>,
+): readonly Readonly<PositionedMealItem>[] {
+  const prefix = frame.subject_prefix_span.raw.trim();
+  if (
+    !/^(?:是\s*)?我(?:\s*(?:自己|本人))?$/u.test(prefix) ||
+    !/^\s*的\s*$/u.test(frame.object_span.raw)
+  ) return Object.freeze([]);
+
+  const afterFrame = sourceText.slice(frame.frame_span.end);
+  const continuation = PUNCTUATED_SELF_CONFIRMATION_ITEM.exec(afterFrame);
+  const raw = continuation?.[1];
+  if (raw === undefined) return Object.freeze([]);
+  const relativeStart = afterFrame.indexOf(raw);
+  if (relativeStart < 0) return Object.freeze([]);
+  const start = frame.frame_span.end + relativeStart;
+  const end = start + raw.length;
+  const continuationFrame = frozenRecord({
+    ...frame,
+    frame_span: frozenRecord({ raw, start, end }),
+    object_span: frozenRecord({ raw, start, end }),
+  });
+  return itemsForFrame(continuationFrame, subject);
+}
+
 function coreItems(
   proposed: readonly Readonly<PositionedMealItem>[],
 ): readonly Readonly<CoreMealItem>[] {
@@ -332,6 +360,7 @@ export function resolveMealFrames(sourceText: string): Readonly<MealFrameProposa
     const frameItems = [
       ...itemsForFrame(frame, resolution.subject),
       ...objectFrontedItems(frame, resolution.subject),
+      ...selfConfirmationContinuationItems(sourceText, frame, resolution.subject),
     ];
     if (
       resolution.subject.resolution_basis === "collective_self_participation" &&
