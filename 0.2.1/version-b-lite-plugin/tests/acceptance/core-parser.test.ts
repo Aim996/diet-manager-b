@@ -1653,6 +1653,36 @@ describe("core parser quality boundaries", () => {
     });
   });
 
+  it("parses a bounded brought-home inventory statement with explicit outer quantity", () => {
+    const command = requiredCandidate(
+      variant("今天带回来一盒鸡蛋，先放进库存。"),
+    );
+
+    expect(command).toMatchObject({
+      action: "add_inventory",
+      items: [{
+        order: 0,
+        raw_name: "鸡蛋",
+        normalized_name: "egg",
+        package_quantity: {
+          outer_count: 1,
+          outer_unit: "carton",
+          inner_per_outer: null,
+          total_inner: null,
+        },
+      }],
+    });
+  });
+
+  it("asks for quantity instead of inventing stock for an unquantified brought-home item", () => {
+    expect(variant("今天带回来鸡蛋，先放进库存。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "add_inventory",
+      reason_code: "amount_ambiguous",
+      question: expect.stringMatching(/数量/u),
+    });
+  });
+
   it("asks for purchase quantity instead of returning an action conflict", () => {
     expect(variant("我买了牛奶。")).toMatchObject({
       disposition: "needs_clarification",
