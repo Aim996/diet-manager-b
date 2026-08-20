@@ -30,6 +30,20 @@ describe("core correction parser", () => {
     });
   });
 
+  it.each([
+    "刚才鸡蛋那条先取消。",
+    "前面鸡蛋那次算错了，帮我去掉。",
+  ])("parses a colloquial undo through the sole-active safety target: %s", (source_text) => {
+    expect(parseCoreCommand(input({ source_text, operation_id: "operation-natural-undo-001" }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "undo_record",
+        operation_id: "operation-natural-undo-001",
+        target: { kind: "sole_active_meal_in_conversation" },
+      },
+    });
+  });
+
   it("asks one question when the target is not bounded", () => {
     expect(parseCoreCommand(input({ source_text: "撤销那条记录" }))).toEqual({
       disposition: "needs_clarification",
