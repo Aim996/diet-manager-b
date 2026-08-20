@@ -96,6 +96,31 @@ describe("core profile parser", () => {
     });
   });
 
+  it.each([
+    ["想开始减脂了，我28岁女生，175高，65公斤。", 175, 65],
+    ["我的身高是175，体重差不多65公斤。", 175, 65],
+  ])("parses bounded natural profile evidence: %s", (sourceText, height, weight) => {
+    expect(parseCoreCommand(input({ source_text: sourceText }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "set_profile",
+        height_cm: height,
+        weight_kg: weight,
+      },
+    });
+  });
+
+  it.each(["175高。", "65公斤。"]) (
+    "asks for the missing natural profile field: %s",
+    (sourceText) => {
+      expect(parseCoreCommand(input({ source_text: sourceText }))).toMatchObject({
+        disposition: "needs_clarification",
+        action: "set_profile",
+        reason_code: "profile_incomplete",
+      });
+    },
+  );
+
   it("asks for the missing field when only one of height or weight is present", () => {
     expect(parseCoreCommand(input({ source_text: "身高180" }))).toEqual({
       disposition: "needs_clarification",
@@ -114,6 +139,12 @@ describe("core profile parser", () => {
   it("does not misclassify ordinary meal text as a profile", () => {
     expect(
       parseCoreCommand(input({ source_text: "吃了一个苹果" })),
+    ).toMatchObject({
+      disposition: "candidate",
+      command: { action: "record_meal" },
+    });
+    expect(
+      parseCoreCommand(input({ source_text: "吃了175克米饭和65克鸡蛋。" })),
     ).toMatchObject({
       disposition: "candidate",
       command: { action: "record_meal" },

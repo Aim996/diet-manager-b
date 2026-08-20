@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { parseCoreCommand } from "../../src/parser/parse-command.js";
 
+let inputSequence = 0;
+
 function parse(sourceText: string) {
+  inputSequence += 1;
   return parseCoreCommand({
     source_text: sourceText,
     received_at: "2026-08-20T12:00:00+08:00",
     timezone: "Asia/Shanghai",
-    operation_id: `operation-${sourceText.length}`,
-    source_message_id: `message-${sourceText.length}`,
+    operation_id: `operation-natural-${inputSequence}`,
+    source_message_id: `message-natural-${inputSequence}`,
     conversation_id: "conversation-natural-regressions-021",
     prior_context: [],
   });
@@ -29,6 +32,24 @@ describe("0.2.1 natural-language regressions from real gateways", () => {
     expectCandidate(sourceText, "set_profile");
   });
 
+  it.each(["175高。", "65公斤。"])(
+    "keeps partial natural profile evidence in the profile parser: %s",
+    (sourceText) => {
+      expect(parse(sourceText)).toMatchObject({
+        disposition: "needs_clarification",
+        action: "set_profile",
+        reason_code: "profile_incomplete",
+      });
+    },
+  );
+
+  it("does not reinterpret meal quantities as a profile", () => {
+    expect(parse("吃了175克米饭和65克鸡蛋。")).toMatchObject({
+      disposition: "candidate",
+      command: { action: "record_meal" },
+    });
+  });
+
   it("routes a natural calorie goal", () => {
     expect(parse("以后每天热量按1900大卡算就行。")).toMatchObject({
       disposition: "candidate",
@@ -47,6 +68,14 @@ describe("0.2.1 natural-language regressions from real gateways", () => {
     expect(parse("蛋白质这一栏暂时不用给我定。")).toMatchObject({
       disposition: "candidate",
       command: { action: "set_goal", goals: { protein_g: null } },
+    });
+  });
+
+  it("fails closed when one goal dimension is both cleared and set", () => {
+    expect(parse("清除热量目标，然后热量目标1900大卡。")).toMatchObject({
+      disposition: "needs_clarification",
+      action: "set_goal",
+      reason_code: "goal_incomplete",
     });
   });
 

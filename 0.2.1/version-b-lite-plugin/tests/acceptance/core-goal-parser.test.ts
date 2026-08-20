@@ -79,6 +79,42 @@ describe("core goal parser", () => {
     });
   });
 
+  it.each([
+    ["以后每天热量按1900大卡算就行。", "energy_kcal", 1900],
+    ["每天喝水先按1200毫升算。", "water_ml", 1200],
+  ])("parses a bounded natural daily goal: %s", (sourceText, field, value) => {
+    expect(parseCoreCommand(input({ source_text: sourceText }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "set_goal",
+        goals: { [field]: value },
+      },
+    });
+  });
+
+  it("parses a bounded natural single-dimension clear", () => {
+    expect(
+      parseCoreCommand(input({ source_text: "蛋白质这一栏暂时不用给我定。" })),
+    ).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "set_goal",
+        goals: { protein_g: null },
+      },
+    });
+  });
+
+  it("fails closed when one dimension is both cleared and set", () => {
+    expect(
+      parseCoreCommand(input({ source_text: "清除热量目标，然后热量目标1900大卡。" })),
+    ).toEqual({
+      disposition: "needs_clarification",
+      action: "set_goal",
+      reason_code: "goal_incomplete",
+      question: "请说明要设置或清除的目标维度和数值。",
+    });
+  });
+
   it("asks for the value when a goal dimension is named without a number or clear", () => {
     expect(parseCoreCommand(input({ source_text: "热量目标" }))).toEqual({
       disposition: "needs_clarification",
