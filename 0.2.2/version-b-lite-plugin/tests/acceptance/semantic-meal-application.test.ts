@@ -176,6 +176,139 @@ describe("semantic meal application requests", () => {
     }
   });
 
+  it.each([
+    [
+      "an item mentioned only as present",
+      "桌上有一个苹果，我吃了一个鸡蛋",
+      [{
+        raw_name: "苹果",
+        normalized_hint: "apple",
+        amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个苹果" },
+      }],
+      "failed",
+      "SEMANTIC_EVIDENCE_INVALID",
+    ],
+    [
+      "two items reusing one occurrence",
+      "我吃了一个鸡蛋",
+      [
+        {
+          raw_name: "鸡蛋",
+          normalized_hint: "egg",
+          amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+        },
+        {
+          raw_name: "鸡蛋",
+          normalized_hint: "egg",
+          amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+        },
+      ],
+      "failed",
+      "SEMANTIC_EVIDENCE_INVALID",
+    ],
+    [
+      "an explicit next-morning plan",
+      "我明早吃一个鸡蛋",
+      [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }],
+      "ignored",
+      "future_plan",
+    ],
+    [
+      "a not-yet statement",
+      "我尚未吃一个鸡蛋",
+      [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }],
+      "ignored",
+      "not_occurred",
+    ],
+    [
+      "a missed-opportunity statement",
+      "我没来得及吃一个鸡蛋",
+      [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }],
+      "ignored",
+      "not_occurred",
+    ],
+  ] satisfies ReadonlyArray<readonly [
+    string,
+    string,
+    SemanticMealCandidateV1["items"],
+    "failed" | "ignored",
+    string,
+  ]>)("keeps %s at zero writes", (_label, sourceText, items, status, code) => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => "2026-08-20T04:30:01.000Z",
+    });
+    try {
+      const request = semanticRequest(sourceText, items);
+      const before = eventCount(root);
+      const outcome = handleCoreRequest(runtime, request);
+
+      expect(outcome).toMatchObject({
+        action: "record_meal",
+        status,
+        committed: false,
+        operation_id: request.operation_id,
+        ...(status === "failed" ? { error_code: code } : { reason_code: code }),
+      });
+      expect(eventCount(root) - before).toBe(0);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("rejects a custom-prototype candidate array without executing inherited code or writing", () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => "2026-08-20T04:30:01.000Z",
+    });
+    let inheritedGetterCalls = 0;
+    try {
+      const request = semanticRequest("我吃了一个鸡蛋", [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]);
+      const items = [...request.semantic_candidate.items];
+      const hostilePrototype = Object.create(Array.prototype) as unknown[];
+      Object.defineProperty(hostilePrototype, "map", {
+        get() {
+          inheritedGetterCalls += 1;
+          return Array.prototype.map;
+        },
+      });
+      Object.setPrototypeOf(items, hostilePrototype);
+      const hostileRequest = {
+        ...request,
+        semantic_candidate: { ...request.semantic_candidate, items },
+      };
+      const before = eventCount(root);
+
+      expect(handleCoreRequest(runtime, hostileRequest as never)).toMatchObject({
+        status: "failed",
+        committed: false,
+        error_code: "INVALID_REQUEST",
+      });
+      expect(inheritedGetterCalls).toBe(0);
+      expect(eventCount(root) - before).toBe(0);
+    } finally {
+      runtime.close();
+    }
+  });
+
   it("rejects a candidate whose source differs from the request without writing", () => {
     const root = newRoot();
     const runtime = createCoreRuntime({

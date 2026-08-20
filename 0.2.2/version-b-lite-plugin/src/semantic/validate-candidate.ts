@@ -10,7 +10,7 @@ import {
   normalizeMealLexeme,
   resolveMealFrames,
 } from "../parser/meal.js";
-import type { PositionedMealItem } from "../parser/meal.js";
+import { parseIngestionPredicateFrames } from "../parser/predicate-frame.js";
 import { detectExplicitOtherSubject } from "../parser/subject.js";
 import {
   isOccurredTimeEvidenceSpan,
@@ -98,7 +98,7 @@ function amountEvidenceAgrees(
 function evidenceContainsOccurrence(
   sourceText: string,
   evidenceSpan: string,
-  occurrence: Readonly<PositionedMealItem>,
+  occurrence: Readonly<SemanticSourceOccurrence>,
 ): boolean {
   let evidenceStart = sourceText.indexOf(evidenceSpan);
   while (evidenceStart >= 0) {
@@ -111,31 +111,91 @@ function evidenceContainsOccurrence(
   return false;
 }
 
+interface SemanticSourceOccurrence {
+  readonly raw_text: string;
+  readonly normalized_name: string;
+  readonly position: number;
+  readonly end: number;
+}
+
+const SEMANTIC_COMPLETED_PREDICATE = /(?:扒|啃)\s*(?:了|过|完)/gu;
+const CLAUSE_END = /[，,。；;！!？?]/u;
+
+function semanticObjectSpans(sourceText: string): readonly Readonly<{
+  readonly start: number;
+  readonly end: number;
+}>[] {
+  const spans = parseIngestionPredicateFrames(sourceText).map((frame) => ({
+    start: frame.object_span.start,
+    end: frame.object_span.end,
+  }));
+  for (const match of sourceText.matchAll(SEMANTIC_COMPLETED_PREDICATE)) {
+    const start = match.index + match[0].length;
+    let end = start;
+    while (end < sourceText.length && !CLAUSE_END.test(sourceText[end]!)) end += 1;
+    spans.push({ start, end });
+  }
+  return spans;
+}
+
+function semanticSourceOccurrences(
+  sourceText: string,
+  candidateItems: SemanticMealCandidateV1["items"],
+  authoritative: readonly Readonly<SemanticSourceOccurrence>[],
+): readonly Readonly<SemanticSourceOccurrence>[] {
+  const objectSpans = semanticObjectSpans(sourceText);
+  const occurrences: SemanticSourceOccurrence[] = authoritative.map((occurrence) => ({
+    raw_text: occurrence.raw_text,
+    normalized_name: occurrence.normalized_name,
+    position: occurrence.position,
+    end: occurrence.end,
+  }));
+  for (const item of candidateItems) {
+    let position = sourceText.indexOf(item.raw_name);
+    while (position >= 0) {
+      const alreadyPresent = occurrences.some((occurrence) =>
+        occurrence.position === position && occurrence.raw_text === item.raw_name
+      );
+      const end = position + item.raw_name.length;
+      const belongsToIngestion = objectSpans.some((span) =>
+        span.start <= position && end <= span.end
+      );
+      if (!alreadyPresent && belongsToIngestion) {
+        occurrences.push({
+          raw_text: item.raw_name,
+          normalized_name: item.normalized_hint,
+          position,
+          end,
+        });
+      }
+      position = sourceText.indexOf(item.raw_name, position + item.raw_name.length);
+    }
+  }
+  occurrences.sort((left, right) => left.position - right.position);
+  return Object.freeze(occurrences.map((occurrence) => Object.freeze(occurrence)));
+}
+
 function candidateItemMatchesOccurrence(
   sourceText: string,
   item: SemanticMealCandidateV1["items"][number],
-  occurrence: Readonly<PositionedMealItem>,
+  occurrence: Readonly<SemanticSourceOccurrence>,
 ): boolean {
   if (
     item.raw_name !== occurrence.raw_text ||
     item.normalized_hint !== occurrence.normalized_name
   ) return false;
   if (item.amount.kind === "unknown") return true;
-  return occurrence.amount_resolution === "resolved" &&
-    occurrence.amount_evidence.quantity === item.amount.value &&
-    occurrence.amount_evidence.unit === item.amount.unit &&
-    occurrence.amount_evidence.estimated === false &&
-    evidenceContainsOccurrence(
-      sourceText,
-      item.amount.evidence_span,
-      occurrence,
-    );
+  return evidenceContainsOccurrence(
+    sourceText,
+    item.amount.evidence_span,
+    occurrence,
+  );
 }
 
 function everyCandidateItemCompletedAfter(
   sourceText: string,
   items: SemanticMealCandidateV1["items"],
-  occurrences: readonly Readonly<PositionedMealItem>[],
+  occurrences: readonly Readonly<SemanticSourceOccurrence>[],
   completedEvidenceEnd: number,
 ): boolean {
   const available = occurrences.filter((occurrence) =>
@@ -180,6 +240,11 @@ export function validateSemanticMealCandidate(
   }
 
   const mealAuthority = resolveMealFrames(input.source_text);
+  const sourceOccurrences = semanticSourceOccurrences(
+    input.source_text,
+    candidate.items,
+    mealAuthority.proposed_items,
+  );
   const completion = classifySemanticCompletion(
     input.source_text,
     mealAuthority.proposed_items,
@@ -202,7 +267,7 @@ export function validateSemanticMealCandidate(
       everyCandidateItemCompletedAfter(
         input.source_text,
         candidate.items,
-        mealAuthority.proposed_items,
+        sourceOccurrences,
         laterCompleted.end,
       );
     if (!candidateScopedOverride) {
@@ -229,6 +294,7 @@ export function validateSemanticMealCandidate(
 
   const items: CoreMealItem[] = [];
   const missingItems: string[] = [];
+  const availableOccurrences = [...sourceOccurrences];
   for (const item of candidate.items) {
     const normalizedName = normalizeMealLexeme(item.raw_name);
     const kind = mealLexemeKind(item.raw_name);
@@ -240,6 +306,13 @@ export function validateSemanticMealCandidate(
       return rejected("SEMANTIC_ITEM_MISMATCH");
     }
     if (item.amount.kind === "unknown") {
+      const occurrenceIndex = availableOccurrences.findIndex((occurrence) =>
+        candidateItemMatchesOccurrence(input.source_text, item, occurrence)
+      );
+      if (occurrenceIndex < 0) {
+        return rejected("SEMANTIC_EVIDENCE_INVALID");
+      }
+      availableOccurrences.splice(occurrenceIndex, 1);
       missingItems.push(item.raw_name);
       continue;
     }
@@ -258,6 +331,13 @@ export function validateSemanticMealCandidate(
     ) {
       return rejected("SEMANTIC_EVIDENCE_INVALID");
     }
+    const occurrenceIndex = availableOccurrences.findIndex((occurrence) =>
+      candidateItemMatchesOccurrence(input.source_text, item, occurrence)
+    );
+    if (occurrenceIndex < 0) {
+      return rejected("SEMANTIC_EVIDENCE_INVALID");
+    }
+    availableOccurrences.splice(occurrenceIndex, 1);
     items.push(frozen({
       order: items.length,
       kind,

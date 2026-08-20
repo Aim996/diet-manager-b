@@ -100,6 +100,39 @@ describe("semantic meal candidate validation", () => {
     });
   });
 
+  it("rejects an item that is only mentioned as present, not ingested", () => {
+    const sourceText = "桌上有一个苹果，我吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "苹果",
+        normalized_hint: "apple",
+        amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个苹果" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_EVIDENCE_INVALID",
+    });
+  });
+
+  it("does not let two candidate items reuse one ingestion occurrence", () => {
+    const sourceText = "我吃了一个鸡蛋";
+    const egg = {
+      raw_name: "鸡蛋",
+      normalized_hint: "egg",
+      amount: { kind: "exact" as const, value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+    };
+    const value = {
+      ...candidate(sourceText, [egg, egg]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_EVIDENCE_INVALID",
+    });
+  });
+
   it.each([
     ["item", "rice", 1, "piece", "SEMANTIC_ITEM_MISMATCH"],
     ["quantity", "egg", 2, "piece", "SEMANTIC_EVIDENCE_INVALID"],
@@ -176,6 +209,11 @@ describe("semantic meal candidate validation", () => {
       { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
     ],
     [
+      "explicit next-morning future",
+      "我明早吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
       "unanchored future modal",
       "我会吃一个鸡蛋",
       { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
@@ -208,6 +246,16 @@ describe("semantic meal candidate validation", () => {
     [
       "willingness negation",
       "我不愿意吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "not-yet negation",
+      "我尚未吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "missed-opportunity negation",
+      "我没来得及吃一个鸡蛋",
       { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
     ],
     [
@@ -618,6 +666,32 @@ describe("semantic meal candidate validation", () => {
       error_code: "SEMANTIC_CANDIDATE_INVALID",
     });
     expect(trapCalls).toBe(0);
+  });
+
+  it("rejects custom-prototype arrays without invoking inherited methods", () => {
+    let inheritedGetterCalls = 0;
+    const sourceText = "中午吃了两碗米饭";
+    const base = candidate(sourceText, [{
+      raw_name: "米饭",
+      normalized_hint: "rice",
+      amount: { kind: "exact", value: 2, unit: "bowl", evidence_span: "两碗米饭" },
+    }]);
+    const items = [...base.items];
+    const hostilePrototype = Object.create(Array.prototype) as unknown[];
+    Object.defineProperty(hostilePrototype, "map", {
+      get() {
+        inheritedGetterCalls += 1;
+        return Array.prototype.map;
+      },
+    });
+    Object.setPrototypeOf(items, hostilePrototype);
+    const value = { ...base, items } as SemanticMealCandidateV1;
+
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_CANDIDATE_INVALID",
+    });
+    expect(inheritedGetterCalls).toBe(0);
   });
 
   it("returns a detached deeply frozen clone", () => {

@@ -85,12 +85,12 @@ const CONDITIONAL_RULE = Object.freeze<CompletionRule>({
 
 const SEMANTIC_DIRECT_NON_OCCURRENCE_RULE = Object.freeze<CompletionRule>({
   rule_id: "completion.semantic-direct-non-occurrence",
-  pattern: /(?:没(?:有)?|不(?:想|愿意|愿|打算|计划|准备|会|要)?)\s*(?:吃|喝)/u,
+  pattern: /(?:(?:尚|仍|还)未|还没|没(?:有)?(?:\s*来得及)?|不(?:想|愿意|愿|打算|计划|准备|会|要)?)\s*(?:吃|喝)/u,
 });
 
 const SEMANTIC_STATED_PLAN_RULE = Object.freeze<CompletionRule>({
   rule_id: "completion.semantic-stated-plan",
-  pattern: /(?:(?:打算|计划)\s*(?:(?:明天|后天)\s*)?(?:吃|喝)|准备\s*(?:吃|喝)|(?<!不)(?:会|要|想)\s*(?:吃|喝)|(?:明天|后天|今晚|下周|以后|之后|等会儿|待会儿)\s*(?:(?:会|要|想|准备|打算|计划)\s*)?(?:吃|喝)(?!了))/u,
+  pattern: /(?:(?:打算|计划)\s*(?:(?:明天|明早|明晚|后天)\s*)?(?:吃|喝)|准备\s*(?:吃|喝)|(?<!不)(?:会|要|想)\s*(?:吃|喝)|(?:明天|明早|明晚|后天|今晚|下周|下个月|以后|之后|等会儿|待会儿|一会儿)\s*(?:(?:会|要|想|准备|打算|计划)\s*)?(?:吃|喝)(?!了))/u,
 });
 
 const SEMANTIC_LATER_COMPLETED_RULE = Object.freeze<CompletionRule>({

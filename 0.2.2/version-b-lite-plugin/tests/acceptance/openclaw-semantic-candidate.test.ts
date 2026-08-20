@@ -103,14 +103,14 @@ describe("OpenClaw semantic meal candidate boundary", () => {
     };
 
     expect(parameters.required).toEqual(["action"]);
-    expect(parameters.properties?.semantic_candidate).toMatchObject({
+    expect(parameters.properties?.semantic_candidate).toEqual({
       type: "object",
       additionalProperties: false,
       required: ["schema_version", "intent", "source_text", "subject", "items", "time"],
       properties: {
         schema_version: { const: "diet-manager/semantic-candidate/v1", type: "string" },
         intent: { const: "record_meal", type: "string" },
-        source_text: { type: "string" },
+        source_text: { type: "string", minLength: 1, maxLength: 4096 },
         subject: {
           type: "object",
           additionalProperties: false,
@@ -123,19 +123,28 @@ describe("OpenClaw semantic meal candidate boundary", () => {
                 { const: "private_agent_default", type: "string" },
               ],
             },
-            evidence_span: { anyOf: [{ type: "string" }, { type: "null" }] },
-            explicit_other_spans: { type: "array", items: { type: "string" } },
+            evidence_span: {
+              anyOf: [{ type: "string", minLength: 1, maxLength: 256 }, { type: "null" }],
+            },
+            explicit_other_spans: {
+              type: "array",
+              minItems: 0,
+              maxItems: 64,
+              items: { type: "string", minLength: 1, maxLength: 256 },
+            },
           },
         },
         items: {
           type: "array",
+          minItems: 1,
+          maxItems: 64,
           items: {
             type: "object",
             additionalProperties: false,
             required: ["raw_name", "normalized_hint", "amount"],
             properties: {
-              raw_name: { type: "string" },
-              normalized_hint: { type: "string" },
+              raw_name: { type: "string", minLength: 1, maxLength: 256 },
+              normalized_hint: { type: "string", minLength: 1, maxLength: 256 },
               amount: {
                 anyOf: [
                   {
@@ -144,9 +153,9 @@ describe("OpenClaw semantic meal candidate boundary", () => {
                     required: ["kind", "value", "unit", "evidence_span"],
                     properties: {
                       kind: { const: "exact", type: "string" },
-                      value: { type: "number" },
-                      unit: { type: "string" },
-                      evidence_span: { type: "string" },
+                      value: { type: "number", exclusiveMinimum: 0 },
+                      unit: { type: "string", minLength: 1, maxLength: 64 },
+                      evidence_span: { type: "string", minLength: 1, maxLength: 256 },
                     },
                   },
                   {
@@ -171,7 +180,9 @@ describe("OpenClaw semantic meal candidate boundary", () => {
                 { const: "unspecified", type: "string" },
               ],
             },
-            evidence_span: { anyOf: [{ type: "string" }, { type: "null" }] },
+            evidence_span: {
+              anyOf: [{ type: "string", minLength: 1, maxLength: 256 }, { type: "null" }],
+            },
           },
         },
       },
@@ -335,6 +346,111 @@ describe("OpenClaw semantic meal candidate boundary", () => {
         committed: false,
         error_code: "INVALID_REQUEST",
       });
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it.each([
+    [
+      "an item mentioned only as present",
+      "桌上有一个苹果，我吃了一个鸡蛋",
+      [{
+        raw_name: "苹果",
+        normalized_hint: "apple",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个苹果" },
+      }],
+      "failed",
+      "SEMANTIC_EVIDENCE_INVALID",
+    ],
+    [
+      "two items reusing one occurrence",
+      "我吃了一个鸡蛋",
+      [
+        {
+          raw_name: "鸡蛋",
+          normalized_hint: "egg",
+          amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+        },
+        {
+          raw_name: "鸡蛋",
+          normalized_hint: "egg",
+          amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+        },
+      ],
+      "failed",
+      "SEMANTIC_EVIDENCE_INVALID",
+    ],
+    ["an explicit next-morning plan", "我明早吃一个鸡蛋", undefined, "ignored", "future_plan"],
+    ["a not-yet statement", "我尚未吃一个鸡蛋", undefined, "ignored", "not_occurred"],
+    ["a missed-opportunity statement", "我没来得及吃一个鸡蛋", undefined, "ignored", "not_occurred"],
+  ] as const)("keeps %s at zero registered-tool writes", async (
+    _label,
+    sourceText,
+    suppliedItems,
+    status,
+    code,
+  ) => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-openclaw-zero-${randomUUID()}-`));
+    const registered = registerPlugin(root);
+    const eggItems = [{
+      raw_name: "鸡蛋",
+      normalized_hint: "egg",
+      amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+    }];
+    const params = {
+      ...semanticParams(),
+      source_text: sourceText,
+      operation_id: `operation-openclaw-zero-${randomUUID()}`,
+      source_message_id: `message-openclaw-zero-${randomUUID()}`,
+      semantic_candidate: {
+        ...semanticCandidate(sourceText),
+        items: suppliedItems ?? eggItems,
+        time: { kind: "unspecified", evidence_span: null },
+      },
+    };
+    try {
+      const result = await registered.tool.execute("tool-call-semantic-zero", params);
+
+      expect(result.details).toMatchObject({
+        action: "record_meal",
+        status,
+        committed: false,
+        ...(status === "failed" ? { error_code: code } : { reason_code: code }),
+      });
+      expect(eventCount(root)).toBe(0);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("rejects a custom-prototype array without invoking inherited code or writing", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-openclaw-array-${randomUUID()}-`));
+    const registered = registerPlugin(root);
+    const params = semanticParams();
+    const items = [...params.semantic_candidate.items];
+    let inheritedGetterCalls = 0;
+    const hostilePrototype = Object.create(Array.prototype) as unknown[];
+    Object.defineProperty(hostilePrototype, "map", {
+      get() {
+        inheritedGetterCalls += 1;
+        return Array.prototype.map;
+      },
+    });
+    Object.setPrototypeOf(items, hostilePrototype);
+    params.semantic_candidate.items = items;
+    try {
+      const result = await registered.tool.execute("tool-call-semantic-array", params);
+
+      expect(result.details).toMatchObject({
+        status: "failed",
+        committed: false,
+        error_code: "INVALID_REQUEST",
+      });
+      expect(inheritedGetterCalls).toBe(0);
+      expect(eventCount(root)).toBe(0);
     } finally {
       await registered.lifecycle()?.cleanup();
       rmSync(root, { recursive: true, force: false });

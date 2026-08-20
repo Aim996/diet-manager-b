@@ -53,9 +53,9 @@ const legacyItemSchema = Type.Object(
 const exactAmountSchema = Type.Object(
   {
     kind: Type.Literal("exact"),
-    value: Type.Number(),
-    unit: Type.String(),
-    evidence_span: Type.String(),
+    value: Type.Number({ exclusiveMinimum: 0 }),
+    unit: Type.String({ minLength: 1, maxLength: 64 }),
+    evidence_span: Type.String({ minLength: 1, maxLength: 256 }),
   },
   { additionalProperties: false },
 );
@@ -69,7 +69,7 @@ const semanticMealCandidateSchema = Type.Object(
   {
     schema_version: Type.Literal("diet-manager/semantic-candidate/v1"),
     intent: Type.Literal("record_meal"),
-    source_text: Type.String(),
+    source_text: Type.String({ minLength: 1, maxLength: 4096 }),
     subject: Type.Object(
       {
         kind: Type.Literal("self"),
@@ -77,26 +77,38 @@ const semanticMealCandidateSchema = Type.Object(
           Type.Literal("explicit"),
           Type.Literal("private_agent_default"),
         ]),
-        evidence_span: Type.Union([Type.String(), Type.Null()]),
-        explicit_other_spans: Type.Array(Type.String()),
+        evidence_span: Type.Union([
+          Type.String({ minLength: 1, maxLength: 256 }),
+          Type.Null(),
+        ]),
+        explicit_other_spans: Type.Array(
+          Type.String({ minLength: 1, maxLength: 256 }),
+          { minItems: 0, maxItems: 64 },
+        ),
       },
       { additionalProperties: false },
     ),
-    items: Type.Array(Type.Object(
-      {
-        raw_name: Type.String(),
-        normalized_hint: Type.String(),
-        amount: Type.Union([exactAmountSchema, unknownAmountSchema]),
-      },
-      { additionalProperties: false },
-    )),
+    items: Type.Array(
+      Type.Object(
+        {
+          raw_name: Type.String({ minLength: 1, maxLength: 256 }),
+          normalized_hint: Type.String({ minLength: 1, maxLength: 256 }),
+          amount: Type.Union([exactAmountSchema, unknownAmountSchema]),
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1, maxItems: 64 },
+    ),
     time: Type.Object(
       {
         kind: Type.Union([
           Type.Literal("source_text"),
           Type.Literal("unspecified"),
         ]),
-        evidence_span: Type.Union([Type.String(), Type.Null()]),
+        evidence_span: Type.Union([
+          Type.String({ minLength: 1, maxLength: 256 }),
+          Type.Null(),
+        ]),
       },
       { additionalProperties: false },
     ),

@@ -53,6 +53,7 @@ function data(recordValue: PlainRecord, key: string): unknown {
 
 function array(value: unknown, minimum: number, maximum: number): readonly unknown[] {
   if (value === null || typeof value !== "object" || utilTypes.isProxy(value) || !Array.isArray(value)) invalid();
+  if (Object.getPrototypeOf(value) !== Array.prototype) invalid();
   const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
   if (lengthDescriptor === undefined || !("value" in lengthDescriptor)) invalid();
   const length = lengthDescriptor.value;
@@ -63,11 +64,13 @@ function array(value: unknown, minimum: number, maximum: number): readonly unkno
     ownKeys.length !== expectedKeys.length ||
     ownKeys.some((key) => typeof key !== "string" || !expectedKeys.includes(key))
   ) invalid();
+  const copied: unknown[] = [];
   for (let index = 0; index < length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     if (descriptor === undefined || !("value" in descriptor)) invalid();
+    copied.push(descriptor.value);
   }
-  return value;
+  return Object.freeze(copied);
 }
 
 function string(value: unknown, minimum: number, maximum: number): string {
@@ -120,9 +123,14 @@ export function cloneSemanticCandidate(value: unknown): SemanticMealCandidateV1 
   ]);
   const basis = data(subject, "basis");
   if (basis !== "explicit" && basis !== "private_agent_default") invalid();
-  const otherSpans = array(data(subject, "explicit_other_spans"), 0, 64)
-    .map((span) => string(span, 1, 256));
-  const items = array(data(source, "items"), 1, 64).map(cloneItem);
+  const otherSpans: string[] = [];
+  for (const span of array(data(subject, "explicit_other_spans"), 0, 64)) {
+    otherSpans.push(string(span, 1, 256));
+  }
+  const items: SemanticMealCandidateV1["items"][number][] = [];
+  for (const item of array(data(source, "items"), 1, 64)) {
+    items.push(cloneItem(item));
+  }
   const time = record(data(source, "time"), ["kind", "evidence_span"]);
   const timeKind = data(time, "kind");
   if (timeKind !== "source_text" && timeKind !== "unspecified") invalid();
