@@ -98,6 +98,160 @@ describe("semantic meal candidate validation", () => {
     });
   });
 
+  it.each([
+    [
+      "negated ingestion",
+      "我没吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "future plan",
+      "我明天准备吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "stated plan",
+      "我打算明天吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "direct refusal",
+      "我不吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "hypothetical ingestion",
+      "如果我吃一个鸡蛋",
+      {
+        disposition: "needs_clarification",
+        action: "record_meal",
+        reason_code: "unsupported_command",
+        question: "这是条件描述，还是要记录已经发生的饮食？",
+      },
+    ],
+    [
+      "interrogative ingestion",
+      "我吃一个鸡蛋吗",
+      {
+        disposition: "needs_clarification",
+        action: "record_meal",
+        reason_code: "unsupported_command",
+        question: "这是在询问，还是要记录已经发生的饮食？",
+      },
+    ],
+  ])("never turns %s into a recordable command", (_label, sourceText, expected) => {
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual(expected);
+  });
+
+  it.each([
+    "我妈妈也吃了一个鸡蛋",
+    "我同事在公司吃了一个鸡蛋",
+  ])("ignores an explicit other eater across ordinary modifiers: %s", (sourceText) => {
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "non_self_subject",
+    });
+  });
+
+  it.each([
+    [9, "bowl"],
+    [2, "g"],
+  ])("rejects amount %s %s when present evidence says two bowls", (amount, unit) => {
+    const sourceText = "中午吃了两碗米饭";
+    const value = candidate(sourceText, [{
+      raw_name: "米饭",
+      normalized_hint: "rice",
+      amount: { kind: "exact", value: amount, unit, evidence_span: "两碗米饭" },
+    }]);
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_EVIDENCE_INVALID",
+    });
+  });
+
+  it("rejects an item name masquerading as explicit-self evidence", () => {
+    const sourceText = "中午我吃了一个鸡蛋";
+    const base = candidate(sourceText, [{
+      raw_name: "鸡蛋",
+      normalized_hint: "egg",
+      amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+    }]);
+    const value = {
+      ...base,
+      subject: {
+        kind: "self" as const,
+        basis: "explicit" as const,
+        evidence_span: "鸡蛋",
+        explicit_other_spans: [],
+      },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_EVIDENCE_INVALID",
+    });
+  });
+
+  it("accepts deterministic explicit-self evidence", () => {
+    const sourceText = "中午我吃了一个鸡蛋";
+    const base = candidate(sourceText, [{
+      raw_name: "鸡蛋",
+      normalized_hint: "egg",
+      amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+    }]);
+    const value = {
+      ...base,
+      subject: {
+        kind: "self" as const,
+        basis: "explicit" as const,
+        evidence_span: "我",
+        explicit_other_spans: [],
+      },
+    };
+    expect(validate(value)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        subject: {
+          kind: "self",
+          resolution_basis: "explicit_self",
+          matched_span: "我",
+        },
+      },
+    });
+  });
+
+  it("rejects an item name masquerading as time evidence", () => {
+    const sourceText = "中午吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "source_text" as const, evidence_span: "鸡蛋" },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "rejected",
+      error_code: "SEMANTIC_EVIDENCE_INVALID",
+    });
+  });
+
   it("asks only for a missing amount", () => {
     const sourceText = "早上顺手吃了鸡蛋";
     const value = candidate(sourceText, [{

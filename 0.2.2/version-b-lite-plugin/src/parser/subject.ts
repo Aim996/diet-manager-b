@@ -1,4 +1,7 @@
-import type { IngestionPredicateFrame } from "./predicate-frame.js";
+import {
+  parseIngestionPredicateFrames,
+  type IngestionPredicateFrame,
+} from "./predicate-frame.js";
 
 export const SUBJECT_RULE_VERSION = "diet-manager/subject-v1" as const;
 
@@ -89,10 +92,43 @@ const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|午饭|晚饭|刚才|刚刚|�
 const FRAME_NATURAL_OMITTED_PREFIX = /^(?:顺手|随便|就|刚下班路上|下班路上)$/u;
 const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
 const FRAME_NATURAL_SELF_SUFFIX = /我(?:\s*(?:自己|本人))?(?:(?:刚才|刚刚|刚|这会儿|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|在公司|然后|接着|后来|又|随便|顺手|就|才|已经|没|没有)\s*)*$/u;
-const EXPLICIT_OTHER_SUBJECT = /(我(?:妈妈|爸爸|对象|老公|老婆|孩子|儿子|女儿|妈|爸)|孩子|室友|朋友|同事|家人|他们|(?<!其)他(?!们)|她|妈妈|爸爸|小[\p{Script=Han}]{1,2}|老[\p{Script=Han}]{1,2}|[\p{Script=Han}]{1,4}(?:老师|阿姨|叔叔|同学))(?:(?:刚才|刚刚|刚|这会儿|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|顺手|随便|就|才|已经|又)\s*)*(?=(?:吃|喝)|$)/u;
+const EXPLICIT_OTHER_TERM = /我(?:妈妈|爸爸|对象|老公|老婆|孩子|儿子|女儿|妈|爸)|孩子|室友|朋友|同事|家人|他们|(?<!其)他(?!们)|她|妈妈|爸爸|小[\p{Script=Han}]{1,2}|老[\p{Script=Han}]{1,2}|[\p{Script=Han}]{1,4}(?:老师|阿姨|叔叔|同学)/gu;
+
+function explicitOtherInSubjectPrefix(prefix: string): string | null {
+  if (/^我\s*和\s*朋友\s*一人$/u.test(prefix.trim())) return null;
+  const matches = [...prefix.matchAll(EXPLICIT_OTHER_TERM)];
+  const matchedOther = matches.at(-1);
+  if (matchedOther === undefined) return null;
+  const explicitSelf = FRAME_NATURAL_SELF_SUFFIX.exec(prefix);
+  if (explicitSelf !== null && explicitSelf.index > matchedOther.index) return null;
+  return matchedOther[0];
+}
 
 export function detectExplicitOtherSubject(sourceText: string): string | null {
-  return EXPLICIT_OTHER_SUBJECT.exec(sourceText)?.[1] ?? null;
+  const frames = parseIngestionPredicateFrames(sourceText);
+  for (const frame of frames) {
+    const matched = explicitOtherInSubjectPrefix(frame.subject_prefix_span.raw);
+    if (matched !== null) return matched;
+  }
+  if (frames.length > 0) return null;
+
+  let sawPredicate = false;
+  for (const predicate of sourceText.matchAll(/[吃喝啃扒]/gu)) {
+    sawPredicate = true;
+    const before = sourceText.slice(0, predicate.index);
+    const clauseStart = Math.max(
+      before.lastIndexOf("，"), before.lastIndexOf(","),
+      before.lastIndexOf("。"), before.lastIndexOf("；"),
+      before.lastIndexOf(";"), before.lastIndexOf("！"),
+      before.lastIndexOf("!"), before.lastIndexOf("？"),
+      before.lastIndexOf("?"), before.lastIndexOf("\n"),
+    ) + 1;
+    const matched = explicitOtherInSubjectPrefix(
+      sourceText.slice(clauseStart, predicate.index),
+    );
+    if (matched !== null) return matched;
+  }
+  return sawPredicate ? null : explicitOtherInSubjectPrefix(sourceText);
 }
 
 function frozenFrameRecord<T extends object>(entries: T): Readonly<T> {

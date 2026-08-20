@@ -14,6 +14,7 @@ const OFFSET_ISO_SHAPE_PATTERN = /(?<!\d)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\
 const AMBIGUOUS_LATE_NIGHT_PATTERN = /凌晨\s*\d{1,2}\s*点(?:\s*补记\s*昨天\s*夜宵|[^。！？!?]*(?:记不清)[^。！？!?]*昨晚[^。！？!?]*今早)/u;
 const RICH_LAST_NIGHT_PATTERN = /昨晚\s*\d{1,2}\s*点\s*(?:半|多|\d{1,2}\s*分)/u;
 const LAST_NIGHT_PATTERN = /昨晚\s*(\d{1,2})\s*点(?=$|[\s，。；：！？、,:;.!?]|[吃喝])/u;
+const SEMANTIC_TIME_EVIDENCE_PATTERN = /^(?:今天|昨天|前天|今早|昨晚|今晚|刚才|刚刚|刚|这会儿|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|早餐后|午餐后|晚餐后|回家后|昨晚\s*\d{1,2}\s*点(?:\s*(?:半|多|\d{1,2}\s*分))?)$/u;
 
 interface ParsedOffsetIso {
   readonly epoch_ms: number;
@@ -53,6 +54,16 @@ function parseOffsetIso(value: string): ParsedOffsetIso | null {
     check.getUTCMilliseconds() !== millisecond
   ) return null;
   return Object.freeze({ epoch_ms: localEpoch - offsetMinutes * MINUTE_MS });
+}
+
+export function isOccurredTimeEvidenceSpan(
+  sourceText: string,
+  evidenceSpan: string,
+): boolean {
+  if (!sourceText.includes(evidenceSpan)) return false;
+  if (SEMANTIC_TIME_EVIDENCE_PATTERN.test(evidenceSpan)) return true;
+  return FULL_OFFSET_ISO_PATTERN.test(evidenceSpan) &&
+    parseOffsetIso(evidenceSpan) !== null;
 }
 
 function twoDigits(value: number): string {

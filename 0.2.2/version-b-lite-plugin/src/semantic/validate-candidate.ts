@@ -1,12 +1,17 @@
 import type { DietManagerAction } from "../contracts.js";
+import { classifySemanticCompletion } from "../parser/completion.js";
 import {
   mealLexemeAllowsUnit,
   mealLexemeAmountQuestion,
   mealLexemeKind,
   normalizeMealLexeme,
+  resolveMealFrames,
 } from "../parser/meal.js";
 import { detectExplicitOtherSubject } from "../parser/subject.js";
-import { resolveOccurredTime } from "../parser/time.js";
+import {
+  isOccurredTimeEvidenceSpan,
+  resolveOccurredTime,
+} from "../parser/time.js";
 import type {
   CoreClarificationResult,
   CoreIgnoredResult,
@@ -56,6 +61,32 @@ function containsEvidence(sourceText: string, evidence: string | null): boolean 
   return evidence !== null && sourceText.includes(evidence);
 }
 
+function isExplicitSelfEvidence(sourceText: string, evidence: string): boolean {
+  const sourceSubject = resolveMealFrames(sourceText).subject;
+  if (sourceSubject?.resolution_basis !== "explicit_self") return false;
+  const evidenceSubject = resolveMealFrames(`${evidence}吃了一个鸡蛋`).subject;
+  return evidenceSubject?.resolution_basis === "explicit_self";
+}
+
+function amountEvidenceAgrees(
+  rawName: string,
+  normalizedName: string,
+  value: number,
+  unit: string,
+  evidenceSpan: string,
+): boolean {
+  const evidenceItems = resolveMealFrames(`吃了${evidenceSpan}`).proposed_items
+    .filter((item) =>
+      item.raw_text === rawName && item.normalized_name === normalizedName
+    );
+  if (evidenceItems.length !== 1) return false;
+  const evidenceItem = evidenceItems[0];
+  return evidenceItem?.amount_resolution === "resolved" &&
+    evidenceItem.amount_evidence.quantity === value &&
+    evidenceItem.amount_evidence.unit === unit &&
+    evidenceItem.amount_evidence.estimated === false;
+}
+
 export function validateSemanticMealCandidate(
   input: SemanticMealValidationInput,
 ): SemanticMealValidationResult {
@@ -84,9 +115,33 @@ export function validateSemanticMealCandidate(
     });
   }
 
+  const mealAuthority = resolveMealFrames(input.source_text);
+  const completion = classifySemanticCompletion(
+    input.source_text,
+    mealAuthority.proposed_items,
+  );
+  if (completion.disposition === "needs_clarification") {
+    return frozen({
+      disposition: "needs_clarification" as const,
+      action: "record_meal" as const,
+      reason_code: "unsupported_command" as const,
+      question: completion.question,
+    });
+  }
+  if (completion.disposition === "ignored") {
+    return frozen({
+      disposition: "ignored" as const,
+      action: "record_meal" as const,
+      reason_code: completion.reason_code,
+    });
+  }
   if (
     (candidate.subject.basis === "explicit" &&
-      !containsEvidence(input.source_text, candidate.subject.evidence_span)) ||
+      (!containsEvidence(input.source_text, candidate.subject.evidence_span) ||
+        !isExplicitSelfEvidence(
+          input.source_text,
+          candidate.subject.evidence_span ?? "",
+        ))) ||
     (candidate.subject.basis === "private_agent_default" &&
       candidate.subject.evidence_span !== null) ||
     candidate.subject.explicit_other_spans.some((span) => !input.source_text.includes(span))
@@ -113,7 +168,16 @@ export function validateSemanticMealCandidate(
     if (!mealLexemeAllowsUnit(item.raw_name, item.amount.unit)) {
       return rejected("SEMANTIC_CANDIDATE_INVALID");
     }
-    if (!input.source_text.includes(item.amount.evidence_span)) {
+    if (
+      !input.source_text.includes(item.amount.evidence_span) ||
+      !amountEvidenceAgrees(
+        item.raw_name,
+        normalizedName,
+        item.amount.value,
+        item.amount.unit,
+        item.amount.evidence_span,
+      )
+    ) {
       return rejected("SEMANTIC_EVIDENCE_INVALID");
     }
     items.push(frozen({
@@ -141,7 +205,11 @@ export function validateSemanticMealCandidate(
 
   if (
     (candidate.time.kind === "source_text" &&
-      !containsEvidence(input.source_text, candidate.time.evidence_span)) ||
+      (candidate.time.evidence_span === null ||
+        !isOccurredTimeEvidenceSpan(
+          input.source_text,
+          candidate.time.evidence_span,
+        ))) ||
     (candidate.time.kind === "unspecified" && candidate.time.evidence_span !== null)
   ) {
     return rejected("SEMANTIC_EVIDENCE_INVALID");
