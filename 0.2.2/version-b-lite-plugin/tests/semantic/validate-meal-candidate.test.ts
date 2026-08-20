@@ -66,6 +66,62 @@ describe("semantic meal candidate validation", () => {
     });
   });
 
+  it("accepts an amount span containing a cooking modifier before the item", () => {
+    const sourceText = "我出门前吃了两片面包和一个煮鸡蛋";
+    expect(validateSemanticMealCandidate({
+      candidate: {
+        ...candidate(sourceText, [
+          {
+            raw_name: "面包",
+            normalized_hint: "bread",
+            amount: { kind: "exact", value: 2, unit: "slice", evidence_span: "两片面包" },
+          },
+          {
+            raw_name: "鸡蛋",
+            normalized_hint: "egg",
+            amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个煮鸡蛋" },
+          },
+        ]),
+        time: { kind: "unspecified", evidence_span: null },
+      },
+      action: "record_meal",
+      source_text: sourceText,
+      received_at: "2026-08-20T08:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      operation_id: "semantic-cooking-modifier-002",
+    })).toMatchObject({
+      disposition: "candidate",
+      command: {
+        items: [
+          { normalized_name: "bread", quantity: 2, unit: "slice" },
+          { normalized_name: "egg", quantity: 1, unit: "piece" },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    ["item", "rice", 1, "piece", "SEMANTIC_ITEM_MISMATCH"],
+    ["quantity", "egg", 2, "piece", "SEMANTIC_EVIDENCE_INVALID"],
+    ["unit", "egg", 1, "bowl", "SEMANTIC_CANDIDATE_INVALID"],
+  ] as const)("still rejects a wrong %s behind cooking-modifier evidence", (
+    _label,
+    normalizedHint,
+    value,
+    unit,
+    errorCode,
+  ) => {
+    const sourceText = "我吃了一个煮鸡蛋";
+    expect(validate({
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: normalizedHint,
+        amount: { kind: "exact", value, unit, evidence_span: "一个煮鸡蛋" },
+      }]),
+      time: { kind: "unspecified", evidence_span: null },
+    })).toEqual({ disposition: "rejected", error_code: errorCode });
+  });
+
   it("lets explicit-other evidence override a false self claim", () => {
     const sourceText = "我同事吃了一个鸡蛋";
     expect(validateSemanticMealCandidate({

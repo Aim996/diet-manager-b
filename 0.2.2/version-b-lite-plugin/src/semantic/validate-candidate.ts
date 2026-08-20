@@ -79,7 +79,11 @@ function amountEvidenceAgrees(
   unit: string,
   evidenceSpan: string,
 ): boolean {
-  const evidenceItems = resolveMealFrames(`吃了${evidenceSpan}`).proposed_items
+  const itemPosition = evidenceSpan.lastIndexOf(rawName);
+  const parseableEvidence = itemPosition > 0 && evidenceSpan[itemPosition - 1] === "煮"
+    ? `${evidenceSpan.slice(0, itemPosition - 1)}${evidenceSpan.slice(itemPosition)}`
+    : evidenceSpan;
+  const evidenceItems = resolveMealFrames(`吃了${parseableEvidence}`).proposed_items
     .filter((item) =>
       item.raw_text === rawName && item.normalized_name === normalizedName
     );

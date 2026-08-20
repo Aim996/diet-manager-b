@@ -59,6 +59,7 @@ export interface CoreApplicationRequest {
   readonly source_message_id: string;
   readonly conversation_id: string;
   readonly prior_context: readonly import("./parser/types.js").CoreContextEntry[];
+  readonly semantic_candidate?: import("./semantic/candidate.js").SemanticMealCandidateV1;
 }
 
 export interface FailedOutcome {

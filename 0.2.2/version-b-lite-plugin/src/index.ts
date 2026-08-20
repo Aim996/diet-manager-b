@@ -20,6 +20,8 @@ export {
   dietManagerStatuses,
 } from "./contracts.js";
 
+export type { SemanticMealCandidateV1 } from "./semantic/candidate.js";
+
 export { backupDietDatabase, restoreDietDatabase } from "./storage/backup.js";
 export type { DietDatabaseBackupResult } from "./storage/backup.js";
 

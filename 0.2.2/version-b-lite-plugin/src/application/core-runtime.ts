@@ -54,9 +54,12 @@ import type {
   CoreCommandCandidate,
   CoreInventoryCommandCandidate,
   CoreInventoryLocationCorrectionCandidate,
+  OffsetIsoTimestamp,
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
 } from "../parser/types.js";
+import { cloneSemanticCandidate } from "../semantic/candidate.js";
+import { validateSemanticMealCandidate } from "../semantic/validate-candidate.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { openDietDatabase, type DietDatabaseRuntime } from "../storage/database.js";
 import {
@@ -678,6 +681,7 @@ function acquireSession(runtime: CoreRuntime): CoreRuntimeSession {
 
 const REQUEST_FIELDS = Object.freeze(["action", "source_text", "received_at", "timezone",
   "operation_id", "source_message_id", "conversation_id", "prior_context"] as const);
+const SEMANTIC_CANDIDATE_FIELD = "semantic_candidate" as const;
 
 function requestInvalid(reason: string): never {
   throw new TypeError(`CORE_APPLICATION_REQUEST_INVALID:${reason}`);
@@ -687,10 +691,14 @@ function cloneRequest(value: unknown): Readonly<CoreApplicationRequest> {
   if (typeof value !== "object" || value === null || Array.isArray(value) ||
       isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) return requestInvalid("shape");
   const keys = Reflect.ownKeys(value);
-  if (keys.length !== REQUEST_FIELDS.length || keys.some((key) => typeof key !== "string") ||
+  const hasSemanticCandidate = keys.includes(SEMANTIC_CANDIDATE_FIELD);
+  const expectedLength = REQUEST_FIELDS.length + (hasSemanticCandidate ? 1 : 0);
+  if (keys.length !== expectedLength || keys.some((key) => typeof key !== "string") ||
       REQUEST_FIELDS.some((key) => !keys.includes(key))) return requestInvalid("keys");
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  for (const key of REQUEST_FIELDS) {
+  for (const key of hasSemanticCandidate
+    ? [...REQUEST_FIELDS, SEMANTIC_CANDIDATE_FIELD]
+    : REQUEST_FIELDS) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, "value") || descriptor.enumerable !== true) {
       return requestInvalid(`${key}:descriptor`);
@@ -702,8 +710,32 @@ function cloneRequest(value: unknown): Readonly<CoreApplicationRequest> {
   }
   const parseInput = cloneCoreParseInput(Object.fromEntries(REQUEST_FIELDS
     .filter((key) => key !== "action").map((key) => [key, descriptors[key].value])) as CoreApplicationRequest);
-  const ordinary = JSON.parse(canonicalJson(parseInput)) as Omit<CoreApplicationRequest, "action">;
-  return Object.freeze({ action: action as DietManagerAction, ...ordinary });
+  const ordinary = JSON.parse(canonicalJson(parseInput)) as Omit<
+    CoreApplicationRequest,
+    "action" | "semantic_candidate"
+  >;
+  if (!hasSemanticCandidate) return Object.freeze({ action: action as DietManagerAction, ...ordinary });
+  const semanticCandidate = cloneSemanticCandidate(descriptors.semantic_candidate.value);
+  return Object.freeze({
+    action: action as DietManagerAction,
+    ...ordinary,
+    semantic_candidate: semanticCandidate,
+  });
+}
+
+function parseApplicationRequest(request: Readonly<CoreApplicationRequest>) {
+  if (request.semantic_candidate === undefined) {
+    const { action: _action, semantic_candidate: _candidate, ...parseInput } = request;
+    return parseCoreCommand(parseInput);
+  }
+  return validateSemanticMealCandidate({
+    candidate: request.semantic_candidate,
+    action: request.action,
+    source_text: request.source_text,
+    received_at: request.received_at as OffsetIsoTimestamp,
+    timezone: request.timezone,
+    operation_id: request.operation_id,
+  });
 }
 
 function sanitizedCode(error: unknown): string {
@@ -1280,10 +1312,12 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   }
   let parsed;
   try {
-    const { action: _action, ...parseInput } = request;
-    parsed = parseCoreCommand(parseInput);
+    parsed = parseApplicationRequest(request);
   } catch {
     return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+  }
+  if (parsed.disposition === "rejected") {
+    return failedOutcome(request.action, request.operation_id, parsed.error_code);
   }
   if (parsed.disposition !== "candidate") {
     if (parsed.action !== request.action) {
@@ -2195,10 +2229,12 @@ export async function handleCoreRequestAsync(
   }
   let parsed;
   try {
-    const { action: _action, ...parseInput } = request;
-    parsed = parseCoreCommand(parseInput);
+    parsed = parseApplicationRequest(request);
   } catch {
     return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+  }
+  if (parsed.disposition === "rejected") {
+    return failedOutcome(request.action, request.operation_id, parsed.error_code);
   }
   if (
     parsed.disposition === "candidate" && parsed.command.action === "correct_record" &&
