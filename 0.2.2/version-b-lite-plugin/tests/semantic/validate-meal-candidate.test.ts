@@ -110,6 +110,31 @@ describe("semantic meal candidate validation", () => {
       { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
     ],
     [
+      "future modal",
+      "我明天会吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "near-future modal",
+      "我等会儿要吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "unanchored future modal",
+      "我会吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "unanchored desire",
+      "我想吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
+      "future modal followed by an unrelated completion",
+      "我明天会吃一个鸡蛋，后来还是吃了一个苹果",
+      { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
+    ],
+    [
       "stated plan",
       "我打算明天吃一个鸡蛋",
       { disposition: "ignored", action: "record_meal", reason_code: "future_plan" },
@@ -117,6 +142,16 @@ describe("semantic meal candidate validation", () => {
     [
       "direct refusal",
       "我不吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "desire negation",
+      "我不想吃一个鸡蛋",
+      { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
+    ],
+    [
+      "willingness negation",
+      "我不愿意吃一个鸡蛋",
       { disposition: "ignored", action: "record_meal", reason_code: "not_occurred" },
     ],
     [
@@ -149,6 +184,44 @@ describe("semantic meal candidate validation", () => {
       time: { kind: "unspecified" as const, evidence_span: null },
     };
     expect(validate(value)).toEqual(expected);
+  });
+
+  it("lets completed evidence override earlier reluctance", () => {
+    const sourceText = "本来不想吃，后来还是吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_meal",
+        items: [{ normalized_name: "egg", quantity: 1, unit: "piece" }],
+      },
+    });
+  });
+
+  it("accepts an explicitly completed meal with a future-capable time word", () => {
+    const sourceText = "我今晚吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_meal",
+        items: [{ normalized_name: "egg", quantity: 1, unit: "piece" }],
+      },
+    });
   });
 
   it.each([
