@@ -143,4 +143,71 @@ describe("DEC-030 C-3 set_goal application path", () => {
       dbRuntime.close();
     }
   });
+
+  it("commits natural calorie and protein-clear phrases into successive goal versions", () => {
+    const root = newRoot();
+    let clock = "2026-08-12T04:00:01.000Z";
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => clock,
+    });
+
+    const profileOutcome = handleCoreRequest(
+      runtime,
+      request("set_profile", "身高175体重68公斤", "operation-profile-natural-goal-001"),
+    );
+    expect(profileOutcome).toMatchObject({ status: "committed", committed: true });
+
+    clock = "2026-08-12T04:00:02.000Z";
+    const calorieOutcome = handleCoreRequest(
+      runtime,
+      request(
+        "set_goal",
+        "以后每天热量按1900大卡算就行。",
+        "operation-goal-natural-calorie-002",
+      ),
+    );
+    expect(calorieOutcome).toMatchObject({
+      action: "set_goal",
+      status: "committed",
+      committed: true,
+    });
+    expect(calorieOutcome).not.toMatchObject({ reason_code: "ACTION_CONFLICT" });
+
+    clock = "2026-08-12T04:00:03.000Z";
+    const clearOutcome = handleCoreRequest(
+      runtime,
+      request(
+        "set_goal",
+        "蛋白质这一栏暂时不用给我定。",
+        "operation-goal-natural-clear-003",
+      ),
+    );
+    expect(clearOutcome).toMatchObject({
+      action: "set_goal",
+      status: "committed",
+      committed: true,
+    });
+    expect(clearOutcome).not.toMatchObject({ reason_code: "ACTION_CONFLICT" });
+    runtime.close();
+
+    const dbRuntime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const versions = dbRuntime.database.prepare(
+        "SELECT * FROM goal_versions WHERE user_id = ? ORDER BY effective_from",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(versions).toHaveLength(3);
+      const latest = JSON.parse(versions[2]!.payload_json as string) as {
+        authority_kind: string;
+        goals: Record<string, number | null>;
+      };
+      expect(latest.authority_kind).toBe("diet-manager/goal-version/v1");
+      expect(latest.goals).toMatchObject({
+        energy_kcal: 1900,
+        protein_g: null,
+      });
+    } finally {
+      dbRuntime.close();
+    }
+  });
 });

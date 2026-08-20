@@ -97,4 +97,50 @@ describe("DEC-030 C-2 set_profile application path", () => {
       dbRuntime.close();
     }
   });
+
+  it("commits the real natural profile phrase without an action conflict", () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => "2026-08-12T04:00:01.000Z",
+    });
+    const outcome = handleCoreRequest(
+      runtime,
+      request(
+        "想开始减脂了，我28岁女生，175高，65公斤。",
+        "operation-profile-app-natural-001",
+      ),
+    );
+    expect(outcome).toMatchObject({
+      action: "set_profile",
+      status: "committed",
+      committed: true,
+      operation_id: "operation-profile-app-natural-001",
+      record_id: expect.any(String),
+    });
+    expect(outcome).not.toMatchObject({ reason_code: "ACTION_CONFLICT" });
+    runtime.close();
+
+    const dbRuntime = openDietDatabase({ privateRuntimeRoot: root });
+    try {
+      const profiles = dbRuntime.database.prepare(
+        "SELECT * FROM user_profiles WHERE user_id = ?",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]).toMatchObject({
+        height_cm: 175,
+        weight_kg: 65,
+        sex: "female",
+        age: 28,
+        goal_state: "cut",
+      });
+
+      const goalVersions = dbRuntime.database.prepare(
+        "SELECT * FROM goal_versions WHERE user_id = ?",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(goalVersions).toHaveLength(1);
+    } finally {
+      dbRuntime.close();
+    }
+  });
 });
