@@ -10,8 +10,9 @@ const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
 // 身高单位可省略（缺省厘米），体重单位必须出现（公斤/千克/kg）；性别男/女、年龄数字+岁、
 // 状态减脂/增肌/维持。段序不限，但数值落在保守有界区间内（身高 50–300cm、体重 20–500kg、
 // 年龄 1–120 整数），超出即按档案不完整要求澄清，而非静默落错数据。
-const HEIGHT_PATTERN = /身高\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:厘米|公分|cm|CM|Cm)?/u;
-const WEIGHT_PATTERN = /体重\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:公斤|千克|kg|KG|Kg)/u;
+const HEIGHT_PATTERN = /(?:身高\s*(?:是|为|差不多|大概|约|左右)?\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:厘米|公分|cm|CM|Cm)?|(\d{1,3}(?:\.\d{1,2})?)\s*(?:厘米|公分|cm|CM|Cm)?\s*高)/u;
+const WEIGHT_PATTERN = /(?:体重\s*(?:是|为|差不多|大概|约)?\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:公斤|千克|kg|KG|Kg)(?:左右)?|(?:^|[，,。；;\s])\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:公斤|千克|kg|KG|Kg)(?:左右)?(?=$|[，,。；;\s]))/u;
+const PROFILE_EVIDENCE_PATTERN = /(?:身高|体重|\d{1,3}(?:\.\d{1,2})?\s*(?:厘米|公分|cm|CM|Cm)?\s*高|(?:^|[，,。；;\s])\s*\d{1,3}(?:\.\d{1,2})?\s*(?:公斤|千克|kg|KG|Kg)(?:左右)?(?=$|[，,。；;\s]))/u;
 const SEX_PATTERN = /(男|女)/u;
 const AGE_PATTERN = /(\d{1,3})\s*岁/u;
 const STATE_PATTERN = /(减脂|增肌|维持)/u;
@@ -31,18 +32,25 @@ function frozenRecord<const T extends object>(entries: T): Readonly<T> {
   return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
 }
 
+function firstNumericCapture(match: RegExpExecArray | null): number | null {
+  if (match === null) return null;
+  for (let index = 1; index < match.length; index += 1) {
+    const raw = match[index];
+    if (raw !== undefined) return Number(raw);
+  }
+  return null;
+}
+
 function parseHeight(source: string): number | null {
-  const match = HEIGHT_PATTERN.exec(source);
-  if (match === null || match[1] === undefined) return null;
-  const value = Number(match[1]);
+  const value = firstNumericCapture(HEIGHT_PATTERN.exec(source));
+  if (value === null) return null;
   if (!Number.isFinite(value) || value < 50 || value > 300) return null;
   return value;
 }
 
 function parseWeight(source: string): number | null {
-  const match = WEIGHT_PATTERN.exec(source);
-  if (match === null || match[1] === undefined) return null;
-  const value = Number(match[1]);
+  const value = firstNumericCapture(WEIGHT_PATTERN.exec(source));
+  if (value === null) return null;
   if (!Number.isFinite(value) || value < 20 || value > 500) return null;
   return value;
 }
@@ -64,7 +72,7 @@ export function parseProfileCommand(
   input: Readonly<CoreParseInput>,
 ): CoreParseResult | undefined {
   const source = input.source_text.trim();
-  if (!/身高|体重/u.test(source)) return undefined;
+  if (!PROFILE_EVIDENCE_PATTERN.test(source)) return undefined;
 
   const height = parseHeight(source);
   const weight = parseWeight(source);
