@@ -89,7 +89,11 @@ const FRAME_APPROVED_OMITTED_PREFIX = /^(?:早餐|午饭|晚饭|刚才|刚刚|�
 const FRAME_NATURAL_OMITTED_PREFIX = /^(?:顺手|随便|就|刚下班路上|下班路上)$/u;
 const FRAME_OBJECT_FRONTED_COMPLETION = /^苹果\s*记不清\s*是\s*在\s*公司\s*还是\s*回家后$/u;
 const FRAME_NATURAL_SELF_SUFFIX = /我(?:\s*(?:自己|本人))?(?:(?:刚才|刚刚|刚|这会儿|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|在公司|然后|接着|后来|又|随便|顺手|就|才|已经|没|没有)\s*)*$/u;
-const FRAME_EXPLICIT_NON_SELF_SUFFIX = /(?:孩子|朋友|同事|家人|他们|他|她|妈妈|爸爸|我妈|我爸|我妈妈|我爸爸|我对象|我老公|我老婆|我孩子|我儿子|我女儿|小[\p{Script=Han}]{1,2}|老[\p{Script=Han}]{1,2}|[\p{Script=Han}]{1,4}(?:老师|阿姨|叔叔|同学))(?:(?:刚才|刚刚|刚|这会儿|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|顺手|随便|就|才|已经)\s*)*$/u;
+const EXPLICIT_OTHER_SUBJECT = /(我(?:妈妈|爸爸|对象|老公|老婆|孩子|儿子|女儿|妈|爸)|孩子|室友|朋友|同事|家人|他们|(?<!其)他(?!们)|她|妈妈|爸爸|小[\p{Script=Han}]{1,2}|老[\p{Script=Han}]{1,2}|[\p{Script=Han}]{1,4}(?:老师|阿姨|叔叔|同学))(?:(?:刚才|刚刚|刚|这会儿|今天|昨天|前天|今早|昨晚|今晚|早上|上午|中午|下午|晚上|夜里|早餐|午餐|晚餐|午饭|晚饭|顺手|随便|就|才|已经|又)\s*)*(?=(?:吃|喝)|$)/u;
+
+export function detectExplicitOtherSubject(sourceText: string): string | null {
+  return EXPLICIT_OTHER_SUBJECT.exec(sourceText)?.[1] ?? null;
+}
 
 function frozenFrameRecord<T extends object>(entries: T): Readonly<T> {
   return Object.freeze(Object.assign(Object.create(null), entries)) as Readonly<T>;
@@ -198,7 +202,7 @@ export function resolvePredicateFrameSubject(
     return frozenFrameRecord({ disposition: "unresolved" as const });
   }
 
-  if (FRAME_EXPLICIT_NON_SELF_SUFFIX.test(prefix)) {
+  if (detectExplicitOtherSubject(prefix) !== null) {
     return frozenFrameRecord({ disposition: "non_self" as const });
   }
 

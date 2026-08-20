@@ -46,6 +46,11 @@ export function normalizeMealLexeme(rawText: string): string | null {
   return lexeme === undefined ? null : lexeme.normalized_name;
 }
 
+export function mealLexemeKind(rawText: string): CoreMealItem["kind"] | null {
+  const lexeme = LEXICON.find((candidate) => candidate.raw_text === rawText);
+  return lexeme?.kind ?? null;
+}
+
 export interface PositionedMealItem extends ProposedSubjectItem {
   readonly event_id: string;
   readonly occurrence_id: string;
@@ -152,6 +157,23 @@ const ALLOWED_UNITS: Readonly<Record<string, Readonly<Record<string, string>>>> 
   coffee: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
   tea: frozenRecord({ ml: "ml", mL: "ml", ML: "ml", 毫升: "ml" }),
 });
+
+export function mealLexemeAllowsUnit(rawText: string, unit: string): boolean {
+  const normalizedName = normalizeMealLexeme(rawText);
+  if (normalizedName === null) return false;
+  const units = ALLOWED_UNITS[normalizedName];
+  return units !== undefined && Object.values(units).includes(unit);
+}
+
+export function mealLexemeAmountQuestion(rawText: string): string {
+  const normalizedName = normalizeMealLexeme(rawText);
+  const units = normalizedName === null ? undefined : ALLOWED_UNITS[normalizedName];
+  const rawUnit = units === undefined
+    ? undefined
+    : Object.entries(units).find(([, normalized]) => normalized !== "g")?.[0] ??
+      Object.keys(units)[0];
+  return rawUnit === undefined ? `${rawText}吃了多少？` : `${rawText}吃了多少${rawUnit}？`;
+}
 
 // 数量在食物词之前：`1碗米饭`（锚定在食物词之前）。
 const AMOUNT_BEFORE_ITEM = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u;

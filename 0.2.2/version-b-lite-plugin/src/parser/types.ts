@@ -122,7 +122,9 @@ export interface CoreMealCommandCandidate {
   readonly operation_id: string;
   readonly meal_identity_seed: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version:
+    | "diet-manager/core-parser-v1"
+    | "diet-manager/semantic-candidate-v1";
   readonly occurred_time: OccurredTimeEvidence;
   readonly subject: CoreSubjectEvidence;
   readonly items: readonly CoreMealItem[];
