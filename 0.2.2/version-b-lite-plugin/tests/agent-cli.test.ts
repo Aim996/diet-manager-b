@@ -12,7 +12,7 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -41,6 +41,7 @@ interface CliOptions {
   readonly args?: readonly string[];
   readonly configFile?: string;
   readonly conversationId?: string;
+  readonly environment?: Readonly<Record<string, string>>;
 }
 
 function newRoot(prefix = "diet-agent-cli-"): string {
@@ -64,6 +65,7 @@ function deploymentEnvironment(options: CliOptions): NodeJS.ProcessEnv {
   if (options.conversationId !== undefined) {
     environment.DIET_MANAGER_CONVERSATION_ID = options.conversationId;
   }
+  Object.assign(environment, options.environment);
   return environment;
 }
 
@@ -441,6 +443,79 @@ describe("standalone agent JSON CLI", () => {
 
     expectProtocolFailure(result, "DIET_AGENT_CLI_CONFIG_REQUIRED");
     expect(existsSync(databasePath(dataRoot))).toBe(false);
+  });
+
+  it("rejects a config below a symlink or junction ancestor so a linked parent cannot redirect deployment authority", () => {
+    const container = newRoot("diet-agent-cli-parent-link-config-");
+    const dataRoot = join(container, "data");
+    const realConfigDirectory = join(container, "real-config-directory");
+    const linkedConfigDirectory = join(container, "linked-config-directory");
+    mkdirSync(dataRoot);
+    mkdirSync(realConfigDirectory);
+    writeConfig(join(realConfigDirectory, "runtime.json"), runtimeConfig(dataRoot));
+    symlinkSync(
+      realConfigDirectory,
+      linkedConfigDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const result = runRawCli({
+      configFile: join(linkedConfigDirectory, "runtime.json"),
+      input: `${JSON.stringify(command("query_meals", "查询今天的饮食记录"))}\n`,
+    });
+
+    expectProtocolFailure(result, "DIET_AGENT_CLI_CONFIG_REQUIRED");
+    expect(existsSync(databasePath(dataRoot))).toBe(false);
+  });
+
+  it("rejects a same-length in-place config rewrite between descriptor read and validation", () => {
+    const container = newRoot("diet-agent-cli-config-race-");
+    const firstRoot = join(container, "data-a");
+    const secondRoot = join(container, "data-b");
+    mkdirSync(firstRoot);
+    mkdirSync(secondRoot);
+    const configFile = join(container, "runtime.json");
+    const original = `${JSON.stringify(runtimeConfig(firstRoot))}\n`;
+    const replacement = `${JSON.stringify(runtimeConfig(secondRoot))}\n`;
+    expect(Buffer.byteLength(replacement)).toBe(Buffer.byteLength(original));
+    writeFileSync(configFile, original, "utf8");
+
+    const preload = join(container, "rewrite-after-config-read.mjs");
+    writeFileSync(preload, `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const target = fs.statSync(process.env.DIET_CLI_TEST_RACE_CONFIG);
+const originalReadSync = fs.readSync;
+let rewritten = false;
+fs.readSync = function (...args) {
+  const count = Reflect.apply(originalReadSync, this, args);
+  const opened = fs.fstatSync(args[0]);
+  if (!rewritten && count > 0 && opened.dev === target.dev && opened.ino === target.ino) {
+    rewritten = true;
+    fs.writeFileSync(
+      process.env.DIET_CLI_TEST_RACE_CONFIG,
+      process.env.DIET_CLI_TEST_RACE_REPLACEMENT,
+      "utf8",
+    );
+  }
+  return count;
+};
+syncBuiltinESMExports();
+`, "utf8");
+
+    const result = runRawCli({
+      configFile,
+      input: `${JSON.stringify(command("query_meals", "查询今天的饮食记录"))}\n`,
+      environment: {
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+        DIET_CLI_TEST_RACE_CONFIG: configFile,
+        DIET_CLI_TEST_RACE_REPLACEMENT: replacement,
+      },
+    });
+
+    expectProtocolFailure(result, "DIET_AGENT_CLI_CONFIG_REQUIRED");
+    expect(existsSync(databasePath(firstRoot))).toBe(false);
+    expect(existsSync(databasePath(secondRoot))).toBe(false);
   });
 
   it("executes all eleven actions through isolated processes with only intended SQLite writes", () => {

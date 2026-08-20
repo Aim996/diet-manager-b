@@ -5,7 +5,9 @@ import {
   lstatSync,
   openSync,
   readSync,
+  realpathSync,
 } from "node:fs";
+import { join, parse, resolve, sep } from "node:path";
 
 const RUNTIME_CONFIG_SCHEMA_VERSION = "diet-manager/runtime-config/v1" as const;
 const RUNTIME_CONFIG_MAX_BYTES = 16_384;
@@ -30,14 +32,24 @@ type BigIntStats = ReturnType<typeof fstatSync> & {
   readonly ino: bigint;
   readonly nlink: bigint;
   readonly size: bigint;
+  readonly ctimeNs: bigint;
+  readonly mtimeNs: bigint;
 };
 
 function configRequired(): never {
   throw new AgentRuntimeConfigError();
 }
 
-function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino;
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+function sameFileSnapshot(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino &&
+    left.size === right.size && left.ctimeNs === right.ctimeNs &&
+    left.mtimeNs === right.mtimeNs;
 }
 
 function validateOrdinaryFile(stat: BigIntStats): void {
@@ -47,15 +59,50 @@ function validateOrdinaryFile(stat: BigIntStats): void {
   }
 }
 
+interface ConfigPathAuthority {
+  readonly absolutePath: string;
+  readonly fileStat: BigIntStats;
+}
+
+function assertPhysicalPath(path: string): void {
+  const physical = realpathSync.native(path);
+  if (!samePath(physical, resolve(path))) configRequired();
+}
+
+function validateConfigPath(path: string): ConfigPathAuthority {
+  const absolutePath = resolve(path);
+  const root = parse(absolutePath).root;
+  let current = root;
+  const rootStat = lstatSync(current, { bigint: true }) as BigIntStats;
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) configRequired();
+
+  const components = absolutePath.slice(root.length).split(sep).filter((part) => part.length > 0);
+  let fileStat: BigIntStats | undefined;
+  for (const [index, component] of components.entries()) {
+    current = join(current, component);
+    const stat = lstatSync(current, { bigint: true }) as BigIntStats;
+    const final = index === components.length - 1;
+    if (stat.isSymbolicLink()) configRequired();
+    if (final) {
+      validateOrdinaryFile(stat);
+      fileStat = stat;
+    } else if (!stat.isDirectory()) {
+      configRequired();
+    }
+  }
+  if (fileStat === undefined) configRequired();
+  assertPhysicalPath(absolutePath);
+  return Object.freeze({ absolutePath, fileStat });
+}
+
 function readExactOrdinaryFile(path: string): string {
   let descriptor: number | undefined;
   try {
-    const before = lstatSync(path, { bigint: true }) as BigIntStats;
-    validateOrdinaryFile(before);
-    descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const before = validateConfigPath(path);
+    descriptor = openSync(before.absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     const opened = fstatSync(descriptor, { bigint: true }) as BigIntStats;
     validateOrdinaryFile(opened);
-    if (!sameIdentity(before, opened)) configRequired();
+    if (!sameFileSnapshot(before.fileStat, opened)) configRequired();
 
     const length = Number(opened.size);
     const bytes = Buffer.alloc(length);
@@ -67,10 +114,9 @@ function readExactOrdinaryFile(path: string): string {
     }
 
     const after = fstatSync(descriptor, { bigint: true }) as BigIntStats;
-    const current = lstatSync(path, { bigint: true }) as BigIntStats;
+    const current = validateConfigPath(before.absolutePath);
     validateOrdinaryFile(after);
-    validateOrdinaryFile(current);
-    if (!sameIdentity(opened, after) || !sameIdentity(after, current) || after.size !== opened.size) {
+    if (!sameFileSnapshot(opened, after) || !sameFileSnapshot(after, current.fileStat)) {
       configRequired();
     }
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
