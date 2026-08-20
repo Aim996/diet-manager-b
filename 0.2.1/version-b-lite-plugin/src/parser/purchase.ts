@@ -109,6 +109,7 @@ const PRODUCT_ALIASES = Object.freeze<Readonly<Record<string, Readonly<{
 });
 
 const PURCHASE_PREFIX = /^(?:我\s*)?买了/u;
+const BROUGHT_HOME_STOCK_IN = /^今天\s*带回来\s*(.+?)\s*[，,]\s*先\s*放进库存[。.]?$/u;
 const NUMERIC_TOKEN = /^([+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|两|[一二三四五六七八九十])([\s\S]*)$/u;
 // Single source of truth: the package-unit character class is derived from
 // PACKAGE_UNIT_ALIASES so the grammar token can never drift from the
@@ -269,6 +270,12 @@ function parseSinglePurchaseItem(
   return parsed;
 }
 
+function broughtHomeStockInBody(source: string): string | null {
+  const match = BROUGHT_HOME_STOCK_IN.exec(source);
+  const body = match?.[1]?.trim();
+  return body === undefined || body.length === 0 ? null : body;
+}
+
 const MULTI_ITEM_SEPARATOR = /[、和与]/u;
 
 const MISSING_UNIT_HINTS = Object.freeze<Readonly<Record<string, Readonly<[string, string]>>>>({
@@ -330,6 +337,18 @@ export function resolvePantryClarification(
   input: Readonly<CoreParseInput>,
 ): Extract<CoreClarificationResult, { action: "add_inventory" }> | null {
   const source = input.source_text.trim();
+  const broughtHomeBody = broughtHomeStockInBody(source);
+  if (broughtHomeBody !== null) {
+    const parsed = parsePurchaseItemBody(broughtHomeBody, 0);
+    if (parsed.status === "missing_amount" || parsed.status === "amount_ambiguous") {
+      return Object.freeze({
+        disposition: "needs_clarification",
+        action: "add_inventory",
+        reason_code: "amount_ambiguous",
+        question: "还没有记录。请说明入库数量，例如几盒或几个鸡蛋。",
+      });
+    }
+  }
   if (/^(?:我\s*)?买了牛奶[。.]?$/u.test(source)) {
     return Object.freeze({
       disposition: "needs_clarification",
@@ -464,6 +483,11 @@ export function resolvePantryCommand(
   const source = input.source_text.trim();
   const locationCorrection = parseInventoryLocationCorrection(input);
   if (locationCorrection !== null) return locationCorrection;
+  const broughtHomeBody = broughtHomeStockInBody(source);
+  if (broughtHomeBody !== null) {
+    const parsed = parsePurchaseItemBody(broughtHomeBody, 0);
+    if (parsed.status === "candidate") return purchase(input, [parsed.item]);
+  }
   {
     const single = parseSinglePurchaseItem(input, 0);
     if (single.status === "candidate") {
