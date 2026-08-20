@@ -1,0 +1,48 @@
+{
+  "name": "diet-manager-b",
+  "private": true,
+  "version": "0.2.2",
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:b-fault": "vitest run tests/fault-matrix.test.ts --maxWorkers=1 --minWorkers=1 && node tests/b-slice-crash-harness.mjs",
+    "test:b-slice-crash": "npm run build && node tests/b-slice-crash-harness.mjs",
+    "test:progress-reservation-concurrency": "npm run build && node tests/progress-reservation-concurrency.mjs",
+    "test:repository-concurrency": "npm run build && node tests/repository-concurrency.mjs",
+    "test:undo-concurrency": "npm run build && node tests/undo-concurrency.mjs",
+    "admin:backup": "node dist/admin/cli.js backup",
+    "admin:restore": "node dist/admin/cli.js restore",
+    "admin:backup-portable": "node dist/admin/cli.js backup-portable",
+    "admin:restore-portable": "node dist/admin/cli.js restore-portable",
+    "admin:init-root": "node dist/admin/cli.js init-root",
+    "test:admin-cli": "npm run build && node tests/admin-cli-harness.mjs",
+    "install:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-local.ps1",
+    "install:product": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-diet-manager.ps1",
+    "test:install-lifecycle": "npm run build && vitest run tests/install-lifecycle.test.ts --maxWorkers=1 --minWorkers=1",
+    "product:validate": "pwsh -NoProfile -File ../shared/validate-product-0.1.ps1",
+    "validate:real-acceptance-assets": "node ../shared/tests/validate-real-acceptance-assets.mjs",
+    "build": "tsc -p tsconfig.json",
+    "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",
+    "plugin:validate": "npm run build && openclaw plugins build --check --root . --entry ./dist/index.js && openclaw plugins validate --root . --entry ./dist/index.js"
+  },
+  "dependencies": {
+    "typebox": "^1.3.3"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "openclaw": "^2026.5.17",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  }
+}
