@@ -120,6 +120,13 @@ function matchEvidence(
   });
 }
 
+export function findSemanticLaterCompletedEvidence(
+  sourceText: string,
+): CompletionMatchedEvidence | null {
+  return matchEvidence(sourceText, ADVERSATIVE_COMPLETED_RULE) ??
+    matchEvidence(sourceText, SEMANTIC_LATER_COMPLETED_RULE);
+}
+
 const TRAILING_QUESTION_TAIL = /[\s"'。.!！?？]|\p{Pe}|\p{Pf}/u;
 const FINAL_QUESTION_PARTICLE = /[吗么嘛呢]/u;
 
@@ -271,13 +278,6 @@ export function classifySemanticCompletion(
     sourceText,
     SEMANTIC_DIRECT_NON_OCCURRENCE_RULE,
   );
-  const laterCompleted = standard.completion_evidence?.matched_evidence ??
-    matchEvidence(sourceText, SEMANTIC_LATER_COMPLETED_RULE);
-  if (
-    directNonOccurrence !== null &&
-    laterCompleted !== null &&
-    directNonOccurrence.end <= laterCompleted.start
-  ) return standard;
   if (directNonOccurrence !== null || standard.excluded_items.length > 0) {
     return Object.freeze({
       disposition: "ignored" as const,

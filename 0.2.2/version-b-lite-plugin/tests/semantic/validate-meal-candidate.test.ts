@@ -224,6 +224,40 @@ describe("semantic meal candidate validation", () => {
     });
   });
 
+  it("does not let a different later item override an earlier refusal", () => {
+    const sourceText = "我不想吃一个鸡蛋，后来吃了一个苹果";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "not_occurred",
+    });
+  });
+
+  it("does not let different later amount evidence override an earlier refusal", () => {
+    const sourceText = "我不想吃两个鸡蛋，后来吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 2, unit: "piece", evidence_span: "两个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toEqual({
+      disposition: "ignored",
+      action: "record_meal",
+      reason_code: "not_occurred",
+    });
+  });
+
   it("accepts an explicitly completed meal with a future-capable time word", () => {
     const sourceText = "我今晚吃了一个鸡蛋";
     const value = {

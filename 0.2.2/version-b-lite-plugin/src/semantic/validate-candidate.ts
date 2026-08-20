@@ -1,5 +1,8 @@
 import type { DietManagerAction } from "../contracts.js";
-import { classifySemanticCompletion } from "../parser/completion.js";
+import {
+  classifySemanticCompletion,
+  findSemanticLaterCompletedEvidence,
+} from "../parser/completion.js";
 import {
   mealLexemeAllowsUnit,
   mealLexemeAmountQuestion,
@@ -7,6 +10,7 @@ import {
   normalizeMealLexeme,
   resolveMealFrames,
 } from "../parser/meal.js";
+import type { PositionedMealItem } from "../parser/meal.js";
 import { detectExplicitOtherSubject } from "../parser/subject.js";
 import {
   isOccurredTimeEvidenceSpan,
@@ -87,6 +91,62 @@ function amountEvidenceAgrees(
     evidenceItem.amount_evidence.estimated === false;
 }
 
+function evidenceContainsOccurrence(
+  sourceText: string,
+  evidenceSpan: string,
+  occurrence: Readonly<PositionedMealItem>,
+): boolean {
+  let evidenceStart = sourceText.indexOf(evidenceSpan);
+  while (evidenceStart >= 0) {
+    if (
+      evidenceStart <= occurrence.position &&
+      evidenceStart + evidenceSpan.length >= occurrence.end
+    ) return true;
+    evidenceStart = sourceText.indexOf(evidenceSpan, evidenceStart + 1);
+  }
+  return false;
+}
+
+function candidateItemMatchesOccurrence(
+  sourceText: string,
+  item: SemanticMealCandidateV1["items"][number],
+  occurrence: Readonly<PositionedMealItem>,
+): boolean {
+  if (
+    item.raw_name !== occurrence.raw_text ||
+    item.normalized_hint !== occurrence.normalized_name
+  ) return false;
+  if (item.amount.kind === "unknown") return true;
+  return occurrence.amount_resolution === "resolved" &&
+    occurrence.amount_evidence.quantity === item.amount.value &&
+    occurrence.amount_evidence.unit === item.amount.unit &&
+    occurrence.amount_evidence.estimated === false &&
+    evidenceContainsOccurrence(
+      sourceText,
+      item.amount.evidence_span,
+      occurrence,
+    );
+}
+
+function everyCandidateItemCompletedAfter(
+  sourceText: string,
+  items: SemanticMealCandidateV1["items"],
+  occurrences: readonly Readonly<PositionedMealItem>[],
+  completedEvidenceEnd: number,
+): boolean {
+  const available = occurrences.filter((occurrence) =>
+    occurrence.position >= completedEvidenceEnd
+  );
+  return items.every((item) => {
+    const matchIndex = available.findIndex((occurrence) =>
+      candidateItemMatchesOccurrence(sourceText, item, occurrence)
+    );
+    if (matchIndex < 0) return false;
+    available.splice(matchIndex, 1);
+    return true;
+  });
+}
+
 export function validateSemanticMealCandidate(
   input: SemanticMealValidationInput,
 ): SemanticMealValidationResult {
@@ -129,11 +189,25 @@ export function validateSemanticMealCandidate(
     });
   }
   if (completion.disposition === "ignored") {
-    return frozen({
-      disposition: "ignored" as const,
-      action: "record_meal" as const,
-      reason_code: completion.reason_code,
-    });
+    const laterCompleted = findSemanticLaterCompletedEvidence(input.source_text);
+    const candidateScopedOverride =
+      completion.matched_evidence.rule_id ===
+        "completion.semantic-direct-non-occurrence" &&
+      laterCompleted !== null &&
+      completion.matched_evidence.end <= laterCompleted.start &&
+      everyCandidateItemCompletedAfter(
+        input.source_text,
+        candidate.items,
+        mealAuthority.proposed_items,
+        laterCompleted.end,
+      );
+    if (!candidateScopedOverride) {
+      return frozen({
+        disposition: "ignored" as const,
+        action: "record_meal" as const,
+        reason_code: completion.reason_code,
+      });
+    }
   }
   if (
     (candidate.subject.basis === "explicit" &&
