@@ -81,6 +81,8 @@ describe("0.2.1 natural-language regressions from real gateways", () => {
 
   it.each([
     ["这会儿喝了600毫升矿泉水。", "record_water"],
+    ["刚才吃了一个苹果。", "record_meal"],
+    ["这会儿吃了一个苹果。", "record_meal"],
     ["刚才喝了250毫升牛奶。", "record_meal"],
     ["我这会儿喝了270毫升牛奶。", "record_meal"],
     ["是我自己喝的，250毫升牛奶。", "record_meal"],
@@ -102,6 +104,8 @@ describe("0.2.1 natural-language regressions from real gateways", () => {
   it.each([
     "孩子刚才喝了250毫升牛奶。",
     "同事这会儿喝了600毫升矿泉水。",
+    "家人这会儿喝了250毫升牛奶。",
+    "她刚才喝了250毫升牛奶。",
   ])("continues rejecting explicit non-self ingestion: %s", (sourceText) => {
     expect(parse(sourceText)).toMatchObject({
       disposition: "ignored",
