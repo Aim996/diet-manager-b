@@ -86,13 +86,63 @@ Agent 不提供数据根或宿主上下文。命令中不得出现 `official_dat
 - 只要 stdout 成功产生结构合法的业务结果，退出状态就是 `0`；业务未写入由 `committed=false` 和 `status` 表达，不能因为退出 `0` 就声称成功。
 - 协议、配置或启动错误在 stderr 产生一个稳定错误码，退出状态为 `2`，stdout 为空。这同样是未记录；不修改命令重试，不切换其他存储。
 
-### PowerShell
+### PowerShell 7+
 
-路径也使用正斜杠；部署环境已由管理员配置，命令对象不携带数据根或宿主上下文。
+路径也使用正斜杠；部署环境已由管理员配置，命令对象不携带数据根或宿主上下文。不要用 `$command | & ...` 发送含中文的 JSON；请把三个重定向流的编码都显式设为无 BOM UTF-8。
 
 ```powershell
+$node = 'C:/Program Files/diet-manager/node.exe'
+$cli = 'C:/Program Files/diet-manager/dist/cli/agent.js'
 $command = '{"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}'
-$command | & 'C:/Program Files/diet-manager/node.exe' 'C:/Program Files/diet-manager/dist/cli/agent.js' execute
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+$psi = [System.Diagnostics.ProcessStartInfo]::new()
+$psi.FileName = $node
+$psi.ArgumentList.Add($cli)
+$psi.ArgumentList.Add('execute')
+$psi.UseShellExecute = $false
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.StandardInputEncoding = $utf8
+$psi.StandardOutputEncoding = $utf8
+$psi.StandardErrorEncoding = $utf8
+$process = [System.Diagnostics.Process]::new()
+$process.StartInfo = $psi
+[void]$process.Start()
+$process.StandardInput.WriteLine($command)
+$process.StandardInput.Close()
+$stdout = $process.StandardOutput.ReadToEnd()
+$stderr = $process.StandardError.ReadToEnd()
+$process.WaitForExit()
+if ($process.ExitCode -eq 0) { $stdout } else { $stderr }
+```
+
+Windows PowerShell 5.1 没有 `ProcessStartInfo.StandardInputEncoding`；兼容调用应把 stdin 直接写成 UTF-8 字节，并显式设置 stdout/stderr：
+
+```powershell
+$node = 'C:/Program Files/diet-manager/node.exe'
+$cli = 'C:/Program Files/diet-manager/dist/cli/agent.js'
+$command = '{"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}'
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $node
+$psi.Arguments = '"' + $cli + '" execute'
+$psi.UseShellExecute = $false
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.StandardOutputEncoding = $utf8
+$psi.StandardErrorEncoding = $utf8
+$process = New-Object System.Diagnostics.Process
+$process.StartInfo = $psi
+[void]$process.Start()
+$stdinBytes = $utf8.GetBytes($command)
+$process.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)
+$process.StandardInput.Close()
+$stdout = $process.StandardOutput.ReadToEnd()
+$stderr = $process.StandardError.ReadToEnd()
+$process.WaitForExit()
+if ($process.ExitCode -eq 0) { $stdout } else { $stderr }
 ```
 
 ### POSIX shell

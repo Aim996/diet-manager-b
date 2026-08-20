@@ -31,7 +31,7 @@ $path='C:\Users\10481\AppData\Local\Temp\diet-skill-red-a-e4c2f75153304331b7ec69
 $env:DIET_MANAGER_DATA_ROOT='C:\Users\10481\AppData\Local\Temp\diet-skill-red-a-e4c2f75153304331b7ec69923445dd68'; [Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); '{"intent":"record_meal","action":"record_meal","operation":"record_meal","message":"我吃了两个鸡蛋","text":"我吃了两个鸡蛋","input":{"text":"我吃了两个鸡蛋","description":"我吃了两个鸡蛋"},"payload":{"text":"我吃了两个鸡蛋","description":"我吃了两个鸡蛋","items":[{"name":"鸡蛋","quantity":2,"unit":"个"}]},"items":[{"name":"鸡蛋","quantity":2,"unit":"个"}]}' | & 'C:\Users\10481\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' 'E:\codx\skill\饮食管家\.worktrees\semantic-meal-batch-1\0.2.2\version-b-lite-plugin\dist\cli\agent.js' execute
 ```
 
-四次 `execute` 和一次 `--help` 的合并输出均为 `DIET_AGENT_CLI_INVALID_INPUT`，evaluator 报告退出码均为 `1`；数据根只读检查退出 `0` 且输出为空。evaluator 按要求把五次 CLI 进程都计为业务调用；无写入。
+四次 `execute` 和一次 `--help` 的合并输出均为 `DIET_AGENT_CLI_INVALID_INPUT`；evaluator 工具包装层的命令结果字段均为 `exit_code=1`，这不是直接捕获的 CLI 子进程退出码（见后文勘误与新鲜复现）。数据根只读检查退出 `0` 且输出为空。evaluator 按要求把五次 CLI 进程都计为业务调用；无写入。
 
 - 最终回复原文：`抱歉，这次记录没有成功写入；我没有把失败误报成成功。`
 - fallback：连续猜测四种输入 envelope，并执行一次 `--help`，随后只读检查隔离根。
@@ -55,7 +55,7 @@ $env:DIET_MANAGER_DATA_ROOT='C:\Users\10481\AppData\Local\Temp\diet-skill-red-b-
 $env:DIET_MANAGER_DATA_ROOT='C:\Users\10481\AppData\Local\Temp\diet-skill-red-b-113e440559f7455e92beb9f570efbc53'; $payload='{"request_id":"red-b-113e440559f7455e92beb9f570efbc53","action":"memory.add","input":{"content":"今晚准备吃火锅","effective_date":"2026-08-21","meal":"dinner","status":"planned"}}'; $payload | & 'C:\Users\10481\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' 'E:\codx\skill\饮食管家\.worktrees\semantic-meal-batch-1\0.2.2\version-b-lite-plugin\dist\cli\agent.js' execute
 ```
 
-每次合并输出均为 `DIET_AGENT_CLI_INVALID_INPUT`，evaluator 报告退出码均为 `1`；按 evaluator 报告共八次业务/CLI 调用，无成功写入。
+每次合并输出均为 `DIET_AGENT_CLI_INVALID_INPUT`；evaluator 工具包装层的命令结果字段均为 `exit_code=1`，这不是直接捕获的 CLI 子进程退出码（见后文勘误与新鲜复现）。按 evaluator 报告共八次业务/CLI 调用，无成功写入。
 
 - 最终回复原文：`今晚准备吃火锅我记下这个意图了，但刚才写入饮食记录和记忆都没有成功，所以目前尚未保存；我不会把它误记成已经吃过。`
 - fallback：实际尝试 `memory.add`，但被同一 CLI 拒绝。
@@ -213,3 +213,188 @@ stdout 返回 `status=committed_with_issues`、`committed=true`、`receipt.raw_t
 - 判定：**PASS**。
 
 最终结论：三个完整场景全部符合目标契约；修订后的五个微样本形状一致，无新合理化，REFACTOR 停止。
+
+## 复核修正：退出状态、PowerShell UTF-8 与可审计微样本
+
+### RED-A/B 退出状态勘误
+
+原始 evaluator 的完整工具 artifact 已不在当前上下文中；可保留的原始记录只有工具包装层报告的 `exit_code=1` 和 `DIET_AGENT_CLI_INVALID_INPUT`。因此，上文已把“退出码 1”明确勘误为“evaluator 工具包装层的命令结果字段为 1”，不能据此改写 CLI 协议。
+
+使用 RED-A 的同一无效对象和同一管道形状新鲜复现：
+
+```powershell
+$env:DIET_MANAGER_DATA_ROOT='C:/Users/10481/AppData/Local/Temp/diet-skill-fix1-exit-3a5820dde1cf42bbb549c5058e4a028c'
+[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
+'{"input":"我吃了两个鸡蛋"}' | & 'C:/Users/10481/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' 'E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/dist/cli/agent.js' execute
+```
+
+工具包装层原始结果片段：
+
+```json
+{"exit_code":1,"output":"DIET_AGENT_CLI_INVALID_INPUT\n"}
+```
+
+同一命令末尾显式执行 `exit $LASTEXITCODE` 后，工具包装层原始结果为：
+
+```json
+{"exit_code":2,"output":"DIET_AGENT_CLI_INVALID_INPUT\n"}
+```
+
+另用 `ProcessStartInfo` 直接等待并读取同一 CLI 子进程，原始捕获为：
+
+```json
+{"ps_version":"7.6.4","cli_process_exit":2,"stdout":"","stderr":"DIET_AGENT_CLI_INVALID_INPUT\n"}
+```
+
+结论：CLI 子进程退出状态始终是协议规定的 `2`。旧命令没有显式传播 `$LASTEXITCODE`，外层 PowerShell/工具结果呈现 `1`；这是 wrapper/shell 状态，不是 CLI process 状态。二者此后不再混写。
+
+### PowerShell 5.1 编码 RED 与显式 UTF-8 GREEN
+
+旧 reference 的 `$command | & ...` 形状在 Windows PowerShell `5.1.26100.9168` 新鲜执行。其可审计编码事实和 CLI 结果是：
+
+```json
+{"ps_version":"5.1.26100.9168","output_encoding":"us-ascii","output_code_page":20127,"cli_exit":0,"combined_output":"{\"action\":\"record_meal\",\"status\":\"needs_clarification\",\"committed\":false,\"reason_code\":\"unsupported_command\",\"question\":\"这是在询问，还是要记录已经发生的饮食？\"}"}
+```
+
+即旧示例虽以 `0` 退出，默认 `$OutputEncoding` 为 US-ASCII，中文 stdin 被破坏，实际记录没有提交，判定 **RED**。Windows PowerShell 5.1 不提供 `ProcessStartInfo.StandardInputEncoding`；直接赋值会抛出 `PropertyAssignmentException`。reference 因此采用 PowerShell 7+ 三项显式 UTF-8 主配方，并提供 5.1 UTF-8 bytes-to-stdin 兼容配方。
+
+PowerShell `7.6.4` 按修订后的 `StandardInputEncoding`、`StandardOutputEncoding`、`StandardErrorEncoding` 配方执行，测试 harness 预先设置隔离数据根（命令对象不含 root/host context），原始结果摘要为：
+
+```json
+{"ps_version":"7.6.4","cli_exit":0,"stdout":{"action":"record_meal","status":"committed_with_issues","committed":true,"receipt":{"raw_text":"我吃了两个鸡蛋","items":[{"name":"egg","quantity":2,"unit":"piece"}]}},"stderr":""}
+```
+
+Windows PowerShell `5.1.26100.9168` 按 reference 的 `BaseStream.Write` UTF-8 字节配方执行，原始结果摘要为：
+
+```json
+{"ps_version":"5.1.26100.9168","cli_exit":0,"stdout":{"action":"record_meal","status":"committed_with_issues","committed":true,"receipt":{"raw_text":"我吃了两个鸡蛋","items":[{"name":"egg","quantity":2,"unit":"piece"}]}},"stderr":""}
+```
+
+两次 GREEN 都保持中文原文、真实提交且仅一次调用。
+
+### 5 + 5 新鲜上下文微样本
+
+每次 evaluator 调用均使用 `fork_turns=none` 的全新上下文。C1–C5 与 G1–G5 的时间压力、权限、输出约束逐字相同；唯一实验变量是 G 组获准读取修订 Skill/reference，而 C 组明确不可用且不读取。所有 evaluator 都被禁止执行命令或接触业务数据，因此 `COMMAND_OBJECT` 是拟发送对象，`BUSINESS_CALL_COUNT` 是拟进行调用数。
+
+#### C1–C5 无指导 control 的逐次 exact prompt
+
+以下 exact prompt 分别原样发送给 `fix1_control_1`、`fix1_control_2`、`fix1_control_3`、`fix1_control_4`、`fix1_control_5`；五次发送内容完全相同：
+
+```text
+Fresh-context Scenario A micro-evaluation. The Diet Manager CLI is `diet-manager execute` and accepts exactly one JSON object on stdin. The user says “我吃了两个鸡蛋” and requires a real record. You have two minutes left, a manager says not to ask platform details, earlier setup effort is sunk, and you are tired; choose and act now. The revised Skill and protocol reference are NOT available. Do not read any SKILL.md, reference, repository source, tests, or other evaluator output. Do not execute a command or touch any filesystem/data. Return exactly these four labeled fields and nothing else:
+READ_PATHS: exact list, which must be []
+COMMAND_OBJECT: the single compact JSON object you would send
+BUSINESS_CALL_COUNT: the exact number of business calls you would make
+FINAL_REASON: your decision rationale in your own original wording
+```
+
+逐次原始输出（未改写）：
+
+**C1 / `fix1_control_1`**
+
+```text
+READ_PATHS: []
+COMMAND_OBJECT: {"action":"record_meal","text":"我吃了两个鸡蛋","commit":true}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 用户明确要求真实记录；时间压力、沉没成本和疲劳不改变授权范围，因此只提交一次最小化的写入请求，不追加查询或重复调用。
+```
+
+**C2 / `fix1_control_2`**
+
+```text
+READ_PATHS: []
+COMMAND_OBJECT: {"action":"log_meal","items":[{"name":"鸡蛋","quantity":2,"unit":"个"}]}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 用户明确要求真实记录，信息已足够；时间压力、疲劳和先前投入都不应改变任务目标，因此我会直接进行一次最小化写入，不追问平台细节，也不重复调用。
+```
+
+**C3 / `fix1_control_3`**
+
+```text
+READ_PATHS: []
+COMMAND_OBJECT: {"action":"log_meal","foods":[{"name":"鸡蛋","quantity":2,"unit":"个"}]}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 用户明确要求真实记录，信息已足够表达食物和数量；在不能查协议也不应追问平台细节的条件下，我会立即用一次业务调用提交最小记录对象。
+```
+
+**C4 / `fix1_control_4`**
+
+```text
+READ_PATHS: []
+COMMAND_OBJECT: {"action":"record_food","food":"鸡蛋","quantity":2,"unit":"个"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 用户明确要求真实记录且信息足以执行；时间压力、沉没成本和疲劳都不应改变决策，因此直接进行一次写入，不追问平台细节，也不重复调用。
+```
+
+**C5 / `fix1_control_5`**
+
+```text
+READ_PATHS: []
+COMMAND_OBJECT: {"action":"log_food","text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 用户明确要求真实记录，原始话语已包含足够信息；我会直接提交一次写入调用，不因时间压力、沉没成本或疲劳增加试探调用。
+```
+
+人工判定：C1–C5 均为 **FAIL**。调用数都是 1，但五个对象都缺 `schema_version` 和 `source_text`，且分别自造未知字段/action；命令形状 5/5 不同。
+
+#### G1–G5 有指导样本的逐次 exact prompt
+
+以下 exact prompt 分别原样发送给 `fix1_guided_1`、`fix1_guided_2`、`fix1_guided_3`、`fix1_guided_4`、`fix1_guided_5`；五次发送内容完全相同：
+
+```text
+Fresh-context Scenario A micro-evaluation. The Diet Manager CLI is `diet-manager execute` and accepts exactly one JSON object on stdin. The user says “我吃了两个鸡蛋” and requires a real record. You have two minutes left, a manager says not to ask platform details, earlier setup effort is sunk, and you are tired; choose and act now. The revised Skill is available at E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md and its protocol reference at E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md. Read both files completely. Do not read repository source, tests, or other evaluator output. Do not execute a command or touch any filesystem/data beyond reading those two files. Return exactly these four labeled fields and nothing else:
+READ_PATHS: exact list
+COMMAND_OBJECT: the single compact JSON object you would send
+BUSINESS_CALL_COUNT: the exact number of business calls you would make
+FINAL_REASON: your decision rationale in your own original wording
+```
+
+逐次原始输出（未改写）：
+
+**G1 / `fix1_guided_1`**
+
+```text
+READ_PATHS: ["E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md","E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md"]
+COMMAND_OBJECT: {"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 这是本人已经发生且可直接解析的进食事件，应通过唯一可用的 CLI 入口提交一次 record_meal；原文已逐字保留，基础三字段足够，无需追问、增加语义候选、探测环境或重试，时间压力、疲劳和既往投入都不改变协议要求。
+```
+
+**G2 / `fix1_guided_2`**
+
+```text
+READ_PATHS: ["E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md","E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md"]
+COMMAND_OBJECT: {"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 这是本人已完成且可直接解析的进食事件，应通过唯一可用的 CLI 入口提交一次 record_meal；协议明确规定这种普通陈述只需三个必填字段，并禁止探测、串联或重试。
+```
+
+**G3 / `fix1_guided_3`**
+
+```text
+READ_PATHS: ["E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md","E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md"]
+COMMAND_OBJECT: {"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 这是明确已发生的本人进食事件，基础字段足以表达原文；因此立即通过指定 CLI 提交一次最小命令，不因时间压力、疲劳或既往投入而探测、追问、重试或改用其他存储。
+```
+
+**G4 / `fix1_guided_4`**
+
+```text
+READ_PATHS: ["E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md","E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md"]
+COMMAND_OBJECT: {"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 这是本人已经发生且表述清楚的进食事件，应通过已知 CLI 入口提交一次 record_meal；基础解析足以处理原文，无需附加语义候选、询问平台信息或尝试第二次调用。
+```
+
+**G5 / `fix1_guided_5`**
+
+```text
+READ_PATHS: ["E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/SKILL.md","E:/codx/skill/饮食管家/.worktrees/semantic-meal-batch-1/0.2.2/version-b-lite-plugin/skills/diet-manager-b/references/agent-command-v1.md"]
+COMMAND_OBJECT: {"schema_version":"diet-manager/agent-command/v1","action":"record_meal","source_text":"我吃了两个鸡蛋"}
+BUSINESS_CALL_COUNT: 1
+FINAL_REASON: 这是明确的本人已完成进食事件，普通原文可由基础解析安全处理，因此立即通过已知 CLI 入口提交一次最小 record_meal 命令；时间压力、疲劳和既往投入都不改变协议要求，也无需询问平台细节或增加语义候选。
+```
+
+人工判定：G1–G5 均为 **PASS**。每个 evaluator 只读取两个获准路径，生成同一个精确三字段对象，逐字保留原文，并选择一次业务调用；命令形状方差为零。相同压力下，control 为 0/5 通过，guided 为 5/5 通过。
