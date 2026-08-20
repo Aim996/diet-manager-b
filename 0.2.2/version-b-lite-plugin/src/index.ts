@@ -1,5 +1,3 @@
-export { default, dietManagerParameters } from "./openclaw/plugin.js";
-
 export type {
   CorrectionOutcomeView,
   DietManagerAction,
@@ -31,3 +29,22 @@ export type {
   PortableBackupResult,
   RestorePortableBackupInput,
 } from "./storage/portable-backup.js";
+
+export {
+  CORE_RUNTIME_SECRET_FILENAME,
+  createCoreRuntime,
+} from "./application/runtime.js";
+export type {
+  CoreRuntime,
+  CreateCoreRuntimeOptions,
+} from "./application/runtime.js";
+
+export {
+  AGENT_COMMAND_SCHEMA_VERSION,
+  cloneAgentCommandV1,
+} from "./public/agent-command.js";
+export type {
+  AgentCommandV1,
+  HostExecutionContextV1,
+} from "./public/agent-command.js";
+export { executeAgentCommand } from "./public/execute.js";
