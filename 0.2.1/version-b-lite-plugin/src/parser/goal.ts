@@ -6,10 +6,11 @@ import type {
 
 const PARSER_VERSION = "diet-manager/core-parser-v1" as const;
 
-// 有界六项目标语法：<维度>目标<数值> 或 清除/取消/删除/重置<维度>目标，任意子集可并写。
+// 有界六项目标语法：<维度>目标<数值>、每天<维度>按<数值>算，或
+// 清除/取消/删除/重置<维度>目标，任意子集可并写。
 // null（清除）以清除标记识别；数值为 1–6 位整数或最多两位小数（正数，越界交由领域校验）。
-// 仅当「目标」与某目标维度关键词同时出现才介入；维度已点名但既无数值也无清除标记时，
-// 返回 goal_incomplete 澄清而非静默丢弃。
+// 同一维度同时出现设置和清除时 fail-closed；维度已点名但既无数值也无清除标记时，
+// 返回 goal_incomplete 澄清而非静默丢弃。普通饮食中的营养词不会单独触发目标解析。
 
 const CLEAR_MARKER = "清除|取消|删除|重置";
 const GOAL_NUMBER = String.raw`(\d{1,6}(?:\.\d{1,2})?)`;
@@ -33,7 +34,7 @@ const GOAL_DIMENSIONS: readonly GoalDimensionSpec[] = [
   { field: "fat_g", keywords: ["脂肪"] },
   { field: "carbohydrate_g", keywords: ["碳水化合物", "碳水"] },
   { field: "fiber_g", keywords: ["膳食纤维", "纤维"] },
-  { field: "water_ml", keywords: ["饮水", "水"] },
+  { field: "water_ml", keywords: ["饮水", "喝水", "水"] },
 ];
 
 function escapeRegex(keyword: string): string {
@@ -47,11 +48,28 @@ function extractGoal(source: string, spec: GoalDimensionSpec): GoalExtraction {
   const clearBefore = new RegExp(`(?:${CLEAR_MARKER})\\s*(?:${keywords})\\s*目标`, "u");
   const clearAfter = new RegExp(`(?:${keywords})\\s*目标\\s*(?:${CLEAR_MARKER})`, "u");
   const setAfter = new RegExp(`(?:${keywords})\\s*目标\\s*${GOAL_NUMBER}`, "u");
+  const dailySet = new RegExp(
+    `每天\\s*(?:${keywords})\\s*(?:先\\s*)?按\\s*${GOAL_NUMBER}\\s*(?:大卡|千卡|毫升|ml|ML)?\\s*(?:算|定)`,
+    "u",
+  );
+  const naturalClearAfter = new RegExp(
+    `(?:${keywords})(?:\\s*这一栏)?\\s*(?:暂时|先)?\\s*(?:(?:不用|不需要|不要|不)(?:\\s*给我)?\\s*(?:设|定)|(?:去掉|清掉|取消))`,
+    "u",
+  );
+  const naturalClearBefore = new RegExp(
+    `(?:去掉|清掉|取消)\\s*(?:${keywords})(?:\\s*目标)?`,
+    "u",
+  );
   const incomplete = new RegExp(`(?:${keywords})\\s*目标`, "u");
 
-  if (clearBefore.test(source) || clearAfter.test(source)) return { value: null };
-  const setMatch = setAfter.exec(source);
-  if (setMatch !== null && setMatch[1] !== undefined) return { value: Number(setMatch[1]) };
+  const clearMatched = clearBefore.test(source) || clearAfter.test(source) ||
+    naturalClearAfter.test(source) || naturalClearBefore.test(source);
+  const setMatch = setAfter.exec(source) ?? dailySet.exec(source);
+  const setValue = setMatch?.[1] === undefined ? null : Number(setMatch[1]);
+
+  if (clearMatched && setValue !== null) return "incomplete";
+  if (clearMatched) return { value: null };
+  if (setValue !== null) return { value: setValue };
   if (incomplete.test(source)) return "incomplete";
   return null;
 }
@@ -61,14 +79,13 @@ function frozenRecord<const T extends object>(entries: T): Readonly<T> {
 }
 
 /**
- * 解析有界六项目标命令。仅当「目标」与目标维度关键词同时出现时介入；
- * 无任何目标维度关键词则返回 undefined，交由既有解析器判定。
+ * 解析有界六项目标命令。只有规范目标、每日设定或有界清除形式才介入；
+ * 无任何目标操作证据则返回 undefined，交由既有解析器判定。
  */
 export function parseGoalCommand(
   input: Readonly<CoreParseInput>,
 ): CoreParseResult | undefined {
   const source = input.source_text.trim();
-  if (!/目标/u.test(source)) return undefined;
 
   const overrides: Record<string, number | null> = Object.create(null);
   let incomplete = false;
