@@ -15,6 +15,7 @@ import { OfflineUsdaAdapter } from "../nutrition/offline-usda.js";
 import { FoodDataCentralAdapter } from "../nutrition/adapters/fooddata-central.js";
 import { FoodDataCentralHttpTransport } from "../nutrition/adapters/fooddata-central-http.js";
 import type { NutritionRuntimeConfig, NutritionSourceAdapter, SourceContext } from "../nutrition/types.js";
+import { cloneSemanticCandidate } from "../semantic/candidate.js";
 import {
   assertDietManagerOutcome,
   dietManagerActions,
@@ -49,6 +50,60 @@ const legacyItemSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const exactAmountSchema = Type.Object(
+  {
+    kind: Type.Literal("exact"),
+    value: Type.Number(),
+    unit: Type.String(),
+    evidence_span: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+const unknownAmountSchema = Type.Object(
+  { kind: Type.Literal("unknown") },
+  { additionalProperties: false },
+);
+
+const semanticMealCandidateSchema = Type.Object(
+  {
+    schema_version: Type.Literal("diet-manager/semantic-candidate/v1"),
+    intent: Type.Literal("record_meal"),
+    source_text: Type.String(),
+    subject: Type.Object(
+      {
+        kind: Type.Literal("self"),
+        basis: Type.Union([
+          Type.Literal("explicit"),
+          Type.Literal("private_agent_default"),
+        ]),
+        evidence_span: Type.Union([Type.String(), Type.Null()]),
+        explicit_other_spans: Type.Array(Type.String()),
+      },
+      { additionalProperties: false },
+    ),
+    items: Type.Array(Type.Object(
+      {
+        raw_name: Type.String(),
+        normalized_hint: Type.String(),
+        amount: Type.Union([exactAmountSchema, unknownAmountSchema]),
+      },
+      { additionalProperties: false },
+    )),
+    time: Type.Object(
+      {
+        kind: Type.Union([
+          Type.Literal("source_text"),
+          Type.Literal("unspecified"),
+        ]),
+        evidence_span: Type.Union([Type.String(), Type.Null()]),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export const dietManagerParameters = Type.Object(
   {
     action: actionSchema,
@@ -66,6 +121,7 @@ export const dietManagerParameters = Type.Object(
     items: Type.Optional(Type.Array(legacyItemSchema, {
       description: "Legacy compatibility evidence; the core parses source_text authoritatively.",
     })),
+    semantic_candidate: Type.Optional(semanticMealCandidateSchema),
     received_at: Type.Optional(Type.String({
       description:
         "Operational calls require this field: use the current inbound OpenClaw message timestamp as an ISO offset timestamp.",
@@ -128,6 +184,7 @@ const PARAMETER_FIELDS = Object.freeze([
   "source_text",
   "occurred_at_text",
   "items",
+  "semantic_candidate",
   "received_at",
   "timezone",
   "source_message_id",
@@ -214,6 +271,9 @@ function dataDescriptors(
 function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
   const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action"]);
   if (CORE_REQUEST_FIELDS.some((field) => descriptors[field] === undefined)) return undefined;
+  const semanticCandidate = descriptors.semantic_candidate === undefined
+    ? undefined
+    : cloneSemanticCandidate(descriptors.semantic_candidate.value);
   return {
     action: descriptors.action?.value as DietManagerAction,
     source_text: descriptors.source_text?.value as string,
@@ -224,6 +284,7 @@ function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
     conversation_id: descriptors.conversation_id?.value as string,
     // PRODUCT-0.1 core exposes no caller-authored context/revision authority.
     prior_context: [],
+    ...(semanticCandidate === undefined ? {} : { semantic_candidate: semanticCandidate }),
   };
 }
 
@@ -409,7 +470,7 @@ export default defineToolPlugin({
     tool({
       name: "diet_manager",
       description:
-        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.",
+        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. For record_meal, when the user's natural wording is not safely represented by the legacy parser, send semantic_candidate with the exact same source_text, explicit evidence spans, and unknown amounts left unknown. Never invent identifiers, amounts, units, times, people, or normalized food names. An explicit other person overrides private-agent default self. Follow committed/status/reason_code/error_code exactly in the final reply. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.",
       parameters: dietManagerParameters,
       execute: executeDietManager,
     }),

@@ -74,6 +74,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       "occurred_at_text",
       "operation_id",
       "received_at",
+      "semantic_candidate",
       "source_message_id",
       "source_text",
       "timezone",

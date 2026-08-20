@@ -13,6 +13,8 @@ description: Use when a user reports completed food, water, or inventory activit
 
 工具为旧调用方保留可选的 `occurred_at_text` 和 `items`，但它们只是兼容字段，不能替代写入所需的权威信息。实际请求写入时必须同时提供 `action`、逐字 `source_text`、`received_at`、`timezone`、`operation_id`、`source_message_id` 和 `conversation_id`；查询请求也使用同一组完整调用元数据。其中时间与标识必须逐字取自当前 OpenClaw 入站消息、工具调用和会话上下文；这些调用元数据不是食物、数量或营养事实。上下文没有提供某个必需值时不要调用，也不要虚构一个值。
 
+仅对 `record_meal`：当用户原话不能由旧解析路径安全表达时，在完整七字段之外提交可选 `semantic_candidate`。它只是基于原文的证据候选，不是写入权威：候选的 `source_text` 必须与外层逐字相同，证据片段必须来自原文；不确定的数量使用 `{ "kind": "unknown" }`，不得虚构标识、数量、单位、时间、人物或规范化食物名。原文明确出现他人时，把原文片段放入 `explicit_other_spans`；明确他人优先于私聊默认本人，不能伪装成本人餐食。候选不能替代任何一个必需调用元数据。
+
 每条入站消息至多调用一次 `diet_manager`。拿到结果后立即停止工具操作并回复，不对同一句换参数重试，不读取插件文件，不运行命令排错，也不改用 Memory、便签、提醒或其他工具兜底。只有用户明确要求创建提醒时，提醒工具才属于当前请求。
 
 工具返回失败、冲突或未实现时，不要建议用户原样重发同一句。只有确实缺少数量、规格或时间时，才询问那一个必要信息；功能未实现时直接说明当前不能完成。
@@ -63,6 +65,30 @@ description: Use when a user reports completed food, water, or inventory activit
 ## 示例
 
 用户说“我刚喝了 500 毫升白水，帮我记一下”时，把整句原话作为 `source_text` 调用 `record_water`。只有返回 `committed=true` 才回答已记录；若返回 `failed`，明确说明本次未记录，不要写入每日记忆兜底。
+
+用户说“中午扒了两碗米饭，这会儿还撑着”，且宿主提供了下列调用元数据时，使用一次结构化餐食调用：
+
+```json
+{
+  "action": "record_meal",
+  "source_text": "中午扒了两碗米饭，这会儿还撑着",
+  "received_at": "2026-08-20T12:30:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "operation_id": "pressure-operation-001",
+  "source_message_id": "pressure-message-001",
+  "conversation_id": "pressure-conversation-001",
+  "semantic_candidate": {
+    "schema_version": "diet-manager/semantic-candidate/v1",
+    "intent": "record_meal",
+    "source_text": "中午扒了两碗米饭，这会儿还撑着",
+    "subject": { "kind": "self", "basis": "private_agent_default", "evidence_span": null, "explicit_other_spans": [] },
+    "items": [{ "raw_name": "米饭", "normalized_hint": "rice", "amount": { "kind": "exact", "value": 2, "unit": "bowl", "evidence_span": "两碗米饭" } }],
+    "time": { "kind": "source_text", "evidence_span": "中午" }
+  }
+}
+```
+
+最终回复严格服从工具返回的 `committed`、`status`、`reason_code` 和 `error_code`；候选内容本身不能证明已经记录。
 
 ## 常见错误
 
