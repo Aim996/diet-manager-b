@@ -12,6 +12,7 @@ export interface CompletionMatchedEvidence {
     | "completion.interrogative"
     | "completion.conditional"
     | "completion.semantic-direct-non-occurrence"
+    | "completion.semantic-later-completed"
     | "completion.semantic-stated-plan"
     | `completion.item-negation.${string}`;
   readonly raw: string;
@@ -90,6 +91,11 @@ const SEMANTIC_DIRECT_NON_OCCURRENCE_RULE = Object.freeze<CompletionRule>({
 const SEMANTIC_STATED_PLAN_RULE = Object.freeze<CompletionRule>({
   rule_id: "completion.semantic-stated-plan",
   pattern: /(?:(?:打算|计划)\s*(?:(?:明天|后天)\s*)?(?:吃|喝)|准备\s*(?:吃|喝)|(?<!不)(?:会|要|想)\s*(?:吃|喝)|(?:明天|后天|今晚|下周|以后|之后|等会儿|待会儿)\s*(?:(?:会|要|想|准备|打算|计划)\s*)?(?:吃|喝)(?!了))/u,
+});
+
+const SEMANTIC_LATER_COMPLETED_RULE = Object.freeze<CompletionRule>({
+  rule_id: "completion.semantic-later-completed",
+  pattern: /后来\s*(?:吃|喝)了/u,
 });
 
 function clarificationAction(sourceText: string): "record_meal" | "record_water" {
@@ -265,11 +271,12 @@ export function classifySemanticCompletion(
     sourceText,
     SEMANTIC_DIRECT_NON_OCCURRENCE_RULE,
   );
+  const laterCompleted = standard.completion_evidence?.matched_evidence ??
+    matchEvidence(sourceText, SEMANTIC_LATER_COMPLETED_RULE);
   if (
     directNonOccurrence !== null &&
-    standard.completion_evidence !== null &&
-    directNonOccurrence.end <=
-      standard.completion_evidence.matched_evidence.start
+    laterCompleted !== null &&
+    directNonOccurrence.end <= laterCompleted.start
   ) return standard;
   if (directNonOccurrence !== null || standard.excluded_items.length > 0) {
     return Object.freeze({

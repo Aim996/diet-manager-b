@@ -205,6 +205,25 @@ describe("semantic meal candidate validation", () => {
     });
   });
 
+  it("lets a plain later completion override earlier reluctance", () => {
+    const sourceText = "本来不想吃，后来吃了一个鸡蛋";
+    const value = {
+      ...candidate(sourceText, [{
+        raw_name: "鸡蛋",
+        normalized_hint: "egg",
+        amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+      }]),
+      time: { kind: "unspecified" as const, evidence_span: null },
+    };
+    expect(validate(value)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "record_meal",
+        items: [{ normalized_name: "egg", quantity: 1, unit: "piece" }],
+      },
+    });
+  });
+
   it("accepts an explicitly completed meal with a future-capable time word", () => {
     const sourceText = "我今晚吃了一个鸡蛋";
     const value = {
