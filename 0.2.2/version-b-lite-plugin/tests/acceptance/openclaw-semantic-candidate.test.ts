@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getToolPluginMetadata } from "openclaw/plugin-sdk/tool-plugin";
 
-import pluginEntry from "../../src/index.js";
+import pluginEntry from "../../src/openclaw/index.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
 interface RegisteredTool {

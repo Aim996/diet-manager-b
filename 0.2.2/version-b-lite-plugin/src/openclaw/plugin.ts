@@ -5,9 +5,10 @@ import {
 } from "openclaw/plugin-sdk/tool-plugin";
 import { Type } from "typebox";
 
-import { handleCoreRequestAsync } from "../application/command-handler.js";
 import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
+import { AGENT_COMMAND_SCHEMA_VERSION } from "../public/agent-command.js";
+import { executeAgentCommand } from "../public/execute.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { createCommonDishTemplateAdapters } from "../nutrition/builtin.js";
@@ -280,7 +281,7 @@ function dataDescriptors(
   return descriptors;
 }
 
-function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
+function cloneToolRequest(value: unknown): Omit<CoreApplicationRequest, "prior_context"> | undefined {
   const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action"]);
   if (CORE_REQUEST_FIELDS.some((field) => descriptors[field] === undefined)) return undefined;
   const semanticCandidate = descriptors.semantic_candidate === undefined
@@ -294,8 +295,6 @@ function cloneToolRequest(value: unknown): CoreApplicationRequest | undefined {
     operation_id: descriptors.operation_id?.value as string,
     source_message_id: descriptors.source_message_id?.value as string,
     conversation_id: descriptors.conversation_id?.value as string,
-    // PRODUCT-0.1 core exposes no caller-authored context/revision authority.
-    prior_context: [],
     ...(semanticCandidate === undefined ? {} : { semantic_candidate: semanticCandidate }),
   };
 }
@@ -430,7 +429,7 @@ async function executeDietManager(
   context: ToolPluginExecutionContext,
 ): Promise<DietManagerOutcome> {
   const identity = safeRequestIdentity(value);
-  let request: CoreApplicationRequest | undefined;
+  let request: Omit<CoreApplicationRequest, "prior_context"> | undefined;
   try {
     request = cloneToolRequest(value);
   } catch {
@@ -459,14 +458,31 @@ async function executeDietManager(
   }
   try {
     const runtime = acquirePluginRuntime(pluginConfig.root, pluginConfig.nutrition, context);
-    return validatedJsonOutcome(await handleCoreRequestAsync(runtime, request));
+    return validatedJsonOutcome(await executeAgentCommand(runtime, {
+      schema_version: AGENT_COMMAND_SCHEMA_VERSION,
+      action: request.action,
+      source_text: request.source_text,
+      ...(request.semantic_candidate === undefined
+        ? {}
+        : { semantic_candidate: request.semantic_candidate }),
+    }, {
+      received_at: request.received_at,
+      timezone: request.timezone,
+      operation_id: request.operation_id,
+      source_message_id: request.source_message_id,
+      conversation_id: request.conversation_id,
+    }));
   } catch (error) {
-    const errorCode = error instanceof Error && error.message === "PLUGIN_CONFIG_CONFLICT"
-      ? "PLUGIN_CONFIG_CONFLICT"
-      : "PLUGIN_RUNTIME_UNAVAILABLE";
+    const invalidRequest = error instanceof TypeError &&
+      error.message.startsWith("DIET_AGENT_COMMAND_INVALID:");
+    const errorCode = invalidRequest
+      ? "INVALID_REQUEST"
+      : error instanceof Error && error.message === "PLUGIN_CONFIG_CONFLICT"
+        ? "PLUGIN_CONFIG_CONFLICT"
+        : "PLUGIN_RUNTIME_UNAVAILABLE";
     return validatedJsonOutcome(failedOutcome(
-      request.action,
-      request.operation_id,
+      invalidRequest ? identity.action : request.action,
+      invalidRequest ? identity.operationId : request.operation_id,
       errorCode,
     ));
   }

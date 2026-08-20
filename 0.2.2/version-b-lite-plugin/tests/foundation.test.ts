@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 import { getToolPluginMetadata } from "openclaw/plugin-sdk/tool-plugin";
 import { describe, expect, test } from "vitest";
 import * as foundation from "../src/index";
-import * as openClawPlugin from "../src/openclaw/plugin.js";
+import * as openClawPlugin from "../src/openclaw/index.js";
 import pluginEntry, {
   dietManagerParameters,
-} from "../src/index";
+} from "../src/openclaw/index.js";
 
 const testsDirectory = dirname(fileURLToPath(import.meta.url));
 const projectDirectory = resolve(testsDirectory, "..");
@@ -190,6 +190,7 @@ describe("diet manager B core plugin boundary", () => {
       devDependencies?: Record<string, unknown>;
       engines?: Record<string, unknown>;
       peerDependencies?: Record<string, unknown>;
+      peerDependenciesMeta?: Record<string, { optional?: unknown }>;
       openclaw?: { extensions?: unknown };
     };
 
@@ -198,9 +199,10 @@ describe("diet manager B core plugin boundary", () => {
     expect(packageManifest.devDependencies?.["@types/node"]).toBe("^24.0.0");
     expect(packageManifest.engines?.node).toBe(">=24.15.0 <25");
     expect(packageManifest.peerDependencies?.openclaw).toBe(">=2026.5.17");
-    expect(packageManifest.openclaw?.extensions).toEqual(["./dist/index.js"]);
-    expect(packageManifest.scripts?.["plugin:build"]).toBeDefined();
-    expect(packageManifest.scripts?.["plugin:validate"]).toBeDefined();
+    expect(packageManifest.peerDependenciesMeta?.openclaw?.optional).toBe(true);
+    expect(packageManifest.openclaw?.extensions).toEqual(["./dist/openclaw/index.js"]);
+    expect(packageManifest.scripts?.["plugin:build"]).toContain("./dist/openclaw/index.js");
+    expect(packageManifest.scripts?.["plugin:validate"]).toContain("./dist/openclaw/index.js");
   });
 
   test("declares no SQLite dependency", () => {

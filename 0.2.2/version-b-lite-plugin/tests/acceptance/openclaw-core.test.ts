@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getToolPluginMetadata } from "openclaw/plugin-sdk/tool-plugin";
 
-import pluginEntry from "../../src/index.js";
+import pluginEntry from "../../src/openclaw/index.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
 interface RegisteredTool {
@@ -362,6 +362,27 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         error_code: "INVALID_REQUEST",
       });
       expect(readdirSync(root)).toEqual([]);
+    } finally {
+      await registered.lifecycle()?.cleanup();
+      rmSync(root, { recursive: true, force: false });
+    }
+  });
+
+  it("keeps public-command validation failures classified as invalid requests", async () => {
+    const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-invalid-action-${randomUUID()}-`));
+    const registered = registerPlugin({ official_data_root: root });
+    try {
+      const result = await registered.tool.execute("tool-call-invalid-action-001", {
+        ...mealParams(),
+        action: "not-a-diet-manager-action",
+      });
+      expect(result.details).toEqual({
+        action: "record_meal",
+        status: "failed",
+        committed: false,
+        operation_id: "operation-openclaw-meal-001",
+        error_code: "INVALID_REQUEST",
+      });
     } finally {
       await registered.lifecycle()?.cleanup();
       rmSync(root, { recursive: true, force: false });
