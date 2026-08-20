@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diet-manager.local/schemas/product-inventory/v1",
+  "x-schema-version": "1.0.0",
+  "title": "Diet Manager Product and Inventory Schema v1",
+  "oneOf": [
+    { "$ref": "#/$defs/ProductIdentity" },
+    { "$ref": "#/$defs/InventoryBatch" },
+    { "$ref": "#/$defs/InventoryBatchProjection" },
+    { "$ref": "#/$defs/InventoryTransaction" }
+  ],
+  "$defs": {
+    "ConfirmedAlias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "confirmation_kind", "source_message_id", "confirmed_at"],
+      "properties": {
+        "alias": { "type": "string", "minLength": 1 },
+        "confirmation_kind": { "const": "explicit_user" },
+        "source_message_id": { "type": "string", "minLength": 1 },
+        "confirmed_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "FieldProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "source_message_id", "source_ref", "parser_version", "normalization_rule_version", "conversion_rule_version", "derived_fields"],
+      "properties": {
+        "source_kind": { "enum": ["explicit_user", "product_label", "manufacturer", "confirmed_rule", "deterministic_rule", "model_with_evidence", "unknown"] },
+        "source_message_id": { "type": ["string", "null"] },
+        "source_ref": { "type": ["string", "null"] },
+        "parser_version": { "type": "string", "minLength": 1 },
+        "normalization_rule_version": { "type": "string", "minLength": 1 },
+        "conversion_rule_version": { "type": ["string", "null"] },
+        "derived_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "ProductIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_id", "raw_names", "normalized_name", "product_type", "brand", "manufacturer", "variant_or_flavor", "product_form", "confirmed_aliases", "barcode", "sku", "known_package_specs", "nutrition_profile_ids", "default_storage_rule", "default_shelf_life_rule", "source_refs", "field_provenance", "schema_version"],
+      "properties": {
+        "product_id": { "type": "string", "minLength": 1 },
+        "raw_names": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "normalized_name": { "type": "string", "minLength": 1 },
+        "product_type": { "enum": ["food", "beverage", "ingredient", "prepared_food", "unknown"] },
+        "brand": { "type": ["string", "null"] },
+        "manufacturer": { "type": ["string", "null"] },
+        "variant_or_flavor": { "type": ["string", "null"] },
+        "product_form": { "type": ["string", "null"] },
+        "confirmed_aliases": { "type": "array", "items": { "$ref": "#/$defs/ConfirmedAlias" } },
+        "barcode": { "type": ["string", "null"] },
+        "sku": { "type": ["string", "null"] },
+        "known_package_specs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "nutrition_profile_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "default_storage_rule": { "type": ["string", "null"] },
+        "default_shelf_life_rule": { "type": ["string", "null"] },
+        "source_refs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "field_provenance": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/FieldProvenance" } },
+        "schema_version": { "const": "1.0.0" }
+      }
+    },
+    "InventoryBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch_id", "product_id", "stock_event_id", "source_text", "occurred_at_text", "purchased_at", "produced_at", "stocked_at", "received_at", "committed_at", "original_quantity", "quantity_unit", "package_spec", "purchase_location", "production_date", "explicit_expiration_at", "shelf_life_text", "shelf_life_basis", "data_quality", "schema_version", "provenance_refs", "field_provenance"],
+      "properties": {
+        "batch_id": { "type": "string", "minLength": 1 },
+        "product_id": { "type": "string", "minLength": 1 },
+        "stock_event_id": { "type": "string", "minLength": 1 },
+        "source_text": { "type": "string", "minLength": 1 },
+        "occurred_at_text": { "type": ["string", "null"] },
+        "purchased_at": { "type": ["string", "null"], "format": "date-time" },
+        "produced_at": { "type": ["string", "null"], "format": "date-time" },
+        "stocked_at": { "type": "string", "format": "date-time" },
+        "received_at": { "type": "string", "format": "date-time" },
+        "committed_at": { "type": "string", "format": "date-time" },
+        "original_quantity": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/Amount" },
+        "quantity_unit": { "type": ["string", "null"] },
+        "package_spec": { "oneOf": [{ "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/Amount" }, { "type": "null" }] },
+        "purchase_location": { "type": ["string", "null"] },
+        "production_date": { "type": ["string", "null"], "format": "date" },
+        "explicit_expiration_at": { "type": ["string", "null"], "format": "date-time" },
+        "shelf_life_text": { "type": ["string", "null"] },
+        "shelf_life_basis": { "enum": ["user_explicit", "product_label", "production_plus_explicit", "manufacturer_product_rule", "confirmed_same_product_rule", "unknown"] },
+        "data_quality": { "enum": ["complete", "partial", "estimated", "unknown"] },
+        "schema_version": { "const": "1.0.0" },
+        "provenance_refs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "field_provenance": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/FieldProvenance" } }
+      }
+    },
+    "InventoryBatchProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch_id", "remaining_quantity", "current_storage_location", "current_storage_location_source", "opened_at", "opened_at_source", "effective_expiration_at", "quantity_status", "seal_status", "expiry_status", "effective_status", "open_issue_ids", "last_event_id", "last_changed_at", "last_verified_at"],
+      "properties": {
+        "batch_id": { "type": "string", "minLength": 1 },
+        "remaining_quantity": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/Amount" },
+        "current_storage_location": { "enum": ["refrigerated", "frozen", "ambient_cool", "dry_storage", "produce_area", "custom", "unknown"] },
+        "current_storage_location_source": { "enum": ["user_explicit", "product_label", "manufacturer", "confirmed_same_product_rule", "product_type_default", "model_with_evidence", "unknown"] },
+        "opened_at": { "type": ["string", "null"], "format": "date-time" },
+        "opened_at_source": { "enum": ["user_explicit", "current_operation", "first_partial_consumption", "user_correction", "unknown"] },
+        "effective_expiration_at": { "type": ["string", "null"], "format": "date-time" },
+        "quantity_status": { "enum": ["available", "depleted", "unknown"] },
+        "seal_status": { "enum": ["unknown", "unopened", "opened"] },
+        "expiry_status": { "enum": ["normal", "near_expiry", "expired", "unknown"] },
+        "effective_status": { "enum": ["active", "depleted", "discarded", "returned_to_vendor", "gifted_out", "voided", "unknown"] },
+        "open_issue_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "last_event_id": { "type": "string", "minLength": 1 },
+        "last_changed_at": { "type": "string", "format": "date-time" },
+        "last_verified_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "InventoryTransaction": {
+      "allOf": [
+        { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/EventEnvelope" },
+        {
+          "type": "object",
+          "required": ["transaction_id", "product_id", "batch_id", "direction", "quantity_delta", "quantity_before", "quantity_after", "unit", "conversion_basis", "reason_code", "authorization_kind", "authorization_source_message_id", "related_event_id", "related_transaction_id", "idempotency_key", "partial_deduction"],
+          "properties": {
+            "transaction_id": { "type": "string", "minLength": 1 },
+            "product_id": { "type": "string", "minLength": 1 },
+            "batch_id": { "type": "string", "minLength": 1 },
+            "direction": { "enum": ["in", "out", "neutral"] },
+            "quantity_delta": { "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" },
+            "quantity_before": { "allOf": [{ "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" }, { "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$" }] },
+            "quantity_after": { "allOf": [{ "$ref": "https://diet-manager.local/schemas/event-and-amount/v1#/$defs/DecimalString" }, { "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$" }] },
+            "unit": { "type": "string", "minLength": 1 },
+            "conversion_basis": { "type": ["string", "null"] },
+            "reason_code": { "enum": ["purchase_stocked", "gift_received", "package_opened", "consumed", "returned_to_stock", "returned_to_vendor", "gifted_out", "adjustment", "discarded", "depleted", "correction_compensation"] },
+            "authorization_kind": { "enum": ["explicit_user", "rule_version", "system_projection"] },
+            "authorization_source_message_id": { "type": ["string", "null"] },
+            "related_event_id": { "type": ["string", "null"] },
+            "related_transaction_id": { "type": ["string", "null"] },
+            "idempotency_key": { "type": "string", "minLength": 1 },
+            "partial_deduction": { "type": "boolean" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": "diet-manager/selected-route-map-template/v1",
+  "gate_id": "X-GATE-002",
+  "selected_route": "B",
+  "project_root": ".",
+  "selected_route_root": "version-b-lite-plugin",
+  "contract": {
+    "path": "shared/business-contract.md",
+    "id": "diet-manager/contract-v2",
+    "version": 2,
+    "sha256": "632B2BBF8D0E6C655F4C0A47958828A86C67B3240065984CCC78A808E6F7072E",
+    "last_change_commit": "a6559f9728c46fbbddc30d5e187d824ad83493ff"
+  },
+  "config": {
+    "key": "official_data_root",
+    "type": "string",
+    "required": true,
+    "semantics": "backend_owned_existing_absolute_runtime_root",
+    "gate_time_open_or_create": false
+  },
+  "task_paths": [
+    { "task_id": "SEL-CORE-001", "paths": ["version-b-lite-plugin/src/domain/core-service.ts", "version-b-lite-plugin/tests/acceptance/core.test.ts"] },
+    { "task_id": "SEL-PANTRY-001", "paths": ["version-b-lite-plugin/src/domain/inventory-service.ts", "version-b-lite-plugin/src/storage/inventory-repository.ts"] },
+    { "task_id": "SEL-NUTR-001", "paths": ["version-b-lite-plugin/src/nutrition/nutrition-service.ts", "version-b-lite-plugin/src/nutrition/source-client.ts"] },
+    { "task_id": "SEL-FACTEFFECT-001", "paths": ["version-b-lite-plugin/src/orchestration/fact-effect-finalize.ts", "version-b-lite-plugin/src/projections/progress-contribution.ts"] },
+    { "task_id": "SEL-ISSUE-001", "paths": ["version-b-lite-plugin/src/issues/issue-service.ts", "version-b-lite-plugin/src/issues/prompt-options.ts"] },
+    { "task_id": "SEL-CORR-001", "paths": ["version-b-lite-plugin/src/corrections/correction-service.ts", "version-b-lite-plugin/tests/acceptance/correction.test.ts"] },
+    { "task_id": "SEL-PROGRESS-001", "paths": ["version-b-lite-plugin/src/projections/progress-projector.ts", "version-b-lite-plugin/tests/acceptance/progress.test.ts"] },
+    { "task_id": "SEL-QUERY-001", "paths": ["version-b-lite-plugin/src/queries/report-service.ts", "version-b-lite-plugin/tests/acceptance/query.test.ts"] },
+    { "task_id": "SEL-RECEIPT-001", "paths": ["version-b-lite-plugin/src/receipt/renderer.ts", "version-b-lite-plugin/tests/golden/receipts.test.ts"] },
+    { "task_id": "SEL-RELIABILITY-001", "paths": ["version-b-lite-plugin/tests/reliability/fault-matrix.test.ts", "shared/tests/validate-zero-diff.ps1"] },
+    { "task_id": "SEL-INSTALL-001", "paths": ["scripts/install.ps1", "docs/install-support-matrix.md"] },
+    { "task_id": "SEL-MIGRATE-001", "paths": ["version-b-lite-plugin/src/storage/migrate.ts", "version-b-lite-plugin/tests/migration/migration.test.ts"] },
+    { "task_id": "SEL-BACKUP-001", "paths": ["scripts/backup.ps1", "scripts/restore.ps1", "scripts/uninstall.ps1"] },
+    { "task_id": "SEL-EXPORT-BASE-001", "paths": ["version-b-lite-plugin/src/export/baseline-export.ts", "version-b-lite-plugin/tests/export/baseline.test.ts"] },
+    { "task_id": "SEL-RELEASE-001", "paths": ["release/0.1/candidate-manifest.json", "scripts/release-0.1.ps1"] },
+    { "task_id": "SEL-TEMPLATE-001", "paths": ["version-b-lite-plugin/src/templates/personal-dish-service.ts", "version-b-lite-plugin/tests/acceptance/template.test.ts"] },
+    { "task_id": "SEL-REVIEW-001", "paths": ["version-b-lite-plugin/src/review/review-service.ts", "version-b-lite-plugin/tests/acceptance/review.test.ts"] },
+    { "task_id": "SEL-LIFE-001", "paths": ["version-b-lite-plugin/src/lifecycle/lifecycle-service.ts", "version-b-lite-plugin/tests/acceptance/lifecycle.test.ts"] },
+    { "task_id": "SEL-EXPORT-001", "paths": ["version-b-lite-plugin/src/export/rich-export.ts", "version-b-lite-plugin/tests/export/rich.test.ts"] },
+    { "task_id": "SEL-UPGRADE-002", "paths": ["version-b-lite-plugin/src/storage/upgrade-0.2.ts", "version-b-lite-plugin/tests/migration/upgrade-0.2.test.ts"] },
+    { "task_id": "SEL-RELEASE-002", "paths": ["release/0.2/candidate-manifest.json", "scripts/release-0.2.ps1"] }
+  ],
+  "forbidden_claims": ["product_ready", "installable", "release", "G3"]
+}

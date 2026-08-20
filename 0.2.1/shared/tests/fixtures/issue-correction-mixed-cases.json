@@ -1,0 +1,338 @@
+{
+  "fixture_set_id": "diet-manager/issue-correction-mixed-cases/v1",
+  "schema_version": "1.0.0",
+  "semantic_only_case_ids": [
+    "ICM-CORRECTION-TARGET-MISMATCH-INVALID",
+    "ICM-CORRECTION-DATE-ORDER-INVALID",
+    "ICM-CORRECTION-NO-CHANGE-EVENT-INVALID",
+    "ICM-CORRECTION-STALE-WRITE-INVALID",
+    "ICM-CORRECTION-REVISION-INCREMENT-INVALID",
+    "ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID",
+    "ICM-MIXED-SEQUENCE-DUPLICATE-INVALID",
+    "ICM-MIXED-SEQUENCE-GAP-INVALID",
+    "ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID",
+    "ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID"
+  ],
+  "templates": {
+    "issue_open": {
+      "issue_id": "issue-001",
+      "issue_code": "quantity_missing",
+      "issue_type": "blocking_fact",
+      "priority": "high",
+      "entity_type": "meal_item",
+      "entity_id": "item-001",
+      "field_path": "amount.value",
+      "detected_at": "2026-08-11T08:00:00+08:00",
+      "source_message_id": "msg-001",
+      "source_text": "ate rice",
+      "known_facts": [{"field_path":"food_name","value_text":"rice","source":"user","evidence_ref":"msg-001"}],
+      "missing_or_conflicting_facts": ["amount.value"],
+      "impact": "fact commit requires a quantity",
+      "candidate_values": [{"candidate_id":"value-150g","label":"150 g","value_text":"150","evidence":"recent confirmed meal"}],
+      "candidate_actions": [{"action_id":"defer","label":"decide later","operation":"defer","safe_exit":true}],
+      "status": "open",
+      "revision": 1,
+      "last_presented_at": null,
+      "resolved_at": null,
+      "resolution_source": null,
+      "resolution_reason": null,
+      "resolution_event_id": null
+    },
+    "issue_awaiting": {
+      "$template": "issue_open",
+      "$set": {"status":"awaiting_user","last_presented_at":"2026-08-11T08:01:00+08:00"}
+    },
+    "issue_resolved": {
+      "$template": "issue_open",
+      "$set": {"status":"resolved","revision":2,"resolved_at":"2026-08-11T08:02:00+08:00","resolution_source":"user","resolution_reason":"user_supplied","resolution_event_id":"resolution-001"}
+    },
+    "issue_dismissed": {
+      "$template": "issue_open",
+      "$set": {"status":"dismissed","revision":2,"resolved_at":"2026-08-11T08:02:00+08:00","resolution_source":"user","resolution_reason":"dismissed_by_user","resolution_event_id":"resolution-002"}
+    },
+    "resolution_applied": {
+      "event_id": "resolution-001",
+      "issue_id": "issue-001",
+      "request_id": "request-001",
+      "expected_revision": 1,
+      "application_outcome": "applied",
+      "resolution_reason": "user_supplied",
+      "rejection_reason": null,
+      "resolution_source": "user",
+      "created_at": "2026-08-11T08:02:00+08:00"
+    },
+    "resolution_no_change": {
+      "$template": "resolution_applied",
+      "$set": {"event_id":"resolution-003","application_outcome":"no_change","resolution_reason":"user_confirmed"}
+    },
+    "resolution_rejected": {
+      "$template": "resolution_applied",
+      "$set": {"event_id":"resolution-004","application_outcome":"rejected","resolution_reason":null,"rejection_reason":"stale_revision","resolution_source":null}
+    },
+    "quick_prompt": {
+      "prompt_id": "prompt-001",
+      "issue_id": "issue-001",
+      "option_ids": ["value-150g", "value-200g", "defer"],
+      "safe_exit_option_id": "defer",
+      "generated_from_revision": 1,
+      "generated_at": "2026-08-11T08:01:00+08:00",
+      "expires_at": "2026-08-11T08:11:00+08:00"
+    },
+    "correction_change": {
+      "correction_id": "correction-001",
+      "target_event_id": "meal-001",
+      "base_revision": 1,
+      "request_id": "request-correction-001",
+      "source_text": "change rice to 200 g",
+      "operation": "change_amount",
+      "before_snapshot": {"event_id":"meal-001","lifecycle":"active","revision":1,"occurred_time_ref":"2026-08-11T08:00:00+08:00","item_refs":["item-rice-001"],"content_digest":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+      "change_set": [{"field_path":"items.item-rice-001.amount.value","before_value":"150","after_value":"200"}],
+      "after_snapshot": {"event_id":"meal-001","lifecycle":"active","revision":2,"occurred_time_ref":"2026-08-11T08:00:00+08:00","item_refs":["item-rice-001"],"content_digest":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"},
+      "nutrition_delta": {"energy_kcal":"58","protein_g":"1.3","fat_g":"0.15","carbohydrate_g":"12.95","fiber_g":"0.2"},
+      "inventory_effects": [{"effect_id":"inventory-effect-001","transaction_id":"inventory-tx-002","action":"replace"}],
+      "affected_dates": ["2026-08-11"],
+      "created_at": "2026-08-11T08:05:00+08:00",
+      "timezone": "Asia/Shanghai"
+    },
+    "correction_void": {
+      "$template": "correction_change",
+      "$set": {"correction_id":"correction-void-001","operation":"void_event","source_text":"delete that meal","change_set":[{"field_path":"lifecycle","before_value":"active","after_value":"voided"}],"after_snapshot":{"event_id":"meal-001","lifecycle":"voided","revision":2,"occurred_time_ref":"2026-08-11T08:00:00+08:00","item_refs":["item-rice-001"],"content_digest":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}}
+    },
+    "correction_restore": {
+      "$template": "correction_void",
+      "$set": {"correction_id":"correction-restore-001","base_revision":2,"operation":"restore_event","source_text":"restore that meal","before_snapshot":{"event_id":"meal-001","lifecycle":"voided","revision":2,"occurred_time_ref":"2026-08-11T08:00:00+08:00","item_refs":["item-rice-001"],"content_digest":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"},"change_set":[{"field_path":"lifecycle","before_value":"voided","after_value":"active"}],"after_snapshot":{"event_id":"meal-001","lifecycle":"active","revision":3,"occurred_time_ref":"2026-08-11T08:00:00+08:00","item_refs":["item-rice-001"],"content_digest":"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"}}
+    },
+    "correction_cross_day": {
+      "$template": "correction_change",
+      "$set": {"correction_id":"correction-time-001","operation":"change_time","source_text":"that was yesterday","change_set":[{"field_path":"occurred_time","before_value":"2026-08-11T00:10:00+08:00","after_value":"2026-08-10T23:50:00+08:00"}],"before_snapshot":{"event_id":"meal-001","lifecycle":"active","revision":1,"occurred_time_ref":"2026-08-11T00:10:00+08:00","item_refs":["item-rice-001"],"content_digest":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"after_snapshot":{"event_id":"meal-001","lifecycle":"active","revision":2,"occurred_time_ref":"2026-08-10T23:50:00+08:00","item_refs":["item-rice-001"],"content_digest":"EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"},"affected_dates":["2026-08-10","2026-08-11"]}
+    },
+    "outbox_pending": {
+      "outbox_id": "outbox-001",
+      "envelope_id": "envelope-001",
+      "operation_id": "operation-001",
+      "effect_id": "effect-nutrition-001",
+      "effect_kind": "nutrition",
+      "previous_state": null,
+      "state": "pending",
+      "attempt_count": 0,
+      "reason": null,
+      "created_at": "2026-08-11T08:00:01+08:00",
+      "updated_at": "2026-08-11T08:00:01+08:00"
+    },
+    "outbox_retryable": {
+      "$template": "outbox_pending",
+      "$set": {"previous_state":"processing","state":"retryable_failed","attempt_count":1,"reason":"temporary database timeout","updated_at":"2026-08-11T08:00:05+08:00"}
+    },
+    "outbox_permanent": {
+      "$template": "outbox_pending",
+      "$set": {"effect_kind":"inventory","previous_state":"processing","state":"permanent_business_skip","attempt_count":1,"reason":"inventory insufficient; Issue created","updated_at":"2026-08-11T08:00:05+08:00"}
+    },
+    "fact_success": {
+      "stage": "FactCommit",
+      "envelope_id": "envelope-001",
+      "operation_id": "operation-001",
+      "idempotency_key": "idem-001",
+      "input_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "envelope_state": "fact_committed",
+      "result_status": "committed",
+      "business_writes": 2,
+      "committed_event_ids": ["meal-001"],
+      "correction_event_ids": [],
+      "outbox_ids": ["outbox-001"],
+      "issue_ids": [],
+      "nutrition_snapshot_ids": [],
+      "inventory_transaction_ids": [],
+      "progress_result": null,
+      "receipt_data": null,
+      "terminal_idempotency_result": null,
+      "committed_at": "2026-08-11T08:00:01+08:00",
+      "error_code": null
+    },
+    "fact_failed": {
+      "$template": "fact_success",
+      "$set": {"envelope_state":"failed_fact","result_status":"failed","business_writes":0,"committed_event_ids":[],"correction_event_ids":[],"outbox_ids":[],"committed_at":null,"error_code":"fact_validation_failed"}
+    },
+    "effect_succeeded": {
+      "stage": "EffectBundle",
+      "envelope_id": "envelope-001",
+      "operation_id": "operation-001",
+      "effect_state": "succeeded",
+      "result_status": "committed",
+      "effect_writes": 3,
+      "nutrition_snapshot_ids": ["nutrition-snapshot-001"],
+      "inventory_transaction_ids": ["inventory-tx-001"],
+      "issue_ids": [],
+      "projection_refs": ["projection-2026-08-11"],
+      "retry_after": null,
+      "reason": null,
+      "progress_result": null,
+      "receipt_data": null,
+      "terminal_idempotency_result": null,
+      "completed_at": "2026-08-11T08:00:03+08:00"
+    },
+    "effect_pending": {
+      "$template": "effect_succeeded",
+      "$set": {"effect_state":"retryable_failed","result_status":"failed","effect_writes":0,"nutrition_snapshot_ids":[],"inventory_transaction_ids":[],"issue_ids":[],"projection_refs":[],"retry_after":"2026-08-11T08:01:03+08:00","reason":"temporary effect failure","completed_at":null}
+    },
+    "effect_permanent": {
+      "$template": "effect_succeeded",
+      "$set": {"effect_state":"permanent_business_skip","result_status":"committed_with_issues","effect_writes":1,"nutrition_snapshot_ids":[],"inventory_transaction_ids":[],"issue_ids":["issue-inventory-001"],"projection_refs":[],"reason":"inventory insufficient","completed_at":"2026-08-11T08:00:03+08:00"}
+    },
+    "mixed_committed": {
+      "envelope_id": "envelope-001",
+      "idempotency_key": "idem-envelope-001",
+      "input_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "items": [
+        {"sequence":0,"operation_id":"operation-001","idempotency_key":"idem-item-001","command_type":"create","status":"committed","committed_fact_ids":["meal-001"],"correction_event_ids":[],"issue_ids":[],"error_code":null},
+        {"sequence":1,"operation_id":"operation-002","idempotency_key":"idem-item-002","command_type":"correct","status":"committed_with_issues","committed_fact_ids":[],"correction_event_ids":["correction-001"],"issue_ids":["issue-estimate-001"],"error_code":null}
+      ],
+      "frozen_at": "2026-08-11T08:00:05+08:00"
+    },
+    "mixed_later_failure": {
+      "$template": "mixed_committed",
+      "$set": {"items":[
+        {"sequence":0,"operation_id":"operation-001","idempotency_key":"idem-item-001","command_type":"create","status":"committed","committed_fact_ids":["meal-001"],"correction_event_ids":[],"issue_ids":[],"error_code":null},
+        {"sequence":1,"operation_id":"operation-002","idempotency_key":"idem-item-002","command_type":"correct","status":"failed","committed_fact_ids":[],"correction_event_ids":[],"issue_ids":[],"error_code":"stale_revision"},
+        {"sequence":2,"operation_id":"operation-003","idempotency_key":"idem-item-003","command_type":"create","status":"committed","committed_fact_ids":["meal-003"],"correction_event_ids":[],"issue_ids":[],"error_code":null}
+      ]}
+    },
+    "daily_progress_day": {
+      "date":"2026-08-11","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],
+      "committed_totals":{"energy_kcal":"500","protein_g":"30","fat_g":"10","carbohydrate_g":"60","fiber_g":"8","water_ml":"800"},
+      "configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},
+      "current_turn_increments":{"energy_kcal":"100","protein_g":"5","fat_g":"2","carbohydrate_g":"18","fiber_g":"1","water_ml":"250"},
+      "metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},
+      "coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"800","idempotency_result_id":"terminal-result-001","generated_at":"2026-08-11T08:00:05+08:00"
+    },
+    "progress_single": {
+      "result_id": "progress-result-001",
+      "schema_version": "1.0.0",
+      "result_status": "committed",
+      "result_kind": "write_finalized",
+      "daily_progress_by_date": [{
+        "date":"2026-08-11","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],
+        "committed_totals":{"energy_kcal":"500","protein_g":"30","fat_g":"10","carbohydrate_g":"60","fiber_g":"8","water_ml":"800"},
+        "configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},
+        "current_turn_increments":{"energy_kcal":"100","protein_g":"5","fat_g":"2","carbohydrate_g":"18","fiber_g":"1","water_ml":"250"},
+        "metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},
+        "coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"800","idempotency_result_id":"terminal-result-001","generated_at":"2026-08-11T08:00:05+08:00"
+      }],
+      "daily_progress": {
+        "date":"2026-08-11","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],
+        "committed_totals":{"energy_kcal":"500","protein_g":"30","fat_g":"10","carbohydrate_g":"60","fiber_g":"8","water_ml":"800"},
+        "configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},
+        "current_turn_increments":{"energy_kcal":"100","protein_g":"5","fat_g":"2","carbohydrate_g":"18","fiber_g":"1","water_ml":"250"},
+        "metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},
+        "coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"800","idempotency_result_id":"terminal-result-001","generated_at":"2026-08-11T08:00:05+08:00"
+      }
+    },
+    "progress_cross_day": {
+      "$template": "progress_single",
+      "$remove": ["daily_progress"],
+      "$set": {"daily_progress_by_date":[
+        {"date":"2026-08-10","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],"committed_totals":{"energy_kcal":"400","protein_g":"25","fat_g":"8","carbohydrate_g":"50","fiber_g":"7","water_ml":"600"},"configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},"current_turn_increments":{"energy_kcal":"-100","protein_g":"-5","fat_g":"-2","carbohydrate_g":"-18","fiber_g":"-1","water_ml":"0"},"metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},"coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"600","idempotency_result_id":"terminal-result-002","generated_at":"2026-08-11T08:00:05+08:00"},
+        {"date":"2026-08-11","timezone":"Asia/Shanghai","goal_version_id":"goal-v1","metric_order":["energy_kcal","protein_g","fat_g","carbohydrate_g","fiber_g","water_ml"],"committed_totals":{"energy_kcal":"600","protein_g":"35","fat_g":"12","carbohydrate_g":"78","fiber_g":"9","water_ml":"800"},"configured_goals":{"energy_kcal":"1900","protein_g":"120","fat_g":"55","carbohydrate_g":"200","fiber_g":"30","water_ml":"2500"},"current_turn_increments":{"energy_kcal":"100","protein_g":"5","fat_g":"2","carbohydrate_g":"18","fiber_g":"1","water_ml":"0"},"metric_coverage":{"energy_kcal":"complete","protein_g":"complete","fat_g":"complete","carbohydrate_g":"complete","fiber_g":"complete","water_ml":"complete"},"coverage_status":"complete","unknown_item_ids":[],"water_known_min_ml":"800","idempotency_result_id":"terminal-result-002","generated_at":"2026-08-11T08:00:05+08:00"}
+      ]}
+    },
+    "receipt_committed": {
+      "receipt_id": "receipt-001",
+      "envelope_id": "envelope-001",
+      "result_status": "committed",
+      "committed_event_ids": ["meal-001"],
+      "correction_event_ids": ["correction-001"],
+      "actual_inventory_effect_ids": ["inventory-tx-001"],
+      "issue_ids": [],
+      "affected_dates": ["2026-08-11"],
+      "finalized_at": "2026-08-11T08:00:05+08:00"
+    },
+    "finalize_committed": {
+      "stage": "EnvelopeFinalize",
+      "envelope_id": "envelope-001",
+      "idempotency_key": "idem-envelope-001",
+      "input_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "envelope_state": "terminal",
+      "result_status": "committed",
+      "mixed_result": {"$template":"mixed_committed"},
+      "receipt_data": {"$template":"receipt_committed"},
+      "progress_result": {"$template":"progress_single"},
+      "terminal_idempotency_result": {"result_id":"terminal-result-001","frozen_digest":"3333333333333333333333333333333333333333333333333333333333333333"},
+      "error_code": null,
+      "finalized_at": "2026-08-11T08:00:05+08:00"
+    },
+    "finalize_pending": {
+      "$template": "finalize_committed",
+      "$set": {"envelope_state":"effects_pending","result_status":"failed","mixed_result":null,"receipt_data":null,"progress_result":null,"terminal_idempotency_result":null,"error_code":"effects_retryable_failed","finalized_at":null}
+    },
+    "finalize_cross_day": {
+      "$template": "finalize_committed",
+      "$set": {"progress_result":{"$template":"progress_cross_day"},"receipt_data":{"$template":"receipt_committed","$set":{"affected_dates":["2026-08-10","2026-08-11"]}}}
+    }
+  },
+  "cases": [
+    {"case_id":"ICM-ISSUE-OPEN-VALID","target":"Issue","template_id":"issue_open","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-ISSUE-AWAITING-USER-VALID","target":"Issue","template_id":"issue_awaiting","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-ISSUE-RESOLVED-VALID","target":"Issue","template_id":"issue_resolved","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-ISSUE-DISMISSED-VALID","target":"Issue","template_id":"issue_dismissed","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-ISSUE-LEGACY-STATUS-INVALID","target":"Issue","template_id":"issue_open","mutations":[{"op":"set","path":"/status","value":"closed"}],"expected_valid":false,"expected_error_contains":"status"},
+    {"case_id":"ICM-ISSUE-OPEN-CLOSURE-FIELDS-INVALID","target":"Issue","template_id":"issue_open","mutations":[{"op":"set","path":"/resolved_at","value":"2026-08-11T08:02:00+08:00"}],"expected_valid":false,"expected_error_contains":"closure"},
+    {"case_id":"ICM-ISSUE-RESOLVED-MISSING-EVENT-INVALID","target":"Issue","template_id":"issue_resolved","mutations":[{"op":"set","path":"/resolution_event_id","value":null}],"expected_valid":false,"expected_error_contains":"resolution_event_id"},
+    {"case_id":"ICM-ISSUE-CODE-INVALID","target":"Issue","template_id":"issue_open","mutations":[{"op":"set","path":"/issue_code","value":"generic_error"}],"expected_valid":false,"expected_error_contains":"issue_code"},
+    {"case_id":"ICM-RESOLUTION-APPLIED-VALID","target":"IssueResolutionEvent","template_id":"resolution_applied","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-RESOLUTION-NO-CHANGE-VALID","target":"IssueResolutionEvent","template_id":"resolution_no_change","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-RESOLUTION-REJECTED-VALID","target":"IssueResolutionEvent","template_id":"resolution_rejected","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-RESOLUTION-REJECTED-MISSING-REASON-INVALID","target":"IssueResolutionEvent","template_id":"resolution_rejected","mutations":[{"op":"set","path":"/rejection_reason","value":null}],"expected_valid":false,"expected_error_contains":"rejection_reason"},
+    {"case_id":"ICM-RESOLUTION-TECHNICAL-FAILED-PERSISTED-INVALID","target":"IssueResolutionEvent","template_id":"resolution_rejected","mutations":[{"op":"set","path":"/application_outcome","value":"failed"}],"expected_valid":false,"expected_error_contains":"application_outcome"},
+    {"case_id":"ICM-QUICK-PROMPT-VALID","target":"QuickPrompt","template_id":"quick_prompt","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-QUICK-PROMPT-TOO-FEW-OPTIONS-INVALID","target":"QuickPrompt","template_id":"quick_prompt","mutations":[{"op":"set","path":"/option_ids","value":["defer"]}],"expected_valid":false,"expected_error_contains":"option_ids"},
+    {"case_id":"ICM-QUICK-PROMPT-EXPIRED-APPLICATION-VALID","target":"IssueResolutionEvent","template_id":"resolution_rejected","mutations":[{"op":"set","path":"/rejection_reason","value":"expired_prompt"}],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-CHANGE-AMOUNT-VALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-VOID-VALID","target":"CorrectionEvent","template_id":"correction_void","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-RESTORE-VALID","target":"CorrectionEvent","template_id":"correction_restore","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-VOID-AFTER-ACTIVE-INVALID","target":"CorrectionEvent","template_id":"correction_void","mutations":[{"op":"set","path":"/after_snapshot/lifecycle","value":"active"}],"expected_valid":false,"expected_error_contains":"void lifecycle"},
+    {"case_id":"ICM-CORRECTION-RESTORE-BEFORE-ACTIVE-INVALID","target":"CorrectionEvent","template_id":"correction_restore","mutations":[{"op":"set","path":"/before_snapshot/lifecycle","value":"active"}],"expected_valid":false,"expected_error_contains":"restore lifecycle"},
+    {"case_id":"ICM-CORRECTION-CROSS-DAY-VALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-CORRECTION-LEGACY-OPERATION-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/operation","value":"edit"}],"expected_valid":false,"expected_error_contains":"operation"},
+    {"case_id":"ICM-CORRECTION-MISSING-SNAPSHOT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"remove","path":"/before_snapshot"}],"expected_valid":false,"expected_error_contains":"before_snapshot"},
+    {"case_id":"ICM-CORRECTION-DATE-ORDER-INVALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[{"op":"set","path":"/affected_dates","value":["2026-08-11","2026-08-10"]}],"expected_valid":false,"expected_error_contains":"affected_dates"},
+    {"case_id":"ICM-CORRECTION-DUPLICATE-DATE-INVALID","target":"CorrectionEvent","template_id":"correction_cross_day","mutations":[{"op":"set","path":"/affected_dates","value":["2026-08-10","2026-08-10"]}],"expected_valid":false,"expected_error_contains":"affected_dates"},
+    {"case_id":"ICM-CORRECTION-TARGET-MISMATCH-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/event_id","value":"meal-other"}],"expected_valid":false,"expected_error_contains":"target_event_id"},
+    {"case_id":"ICM-CORRECTION-NO-CHANGE-EVENT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/content_digest","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}],"expected_valid":false,"expected_error_contains":"snapshot change"},
+    {"case_id":"ICM-CORRECTION-STALE-WRITE-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/base_revision","value":2}],"expected_valid":false,"expected_error_contains":"base_revision"},
+    {"case_id":"ICM-CORRECTION-REVISION-INCREMENT-INVALID","target":"CorrectionEvent","template_id":"correction_change","mutations":[{"op":"set","path":"/after_snapshot/revision","value":3}],"expected_valid":false,"expected_error_contains":"revision increment"},
+    {"case_id":"ICM-OUTBOX-PENDING-VALID","target":"EffectOutboxEntry","template_id":"outbox_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-OUTBOX-RETRYABLE-FAILED-VALID","target":"EffectOutboxEntry","template_id":"outbox_retryable","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-OUTBOX-PERMANENT-SKIP-VALID","target":"EffectOutboxEntry","template_id":"outbox_permanent","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-OUTBOX-TERMINAL-REOPEN-INVALID","target":"EffectOutboxEntry","template_id":"outbox_pending","mutations":[{"op":"set","path":"/previous_state","value":"succeeded"},{"op":"set","path":"/state","value":"processing"},{"op":"set","path":"/attempt_count","value":2}],"expected_valid":false,"expected_error_contains":"transition"},
+    {"case_id":"ICM-OUTBOX-RETRYABLE-MISSING-REASON-INVALID","target":"EffectOutboxEntry","template_id":"outbox_retryable","mutations":[{"op":"set","path":"/reason","value":null}],"expected_valid":false,"expected_error_contains":"reason"},
+    {"case_id":"ICM-OUTBOX-NEGATIVE-ATTEMPT-INVALID","target":"EffectOutboxEntry","template_id":"outbox_pending","mutations":[{"op":"set","path":"/attempt_count","value":-1}],"expected_valid":false,"expected_error_contains":"attempt_count"},
+    {"case_id":"ICM-FACT-COMMIT-SUCCESS-VALID","target":"FactCommitResult","template_id":"fact_success","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FACT-COMMIT-FAILED-VALID","target":"FactCommitResult","template_id":"fact_failed","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FACT-COMMIT-FAILED-BUSINESS-ID-INVALID","target":"FactCommitResult","template_id":"fact_failed","mutations":[{"op":"set","path":"/committed_event_ids","value":["meal-should-not-exist"]}],"expected_valid":false,"expected_error_contains":"zero business data"},
+    {"case_id":"ICM-FACT-COMMIT-FAILED-OUTBOX-INVALID","target":"FactCommitResult","template_id":"fact_failed","mutations":[{"op":"set","path":"/outbox_ids","value":["outbox-should-not-exist"]}],"expected_valid":false,"expected_error_contains":"zero business data"},
+    {"case_id":"ICM-FACT-COMMIT-SUCCESS-NO-OUTBOX-INVALID","target":"FactCommitResult","template_id":"fact_success","mutations":[{"op":"set","path":"/outbox_ids","value":[]}],"expected_valid":false,"expected_error_contains":"outbox_ids"},
+    {"case_id":"ICM-EFFECT-SUCCEEDED-VALID","target":"EffectBundleResult","template_id":"effect_succeeded","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-EFFECT-PENDING-VALID","target":"EffectBundleResult","template_id":"effect_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-EFFECT-PERMANENT-SKIP-VALID","target":"EffectBundleResult","template_id":"effect_permanent","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-EFFECT-PENDING-RECEIPT-INVALID","target":"EffectBundleResult","template_id":"effect_pending","mutations":[{"op":"set","path":"/receipt_data","value":{"receipt_id":"forbidden"}}],"expected_valid":false,"expected_error_contains":"receipt_data"},
+    {"case_id":"ICM-EFFECT-INVENTORY-INSUFFICIENT-VALID","target":"EffectBundleResult","template_id":"effect_permanent","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FINALIZE-COMMITTED-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FINALIZE-COMMITTED-WITH-ISSUES-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[{"op":"set","path":"/result_status","value":"committed_with_issues"},{"op":"set","path":"/receipt_data/result_status","value":"committed_with_issues"},{"op":"set","path":"/receipt_data/issue_ids","value":["issue-estimate-001"]}],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FINALIZE-EFFECTS-PENDING-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FINALIZE-PENDING-RECEIPT-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[{"op":"set","path":"/receipt_data","value":{"$template":"receipt_committed"}}],"expected_valid":false,"expected_error_contains":"terminal outputs"},
+    {"case_id":"ICM-FINALIZE-CROSS-DAY-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_cross_day","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-FINALIZE-CROSS-DAY-ALIAS-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_cross_day","mutations":[{"op":"set","path":"/progress_result/daily_progress","value":{"$template":"daily_progress_day"}}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
+    {"case_id":"ICM-FINALIZE-SINGLE-ALIAS-MISSING-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[{"op":"remove","path":"/progress_result/daily_progress"}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
+    {"case_id":"ICM-FINALIZE-SINGLE-ALIAS-MISMATCH-INVALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[{"op":"set","path":"/progress_result/daily_progress/date","value":"2026-08-10"}],"expected_valid":false,"expected_error_contains":"daily_progress alias"},
+    {"case_id":"ICM-MIXED-ORDERED-VALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-MIXED-LATER-FAILURE-VALID","target":"MixedCommitResult","template_id":"mixed_later_failure","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-MIXED-SEQUENCE-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/sequence","value":0}],"expected_valid":false,"expected_error_contains":"sequence"},
+    {"case_id":"ICM-MIXED-SEQUENCE-GAP-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/sequence","value":2}],"expected_valid":false,"expected_error_contains":"sequence"},
+    {"case_id":"ICM-MIXED-OPERATION-ID-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/operation_id","value":"operation-001"}],"expected_valid":false,"expected_error_contains":"duplicate identity"},
+    {"case_id":"ICM-MIXED-IDEMPOTENCY-KEY-DUPLICATE-INVALID","target":"MixedCommitResult","template_id":"mixed_committed","mutations":[{"op":"set","path":"/items/1/idempotency_key","value":"idem-item-001"}],"expected_valid":false,"expected_error_contains":"duplicate identity"},
+    {"case_id":"ICM-MIXED-FAILED-BUSINESS-REF-INVALID","target":"MixedCommitResult","template_id":"mixed_later_failure","mutations":[{"op":"set","path":"/items/1/correction_event_ids","value":["correction-forbidden"]}],"expected_valid":false,"expected_error_contains":"business refs"},
+    {"case_id":"ICM-IDEMPOTENCY-TERMINAL-RETRY-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_committed","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-IDEMPOTENCY-PENDING-RESUME-VALID","target":"EnvelopeFinalizeResult","template_id":"finalize_pending","mutations":[],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-IDEMPOTENCY-CONFLICT-ZERO-WRITE-VALID","target":"FactCommitResult","template_id":"fact_failed","mutations":[{"op":"set","path":"/error_code","value":"idempotency_conflict"}],"expected_valid":true,"expected_error_contains":null},
+    {"case_id":"ICM-IDEMPOTENCY-CONFLICT-BUSINESS-WRITE-INVALID","target":"FactCommitResult","template_id":"fact_failed","mutations":[{"op":"set","path":"/error_code","value":"idempotency_conflict"},{"op":"set","path":"/business_writes","value":1}],"expected_valid":false,"expected_error_contains":"zero business data"}
+  ]
+}

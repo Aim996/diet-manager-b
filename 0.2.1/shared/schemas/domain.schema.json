@@ -1,0 +1,1883 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diet-manager.local/schemas/domain.schema.json",
+  "title": "Diet Manager SCHEMA-v1",
+  "oneOf": [
+    { "$ref": "#/$defs/EventEnvelope" },
+    { "$ref": "#/$defs/ProductIdentity" },
+    { "$ref": "#/$defs/PackagingVariant" },
+    { "$ref": "#/$defs/InventoryBatch" },
+    { "$ref": "#/$defs/InventoryEffect" },
+    { "$ref": "#/$defs/InventoryTransaction" },
+    { "$ref": "#/$defs/InventoryBalanceView" },
+    { "$ref": "#/$defs/NutritionProfile" },
+    { "$ref": "#/$defs/NutritionSnapshot" },
+    { "$ref": "#/$defs/Issue" },
+    { "$ref": "#/$defs/IssueStateEvent" },
+    { "$ref": "#/$defs/IssueView" },
+    { "$ref": "#/$defs/IssueResolutionEvent" },
+    { "$ref": "#/$defs/QuickPrompt" },
+    { "$ref": "#/$defs/CorrectionEvent" },
+    { "$ref": "#/$defs/EventVersionSnapshot" },
+    { "$ref": "#/$defs/EffectiveEventView" }
+  ],
+  "$defs": {
+    "StableId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "VersionRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CanonicalDecimal": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "LocalDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "RuleRef": {
+      "type": "object",
+      "required": ["rule_id", "rule_version"],
+      "properties": {
+        "rule_id": { "$ref": "#/$defs/StableId" },
+        "rule_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "ProvenanceEvidence": {
+      "type": "object",
+      "required": ["evidence_id", "evidence_kind", "source_ref", "captured_at", "field_paths"],
+      "properties": {
+        "evidence_id": { "$ref": "#/$defs/StableId" },
+        "evidence_kind": { "enum": ["user_explicit", "label", "confirmed_history", "external_source", "system_rule", "conversation_reference"] },
+        "source_ref": { "type": "string", "minLength": 1 },
+        "captured_at": { "$ref": "#/$defs/Timestamp" },
+        "field_paths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "adopted_value": { "$ref": "#/$defs/Measure" },
+        "basis": { "type": "string", "minLength": 1 },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "additionalProperties": false
+    },
+    "DerivedMeasure": {
+      "type": "object",
+      "required": ["role", "measure", "conversion_formula", "evidence_refs", "rule_ref"],
+      "properties": {
+        "role": { "enum": ["nutrition_adopted", "inventory_requested", "packaging_derived"] },
+        "measure": { "$ref": "#/$defs/KnownMeasure" },
+        "conversion_formula": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "additionalProperties": false
+    },
+    "NutritionAdoptedMeasure": {
+      "allOf": [
+        { "$ref": "#/$defs/DerivedMeasure" },
+        { "type": "object", "properties": { "role": { "const": "nutrition_adopted" } } }
+      ]
+    },
+    "InventoryRequestedMeasure": {
+      "allOf": [
+        { "$ref": "#/$defs/DerivedMeasure" },
+        { "type": "object", "properties": { "role": { "const": "inventory_requested" } } }
+      ]
+    },
+    "PackagingDerivedMeasure": {
+      "allOf": [
+        { "$ref": "#/$defs/DerivedMeasure" },
+        { "type": "object", "properties": { "role": { "const": "packaging_derived" } } }
+      ]
+    },
+    "KnownMeasure": {
+      "type": "object",
+      "required": ["state", "value", "unit"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/CanonicalDecimal" },
+        "unit": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "PositiveKnownMeasure": {
+      "allOf": [
+        { "$ref": "#/$defs/KnownMeasure" },
+        {
+          "type": "object",
+          "properties": {
+            "value": { "type": "string", "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]+)?|0\\.[0-9]*[1-9][0-9]*)$" }
+          }
+        }
+      ]
+    },
+    "UnknownMeasure": {
+      "type": "object",
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "Measure": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownMeasure" },
+        { "$ref": "#/$defs/UnknownMeasure" }
+      ]
+    },
+    "ExactQuantity": {
+      "type": "object",
+      "required": ["kind", "raw_text", "measure"],
+      "properties": {
+        "kind": { "const": "exact" },
+        "raw_text": { "type": "string", "minLength": 1 },
+        "measure": { "$ref": "#/$defs/KnownMeasure" }
+      },
+      "additionalProperties": false
+    },
+    "ApproximateQuantity": {
+      "type": "object",
+      "required": ["kind", "raw_text", "measure", "qualifier"],
+      "properties": {
+        "kind": { "const": "approximate" },
+        "raw_text": { "type": "string", "minLength": 1 },
+        "measure": { "$ref": "#/$defs/KnownMeasure" },
+        "qualifier": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "RangeQuantity": {
+      "type": "object",
+      "required": ["kind", "raw_text", "min_measure", "max_measure"],
+      "properties": {
+        "kind": { "const": "range" },
+        "raw_text": { "type": "string", "minLength": 1 },
+        "min_measure": { "$ref": "#/$defs/KnownMeasure" },
+        "max_measure": { "$ref": "#/$defs/KnownMeasure" }
+      },
+      "additionalProperties": false
+    },
+    "VagueQuantity": {
+      "type": "object",
+      "required": ["kind", "raw_text", "description"],
+      "properties": {
+        "kind": { "const": "vague" },
+        "raw_text": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "plausible_min": { "$ref": "#/$defs/KnownMeasure" },
+        "plausible_max": { "$ref": "#/$defs/KnownMeasure" },
+        "adopted_measure": { "$ref": "#/$defs/KnownMeasure" },
+        "adoption_basis": { "const": "upper_plausible_bound" },
+        "adoption_formula": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "dependentRequired": {
+        "plausible_min": ["plausible_max", "evidence_refs", "rule_ref"],
+        "plausible_max": ["plausible_min", "evidence_refs", "rule_ref"],
+        "adopted_measure": ["plausible_min", "plausible_max", "adoption_basis", "adoption_formula", "evidence_refs", "rule_ref"]
+      },
+      "additionalProperties": false
+    },
+    "MissingQuantity": {
+      "type": "object",
+      "required": ["kind", "raw_text", "reason"],
+      "properties": {
+        "kind": { "const": "missing" },
+        "raw_text": { "type": "string" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "Quantity": {
+      "oneOf": [
+        { "$ref": "#/$defs/ExactQuantity" },
+        { "$ref": "#/$defs/ApproximateQuantity" },
+        { "$ref": "#/$defs/RangeQuantity" },
+        { "$ref": "#/$defs/VagueQuantity" },
+        { "$ref": "#/$defs/MissingQuantity" }
+      ]
+    },
+    "OccurredTime": {
+      "type": "object",
+      "required": ["raw_text", "precision", "timezone", "resolution_basis", "resolution_anchor", "resolver_version"],
+      "properties": {
+        "raw_text": { "type": "string" },
+        "resolved_start": { "$ref": "#/$defs/Timestamp" },
+        "resolved_end": { "$ref": "#/$defs/Timestamp" },
+        "precision": { "enum": ["exact", "date", "meal_period", "approximate", "unknown"] },
+        "timezone": { "type": "string", "minLength": 1 },
+        "resolution_basis": { "type": "string", "minLength": 1 },
+        "resolution_anchor": { "$ref": "#/$defs/Timestamp" },
+        "resolver_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "precision": { "enum": ["exact", "date"] } },
+            "required": ["precision"]
+          },
+          "then": {
+            "properties": { "resolved_start": {} },
+            "required": ["resolved_start"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "precision": { "enum": ["meal_period", "approximate"] } },
+            "required": ["precision"]
+          },
+          "then": {
+            "properties": { "resolved_start": {}, "resolved_end": {} },
+            "required": ["resolved_start", "resolved_end"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "precision": { "const": "unknown" } },
+            "required": ["precision"]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["resolved_start"] },
+                { "required": ["resolved_end"] }
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "MealSlot": {
+      "type": "object",
+      "required": ["raw_text", "value", "source"],
+      "properties": {
+        "raw_text": { "type": "string" },
+        "value": { "enum": ["breakfast", "lunch", "dinner", "snack", "late_snack", "unknown"] },
+        "source": { "enum": ["user_explicit", "system_inferred", "unknown"] }
+      },
+      "additionalProperties": false
+    },
+    "MealContext": {
+      "type": "object",
+      "required": ["value", "source", "rule_version"],
+      "properties": {
+        "value": { "enum": ["home_default", "external_explicit", "delivery_explicit", "skip_inventory_explicit", "unknown"] },
+        "source": { "type": "string", "minLength": 1 },
+        "rule_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "DishComponent": {
+      "type": "object",
+      "required": ["component_id", "raw_name", "normalized_name", "reported_quantity"],
+      "properties": {
+        "component_id": { "$ref": "#/$defs/StableId" },
+        "raw_name": { "type": "string", "minLength": 1 },
+        "normalized_name": { "type": "string", "minLength": 1 },
+        "reported_quantity": { "$ref": "#/$defs/Quantity" },
+        "nutrition_quantity": { "oneOf": [{ "$ref": "#/$defs/NutritionAdoptedMeasure" }, { "$ref": "#/$defs/UnknownMeasure" }] },
+        "inventory_requested_quantity": { "oneOf": [{ "$ref": "#/$defs/InventoryRequestedMeasure" }, { "$ref": "#/$defs/UnknownMeasure" }] }
+      },
+      "additionalProperties": false
+    },
+    "TemplateRef": {
+      "type": "object",
+      "required": ["template_id", "template_version"],
+      "properties": {
+        "template_id": { "$ref": "#/$defs/StableId" },
+        "template_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "MealItem": {
+      "type": "object",
+      "required": ["meal_item_id", "raw_name", "normalized_name", "item_type", "reported_quantity", "nutrition_mode"],
+      "properties": {
+        "meal_item_id": { "$ref": "#/$defs/StableId" },
+        "raw_name": { "type": "string", "minLength": 1 },
+        "normalized_name": { "type": "string", "minLength": 1 },
+        "item_type": { "enum": ["single_food", "basic_food", "packaged_food", "common_dish", "custom_composite", "unknown_combo", "nutritious_drink", "unknown"] },
+        "reported_quantity": { "$ref": "#/$defs/Quantity" },
+        "nutrition_quantity": { "oneOf": [{ "$ref": "#/$defs/NutritionAdoptedMeasure" }, { "$ref": "#/$defs/UnknownMeasure" }] },
+        "inventory_requested_quantity": { "oneOf": [{ "$ref": "#/$defs/InventoryRequestedMeasure" }, { "$ref": "#/$defs/UnknownMeasure" }] },
+        "nutrition_mode": { "enum": ["whole_item", "components", "unknown"] },
+        "components": { "type": "array", "items": { "$ref": "#/$defs/DishComponent" } },
+        "product_ref": { "$ref": "#/$defs/StableId" },
+        "template_ref": { "$ref": "#/$defs/TemplateRef" },
+        "nutrition_snapshot_ref": { "$ref": "#/$defs/StableId" },
+        "inventory_effect_refs": { "type": "array", "items": { "$ref": "#/$defs/StableId" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "nutrition_mode": { "const": "whole_item" } }, "required": ["nutrition_mode"] },
+          "then": { "properties": { "components": { "type": "array", "maxItems": 0 } } }
+        },
+        {
+          "if": { "properties": { "nutrition_mode": { "const": "components" } }, "required": ["nutrition_mode"] },
+          "then": {
+            "properties": { "components": { "type": "array", "minItems": 1 } },
+            "required": ["components"]
+          }
+        },
+        {
+          "if": { "properties": { "item_type": { "const": "unknown_combo" } }, "required": ["item_type"] },
+          "then": {
+            "properties": {
+              "nutrition_mode": { "const": "unknown" },
+              "nutrition_quantity": { "$ref": "#/$defs/UnknownMeasure" },
+              "components": { "type": "array", "maxItems": 0 }
+            },
+            "required": ["nutrition_quantity"],
+            "not": {
+              "anyOf": [
+                { "properties": { "template_ref": {} }, "required": ["template_ref"] },
+                { "properties": { "nutrition_snapshot_ref": {} }, "required": ["nutrition_snapshot_ref"] }
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "MealEvent": {
+      "type": "object",
+      "required": ["meal_event_id", "occurred_time", "meal_slot", "context", "items"],
+      "properties": {
+        "meal_event_id": { "$ref": "#/$defs/StableId" },
+        "occurred_time": { "$ref": "#/$defs/OccurredTime" },
+        "meal_slot": { "$ref": "#/$defs/MealSlot" },
+        "context": { "$ref": "#/$defs/MealContext" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/MealItem" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PurchaseEvent": {
+      "type": "object",
+      "required": ["purchase_event_id", "occurred_time", "batch_refs", "input_order"],
+      "properties": {
+        "purchase_event_id": { "$ref": "#/$defs/StableId" },
+        "occurred_time": { "$ref": "#/$defs/OccurredTime" },
+        "batch_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "input_order": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } }
+      },
+      "additionalProperties": false
+    },
+    "EventEnvelope": {
+      "type": "object",
+      "required": ["model_type", "event_id", "event_type", "event_version", "lifecycle", "source_text", "message_source", "received_at", "committed_at", "schema_version", "payload"],
+      "properties": {
+        "model_type": { "const": "event_envelope" },
+        "event_id": { "$ref": "#/$defs/StableId" },
+        "event_type": { "enum": ["meal", "purchase"] },
+        "event_version": { "$ref": "#/$defs/VersionRef" },
+        "lifecycle": { "enum": ["active", "corrected", "voided"] },
+        "source_text": { "type": "string", "minLength": 1 },
+        "message_source": { "type": "string", "minLength": 1 },
+        "received_at": { "$ref": "#/$defs/Timestamp" },
+        "committed_at": { "$ref": "#/$defs/Timestamp" },
+        "schema_version": { "$ref": "#/$defs/VersionRef" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/MealEvent" },
+            { "$ref": "#/$defs/PurchaseEvent" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "event_type": { "const": "meal" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/MealEvent" } } }
+        },
+        {
+          "if": { "properties": { "event_type": { "const": "purchase" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/PurchaseEvent" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "ConfirmedAlias": {
+      "type": "object",
+      "required": ["alias", "evidence_refs"],
+      "properties": {
+        "alias": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } }
+      },
+      "additionalProperties": false
+    },
+    "ProductIdentity": {
+      "type": "object",
+      "required": ["model_type", "product_id", "product_version", "raw_name", "normalized_name", "product_type", "confirmed_aliases", "packaging_variant_refs", "nutrition_profile_refs", "status", "evidence_refs", "created_at"],
+      "properties": {
+        "model_type": { "const": "product_identity" },
+        "product_id": { "$ref": "#/$defs/StableId" },
+        "product_version": { "$ref": "#/$defs/VersionRef" },
+        "raw_name": { "type": "string", "minLength": 1 },
+        "normalized_name": { "type": "string", "minLength": 1 },
+        "product_type": { "enum": ["ingredient", "basic_food", "packaged_food", "beverage", "composite_food", "unknown"] },
+        "brand": { "type": "string", "minLength": 1 },
+        "variant": { "type": "string", "minLength": 1 },
+        "confirmed_aliases": { "type": "array", "items": { "$ref": "#/$defs/ConfirmedAlias" } },
+        "packaging_variant_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "nutrition_profile_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "status": { "enum": ["active", "historical", "merged", "superseded"] },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "PackagingVariant": {
+      "type": "object",
+      "required": ["model_type", "packaging_variant_id", "packaging_version", "product_id", "outer_unit", "inner_count_per_outer", "single_item_spec", "conversion_formula", "evidence_refs", "rule_ref", "created_at"],
+      "properties": {
+        "model_type": { "const": "packaging_variant" },
+        "packaging_variant_id": { "$ref": "#/$defs/StableId" },
+        "packaging_version": { "$ref": "#/$defs/VersionRef" },
+        "product_id": { "$ref": "#/$defs/StableId" },
+        "outer_unit": { "type": "string", "minLength": 1 },
+        "inner_count_per_outer": { "$ref": "#/$defs/Measure" },
+        "single_item_spec": { "$ref": "#/$defs/Measure" },
+        "conversion_formula": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "PackageObservation": {
+      "type": "object",
+      "required": ["outer_quantity", "inner_content", "single_item_spec"],
+      "properties": {
+        "outer_quantity": { "$ref": "#/$defs/ExactQuantity" },
+        "inner_content": { "$ref": "#/$defs/Measure" },
+        "single_item_spec": { "$ref": "#/$defs/Measure" }
+      },
+      "additionalProperties": false
+    },
+    "StorageAssignment": {
+      "type": "object",
+      "required": ["location", "source", "evidence_refs"],
+      "properties": {
+        "location": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["user_explicit", "label", "confirmed_product_rule", "product_type_default", "unknown"] },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "source": { "enum": ["confirmed_product_rule", "product_type_default"] } },
+            "required": ["source"]
+          },
+          "then": {
+            "properties": { "rule_ref": {} },
+            "required": ["rule_ref"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "KnownExpirationAssessment": {
+      "type": "object",
+      "required": ["state", "assessment_id", "assessment_version", "assessment_triggers", "assessed_at", "basis", "anchor_at", "expires_at", "estimated", "timezone", "storage_condition", "evidence_refs", "rule_ref"],
+      "properties": {
+        "state": { "const": "known" },
+        "assessment_id": { "$ref": "#/$defs/StableId" },
+        "assessment_version": { "$ref": "#/$defs/VersionRef" },
+        "supersedes_assessment_version": { "$ref": "#/$defs/VersionRef" },
+        "assessment_triggers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["initial_stock_in", "storage_changed", "opening_changed", "expiration_fact_changed", "rule_reassessment"] } },
+        "assessed_at": { "$ref": "#/$defs/Timestamp" },
+        "basis": { "enum": ["user_explicit_expiration", "label_expiration", "production_plus_shelf_life", "opened_plus_label_period", "purchase_plus_rule", "stocked_plus_default_rule"] },
+        "anchor_at": { "$ref": "#/$defs/Timestamp" },
+        "expires_at": { "$ref": "#/$defs/Timestamp" },
+        "estimated": { "type": "boolean" },
+        "timezone": { "type": "string", "minLength": 1 },
+        "storage_condition": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } }, "required": ["assessment_triggers"] },
+          "then": {
+            "properties": { "assessment_triggers": { "type": "array", "maxItems": 1 } },
+            "not": { "properties": { "supersedes_assessment_version": {} }, "required": ["supersedes_assessment_version"] }
+          },
+          "else": { "properties": { "supersedes_assessment_version": {} }, "required": ["supersedes_assessment_version"] }
+        },
+        {
+          "if": { "properties": { "basis": { "enum": ["production_plus_shelf_life", "opened_plus_label_period", "purchase_plus_rule", "stocked_plus_default_rule"] } }, "required": ["basis"] },
+          "then": { "properties": { "estimated": { "const": true } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "UnknownExpirationAssessment": {
+      "type": "object",
+      "required": ["state", "assessment_id", "assessment_version", "assessment_triggers", "assessed_at", "reason", "timezone", "evidence_refs", "rule_ref"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "assessment_id": { "$ref": "#/$defs/StableId" },
+        "assessment_version": { "$ref": "#/$defs/VersionRef" },
+        "supersedes_assessment_version": { "$ref": "#/$defs/VersionRef" },
+        "assessment_triggers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["initial_stock_in", "storage_changed", "opening_changed", "expiration_fact_changed", "rule_reassessment"] } },
+        "assessed_at": { "$ref": "#/$defs/Timestamp" },
+        "reason": { "type": "string", "minLength": 1 },
+        "best_anchor_at": { "$ref": "#/$defs/Timestamp" },
+        "best_anchor_kind": { "enum": ["production_time", "made_time", "purchase_time", "stocked_time"] },
+        "timezone": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "dependentRequired": {
+        "best_anchor_at": ["best_anchor_kind"],
+        "best_anchor_kind": ["best_anchor_at"]
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } }, "required": ["assessment_triggers"] },
+          "then": {
+            "properties": { "assessment_triggers": { "type": "array", "maxItems": 1 } },
+            "not": { "properties": { "supersedes_assessment_version": {} }, "required": ["supersedes_assessment_version"] }
+          },
+          "else": { "properties": { "supersedes_assessment_version": {} }, "required": ["supersedes_assessment_version"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "ExpirationAssessment": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownExpirationAssessment" },
+        { "$ref": "#/$defs/UnknownExpirationAssessment" }
+      ]
+    },
+    "ExpirationAssessmentRef": {
+      "type": "object",
+      "required": ["assessment_id", "assessment_version"],
+      "properties": {
+        "assessment_id": { "$ref": "#/$defs/StableId" },
+        "assessment_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "InventoryBatch": {
+      "type": "object",
+      "required": ["model_type", "batch_id", "batch_version", "revision_triggers", "revision_evidence_refs", "product_id", "source_text", "occurred_time", "received_at", "committed_at", "initial_quantity", "storage", "opening_state", "expiration", "data_quality", "issue_refs", "schema_version"],
+      "properties": {
+        "model_type": { "const": "inventory_batch" },
+        "batch_id": { "$ref": "#/$defs/StableId" },
+        "batch_version": { "$ref": "#/$defs/VersionRef" },
+        "supersedes_batch_version": { "$ref": "#/$defs/VersionRef" },
+        "revision_triggers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["initial_stock_in", "storage_changed", "opening_changed", "expiration_fact_changed", "rule_reassessment"] } },
+        "revision_evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "product_id": { "$ref": "#/$defs/StableId" },
+        "packaging_variant_id": { "$ref": "#/$defs/StableId" },
+        "source_text": { "type": "string", "minLength": 1 },
+        "occurred_time": { "$ref": "#/$defs/OccurredTime" },
+        "received_at": { "$ref": "#/$defs/Timestamp" },
+        "committed_at": { "$ref": "#/$defs/Timestamp" },
+        "initial_quantity": { "$ref": "#/$defs/Quantity" },
+        "package_observation": { "$ref": "#/$defs/PackageObservation" },
+        "derived_total": { "$ref": "#/$defs/PackagingDerivedMeasure" },
+        "storage": { "$ref": "#/$defs/StorageAssignment" },
+        "opening_state": { "enum": ["sealed", "opened", "unknown"] },
+        "opened_at": { "$ref": "#/$defs/Timestamp" },
+        "opened_at_basis": { "enum": ["user_explicit", "label", "inferred_from_first_partial_consumption"] },
+        "expiration": { "$ref": "#/$defs/ExpirationAssessment" },
+        "data_quality": { "enum": ["confirmed", "partial", "needs_confirmation", "unknown"] },
+        "issue_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "schema_version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "opening_state": { "const": "opened" } }, "required": ["opening_state"] },
+          "then": {
+            "properties": { "opened_at": {}, "opened_at_basis": {} },
+            "required": ["opened_at", "opened_at_basis"]
+          }
+        },
+        {
+          "if": { "properties": { "opening_state": { "enum": ["sealed", "unknown"] } }, "required": ["opening_state"] },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "properties": { "opened_at": {} }, "required": ["opened_at"] },
+                { "properties": { "opened_at_basis": {} }, "required": ["opened_at_basis"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } }, "required": ["revision_triggers"] },
+          "then": {
+            "properties": { "revision_triggers": { "type": "array", "maxItems": 1 } },
+            "not": { "properties": { "supersedes_batch_version": {} }, "required": ["supersedes_batch_version"] }
+          },
+          "else": { "properties": { "supersedes_batch_version": {} }, "required": ["supersedes_batch_version"] }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "storage_changed" } } }, "required": ["revision_triggers"] },
+          "then": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "storage_changed" } } } } } }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "opening_changed" } } }, "required": ["revision_triggers"] },
+          "then": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "opening_changed" } } } } } }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "expiration_fact_changed" } } }, "required": ["revision_triggers"] },
+          "then": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "expiration_fact_changed" } } } } } }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "rule_reassessment" } } }, "required": ["revision_triggers"] },
+          "then": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "rule_reassessment" } } } } } }
+        },
+        {
+          "if": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } }, "required": ["revision_triggers"] },
+          "then": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } } } } }
+        },
+        {
+          "if": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } }, "required": ["assessment_triggers"] } }, "required": ["expiration"] },
+          "then": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "initial_stock_in" } } } }
+        },
+        {
+          "if": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "storage_changed" } } }, "required": ["assessment_triggers"] } }, "required": ["expiration"] },
+          "then": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "storage_changed" } } } }
+        },
+        {
+          "if": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "opening_changed" } } }, "required": ["assessment_triggers"] } }, "required": ["expiration"] },
+          "then": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "opening_changed" } } } }
+        },
+        {
+          "if": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "expiration_fact_changed" } } }, "required": ["assessment_triggers"] } }, "required": ["expiration"] },
+          "then": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "expiration_fact_changed" } } } }
+        },
+        {
+          "if": { "properties": { "expiration": { "type": "object", "properties": { "assessment_triggers": { "type": "array", "contains": { "const": "rule_reassessment" } } }, "required": ["assessment_triggers"] } }, "required": ["expiration"] },
+          "then": { "properties": { "revision_triggers": { "type": "array", "contains": { "const": "rule_reassessment" } } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InventoryMatch": {
+      "type": "object",
+      "required": ["match_id", "match_status", "candidate_product_ids", "candidate_batch_ids", "selected_batch_ids", "batch_selection_policy", "evidence_refs", "rule_ref", "created_at"],
+      "properties": {
+        "match_id": { "$ref": "#/$defs/StableId" },
+        "match_status": { "enum": ["unique", "multiple", "none", "insufficient", "unconvertible"] },
+        "candidate_product_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "matched_product_id": { "$ref": "#/$defs/StableId" },
+        "candidate_batch_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "selected_batch_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "batch_selection_policy": { "enum": ["user_specified", "fefo", "fifo", "none"] },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "match_status": { "const": "unique" } }, "required": ["match_status"] },
+          "then": {
+            "properties": {
+              "candidate_product_ids": { "type": "array", "minItems": 1, "maxItems": 1 },
+              "matched_product_id": {},
+              "candidate_batch_ids": { "type": "array", "minItems": 1 },
+              "selected_batch_ids": { "type": "array", "minItems": 1 },
+              "batch_selection_policy": { "enum": ["user_specified", "fefo", "fifo"] }
+            },
+            "required": ["matched_product_id"]
+          }
+        },
+        {
+          "if": { "properties": { "match_status": { "enum": ["multiple", "none"] } }, "required": ["match_status"] },
+          "then": {
+            "not": {
+              "properties": { "matched_product_id": {} },
+              "required": ["matched_product_id"]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "match_status": { "const": "multiple" } }, "required": ["match_status"] },
+          "then": {
+            "properties": {
+              "candidate_product_ids": { "type": "array", "minItems": 2 },
+              "selected_batch_ids": { "type": "array", "maxItems": 0 },
+              "batch_selection_policy": { "const": "none" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "match_status": { "const": "none" } }, "required": ["match_status"] },
+          "then": {
+            "properties": {
+              "candidate_product_ids": { "type": "array", "maxItems": 0 },
+              "candidate_batch_ids": { "type": "array", "maxItems": 0 },
+              "selected_batch_ids": { "type": "array", "maxItems": 0 },
+              "batch_selection_policy": { "const": "none" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "match_status": { "const": "insufficient" } }, "required": ["match_status"] },
+          "then": {
+            "properties": {
+              "candidate_product_ids": { "type": "array", "minItems": 1, "maxItems": 1 },
+              "matched_product_id": {},
+              "candidate_batch_ids": { "type": "array", "minItems": 1 },
+              "selected_batch_ids": { "type": "array", "maxItems": 0 },
+              "batch_selection_policy": { "const": "none" }
+            },
+            "required": ["matched_product_id"]
+          }
+        },
+        {
+          "if": { "properties": { "match_status": { "const": "unconvertible" } }, "required": ["match_status"] },
+          "then": {
+            "properties": {
+              "candidate_product_ids": { "type": "array", "minItems": 1, "maxItems": 1 },
+              "matched_product_id": {},
+              "candidate_batch_ids": { "type": "array", "minItems": 1 },
+              "selected_batch_ids": { "type": "array", "maxItems": 0 },
+              "batch_selection_policy": { "const": "none" }
+            },
+            "required": ["matched_product_id"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "BatchAllocation": {
+      "type": "object",
+      "required": ["batch_id", "amount"],
+      "properties": {
+        "batch_id": { "$ref": "#/$defs/StableId" },
+        "amount": { "$ref": "#/$defs/PositiveKnownMeasure" }
+      },
+      "additionalProperties": false
+    },
+    "InventoryEffect": {
+      "type": "object",
+      "required": ["model_type", "effect_id", "meal_event_id", "meal_item_id", "match_id", "effect_status", "requested_amount", "applied_amount", "allocations", "rule_ref", "created_at"],
+      "properties": {
+        "model_type": { "const": "inventory_effect" },
+        "effect_id": { "$ref": "#/$defs/StableId" },
+        "meal_event_id": { "$ref": "#/$defs/StableId" },
+        "meal_item_id": { "$ref": "#/$defs/StableId" },
+        "match_id": { "$ref": "#/$defs/StableId" },
+        "effect_status": { "enum": ["deducted", "skipped_external", "skipped_by_user", "skipped_no_match", "skipped_ambiguous", "skipped_insufficient", "skipped_vague_quantity", "skipped_unconvertible_unit", "reversed"] },
+        "requested_amount": { "$ref": "#/$defs/Measure" },
+        "applied_amount": { "$ref": "#/$defs/KnownMeasure" },
+        "allocations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/BatchAllocation" }
+        },
+        "issue_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "effect_status": { "const": "deducted" } },
+            "required": ["effect_status"]
+          },
+          "then": {
+            "properties": {
+              "allocations": { "type": "array", "minItems": 1 },
+              "requested_amount": { "$ref": "#/$defs/PositiveKnownMeasure" },
+              "applied_amount": { "$ref": "#/$defs/PositiveKnownMeasure" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effect_status": {
+                "enum": ["skipped_external", "skipped_by_user", "skipped_no_match", "skipped_ambiguous", "skipped_insufficient", "skipped_vague_quantity", "skipped_unconvertible_unit"]
+              }
+            },
+            "required": ["effect_status"]
+          },
+          "then": {
+            "properties": {
+              "allocations": { "type": "array", "maxItems": 0 },
+              "applied_amount": {
+                "type": "object",
+                "properties": { "value": { "type": "string", "pattern": "^0(?:\\.0+)?$" } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "effect_status": { "const": "reversed" } },
+            "required": ["effect_status"]
+          },
+          "then": {
+            "properties": {
+              "allocations": { "type": "array", "minItems": 1 },
+              "requested_amount": { "$ref": "#/$defs/PositiveKnownMeasure" },
+              "applied_amount": { "$ref": "#/$defs/PositiveKnownMeasure" }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InventoryTransaction": {
+      "type": "object",
+      "required": ["model_type", "transaction_id", "transaction_version", "transaction_type", "batch_id", "direction", "amount", "previous_balance", "resulting_balance", "idempotency_key", "rule_ref", "created_at"],
+      "properties": {
+        "model_type": { "const": "inventory_transaction" },
+        "transaction_id": { "$ref": "#/$defs/StableId" },
+        "transaction_version": { "$ref": "#/$defs/VersionRef" },
+        "transaction_type": { "enum": ["stock_in", "deduction", "return", "adjustment", "discard", "refund"] },
+        "batch_id": { "$ref": "#/$defs/StableId" },
+        "effect_id": { "$ref": "#/$defs/StableId" },
+        "direction": { "enum": ["increase", "decrease"] },
+        "amount": { "$ref": "#/$defs/PositiveKnownMeasure" },
+        "previous_balance": { "$ref": "#/$defs/Measure" },
+        "resulting_balance": { "$ref": "#/$defs/Measure" },
+        "idempotency_key": { "$ref": "#/$defs/StableId" },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "transaction_type": { "enum": ["stock_in", "return"] } }, "required": ["transaction_type"] },
+          "then": { "properties": { "direction": { "const": "increase" } } }
+        },
+        {
+          "if": { "properties": { "transaction_type": { "enum": ["deduction", "discard", "refund"] } }, "required": ["transaction_type"] },
+          "then": { "properties": { "direction": { "const": "decrease" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InventoryBatchCurrentState": {
+      "type": "object",
+      "required": ["batch_version", "storage", "opening_state", "expiration_assessment_ref"],
+      "properties": {
+        "batch_version": { "$ref": "#/$defs/VersionRef" },
+        "storage": { "$ref": "#/$defs/StorageAssignment" },
+        "opening_state": { "enum": ["sealed", "opened", "unknown"] },
+        "opened_at": { "$ref": "#/$defs/Timestamp" },
+        "opened_at_basis": { "enum": ["user_explicit", "label", "inferred_from_first_partial_consumption"] },
+        "expiration_assessment_ref": { "$ref": "#/$defs/ExpirationAssessmentRef" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "opening_state": { "const": "opened" } }, "required": ["opening_state"] },
+          "then": {
+            "properties": { "opened_at": {}, "opened_at_basis": {} },
+            "required": ["opened_at", "opened_at_basis"]
+          }
+        },
+        {
+          "if": { "properties": { "opening_state": { "enum": ["sealed", "unknown"] } }, "required": ["opening_state"] },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "properties": { "opened_at": {} }, "required": ["opened_at"] },
+                { "properties": { "opened_at_basis": {} }, "required": ["opened_at_basis"] }
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InventoryBalanceView": {
+      "type": "object",
+      "required": ["model_type", "batch_id", "as_of_transaction_version", "balance", "current_batch_state", "projection_status", "computed_at"],
+      "properties": {
+        "model_type": { "const": "inventory_balance_view" },
+        "batch_id": { "$ref": "#/$defs/StableId" },
+        "as_of_transaction_version": { "$ref": "#/$defs/VersionRef" },
+        "balance": { "$ref": "#/$defs/Measure" },
+        "current_batch_state": { "$ref": "#/$defs/InventoryBatchCurrentState" },
+        "projection_status": { "enum": ["current", "partial", "stale"] },
+        "computed_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "NutritionSourceReference": {
+      "type": "object",
+      "required": ["source_id", "registry_version"],
+      "properties": {
+        "source_id": { "$ref": "#/$defs/StableId" },
+        "registry_version": { "$ref": "#/$defs/VersionRef" },
+        "source_record_version": { "$ref": "#/$defs/VersionRef" },
+        "retrieved_at": { "$ref": "#/$defs/Timestamp" },
+        "match_scope": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "NutritionBasis": {
+      "type": "object",
+      "required": ["basis_type", "basis_amount", "conversion_evidence_refs"],
+      "properties": {
+        "basis_type": { "enum": ["per_100g", "per_100ml", "per_serving", "per_item", "per_package", "custom"] },
+        "basis_amount": { "$ref": "#/$defs/PositiveKnownMeasure" },
+        "serving_name": { "type": "string", "minLength": 1 },
+        "servings_per_package": { "$ref": "#/$defs/PositiveKnownMeasure" },
+        "conversion_evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "basis_type": { "const": "per_100g" } },
+            "required": ["basis_type"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "basis_amount": {
+                "type": "object",
+                "properties": {
+                  "state": { "const": "known" },
+                  "value": { "type": "string", "pattern": "^100(?:\\.0+)?$" },
+                  "unit": { "const": "g" }
+                },
+                "required": ["state", "value", "unit"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "basis_type": { "const": "per_100ml" } },
+            "required": ["basis_type"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "basis_amount": {
+                "type": "object",
+                "properties": {
+                  "state": { "const": "known" },
+                  "value": { "type": "string", "pattern": "^100(?:\\.0+)?$" },
+                  "unit": { "const": "ml" }
+                },
+                "required": ["state", "value", "unit"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "KnownNutrientField": {
+      "type": "object",
+      "required": ["state", "source_field_status", "amount", "evidence_refs", "estimation"],
+      "properties": {
+        "state": { "const": "known" },
+        "source_field_status": { "const": "present" },
+        "amount": { "$ref": "#/$defs/KnownMeasure" },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StableId" } },
+        "estimation": { "enum": ["none", "estimated"] }
+      },
+      "additionalProperties": false
+    },
+    "UnknownNutrientField": {
+      "type": "object",
+      "required": ["state", "source_field_status", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "source_field_status": { "const": "missing" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "NutrientField": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownNutrientField" },
+        { "$ref": "#/$defs/UnknownNutrientField" }
+      ]
+    },
+    "EnergyMeasure": {
+      "type": "object",
+      "required": ["state", "value", "unit"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/CanonicalDecimal" },
+        "unit": { "enum": ["kcal", "kJ"] }
+      },
+      "additionalProperties": false
+    },
+    "GramMeasure": {
+      "type": "object",
+      "required": ["state", "value", "unit"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/CanonicalDecimal" },
+        "unit": { "const": "g" }
+      },
+      "additionalProperties": false
+    },
+    "SodiumMeasure": {
+      "type": "object",
+      "required": ["state", "value", "unit"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/CanonicalDecimal" },
+        "unit": { "const": "mg" }
+      },
+      "additionalProperties": false
+    },
+    "KnownEnergyNutrientField": {
+      "allOf": [
+        { "$ref": "#/$defs/KnownNutrientField" },
+        {
+          "type": "object",
+          "properties": { "amount": { "$ref": "#/$defs/EnergyMeasure" } }
+        }
+      ]
+    },
+    "KnownMassNutrientField": {
+      "allOf": [
+        { "$ref": "#/$defs/KnownNutrientField" },
+        {
+          "type": "object",
+          "properties": { "amount": { "$ref": "#/$defs/GramMeasure" } }
+        }
+      ]
+    },
+    "KnownSodiumNutrientField": {
+      "allOf": [
+        { "$ref": "#/$defs/KnownNutrientField" },
+        {
+          "type": "object",
+          "properties": { "amount": { "$ref": "#/$defs/SodiumMeasure" } }
+        }
+      ]
+    },
+    "EnergyNutrientField": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownEnergyNutrientField" },
+        { "$ref": "#/$defs/UnknownNutrientField" }
+      ]
+    },
+    "MassNutrientField": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownMassNutrientField" },
+        { "$ref": "#/$defs/UnknownNutrientField" }
+      ]
+    },
+    "SodiumNutrientField": {
+      "oneOf": [
+        { "$ref": "#/$defs/KnownSodiumNutrientField" },
+        { "$ref": "#/$defs/UnknownNutrientField" }
+      ]
+    },
+    "NutritionFields": {
+      "type": "object",
+      "required": ["energy", "protein", "fat", "carbohydrate", "fiber"],
+      "properties": {
+        "energy": { "$ref": "#/$defs/EnergyNutrientField" },
+        "protein": { "$ref": "#/$defs/MassNutrientField" },
+        "fat": { "$ref": "#/$defs/MassNutrientField" },
+        "carbohydrate": { "$ref": "#/$defs/MassNutrientField" },
+        "fiber": { "$ref": "#/$defs/MassNutrientField" },
+        "sodium": { "$ref": "#/$defs/SodiumNutrientField" }
+      },
+      "additionalProperties": false
+    },
+    "NutrientName": {
+      "enum": ["energy", "protein", "fat", "carbohydrate", "fiber", "sodium"]
+    },
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "NutritionProfile": {
+      "type": "object",
+      "required": ["model_type", "profile_id", "profile_version", "subject_type", "subject_ref", "source", "basis", "nutrients", "completeness", "estimation_status", "content_hash", "created_at"],
+      "properties": {
+        "model_type": { "const": "nutrition_profile" },
+        "profile_id": { "$ref": "#/$defs/StableId" },
+        "profile_version": { "$ref": "#/$defs/VersionRef" },
+        "subject_type": { "enum": ["product", "food", "dish_template"] },
+        "subject_ref": { "$ref": "#/$defs/StableId" },
+        "source": { "$ref": "#/$defs/NutritionSourceReference" },
+        "basis": { "$ref": "#/$defs/NutritionBasis" },
+        "nutrients": { "$ref": "#/$defs/NutritionFields" },
+        "completeness": { "enum": ["complete", "partial", "unknown"] },
+        "estimation_status": { "enum": ["none", "partial", "key_fields_estimated"] },
+        "content_hash": { "$ref": "#/$defs/ContentHash" },
+        "supersedes_profile_version": { "$ref": "#/$defs/VersionRef" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "NutritionSnapshot": {
+      "type": "object",
+      "required": ["model_type", "snapshot_id", "snapshot_version", "meal_event_id", "meal_item_id", "profile_id", "profile_version", "source", "basis", "consumed_amount", "conversion_formula", "raw_values", "rounded_values", "rounding_rule", "known_fields", "missing_fields", "estimated_fields", "completeness", "estimation_status", "content_hash", "created_at"],
+      "properties": {
+        "model_type": { "const": "nutrition_snapshot" },
+        "snapshot_id": { "$ref": "#/$defs/StableId" },
+        "snapshot_version": { "$ref": "#/$defs/VersionRef" },
+        "meal_event_id": { "$ref": "#/$defs/StableId" },
+        "meal_item_id": { "$ref": "#/$defs/StableId" },
+        "profile_id": { "$ref": "#/$defs/StableId" },
+        "profile_version": { "$ref": "#/$defs/VersionRef" },
+        "source": { "$ref": "#/$defs/NutritionSourceReference" },
+        "basis": { "$ref": "#/$defs/NutritionBasis" },
+        "consumed_amount": { "$ref": "#/$defs/Measure" },
+        "conversion_formula": { "type": "string", "minLength": 1 },
+        "raw_values": { "$ref": "#/$defs/NutritionFields" },
+        "rounded_values": { "$ref": "#/$defs/NutritionFields" },
+        "rounding_rule": { "$ref": "#/$defs/VersionRef" },
+        "known_fields": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/NutrientName" } },
+        "missing_fields": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/NutrientName" } },
+        "estimated_fields": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/NutrientName" } },
+        "completeness": { "enum": ["complete", "partial", "unknown"] },
+        "estimation_status": { "enum": ["none", "partial", "key_fields_estimated"] },
+        "content_hash": { "$ref": "#/$defs/ContentHash" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "IssueKind": {
+      "enum": ["anomaly", "enrichment", "blocking"]
+    },
+    "IssueCode": {
+      "enum": [
+        "missing_quantity",
+        "vague_quantity",
+        "quantity_range",
+        "missing_unit",
+        "missing_package_content",
+        "conflicting_package_spec",
+        "unknown_product_type",
+        "unconvertible_unit",
+        "ambiguous_inventory_match",
+        "insufficient_inventory",
+        "missing_nutrition",
+        "partial_nutrition",
+        "missing_expiration",
+        "uncertain_event_time",
+        "possible_duplicate",
+        "stale_preview",
+        "correction_target_not_found"
+      ]
+    },
+    "IssueStatus": {
+      "enum": ["open", "offered", "deferred", "resolved", "dismissed", "invalidated"]
+    },
+    "Issue": {
+      "type": "object",
+      "required": ["model_type", "issue_id", "issue_version", "issue_kind", "issue_code", "entity_type", "entity_id", "field_path", "known_facts", "missing_or_conflicting_facts", "impact", "allowed_resolutions", "attention_policy", "detected_at", "rule_ref"],
+      "properties": {
+        "model_type": { "const": "issue" },
+        "issue_id": { "$ref": "#/$defs/StableId" },
+        "issue_version": { "$ref": "#/$defs/VersionRef" },
+        "issue_kind": { "$ref": "#/$defs/IssueKind" },
+        "issue_code": { "$ref": "#/$defs/IssueCode" },
+        "entity_type": { "type": "string", "minLength": 1 },
+        "entity_id": { "$ref": "#/$defs/StableId" },
+        "field_path": { "type": "string", "minLength": 1 },
+        "known_facts": { "type": "object" },
+        "missing_or_conflicting_facts": { "type": "object" },
+        "impact": { "type": "string", "minLength": 1 },
+        "allowed_resolutions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "attention_policy": { "enum": ["normal", "suppressed_until_relevant", "deferred_schedule", "high"] },
+        "detected_at": { "$ref": "#/$defs/Timestamp" },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "issue_code": {
+                "enum": [
+                  "unconvertible_unit", "ambiguous_inventory_match", "insufficient_inventory",
+                  "missing_nutrition", "partial_nutrition", "missing_expiration"
+                ]
+              }
+            },
+            "required": ["issue_code"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "issue_kind": { "enum": ["anomaly", "enrichment"] } }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "IssueStateEvent": {
+      "type": "object",
+      "required": ["model_type", "state_event_id", "issue_id", "expected_issue_version", "from_status", "to_status", "trigger", "created_at", "rule_ref"],
+      "properties": {
+        "model_type": { "const": "issue_state_event" },
+        "state_event_id": { "$ref": "#/$defs/StableId" },
+        "issue_id": { "$ref": "#/$defs/StableId" },
+        "expected_issue_version": { "$ref": "#/$defs/VersionRef" },
+        "from_status": { "$ref": "#/$defs/IssueStatus" },
+        "to_status": { "$ref": "#/$defs/IssueStatus" },
+        "trigger": { "type": "string", "minLength": 1 },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" }
+      },
+      "additionalProperties": false
+    },
+    "IssueView": {
+      "type": "object",
+      "required": ["model_type", "issue_id", "issue_version", "status", "as_of_state_event_id", "computed_at"],
+      "properties": {
+        "model_type": { "const": "issue_view" },
+        "issue_id": { "$ref": "#/$defs/StableId" },
+        "issue_version": { "$ref": "#/$defs/VersionRef" },
+        "status": { "$ref": "#/$defs/IssueStatus" },
+        "as_of_state_event_id": { "$ref": "#/$defs/StableId" },
+        "last_offered_at": { "$ref": "#/$defs/Timestamp" },
+        "deferred_until_or_trigger": { "type": "string", "minLength": 1 },
+        "resolution_event_id": { "$ref": "#/$defs/StableId" },
+        "invalidated_by_event_id": { "$ref": "#/$defs/StableId" },
+        "computed_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["resolved", "dismissed"] } }, "required": ["status"] },
+          "then": {
+            "properties": { "resolution_event_id": {} },
+            "required": ["resolution_event_id"]
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "invalidated" } }, "required": ["status"] },
+          "then": {
+            "properties": { "invalidated_by_event_id": {} },
+            "required": ["invalidated_by_event_id"]
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "deferred" } }, "required": ["status"] },
+          "then": {
+            "properties": { "deferred_until_or_trigger": {} },
+            "required": ["deferred_until_or_trigger"]
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "enum": ["open", "offered"] } },
+            "required": ["status"]
+          },
+          "then": {
+            "not": {
+              "type": "object",
+              "anyOf": [
+                { "type": "object", "properties": { "resolution_event_id": {} }, "required": ["resolution_event_id"] },
+                { "type": "object", "properties": { "deferred_until_or_trigger": {} }, "required": ["deferred_until_or_trigger"] },
+                { "type": "object", "properties": { "invalidated_by_event_id": {} }, "required": ["invalidated_by_event_id"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "enum": ["resolved", "dismissed"] } },
+            "required": ["status"]
+          },
+          "then": {
+            "not": {
+              "type": "object",
+              "anyOf": [
+                { "type": "object", "properties": { "deferred_until_or_trigger": {} }, "required": ["deferred_until_or_trigger"] },
+                { "type": "object", "properties": { "invalidated_by_event_id": {} }, "required": ["invalidated_by_event_id"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "const": "invalidated" } },
+            "required": ["status"]
+          },
+          "then": {
+            "not": {
+              "type": "object",
+              "anyOf": [
+                { "type": "object", "properties": { "resolution_event_id": {} }, "required": ["resolution_event_id"] },
+                { "type": "object", "properties": { "deferred_until_or_trigger": {} }, "required": ["deferred_until_or_trigger"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "const": "deferred" } },
+            "required": ["status"]
+          },
+          "then": {
+            "not": {
+              "type": "object",
+              "anyOf": [
+                { "type": "object", "properties": { "resolution_event_id": {} }, "required": ["resolution_event_id"] },
+                { "type": "object", "properties": { "invalidated_by_event_id": {} }, "required": ["invalidated_by_event_id"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "const": "offered" } },
+            "required": ["status"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "last_offered_at": { "$ref": "#/$defs/Timestamp" } },
+            "required": ["last_offered_at"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "VersionedEntityRef": {
+      "type": "object",
+      "required": ["entity_type", "entity_id", "version"],
+      "properties": {
+        "entity_type": { "type": "string", "minLength": 1 },
+        "entity_id": { "$ref": "#/$defs/StableId" },
+        "version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "CommittedEventVersionRef": {
+      "type": "object",
+      "required": ["entity_type", "entity_id", "version"],
+      "properties": {
+        "entity_type": { "enum": ["meal_event", "purchase_event"] },
+        "entity_id": { "$ref": "#/$defs/StableId" },
+        "version": { "$ref": "#/$defs/VersionRef" }
+      },
+      "additionalProperties": false
+    },
+    "QuickOption": {
+      "type": "object",
+      "required": ["option_id", "option_kind", "operation", "effect_summary", "non_effect_summary", "affected_issue_ids", "conflict_group"],
+      "properties": {
+        "option_id": { "$ref": "#/$defs/StableId" },
+        "option_kind": { "enum": ["action", "safe_exit"] },
+        "operation": { "type": "string", "minLength": 1 },
+        "effect_summary": { "type": "string", "minLength": 1 },
+        "non_effect_summary": { "type": "string", "minLength": 1 },
+        "affected_issue_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "conflict_group": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "option_kind": { "const": "safe_exit" } },
+            "required": ["option_kind"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "operation": { "enum": ["defer", "keep_unchanged", "do_not_link"] } }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "QuickPrompt": {
+      "type": "object",
+      "required": ["model_type", "prompt_id", "prompt_version", "issue_ids", "target_versions", "options", "free_text_reply_supported", "rule_ref", "generated_at", "expires_at"],
+      "properties": {
+        "model_type": { "const": "quick_prompt" },
+        "prompt_id": { "$ref": "#/$defs/StableId" },
+        "prompt_version": { "$ref": "#/$defs/VersionRef" },
+        "issue_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "target_versions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/VersionedEntityRef" } },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/QuickOption" },
+          "contains": {
+            "type": "object",
+            "properties": { "option_kind": { "const": "safe_exit" } },
+            "required": ["option_kind"]
+          },
+          "minContains": 1
+        },
+        "free_text_reply_supported": { "const": true },
+        "rule_ref": { "$ref": "#/$defs/RuleRef" },
+        "generated_at": { "$ref": "#/$defs/Timestamp" },
+        "expires_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "IssueResolutionEvent": {
+      "type": "object",
+      "required": ["model_type", "resolution_event_id", "resolution_group_id", "issue_id", "expected_issue_version", "selected_option_ids", "supplied_facts", "source_text", "operation", "revalidated_versions", "outcome", "applied_effects", "skipped_effects", "resulting_issue_status", "idempotency_key", "created_at"],
+      "properties": {
+        "model_type": { "const": "issue_resolution_event" },
+        "resolution_event_id": { "$ref": "#/$defs/StableId" },
+        "resolution_group_id": { "$ref": "#/$defs/StableId" },
+        "issue_id": { "$ref": "#/$defs/StableId" },
+        "expected_issue_version": { "$ref": "#/$defs/VersionRef" },
+        "prompt_id": { "$ref": "#/$defs/StableId" },
+        "selected_option_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "supplied_facts": { "type": "object" },
+        "source_text": { "type": "string", "minLength": 1 },
+        "operation": { "type": "string", "minLength": 1 },
+        "revalidated_versions": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/VersionedEntityRef" } },
+        "outcome": { "enum": ["applied", "deferred", "dismissed", "rejected_expired", "rejected_stale", "rejected_conflict", "rejected_effect"] },
+        "applied_effects": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "skipped_effects": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "resulting_issue_status": { "enum": ["open", "offered", "deferred", "resolved", "dismissed", "invalidated"] },
+        "idempotency_key": { "$ref": "#/$defs/StableId" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "outcome": { "const": "applied" } }, "required": ["outcome"] },
+          "then": {
+            "properties": {
+              "revalidated_versions": { "type": "array", "minItems": 1 },
+              "resulting_issue_status": { "const": "resolved" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "outcome": { "const": "deferred" } }, "required": ["outcome"] },
+          "then": {
+            "properties": {
+              "revalidated_versions": { "type": "array", "minItems": 1 },
+              "applied_effects": { "type": "array", "maxItems": 0 },
+              "resulting_issue_status": { "const": "deferred" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "outcome": { "const": "dismissed" } }, "required": ["outcome"] },
+          "then": {
+            "properties": {
+              "revalidated_versions": { "type": "array", "minItems": 1 },
+              "applied_effects": { "type": "array", "maxItems": 0 },
+              "resulting_issue_status": { "const": "dismissed" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "outcome": { "enum": ["rejected_expired", "rejected_stale", "rejected_conflict", "rejected_effect"] } }, "required": ["outcome"] },
+          "then": {
+            "properties": {
+              "revalidated_versions": { "type": "array", "minItems": 1 },
+              "applied_effects": { "type": "array", "maxItems": 0 },
+              "resulting_issue_status": { "enum": ["open", "offered", "deferred"] }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "CorrectionBeforeSnapshot": {
+      "type": "object",
+      "required": ["event_version_snapshot_id"],
+      "properties": {
+        "event_version_snapshot_id": { "$ref": "#/$defs/StableId" }
+      },
+      "additionalProperties": false
+    },
+    "InventoryCompensation": {
+      "type": "object",
+      "required": ["actual_effect_refs", "compensation_effect_refs", "mode"],
+      "properties": {
+        "actual_effect_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "compensation_effect_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "mode": { "const": "actual_effect_delta" }
+      },
+      "additionalProperties": false
+    },
+    "NutritionRecalculation": {
+      "type": "object",
+      "required": ["required", "snapshot_refs"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "snapshot_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+          "then": {
+            "properties": { "snapshot_refs": { "type": "array", "minItems": 1 } }
+          }
+        },
+        {
+          "if": { "properties": { "required": { "const": false } }, "required": ["required"] },
+          "then": {
+            "properties": { "snapshot_refs": { "type": "array", "maxItems": 0 } }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "TimeChangeDetail": {
+      "type": "object",
+      "required": ["before_time", "after_time", "old_local_date", "new_local_date"],
+      "properties": {
+        "before_time": { "$ref": "#/$defs/OccurredTime" },
+        "after_time": { "$ref": "#/$defs/OccurredTime" },
+        "old_local_date": { "$ref": "#/$defs/LocalDate" },
+        "new_local_date": { "$ref": "#/$defs/LocalDate" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeAmountFacts": {
+      "type": "object",
+      "required": ["fact_type", "reported_quantity"],
+      "properties": {
+        "fact_type": { "const": "change_amount" },
+        "reported_quantity": { "$ref": "#/$defs/Quantity" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeUnitFacts": {
+      "type": "object",
+      "required": ["fact_type", "unit"],
+      "properties": {
+        "fact_type": { "const": "change_unit" },
+        "unit": { "$ref": "#/$defs/KnownMeasure/properties/unit" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeTimeFacts": {
+      "type": "object",
+      "required": ["fact_type", "occurred_time"],
+      "properties": {
+        "fact_type": { "const": "change_time" },
+        "occurred_time": { "$ref": "#/$defs/OccurredTime" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeMealSlotFacts": {
+      "type": "object",
+      "required": ["fact_type", "meal_slot"],
+      "properties": {
+        "fact_type": { "const": "change_meal_slot" },
+        "meal_slot": { "$ref": "#/$defs/MealSlot" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeItemNameFacts": {
+      "type": "object",
+      "required": ["fact_type", "raw_name", "normalized_name"],
+      "properties": {
+        "fact_type": { "const": "change_item_name" },
+        "raw_name": { "$ref": "#/$defs/MealItem/properties/raw_name" },
+        "normalized_name": { "$ref": "#/$defs/MealItem/properties/normalized_name" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeItemTypeFacts": {
+      "type": "object",
+      "required": ["fact_type", "item_type"],
+      "properties": {
+        "fact_type": { "const": "change_item_type" },
+        "item_type": { "$ref": "#/$defs/MealItem/properties/item_type" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeComponentsFacts": {
+      "type": "object",
+      "required": ["fact_type", "components"],
+      "properties": {
+        "fact_type": { "const": "change_components" },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/DishComponent" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionAddItemFacts": {
+      "type": "object",
+      "required": ["fact_type", "item"],
+      "properties": {
+        "fact_type": { "const": "add_item" },
+        "item": { "$ref": "#/$defs/MealItem" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionRemoveItemFacts": {
+      "type": "object",
+      "required": ["fact_type"],
+      "properties": {
+        "fact_type": { "const": "remove_item" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeInventoryLinkFacts": {
+      "type": "object",
+      "required": ["fact_type", "inventory_match"],
+      "properties": {
+        "fact_type": { "const": "change_inventory_link" },
+        "inventory_match": { "$ref": "#/$defs/InventoryMatch" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionChangeNutritionSourceFacts": {
+      "type": "object",
+      "required": ["fact_type", "nutrition_source"],
+      "properties": {
+        "fact_type": { "const": "change_nutrition_source" },
+        "nutrition_source": { "$ref": "#/$defs/NutritionSourceReference" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionVoidEventFacts": {
+      "type": "object",
+      "required": ["fact_type"],
+      "properties": {
+        "fact_type": { "const": "void_event" }
+      },
+      "additionalProperties": false
+    },
+    "CorrectionSuppliedFacts": {
+      "oneOf": [
+        { "$ref": "#/$defs/CorrectionChangeAmountFacts" },
+        { "$ref": "#/$defs/CorrectionChangeUnitFacts" },
+        { "$ref": "#/$defs/CorrectionChangeTimeFacts" },
+        { "$ref": "#/$defs/CorrectionChangeMealSlotFacts" },
+        { "$ref": "#/$defs/CorrectionChangeItemNameFacts" },
+        { "$ref": "#/$defs/CorrectionChangeItemTypeFacts" },
+        { "$ref": "#/$defs/CorrectionChangeComponentsFacts" },
+        { "$ref": "#/$defs/CorrectionAddItemFacts" },
+        { "$ref": "#/$defs/CorrectionRemoveItemFacts" },
+        { "$ref": "#/$defs/CorrectionChangeInventoryLinkFacts" },
+        { "$ref": "#/$defs/CorrectionChangeNutritionSourceFacts" },
+        { "$ref": "#/$defs/CorrectionVoidEventFacts" }
+      ]
+    },
+    "CorrectionEvent": {
+      "type": "object",
+      "required": ["model_type", "correction_id", "root_event_id", "target_event_id", "target_version", "operation", "before_snapshot", "supplied_facts", "source_text", "inventory_compensation", "nutrition_recalculation", "affected_local_dates", "resulting_version", "idempotency_key", "created_at"],
+      "properties": {
+        "model_type": { "const": "correction_event" },
+        "correction_id": { "$ref": "#/$defs/StableId" },
+        "root_event_id": { "$ref": "#/$defs/StableId" },
+        "target_event_id": { "$ref": "#/$defs/StableId" },
+        "target_item_id": { "$ref": "#/$defs/StableId" },
+        "target_version": { "$ref": "#/$defs/VersionRef" },
+        "operation": { "enum": ["change_amount", "change_unit", "change_time", "change_meal_slot", "change_item_name", "change_item_type", "change_components", "add_item", "remove_item", "change_inventory_link", "change_nutrition_source", "void_event"] },
+        "before_snapshot": { "$ref": "#/$defs/CorrectionBeforeSnapshot" },
+        "supplied_facts": { "$ref": "#/$defs/CorrectionSuppliedFacts" },
+        "source_text": { "type": "string", "minLength": 1 },
+        "time_change": { "$ref": "#/$defs/TimeChangeDetail" },
+        "inventory_compensation": { "$ref": "#/$defs/InventoryCompensation" },
+        "nutrition_recalculation": { "$ref": "#/$defs/NutritionRecalculation" },
+        "affected_local_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/LocalDate" } },
+        "resulting_version": { "$ref": "#/$defs/VersionRef" },
+        "idempotency_key": { "$ref": "#/$defs/StableId" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "remove_item" } }, "required": ["operation"] },
+          "then": {
+            "properties": { "target_item_id": {} },
+            "required": ["target_item_id"]
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "void_event" } }, "required": ["operation"] },
+          "then": {
+            "not": {
+              "properties": { "target_item_id": {} },
+              "required": ["target_item_id"]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_time" } }, "required": ["operation"] },
+          "then": {
+            "properties": { "time_change": {} },
+            "required": ["time_change"]
+          },
+          "else": {
+            "not": {
+              "properties": { "time_change": {} },
+              "required": ["time_change"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "change_amount", "change_unit", "change_item_name", "change_item_type",
+                  "change_components", "add_item", "remove_item", "change_nutrition_source"
+                ]
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "nutrition_recalculation": {
+                "type": "object",
+                "properties": {
+                  "required": { "const": true },
+                  "snapshot_refs": { "type": "array", "minItems": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "operation": { "enum": ["remove_item", "void_event"] },
+              "inventory_compensation": {
+                "type": "object",
+                "properties": { "actual_effect_refs": { "type": "array", "minItems": 1 } },
+                "required": ["actual_effect_refs"]
+              }
+            },
+            "required": ["operation", "inventory_compensation"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "inventory_compensation": {
+                "type": "object",
+                "properties": { "compensation_effect_refs": { "type": "array", "minItems": 1 } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "operation": { "enum": ["remove_item", "void_event"] },
+              "inventory_compensation": {
+                "type": "object",
+                "properties": { "compensation_effect_refs": { "type": "array", "minItems": 1 } },
+                "required": ["compensation_effect_refs"]
+              }
+            },
+            "required": ["operation", "inventory_compensation"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "inventory_compensation": {
+                "type": "object",
+                "properties": { "actual_effect_refs": { "type": "array", "minItems": 1 } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_amount" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_amount" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_unit" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_unit" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_time" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_time" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_meal_slot" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_meal_slot" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_item_name" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_item_name" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_item_type" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_item_type" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_components" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_components" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "add_item" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "add_item" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "remove_item" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "remove_item" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_inventory_link" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_inventory_link" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "change_nutrition_source" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "change_nutrition_source" } }, "required": ["fact_type"] } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "void_event" } }, "required": ["operation"] },
+          "then": { "properties": { "supplied_facts": { "type": "object", "properties": { "fact_type": { "const": "void_event" } }, "required": ["fact_type"] } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "EventVersionSnapshot": {
+      "type": "object",
+      "required": ["model_type", "version_snapshot_id", "root_event_id", "event_ref", "event_version", "lifecycle", "item_refs", "nutrition_snapshot_refs", "inventory_effect_refs", "committed_at", "content_hash"],
+      "properties": {
+        "model_type": { "const": "event_version_snapshot" },
+        "version_snapshot_id": { "$ref": "#/$defs/StableId" },
+        "root_event_id": { "$ref": "#/$defs/StableId" },
+        "event_ref": { "$ref": "#/$defs/CommittedEventVersionRef" },
+        "event_version": { "$ref": "#/$defs/VersionRef" },
+        "lifecycle": { "enum": ["active", "corrected", "voided"] },
+        "item_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "nutrition_snapshot_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "inventory_effect_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/StableId" } },
+        "committed_at": { "$ref": "#/$defs/Timestamp" },
+        "content_hash": { "$ref": "#/$defs/ContentHash" }
+      },
+      "additionalProperties": false
+    },
+    "EffectiveEventView": {
+      "type": "object",
+      "required": ["model_type", "root_event_id", "effective_version_snapshot_id", "effective_event_ref", "lifecycle", "projection_status", "affected_local_dates", "computed_at"],
+      "properties": {
+        "model_type": { "const": "effective_event_view" },
+        "root_event_id": { "$ref": "#/$defs/StableId" },
+        "effective_version_snapshot_id": { "$ref": "#/$defs/StableId" },
+        "effective_event_ref": { "$ref": "#/$defs/CommittedEventVersionRef" },
+        "lifecycle": { "enum": ["active", "corrected", "voided"] },
+        "projection_status": { "enum": ["current", "partial", "stale"] },
+        "affected_local_dates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/LocalDate" } },
+        "computed_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
