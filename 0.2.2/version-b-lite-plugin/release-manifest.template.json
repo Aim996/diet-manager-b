@@ -9,6 +9,11 @@
   "acceptance_assets_sha256": "{{acceptance_assets_sha256}}",
   "node_version": "{{node_version}}",
   "openclaw_version": "{{openclaw_version}}",
+  "distribution": {
+    "artifact_type": "universal-agent-skill",
+    "primary_transport": "diet-manager-json-cli",
+    "openclaw_adapter": "optional"
+  },
   "archive": {
     "path": "artifacts/diet-manager-b-{{product_version}}.zip",
     "bytes": {{archive_bytes}},
