@@ -1286,6 +1286,17 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
+  let parsed: ReturnType<typeof parseApplicationRequest> | undefined;
+  if (request.semantic_candidate !== undefined) {
+    try {
+      parsed = parseApplicationRequest(request);
+    } catch {
+      return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+    }
+    if (parsed.disposition === "rejected") {
+      return failedOutcome(request.action, request.operation_id, parsed.error_code);
+    }
+  }
   if (request.action === "query_daily_summary" || request.action === "query_meals" ||
       request.action === "query_inventory") {
     try {
@@ -1310,11 +1321,12 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   if (!["record_meal", "record_water", "add_inventory", "correct_record", "undo_record", "restore_record", "set_profile", "set_goal"].includes(request.action)) {
     return failedOutcome(request.action, request.operation_id, "ACTION_NOT_IMPLEMENTED");
   }
-  let parsed;
-  try {
-    parsed = parseApplicationRequest(request);
-  } catch {
-    return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+  if (parsed === undefined) {
+    try {
+      parsed = parseApplicationRequest(request);
+    } catch {
+      return failedOutcome(request.action, request.operation_id, "INVALID_REQUEST");
+    }
   }
   if (parsed.disposition === "rejected") {
     return failedOutcome(request.action, request.operation_id, parsed.error_code);

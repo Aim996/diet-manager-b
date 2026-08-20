@@ -4,7 +4,10 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { handleCoreRequest } from "../../src/application/command-handler.js";
+import {
+  handleCoreRequest,
+  handleCoreRequestAsync,
+} from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
 import type { SemanticMealCandidateV1 } from "../../src/semantic/candidate.js";
 import { openDietDatabase } from "../../src/storage/database.js";
@@ -257,6 +260,41 @@ describe("semantic meal application requests", () => {
         committed: false,
         error_code: "INVALID_REQUEST",
       });
+      expect(eventCount(root) - before).toBe(0);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it("rejects a meal candidate on query actions consistently across sync and async entries", async () => {
+    const root = newRoot();
+    const runtime = createCoreRuntime({
+      officialDataRoot: root,
+      now: () => "2026-08-20T04:30:01.000Z",
+    });
+    try {
+      const request = {
+        ...semanticRequest("早上顺手吃了一个鸡蛋", [{
+          raw_name: "鸡蛋",
+          normalized_hint: "egg",
+          amount: { kind: "exact", value: 1, unit: "piece", evidence_span: "一个鸡蛋" },
+        }]),
+        action: "query_daily_summary" as const,
+      };
+      const expected = {
+        action: "query_daily_summary",
+        status: "failed",
+        committed: false,
+        operation_id: request.operation_id,
+        error_code: "SEMANTIC_ACTION_MISMATCH",
+      };
+      const before = eventCount(root);
+
+      const syncOutcome = handleCoreRequest(runtime, request);
+      const asyncOutcome = await handleCoreRequestAsync(runtime, request);
+
+      expect(syncOutcome).toEqual(expected);
+      expect(asyncOutcome).toEqual(expected);
       expect(eventCount(root) - before).toBe(0);
     } finally {
       runtime.close();
