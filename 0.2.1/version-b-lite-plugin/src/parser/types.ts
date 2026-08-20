@@ -253,6 +253,7 @@ export interface CoreNutritionSupplementCandidate {
 export type CoreCorrectionTargetReference =
   | Readonly<{ readonly kind: "event_id"; readonly event_id: string }>
   | Readonly<{ readonly kind: "latest_meal_in_conversation" }>
+  | Readonly<{ readonly kind: "sole_active_meal_in_conversation" }>
   | Readonly<{ readonly kind: "latest_water_in_conversation" }>;
 
 export interface CoreUndoCommandCandidate {

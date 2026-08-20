@@ -427,6 +427,27 @@ function resolveLatestMealEventId(database: DatabaseSync, conversationId: string
   return rows[0]!.event_id;
 }
 
+function resolveSoleActiveMealEventId(
+  database: DatabaseSync,
+  authoritySecret: Uint8Array,
+  conversationId: string,
+): string {
+  const rows = database.prepare(
+    `SELECT event_id FROM event_records
+     WHERE conversation_id = ? AND event_type = 'diet_meal'
+     ORDER BY received_at DESC, event_id DESC`,
+  ).all(conversationId) as Array<{ event_id: string }>;
+  let activeEventId: string | undefined;
+  for (const row of rows) {
+    const state = readEffectiveMealState(database, authoritySecret, row.event_id);
+    if (!state.snapshot.active) continue;
+    if (activeEventId !== undefined) throw new Error("CORRECTION_TARGET_AMBIGUOUS");
+    activeEventId = row.event_id;
+  }
+  if (activeEventId === undefined) throw new Error("CORRECTION_TARGET_NOT_FOUND");
+  return activeEventId;
+}
+
 export function resolveCorrectionTarget(input: ResolveCorrectionTargetInput): ResolvedCorrectionTarget {
   if (typeof input.database !== "object" || input.database === null) return invalid("database");
   if (
@@ -459,6 +480,12 @@ export function resolveCorrectionTarget(input: ResolveCorrectionTargetInput): Re
     targetEventId = reference.event_id;
   } else if (reference.kind === "latest_meal_in_conversation") {
     targetEventId = resolveLatestMealEventId(input.database, input.conversationId);
+  } else if (reference.kind === "sole_active_meal_in_conversation") {
+    targetEventId = resolveSoleActiveMealEventId(
+      input.database,
+      input.authoritySecret,
+      input.conversationId,
+    );
   } else {
     return invalid("reference");
   }

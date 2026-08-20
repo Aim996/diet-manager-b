@@ -1528,12 +1528,34 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     }
     if (parsed.command.action === "undo_record") {
       const session = acquireSession(runtime);
-      const resolvedTarget = resolveCorrectionTarget({
-        database: session.database,
-        authoritySecret: session.authoritySecret,
-        conversationId: request.conversation_id,
-        reference: parsed.command.target,
-      });
+      let resolvedTarget;
+      try {
+        resolvedTarget = resolveCorrectionTarget({
+          database: session.database,
+          authoritySecret: session.authoritySecret,
+          conversationId: request.conversation_id,
+          reference: parsed.command.target,
+        });
+      } catch (error) {
+        if (
+          parsed.command.target.kind === "sole_active_meal_in_conversation" &&
+          error instanceof Error &&
+          error.message === "CORRECTION_TARGET_AMBIGUOUS"
+        ) {
+          return nonWritingOutcome(
+            request.action,
+            request.operation_id,
+            "needs_clarification",
+            "target_ambiguous",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            "同一会话里有多条有效饮食记录，请说明要撤销哪一条。",
+          );
+        }
+        throw error;
+      }
       if (!resolvedTarget.active) {
         return nonWritingOutcome(
           request.action,

@@ -8,6 +8,9 @@ const LATEST_MEAL_UNDO = /^撤销\s*(?:刚才那条|刚才这条|上一条|刚�
 const EVENT_ID_UNDO = /^撤销\s*记录\s*([A-Za-z0-9][A-Za-z0-9._:-]{0,127})[。.]?$/u;
 // 指示词指向某条记录、但未绑定到"刚才那条"或具体编号 —— 目标不唯一，需澄清。
 const DEICTIC_UNBOUNDED_UNDO = /^撤销\s*(?:那条|这条|那一条|这一条)\s*(?:饮食)?记录[。.]?$/u;
+// 私人 Agent 的两种口语撤销形态。它们没有事件编号，因此只允许交给“同一会话唯一
+// active 餐食”目标；应用层若看到零条或多条，不得静默选择最新记录。
+const COLLOQUIAL_SOLE_ACTIVE_UNDO = /^(?:刚才\s*鸡蛋\s*那条\s*先取消|前面\s*鸡蛋\s*那次\s*算错了[，,]\s*帮我去掉)[。.]?$/u;
 
 // 有界恢复语法：与撤销同构，只接受"恢复"前缀。恢复仅对已 void 记录生效。
 const LATEST_MEAL_RESTORE = /^恢复\s*(?:刚才那条|刚才这条|上一条|刚刚那条|刚刚这条)\s*饮食记录[。.]?$/u;
@@ -93,6 +96,19 @@ function mealTimeOccurredAt(
  */
 export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CoreParseResult | undefined {
   const source = input.source_text.trim();
+
+  if (COLLOQUIAL_SOLE_ACTIVE_UNDO.test(source)) {
+    return frozenRecord({
+      disposition: "candidate",
+      command: frozenRecord({
+        action: "undo_record",
+        operation_id: input.operation_id,
+        source_text: input.source_text,
+        parser_version: PARSER_VERSION,
+        target: frozenRecord({ kind: "sole_active_meal_in_conversation" }),
+      }),
+    });
+  }
 
   if (source.startsWith("撤销")) {
     if (LATEST_MEAL_UNDO.test(source)) {
