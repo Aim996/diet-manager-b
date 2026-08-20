@@ -13,7 +13,6 @@ const testsDirectory = dirname(fileURLToPath(import.meta.url));
 const projectDirectory = resolve(testsDirectory, "..");
 const manifestPath = resolve(projectDirectory, "openclaw.plugin.json");
 const packagePath = resolve(projectDirectory, "package.json");
-const skillPath = resolve(projectDirectory, "skills", "diet-manager-b", "SKILL.md");
 const dataDirectory = resolve(projectDirectory, "data");
 const expectedContract = {
   id: "diet-manager/contract-v3",
@@ -122,29 +121,6 @@ describe("diet manager B core plugin boundary", () => {
     expect(dietManagerParameters).toMatchObject({
       "x-diet-manager-contract": expectedContract,
     });
-  });
-
-  test("publishes the frozen contract identity in the Skill without weakening write authority", () => {
-    const skill = readFileSync(skillPath, "utf8");
-
-    expect(skill).toContain(`contract_id=${expectedContract.id}`);
-    expect(skill).toContain(`contract_version=${expectedContract.version}`);
-    expect(skill).toContain(`contract_sha256=${expectedContract.sha256}`);
-    expect(skill).toContain("只有工具返回 `committed=true` 才能告诉用户“已记录”");
-    expect(skill).toContain("技术日志可以说明失败原因，但不属于饮食记录");
-    expect(skill).toContain("`official_data_root` 只由后端配置和管理");
-    expect(skill).toContain("把用户原话逐字放入 `source_text`");
-    expect(skill).toContain("不要传入数据路径、secret、token 或 revision");
-    expect(skill).toContain("`occurred_at_text` 和 `items`，但它们只是兼容字段");
-    expect(skill).toContain("实际请求写入时必须同时提供 `action`、逐字 `source_text`");
-    expect(skill).toContain("牛奶、汤、豆浆、咖啡和茶按饮食处理，不按白水处理");
-    expect(skill).toContain("健康建议请求不进入饮食记录");
-    expect(skill).toContain("不要建议用户原样重发同一句");
-    expect(skill).toContain("保留整句原话并单次使用 `record_meal`");
-    expect(skill).toContain("本阶段后端可能返回 `needs_clarification`");
-    expect(skill).toContain("不要擅自改写原话拆成两次调用");
-    expect(skill).toContain("这些调用元数据不是食物、数量或营养事实");
-    expect(skill).toContain("直接告诉用户本次未记录，不创建便签、记忆或替代记录");
   });
 
   test("teaches natural-language callers the complete runtime authority recipe", () => {

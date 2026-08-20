@@ -1,4 +1,4 @@
 interface:
-  display_name: "饮食管家 B"
-  short_description: "处理饮食、饮水、库存查询以及饮食记录更正与撤销等常见请求"
-  default_prompt: "Use $diet-manager-b 处理我的饮食记录、饮水、库存查询、更正或撤销请求。"
+  display_name: "饮食管家"
+  short_description: "跨 Agent 处理饮食、饮水、库存、档案与目标请求"
+  default_prompt: "Use $diet-manager-b 记录或查询我的饮食、饮水、库存、档案与目标。"

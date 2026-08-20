@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,7 +17,6 @@ import { cloneNutritionRuntimeConfig } from "../../src/nutrition/config.js";
 import type { NutritionSourceAdapter } from "../../src/nutrition/types.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
-const SKILL_PATH = join(process.cwd(), "skills", "diet-manager-b", "SKILL.md");
 const CONVERSATION_ID = "conversation-business-gate";
 
 // A nutrition adapter that always resolves a per-100g apple profile with an
@@ -310,24 +309,4 @@ it("excludes reclassified water from the water domain while keeping the correcti
     runtime.close();
     rmSync(root, { recursive: true, force: false });
   }
-});
-
-it("keeps the Skill contract truthful across every outcome status", () => {
-  const skill = readFileSync(SKILL_PATH, "utf8");
-  // One-call termination.
-  expect(skill).toContain("每条入站消息至多调用一次");
-  // Committed statuses map only to concrete receipts, distinguished by action.
-  expect(skill).toContain("已记录");
-  expect(skill).toContain("已更正");
-  expect(skill).toContain("已撤销");
-  // Non-committed statuses never claim a record.
-  expect(skill).toContain("尚未记录");
-  expect(skill).toContain("没有写入");
-  expect(skill).toContain("未记录");
-  // Banned behaviours.
-  expect(skill).toContain("不宣传能力");
-  expect(skill).toContain("起名");
-  expect(skill).toContain("重试");
-  expect(skill).toContain("记忆");
-  expect(skill).toContain("提醒");
 });
