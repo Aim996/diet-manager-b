@@ -1,11 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  constants,
+  copyFileSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
 } from "node:fs";
@@ -88,20 +92,33 @@ function resolveNpmCli() {
   return npmCli;
 }
 
+function readOutputIdentity(outputDir, errorCode) {
+  let stats;
+  let realPath;
+  try {
+    stats = lstatSync(outputDir);
+    realPath = realpathSync.native(outputDir);
+  } catch {
+    fail(errorCode);
+  }
+  if (!stats.isDirectory() || stats.isSymbolicLink()) fail(errorCode);
+  return Object.freeze({
+    dev: stats.dev,
+    ino: stats.ino,
+    realPath,
+  });
+}
+
+function sameOutputIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.realPath === right.realPath;
+}
+
 function validateOutputDirectory(argument) {
   if (typeof argument !== "string" || argument.length === 0) {
     fail("DIET_PORTABLE_BUILD_ARGUMENTS_INVALID");
   }
   const outputDir = resolve(argument);
-  let stats;
-  try {
-    stats = lstatSync(outputDir);
-  } catch {
-    fail("DIET_PORTABLE_BUILD_OUTPUT_NOT_ORDINARY");
-  }
-  if (!stats.isDirectory() || stats.isSymbolicLink()) {
-    fail("DIET_PORTABLE_BUILD_OUTPUT_NOT_ORDINARY");
-  }
+  const identity = readOutputIdentity(outputDir, "DIET_PORTABLE_BUILD_OUTPUT_NOT_ORDINARY");
   const artifactPath = join(outputDir, EXPECTED_FILENAME);
   if (existsSync(artifactPath)) fail("DIET_PORTABLE_BUILD_OUTPUT_EXISTS");
   let entries;
@@ -111,7 +128,25 @@ function validateOutputDirectory(argument) {
     fail("DIET_PORTABLE_BUILD_OUTPUT_NOT_ORDINARY");
   }
   if (entries.length !== 0) fail("DIET_PORTABLE_BUILD_OUTPUT_NOT_EMPTY");
-  return { outputDir, artifactPath };
+  return Object.freeze({ outputDir, artifactPath, identity });
+}
+
+function revalidateOutputDirectory(output) {
+  const current = readOutputIdentity(output.outputDir, "DIET_PORTABLE_BUILD_OUTPUT_CHANGED");
+  if (!sameOutputIdentity(current, output.identity)) fail("DIET_PORTABLE_BUILD_OUTPUT_CHANGED");
+  if (existsSync(output.artifactPath)) fail("DIET_PORTABLE_BUILD_OUTPUT_EXISTS");
+  let entries;
+  try {
+    entries = readdirSync(output.outputDir);
+  } catch {
+    fail("DIET_PORTABLE_BUILD_OUTPUT_CHANGED");
+  }
+  if (entries.length !== 0) fail("DIET_PORTABLE_BUILD_OUTPUT_NOT_EMPTY");
+}
+
+function assertOutputIdentityUnchanged(output) {
+  const current = readOutputIdentity(output.outputDir, "DIET_PORTABLE_BUILD_OUTPUT_CHANGED");
+  if (!sameOutputIdentity(current, output.identity)) fail("DIET_PORTABLE_BUILD_OUTPUT_CHANGED");
 }
 
 function npmEnvironment(cacheRoot) {
@@ -163,36 +198,74 @@ function validatePackResult(result) {
   }
   if (!Array.isArray(result.files)) fail("DIET_PORTABLE_BUILD_NPM_OUTPUT_INVALID");
   const paths = [];
+  const slashPaths = new Map();
+  const collisionKeys = new Map();
   for (const file of result.files) {
     if (file === null || typeof file !== "object" || typeof file.path !== "string" || file.path.length === 0) {
       fail("DIET_PORTABLE_BUILD_NPM_OUTPUT_INVALID");
     }
-    if (file.path.includes("\\") || file.path.startsWith("/") || file.path.includes("../")) {
+    const slashPath = file.path.replaceAll("\\", "/");
+    const segments = slashPath.split("/");
+    if (slashPath.startsWith("/")
+      || /^[A-Za-z]:\//u.test(slashPath)
+      || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
       fail("DIET_PORTABLE_BUILD_NPM_OUTPUT_INVALID");
     }
     paths.push(file.path);
+    slashPaths.set(file.path, slashPath);
   }
   if (new Set(paths).size !== paths.length) fail("DIET_PORTABLE_BUILD_NPM_OUTPUT_INVALID");
+  for (const path of paths) {
+    const collisionKey = slashPaths.get(path).normalize("NFC").toLowerCase().normalize("NFC");
+    const previous = collisionKeys.get(collisionKey);
+    if (previous !== undefined && previous !== path) fail("DIET_PORTABLE_BUILD_PATH_COLLISION");
+    collisionKeys.set(collisionKey, path);
+  }
   const sorted = lexicalSort(paths);
   for (const path of sorted) {
-    if (FORBIDDEN_PATH.test(path)) fail("DIET_PORTABLE_BUILD_FORBIDDEN_FILE");
-    const allowed = EXACT_ALLOWED_FILES.has(path)
-      || /^dist\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.js$/u.test(path);
+    const slashPath = slashPaths.get(path);
+    if (FORBIDDEN_PATH.test(slashPath)) fail("DIET_PORTABLE_BUILD_FORBIDDEN_FILE");
+    const allowed = EXACT_ALLOWED_FILES.has(slashPath)
+      || /^dist\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.js$/u.test(slashPath);
     if (!allowed) fail("DIET_PORTABLE_BUILD_FILE_NOT_ALLOWED");
   }
+  const normalizedPaths = [...slashPaths.values()];
   for (const required of REQUIRED_FILES) {
-    if (!sorted.includes(required)) fail("DIET_PORTABLE_BUILD_REQUIRED_FILE_MISSING");
+    if (!normalizedPaths.includes(required)) fail("DIET_PORTABLE_BUILD_REQUIRED_FILE_MISSING");
   }
   return sorted;
 }
 
-function removeNewArtifact(artifactPath) {
-  if (!existsSync(artifactPath)) return;
+function readArtifactIdentity(artifactPath, errorCode) {
   try {
     const stats = lstatSync(artifactPath);
-    if (stats.isFile() && !stats.isSymbolicLink()) rmSync(artifactPath, { force: false });
+    if (!stats.isFile() || stats.isSymbolicLink()) fail(errorCode);
+    return Object.freeze({
+      dev: stats.dev,
+      ino: stats.ino,
+      birthtimeMs: stats.birthtimeMs,
+      size: stats.size,
+    });
+  } catch (error) {
+    if (error instanceof BuildError) throw error;
+    fail(errorCode);
+  }
+}
+
+function sameArtifactIdentity(left, right) {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.birthtimeMs === right.birthtimeMs
+    && left.size === right.size;
+}
+
+function revokeOwnedArtifact(artifactPath, ownedIdentity) {
+  if (ownedIdentity === undefined || !existsSync(artifactPath)) return;
+  try {
+    const current = readArtifactIdentity(artifactPath, "DIET_PORTABLE_BUILD_ARTIFACT_INVALID");
+    if (sameArtifactIdentity(current, ownedIdentity)) rmSync(artifactPath, { force: false });
   } catch {
-    // Preserve the original stable build failure. No path details may escape.
+    // Never broaden cleanup to a path whose current identity cannot be proven.
   }
 }
 
@@ -209,30 +282,59 @@ function verifyArtifact(realResult, artifactPath) {
   return { integrity, size: bytes.length };
 }
 
+function publishArtifact(stagedArtifact, output) {
+  revalidateOutputDirectory(output);
+  try {
+    copyFileSync(stagedArtifact, output.artifactPath, constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (error !== null && typeof error === "object" && error.code === "EEXIST") {
+      fail("DIET_PORTABLE_BUILD_OUTPUT_EXISTS");
+    }
+    fail("DIET_PORTABLE_BUILD_PUBLISH_FAILED");
+  }
+  return readArtifactIdentity(output.artifactPath, "DIET_PORTABLE_BUILD_ARTIFACT_INVALID");
+}
+
+function cleanupPrivateRoot(privateRoot) {
+  try {
+    rmSync(privateRoot, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function main() {
   if (process.argv.length !== 3) fail("DIET_PORTABLE_BUILD_ARGUMENTS_INVALID");
   loadPackage();
   requireFiles();
   const npmCli = resolveNpmCli();
-  const { outputDir, artifactPath } = validateOutputDirectory(process.argv[2]);
-  const cacheRoot = mkdtempSync(join(tmpdir(), "diet-portable-npm-cache-"));
-  let realPackStarted = false;
+  const output = validateOutputDirectory(process.argv[2]);
+  const privateRoot = mkdtempSync(join(tmpdir(), "diet-portable-build-"));
+  const cacheRoot = join(privateRoot, "npm-cache");
+  const stagingRoot = join(privateRoot, "staging");
+  mkdirSync(cacheRoot, { mode: 0o700 });
+  mkdirSync(stagingRoot, { mode: 0o700 });
+  const stagedArtifact = join(stagingRoot, EXPECTED_FILENAME);
   let receipt;
+  let publishedIdentity;
+  let buildFailure;
   try {
     const dryResult = runNpm(npmCli, ["pack", "--json", "--dry-run"], cacheRoot);
     const dryFiles = validatePackResult(dryResult);
-    validateOutputDirectory(outputDir);
-    realPackStarted = true;
-    const realResult = runNpm(npmCli, ["pack", "--json", "--pack-destination", outputDir], cacheRoot);
+    const realResult = runNpm(npmCli, ["pack", "--json", "--pack-destination", stagingRoot], cacheRoot);
     const realFiles = validatePackResult(realResult);
     if (JSON.stringify(realFiles) !== JSON.stringify(dryFiles)) {
       fail("DIET_PORTABLE_BUILD_FILE_LIST_MISMATCH");
     }
-    const outputEntries = readdirSync(outputDir);
-    if (outputEntries.length !== 1 || outputEntries[0] !== EXPECTED_FILENAME) {
+    const stagingEntries = readdirSync(stagingRoot);
+    if (stagingEntries.length !== 1 || stagingEntries[0] !== EXPECTED_FILENAME) {
       fail("DIET_PORTABLE_BUILD_ARTIFACT_INVALID");
     }
-    const verified = verifyArtifact(realResult, artifactPath);
+    const verified = verifyArtifact(realResult, stagedArtifact);
+    publishedIdentity = publishArtifact(stagedArtifact, output);
+    assertOutputIdentityUnchanged(output);
+    verifyArtifact(realResult, output.artifactPath);
     receipt = {
       filename: EXPECTED_FILENAME,
       integrity: verified.integrity,
@@ -240,10 +342,14 @@ function main() {
       files: dryFiles,
     };
   } catch (error) {
-    if (realPackStarted) removeNewArtifact(artifactPath);
-    throw error;
-  } finally {
-    rmSync(cacheRoot, { recursive: true, force: true });
+    buildFailure = error;
+  }
+  const cleaned = cleanupPrivateRoot(privateRoot);
+  if (buildFailure !== undefined || !cleaned) {
+    revokeOwnedArtifact(output.artifactPath, publishedIdentity);
+    if (!cleaned) cleanupPrivateRoot(privateRoot);
+    if (!cleaned) fail("DIET_PORTABLE_BUILD_CLEANUP_FAILED");
+    throw buildFailure;
   }
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }

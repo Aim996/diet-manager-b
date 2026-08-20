@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -165,6 +166,35 @@ syncBuiltinESMExports();
   return { hook, marker, calls };
 }
 
+function writeCleanupFailureHook(root: string): { hook: string; privateRootLog: string } {
+  const hook = join(root, "portable-cleanup-failure.cjs");
+  const privateRootLog = join(root, "private-root.txt");
+  writeFileSync(hook, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRmSync = fs.rmSync;
+let injected = false;
+fs.rmSync = function injectedCleanupFailure(target, options) {
+  const leaf = path.basename(String(target));
+  if (!injected && leaf.startsWith("diet-portable-build-") && fs.existsSync(process.env.DIET_TEST_FINAL_ARTIFACT)) {
+    injected = true;
+    fs.writeFileSync(process.env.DIET_TEST_PRIVATE_ROOT_LOG, String(target));
+    if (process.env.DIET_TEST_REPLACE_PUBLISHED === "true") {
+      originalRmSync(process.env.DIET_TEST_FINAL_ARTIFACT, { force: false });
+      fs.writeFileSync(process.env.DIET_TEST_FINAL_ARTIFACT, "competitor-owned-after-publish");
+    }
+    const error = new Error("injected private cleanup failure");
+    error.code = "EACCES";
+    throw error;
+  }
+  return originalRmSync.call(this, target, options);
+};
+syncBuiltinESMExports();
+`);
+  return { hook, privateRootLog };
+}
+
 describe("portable npm package", () => {
   it("builds one verified tarball in a Unicode output path without platform shell tools", () => {
     const base = makeTemp("diet portable 打包-");
@@ -214,11 +244,131 @@ describe("portable npm package", () => {
       .map((line) => JSON.parse(line) as { file: string; args: string[]; offline?: string });
     const npmCalls = childCalls.filter((call) => resolve(call.file) === resolve(process.execPath)
       && call.args[0] === npmCli);
-    expect(npmCalls.map((call) => call.args.slice(1))).toEqual([
-      ["pack", "--json", "--dry-run"],
-      ["pack", "--json", "--pack-destination", output],
-    ]);
+    expect(npmCalls[0]?.args.slice(1)).toEqual(["pack", "--json", "--dry-run"]);
+    expect(npmCalls[1]?.args.slice(1, 4)).toEqual(["pack", "--json", "--pack-destination"]);
+    const privateDestination = npmCalls[1]?.args[4];
+    expect(privateDestination).toBeTypeOf("string");
+    expect(resolve(privateDestination!)).not.toBe(resolve(output));
+    expect(existsSync(privateDestination!)).toBe(false);
     expect(npmCalls.map((call) => call.offline)).toEqual(["true", "true"]);
+  });
+
+  it("never writes through an output directory replaced at the real-pack synchronization point", () => {
+    const fixture = makeFixture();
+    const output = emptyOutput(fixture.root, "final-output");
+    const attacker = emptyOutput(fixture.root, "attacker-output");
+    const competitor = join(attacker, expectedFilename);
+    writeFileSync(competitor, "competitor-owned-bytes");
+    const npmWrapper = join(fixture.root, "npm-cli.js");
+    writeFileSync(npmWrapper, `
+import { spawnSync } from "node:child_process";
+import { rmdirSync, symlinkSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--pack-destination")) {
+  rmdirSync(process.env.DIET_TEST_FINAL_OUTPUT);
+  symlinkSync(
+    process.env.DIET_TEST_ATTACKER_OUTPUT,
+    process.env.DIET_TEST_FINAL_OUTPUT,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+}
+const result = spawnSync(process.execPath, [process.env.DIET_TEST_REAL_NPM_CLI, ...args], {
+  cwd: process.cwd(), encoding: "utf8", env: process.env, windowsHide: true,
+});
+process.stdout.write(result.stdout ?? "");
+process.stderr.write(result.stderr ?? "");
+process.exitCode = result.status ?? 1;
+`);
+    const result = runBuilder(fixture.builder, output, {
+      cwd: fixture.root,
+      npmCli: npmWrapper,
+      env: {
+        DIET_TEST_REAL_NPM_CLI: currentNpmCli(),
+        DIET_TEST_FINAL_OUTPUT: output,
+        DIET_TEST_ATTACKER_OUTPUT: attacker,
+      },
+    });
+    expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_OUTPUT_CHANGED\n" });
+    expect(lstatSync(output).isSymbolicLink()).toBe(true);
+    expect(readFileSync(competitor, "utf8")).toBe("competitor-owned-bytes");
+    expect(readdirSync(attacker)).toEqual([expectedFilename]);
+  });
+
+  it("never overwrites a same-name file created at the real-pack synchronization point", () => {
+    const fixture = makeFixture();
+    const output = emptyOutput(fixture.root, "final-output");
+    const competitor = join(output, expectedFilename);
+    const npmWrapper = join(fixture.root, "npm-cli.js");
+    writeFileSync(npmWrapper, `
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args.includes("--pack-destination")) {
+  writeFileSync(join(process.env.DIET_TEST_FINAL_OUTPUT, "${expectedFilename}"), "competitor-owned-bytes");
+}
+const result = spawnSync(process.execPath, [process.env.DIET_TEST_REAL_NPM_CLI, ...args], {
+  cwd: process.cwd(), encoding: "utf8", env: process.env, windowsHide: true,
+});
+process.stdout.write(result.stdout ?? "");
+process.stderr.write(result.stderr ?? "");
+process.exitCode = result.status ?? 1;
+`);
+    const result = runBuilder(fixture.builder, output, {
+      cwd: fixture.root,
+      npmCli: npmWrapper,
+      env: {
+        DIET_TEST_REAL_NPM_CLI: currentNpmCli(),
+        DIET_TEST_FINAL_OUTPUT: output,
+      },
+    });
+    expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_OUTPUT_EXISTS\n" });
+    expect(readFileSync(competitor, "utf8")).toBe("competitor-owned-bytes");
+    expect(readdirSync(output)).toEqual([expectedFilename]);
+  });
+
+  it("maps a post-publication cleanup failure and revokes its own artifact", () => {
+    const fixture = makeFixture();
+    const output = emptyOutput(fixture.root, "final-output");
+    const artifact = join(output, expectedFilename);
+    const hookRoot = makeTemp("diet-portable-cleanup-hook-");
+    const fault = writeCleanupFailureHook(hookRoot);
+    const result = runBuilder(fixture.builder, output, {
+      cwd: fixture.root,
+      env: {
+        NODE_OPTIONS: `--require=${fault.hook}`,
+        DIET_TEST_FINAL_ARTIFACT: artifact,
+        DIET_TEST_PRIVATE_ROOT_LOG: fault.privateRootLog,
+        DIET_TEST_REPLACE_PUBLISHED: "false",
+      },
+    });
+    expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_CLEANUP_FAILED\n" });
+    expect(readdirSync(output)).toEqual([]);
+    const privateRoot = readFileSync(fault.privateRootLog, "utf8");
+    expect(existsSync(privateRoot)).toBe(false);
+    expect(result.stderr).not.toContain(privateRoot);
+  });
+
+  it("does not revoke a competitor replacement after post-publication cleanup failure", () => {
+    const fixture = makeFixture();
+    const output = emptyOutput(fixture.root, "final-output");
+    const artifact = join(output, expectedFilename);
+    const hookRoot = makeTemp("diet-portable-cleanup-hook-");
+    const fault = writeCleanupFailureHook(hookRoot);
+    const result = runBuilder(fixture.builder, output, {
+      cwd: fixture.root,
+      env: {
+        NODE_OPTIONS: `--require=${fault.hook}`,
+        DIET_TEST_FINAL_ARTIFACT: artifact,
+        DIET_TEST_PRIVATE_ROOT_LOG: fault.privateRootLog,
+        DIET_TEST_REPLACE_PUBLISHED: "true",
+      },
+    });
+    expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_CLEANUP_FAILED\n" });
+    expect(readFileSync(artifact, "utf8")).toBe("competitor-owned-after-publish");
+    expect(readdirSync(output)).toEqual([expectedFilename]);
+    const privateRoot = readFileSync(fault.privateRootLog, "utf8");
+    expect(existsSync(privateRoot)).toBe(false);
   });
 
   it("fails closed on a version other than exactly 0.2.2", () => {
@@ -311,6 +461,46 @@ if ((result.status ?? -1) !== 0) {
     });
     expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_FILE_NOT_ALLOWED\n" });
     expect(readdirSync(output)).toEqual([]);
+  });
+
+  it.each([
+    ["case-fold", ["dist/A.js", "dist/a.js"]],
+    ["Unicode NFC/NFD", ["dist/caf\u00e9.js", "dist/cafe\u0301.js"]],
+    ["slash-normalized", ["dist\\A.js", "dist/A.js"]],
+  ])("rejects %s-equivalent npm paths before real packing", (_label, equivalentPaths) => {
+    const fixture = makeFixture();
+    const output = emptyOutput(fixture.root);
+    const npmWrapper = join(fixture.root, "npm-cli.js");
+    writeFileSync(npmWrapper, `
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+const result = spawnSync(process.execPath, [process.env.DIET_TEST_REAL_NPM_CLI, ...args], {
+  cwd: process.cwd(), encoding: "utf8", env: process.env, windowsHide: true,
+});
+if ((result.status ?? -1) !== 0) {
+  process.stderr.write(result.stderr ?? "");
+  process.exitCode = result.status ?? 1;
+} else {
+  const parsed = JSON.parse(result.stdout);
+  if (args.includes("--dry-run")) {
+    for (const path of JSON.parse(process.env.DIET_TEST_EQUIVALENT_PATHS)) {
+      parsed[0].files.push({ path, size: 1, mode: 420 });
+    }
+  }
+  process.stdout.write(JSON.stringify(parsed));
+}
+`);
+    const result = runBuilder(fixture.builder, output, {
+      cwd: fixture.root,
+      npmCli: npmWrapper,
+      env: {
+        DIET_TEST_REAL_NPM_CLI: currentNpmCli(),
+        DIET_TEST_EQUIVALENT_PATHS: JSON.stringify(equivalentPaths),
+      },
+    });
+    expect(result).toEqual({ code: 1, stdout: "", stderr: "DIET_PORTABLE_BUILD_PATH_COLLISION\n" });
+    expect(readdirSync(output)).toEqual([]);
+    expect(equivalentPaths.every((path) => !result.stderr.includes(path))).toBe(true);
   });
 
   it("does not overwrite an existing destination artifact", () => {
