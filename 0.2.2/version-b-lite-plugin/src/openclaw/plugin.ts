@@ -1,15 +1,22 @@
+import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 import {
   defineToolPlugin,
-  type ToolPluginExecutionContext,
+  type ToolPluginFactoryContext,
 } from "openclaw/plugin-sdk/tool-plugin";
 import { Type } from "typebox";
 
 import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
-import { AGENT_COMMAND_SCHEMA_VERSION } from "../public/agent-command.js";
+import {
+  AGENT_COMMAND_SCHEMA_VERSION,
+  cloneAgentCommandV1,
+  type AgentCommandV1,
+  type HostExecutionContextV1,
+} from "../public/agent-command.js";
 import { executeAgentCommand } from "../public/execute.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
+import { BoundedInsertionCache } from "./bounded-insertion-cache.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { createCommonDishTemplateAdapters } from "../nutrition/builtin.js";
 import { OfflineUsdaAdapter } from "../nutrition/offline-usda.js";
@@ -21,7 +28,6 @@ import {
   assertDietManagerOutcome,
   dietManagerActions,
   dietManagerContract,
-  type CoreApplicationRequest,
   type DietManagerAction,
   type DietManagerOutcome,
 } from "../contracts.js";
@@ -120,13 +126,9 @@ const semanticMealCandidateSchema = Type.Object(
 export const dietManagerParameters = Type.Object(
   {
     action: actionSchema,
-    operation_id: Type.Optional(Type.String({
-      description:
-        "Operational calls require this field: use one stable identifier for the current attempted operation.",
-    })),
     source_text: Type.Optional(Type.String({
       description:
-        "Operational calls require this field: copy the user's current message verbatim; never normalize or invent food facts.",
+        "Copy the user's current message verbatim; never normalize or invent food facts.",
     })),
     occurred_at_text: Type.Optional(Type.String({
       description: "Legacy compatibility evidence; never substitutes for received_at.",
@@ -135,21 +137,6 @@ export const dietManagerParameters = Type.Object(
       description: "Legacy compatibility evidence; the core parses source_text authoritatively.",
     })),
     semantic_candidate: Type.Optional(semanticMealCandidateSchema),
-    received_at: Type.Optional(Type.String({
-      description:
-        "Operational calls require this field: use the current inbound OpenClaw message timestamp as an ISO offset timestamp.",
-    })),
-    timezone: Type.Optional(Type.Literal("Asia/Shanghai", {
-      description: "Operational calls require this field; use Asia/Shanghai.",
-    })),
-    source_message_id: Type.Optional(Type.String({
-      description:
-        "Operational calls require this field: use the stable identifier of the current inbound OpenClaw message.",
-    })),
-    conversation_id: Type.Optional(Type.String({
-      description:
-        "Operational calls require this field: use the current OpenClaw session or conversation identifier.",
-    })),
   },
   {
     additionalProperties: false,
@@ -193,35 +180,22 @@ const coreConfigSchema = Type.Object(
 
 const PARAMETER_FIELDS = Object.freeze([
   "action",
-  "operation_id",
   "source_text",
   "occurred_at_text",
   "items",
   "semantic_candidate",
-  "received_at",
-  "timezone",
-  "source_message_id",
-  "conversation_id",
-] as const);
-
-const CORE_REQUEST_FIELDS = Object.freeze([
-  "action",
-  "source_text",
-  "received_at",
-  "timezone",
-  "operation_id",
-  "source_message_id",
-  "conversation_id",
 ] as const);
 
 interface PluginRuntimeState {
   runtime?: CoreRuntime;
   physicalRoot?: string;
   sourceConfigDigest?: string;
+  executionContexts?: BoundedInsertionCache<string, Readonly<HostExecutionContextV1>>;
   lifecycleRegistered: boolean;
 }
 
 const FDC_CREDENTIAL_REFERENCE = "env:FDC_API_KEY";
+const EXECUTION_CONTEXT_CACHE_CAPACITY = 1024;
 
 function configuredNutritionAdapters(
   nutrition: Readonly<NutritionRuntimeConfig>,
@@ -281,22 +255,16 @@ function dataDescriptors(
   return descriptors;
 }
 
-function cloneToolRequest(value: unknown): Omit<CoreApplicationRequest, "prior_context"> | undefined {
-  const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action"]);
-  if (CORE_REQUEST_FIELDS.some((field) => descriptors[field] === undefined)) return undefined;
-  const semanticCandidate = descriptors.semantic_candidate === undefined
-    ? undefined
-    : cloneSemanticCandidate(descriptors.semantic_candidate.value);
-  return {
-    action: descriptors.action?.value as DietManagerAction,
-    source_text: descriptors.source_text?.value as string,
-    received_at: descriptors.received_at?.value as string,
-    timezone: descriptors.timezone?.value as "Asia/Shanghai",
-    operation_id: descriptors.operation_id?.value as string,
-    source_message_id: descriptors.source_message_id?.value as string,
-    conversation_id: descriptors.conversation_id?.value as string,
-    ...(semanticCandidate === undefined ? {} : { semantic_candidate: semanticCandidate }),
-  };
+function cloneToolRequest(value: unknown): Readonly<AgentCommandV1> {
+  const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action", "source_text"]);
+  return cloneAgentCommandV1({
+    schema_version: AGENT_COMMAND_SCHEMA_VERSION,
+    action: descriptors.action?.value,
+    source_text: descriptors.source_text?.value,
+    ...(descriptors.semantic_candidate === undefined
+      ? {}
+      : { semantic_candidate: cloneSemanticCandidate(descriptors.semantic_candidate.value) }),
+  });
 }
 
 function clonePluginConfig(value: unknown): Readonly<{
@@ -314,26 +282,52 @@ function clonePluginConfig(value: unknown): Readonly<{
 
 function safeRequestIdentity(value: unknown): {
   readonly action: DietManagerAction;
-  readonly operationId?: string;
 } {
   try {
     if (!isOrdinaryObject(value)) return { action: "record_meal" };
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const actionValue = descriptors.action;
-    const operationValue = descriptors.operation_id;
     const action = actionValue !== undefined && Object.hasOwn(actionValue, "value") &&
       typeof actionValue.value === "string" &&
       dietManagerActions.includes(actionValue.value as DietManagerAction)
       ? actionValue.value as DietManagerAction
       : "record_meal";
-    const operationId = operationValue !== undefined && Object.hasOwn(operationValue, "value") &&
-      typeof operationValue.value === "string"
-      ? operationValue.value
-      : undefined;
-    return operationId === undefined ? { action } : { action, operationId };
+    return { action };
   } catch {
     return { action: "record_meal" };
   }
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function trustedExecutionContext(
+  api: object,
+  toolCallId: string,
+  conversationDomain: string,
+): Readonly<HostExecutionContextV1> {
+  const state = pluginRuntimeStates.get(api);
+  if (state?.physicalRoot === undefined) throw new Error("PLUGIN_CONTEXT_UNAVAILABLE");
+  const contexts = state.executionContexts ??
+    new BoundedInsertionCache<string, Readonly<HostExecutionContextV1>>(
+      EXECUTION_CONTEXT_CACHE_CAPACITY,
+    );
+  state.executionContexts = contexts;
+  const conversationDigest = sha256(conversationDomain);
+  const contextKey = `${conversationDigest}:${toolCallId}`;
+  const existing = contexts.get(contextKey);
+  if (existing !== undefined) return existing;
+  const toolCallDigest = sha256(`${conversationDomain}\0${toolCallId}`);
+  const generated = Object.freeze({
+    received_at: new Date().toISOString(),
+    timezone: "Asia/Shanghai" as const,
+    operation_id: `openclaw-operation-${toolCallDigest}`,
+    source_message_id: `openclaw-message-${toolCallDigest}`,
+    conversation_id: `openclaw-conversation-${conversationDigest}`,
+  });
+  contexts.set(contextKey, generated);
+  return generated;
 }
 
 function validatedJsonOutcome(value: DietManagerOutcome): DietManagerOutcome {
@@ -359,13 +353,13 @@ function releasePluginRuntime(runtime: CoreRuntime, api: object): void {
 function acquirePluginRuntime(
   root: string,
   nutrition: Readonly<NutritionRuntimeConfig>,
-  context: ToolPluginExecutionContext,
+  api: ToolPluginFactoryContext<unknown>["api"],
 ): CoreRuntime {
   const physicalRoot = assertPrivateRuntimeRoot(root);
-  let state = pluginRuntimeStates.get(context.api);
+  let state = pluginRuntimeStates.get(api);
   if (state === undefined) {
     state = { lifecycleRegistered: false };
-    pluginRuntimeStates.set(context.api, state);
+    pluginRuntimeStates.set(api, state);
   }
   if (state.physicalRoot !== undefined &&
       !samePhysicalRoot(state.physicalRoot, physicalRoot)) {
@@ -390,33 +384,34 @@ function acquirePluginRuntime(
       owners = new Set<object>();
       pluginRuntimeOwners.set(candidate, owners);
     }
-    owners.add(context.api);
+    owners.add(api);
   } else if (state.runtime !== candidate) {
     throw new Error("PLUGIN_CONFIG_CONFLICT");
   }
   if (!state.lifecycleRegistered) {
     const ownedState = state;
     try {
-      context.api.lifecycle.registerRuntimeLifecycle({
+      api.lifecycle.registerRuntimeLifecycle({
         id: "diet-manager-b-runtime",
         description: "Close the Diet Manager SQLite runtime on plugin cleanup.",
         cleanup(): void {
           if (ownedState.runtime !== undefined) {
-            releasePluginRuntime(ownedState.runtime, context.api);
+            releasePluginRuntime(ownedState.runtime, api);
           }
           ownedState.runtime = undefined;
           ownedState.physicalRoot = undefined;
           ownedState.sourceConfigDigest = undefined;
-          pluginRuntimeStates.delete(context.api);
+          ownedState.executionContexts = undefined;
+          pluginRuntimeStates.delete(api);
         },
       });
       state.lifecycleRegistered = true;
     } catch (error) {
-      releasePluginRuntime(state.runtime, context.api);
+      releasePluginRuntime(state.runtime, api);
       state.runtime = undefined;
       state.physicalRoot = undefined;
       state.sourceConfigDigest = undefined;
-      pluginRuntimeStates.delete(context.api);
+      pluginRuntimeStates.delete(api);
       throw error;
     }
   }
@@ -426,24 +421,27 @@ function acquirePluginRuntime(
 async function executeDietManager(
   value: unknown,
   configValue: unknown,
-  context: ToolPluginExecutionContext,
+  factoryContext: ToolPluginFactoryContext<unknown>,
+  toolCallId: string,
 ): Promise<DietManagerOutcome> {
   const identity = safeRequestIdentity(value);
-  let request: Omit<CoreApplicationRequest, "prior_context"> | undefined;
+  const conversationDomain = factoryContext.toolContext.sessionKey ??
+    factoryContext.toolContext.sessionId;
+  if (conversationDomain === undefined || conversationDomain.length === 0) {
+    return validatedJsonOutcome(failedOutcome(
+      identity.action,
+      undefined,
+      "APPLICATION_AUTHORITY_REQUIRED",
+    ));
+  }
+  let request: Readonly<AgentCommandV1>;
   try {
     request = cloneToolRequest(value);
   } catch {
     return validatedJsonOutcome(failedOutcome(
       identity.action,
-      identity.operationId,
+      undefined,
       "INVALID_REQUEST",
-    ));
-  }
-  if (request === undefined) {
-    return validatedJsonOutcome(failedOutcome(
-      identity.action,
-      identity.operationId,
-      "APPLICATION_AUTHORITY_REQUIRED",
     ));
   }
   let pluginConfig: ReturnType<typeof clonePluginConfig>;
@@ -452,26 +450,21 @@ async function executeDietManager(
   } catch {
     return validatedJsonOutcome(failedOutcome(
       request.action,
-      request.operation_id,
+      undefined,
       "PLUGIN_CONFIG_INVALID",
     ));
   }
   try {
-    const runtime = acquirePluginRuntime(pluginConfig.root, pluginConfig.nutrition, context);
-    return validatedJsonOutcome(await executeAgentCommand(runtime, {
-      schema_version: AGENT_COMMAND_SCHEMA_VERSION,
-      action: request.action,
-      source_text: request.source_text,
-      ...(request.semantic_candidate === undefined
-        ? {}
-        : { semantic_candidate: request.semantic_candidate }),
-    }, {
-      received_at: request.received_at,
-      timezone: request.timezone,
-      operation_id: request.operation_id,
-      source_message_id: request.source_message_id,
-      conversation_id: request.conversation_id,
-    }));
+    const runtime = acquirePluginRuntime(
+      pluginConfig.root,
+      pluginConfig.nutrition,
+      factoryContext.api,
+    );
+    return validatedJsonOutcome(await executeAgentCommand(
+      runtime,
+      request,
+      trustedExecutionContext(factoryContext.api, toolCallId, conversationDomain),
+    ));
   } catch (error) {
     const invalidRequest = error instanceof TypeError &&
       error.message.startsWith("DIET_AGENT_COMMAND_INVALID:");
@@ -482,11 +475,14 @@ async function executeDietManager(
         : "PLUGIN_RUNTIME_UNAVAILABLE";
     return validatedJsonOutcome(failedOutcome(
       invalidRequest ? identity.action : request.action,
-      invalidRequest ? identity.operationId : request.operation_id,
+      undefined,
       errorCode,
     ));
   }
 }
+
+const DIET_MANAGER_DESCRIPTION =
+  "Record/query Diet Manager facts. Send action and the exact source_text only; OpenClaw supplies trusted timing, operation, message, and conversation authority outside model parameters. For record_meal, when the user's natural wording is not safely represented by the legacy parser, send semantic_candidate with the exact same source_text, explicit evidence spans, and unknown amounts left unknown. Never invent amounts, units, times, people, or normalized food names. An explicit other person overrides private-agent default self. Follow committed/status/reason_code/error_code exactly in the final reply. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.";
 
 export default defineToolPlugin({
   id: "diet-manager-b",
@@ -497,10 +493,26 @@ export default defineToolPlugin({
   tools: (tool) => [
     tool({
       name: "diet_manager",
-      description:
-        "Record/query Diet Manager facts. For every operational call, send all seven fields: action, exact source_text, received_at, timezone, operation_id, source_message_id, and conversation_id. Take timing and identifiers from current OpenClaw message/session metadata; do not omit them. For record_meal, when the user's natural wording is not safely represented by the legacy parser, send semantic_candidate with the exact same source_text, explicit evidence spans, and unknown amounts left unknown. Never invent identifiers, amounts, units, times, people, or normalized food names. An explicit other person overrides private-agent default self. Follow committed/status/reason_code/error_code exactly in the final reply. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.",
+      description: DIET_MANAGER_DESCRIPTION,
       parameters: dietManagerParameters,
-      execute: executeDietManager,
+      factory: (factoryContext) => ({
+        name: "diet_manager",
+        label: "diet_manager",
+        description: DIET_MANAGER_DESCRIPTION,
+        parameters: dietManagerParameters,
+        async execute(toolCallId, params) {
+          const outcome = await executeDietManager(
+            params,
+            factoryContext.config,
+            factoryContext,
+            toolCallId,
+          );
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(outcome) }],
+            details: outcome,
+          };
+        },
+      }),
     }),
   ],
 });

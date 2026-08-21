@@ -11,9 +11,11 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./openclaw": {
+      "types": "./dist/openclaw/index.d.ts",
       "import": "./dist/openclaw/index.js"
     }
   },

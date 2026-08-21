@@ -22,8 +22,10 @@ const EXPECTED_VERSION = "0.2.2";
 const EXPECTED_FILENAME = `${EXPECTED_NAME}-${EXPECTED_VERSION}.tgz`;
 const REQUIRED_FILES = Object.freeze([
   "dist/index.js",
+  "dist/index.d.ts",
   "dist/cli/agent.js",
   "dist/openclaw/index.js",
+  "dist/openclaw/index.d.ts",
   "skills/diet-manager-b/SKILL.md",
   "skills/diet-manager-b/references/agent-command-v1.md",
 ]);
@@ -226,7 +228,7 @@ function validatePackResult(result) {
     const slashPath = slashPaths.get(path);
     if (FORBIDDEN_PATH.test(slashPath)) fail("DIET_PORTABLE_BUILD_FORBIDDEN_FILE");
     const allowed = EXACT_ALLOWED_FILES.has(slashPath)
-      || /^dist\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.js$/u.test(slashPath);
+      || /^dist\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:js|d\.ts)$/u.test(slashPath);
     if (!allowed) fail("DIET_PORTABLE_BUILD_FILE_NOT_ALLOWED");
   }
   const normalizedPaths = [...slashPaths.values()];

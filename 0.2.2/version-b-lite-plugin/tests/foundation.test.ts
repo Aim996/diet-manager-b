@@ -78,15 +78,10 @@ describe("diet manager B core plugin boundary", () => {
     expect(actionSchema.anyOf.map((item) => item.const)).toEqual(expectedActions);
     expect(Object.keys(dietManagerParameters.properties).sort()).toEqual([
       "action",
-      "conversation_id",
       "items",
       "occurred_at_text",
-      "operation_id",
-      "received_at",
       "semantic_candidate",
-      "source_message_id",
       "source_text",
-      "timezone",
     ]);
     expect(dietManagerParameters.required).toEqual(["action"]);
     expect(dietManagerParameters.additionalProperties).toBe(false);
@@ -130,8 +125,8 @@ describe("diet manager B core plugin boundary", () => {
       description?: string;
     }>;
 
-    expect(tool?.description).toContain("all seven fields");
-    expect(tool?.description).toContain("current OpenClaw message/session metadata");
+    expect(tool?.description).toContain("action and the exact source_text only");
+    expect(tool?.description).toContain("authority outside model parameters");
     expect(tool?.description).toContain("do not write a note, memory, or fallback record");
     expect(tool?.description).toContain("never estimate nutrition values yourself");
     expect(tool?.description).toContain("at most once for one inbound message");
@@ -140,15 +135,9 @@ describe("diet manager B core plugin boundary", () => {
     expect(tool?.description).toContain("Never say recorded, noted, saved, or updated when committed=false");
     expect(tool?.description).toContain("Do not add encouragement, onboarding, capability offers, or reminder suggestions");
     expect(tool?.description).toContain("Never advise the user to repeat the same unchanged request");
-    for (const field of [
-      "source_text",
-      "received_at",
-      "timezone",
-      "operation_id",
-      "source_message_id",
-      "conversation_id",
-    ]) {
-      expect(properties[field]?.description, field).toContain("Operational calls require this field");
+    expect(properties.source_text?.description).toContain("Copy the user's current message verbatim");
+    for (const field of ["received_at", "timezone", "operation_id", "source_message_id", "conversation_id"]) {
+      expect(properties).not.toHaveProperty(field);
     }
   });
 

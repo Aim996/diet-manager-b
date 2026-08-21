@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,8 +24,10 @@ const productionBuilder = join(projectRoot, "scripts", "build-portable.mjs");
 const expectedFilename = "diet-manager-b-0.2.2.tgz";
 const mandatoryFiles = [
   "dist/index.js",
+  "dist/index.d.ts",
   "dist/cli/agent.js",
   "dist/openclaw/index.js",
+  "dist/openclaw/index.d.ts",
   "skills/diet-manager-b/SKILL.md",
   "skills/diet-manager-b/references/agent-command-v1.md",
 ] as const;
@@ -121,6 +125,33 @@ function emptyOutput(base: string, name = "out"): string {
   const output = join(base, name);
   mkdirSync(output);
   return output;
+}
+
+function extractPackedTarball(artifact: string, destination: string): void {
+  const tar = gunzipSync(readFileSync(artifact));
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) return;
+    const field = (start: number, length: number) => header.subarray(start, start + length)
+      .toString("utf8").replace(/\0.*$/su, "");
+    const path = [field(345, 155), field(0, 100)].filter(Boolean).join("/");
+    const size = Number.parseInt(field(124, 12).trim() || "0", 8);
+    if (!Number.isSafeInteger(size) || size < 0 || !path.startsWith("package/") || path.includes("..")) {
+      throw new Error("invalid npm tar entry");
+    }
+    const target = join(destination, ...path.split("/"));
+    const type = header[156];
+    if (type === 0 || type === 0x30) {
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, tar.subarray(offset + 512, offset + 512 + size));
+    } else if (type === 0x35) {
+      mkdirSync(target, { recursive: true });
+    } else {
+      throw new Error("unsupported npm tar entry");
+    }
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  throw new Error("unterminated npm tarball");
 }
 
 function writeChildProcessGuard(root: string): { hook: string; marker: string; calls: string } {
@@ -236,6 +267,61 @@ describe("portable npm package", () => {
     expect(receipt.integrity).toBe(`sha512-${createHash("sha512").update(bytes).digest("base64")}`);
     expect(readdirSync(output)).toEqual([expectedFilename]);
     expect(existsSync(guard.marker)).toBe(false);
+
+    const consumer = makeTemp("diet-portable-types-consumer-");
+    writeFileSync(join(consumer, "package.json"), `${JSON.stringify({
+      name: "diet-portable-types-consumer",
+      private: true,
+      type: "module",
+    })}\n`);
+    const unpacked = join(consumer, "unpacked");
+    mkdirSync(unpacked);
+    extractPackedTarball(artifact, unpacked);
+    mkdirSync(join(consumer, "node_modules"));
+    renameSync(join(unpacked, "package"), join(consumer, "node_modules", "diet-manager-b"));
+    writeFileSync(join(consumer, "consumer.ts"), `
+import {
+  AGENT_COMMAND_SCHEMA_VERSION,
+  type AgentCommandV1,
+  type DietManagerOutcome,
+} from "diet-manager-b";
+const command: AgentCommandV1 = {
+  schema_version: AGENT_COMMAND_SCHEMA_VERSION,
+  action: "query_meals",
+  source_text: "查询今天的饮食记录",
+};
+declare const outcome: DietManagerOutcome;
+void command;
+void outcome;
+`);
+    const typecheck = spawnSync(process.execPath, [
+      join(projectRoot, "node_modules", "typescript", "bin", "tsc"),
+      "--noEmit",
+      "--strict",
+      "--skipLibCheck",
+      "--module",
+      "NodeNext",
+      "--moduleResolution",
+      "NodeNext",
+      join(consumer, "consumer.ts"),
+    ], { cwd: consumer, encoding: "utf8", windowsHide: true });
+    expect(typecheck.status, typecheck.stdout + typecheck.stderr).toBe(0);
+
+    const installedPackage = JSON.parse(readFileSync(
+      join(consumer, "node_modules", "diet-manager-b", "package.json"),
+      "utf8",
+    )) as { exports: Record<string, { types?: string }> };
+    expect(installedPackage.exports["."]?.types).toBe("./dist/index.d.ts");
+    expect(installedPackage.exports["./openclaw"]?.types).toBe("./dist/openclaw/index.d.ts");
+    expect(existsSync(join(consumer, "node_modules", "diet-manager-b", "dist", "index.d.ts"))).toBe(true);
+    expect(existsSync(join(
+      consumer,
+      "node_modules",
+      "diet-manager-b",
+      "dist",
+      "openclaw",
+      "index.d.ts",
+    ))).toBe(true);
 
     const childCalls = readFileSync(guard.calls, "utf8")
       .trim()

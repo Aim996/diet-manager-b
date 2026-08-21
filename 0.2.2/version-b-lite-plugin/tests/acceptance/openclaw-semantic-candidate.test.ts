@@ -30,8 +30,12 @@ function registerPlugin(root: string): {
   let lifecycle: RuntimeLifecycle | undefined;
   pluginEntry.register({
     pluginConfig: { official_data_root: root },
-    registerTool(tool: RegisteredTool): void {
-      tools.push(tool);
+    registerTool(
+      tool: RegisteredTool | ((context: { sessionKey?: string; sessionId?: string }) => RegisteredTool),
+    ): void {
+      tools.push(typeof tool === "function"
+        ? tool({ sessionKey: "openclaw-semantic-session" })
+        : tool);
     },
     lifecycle: {
       registerRuntimeLifecycle(value: RuntimeLifecycle): void {
@@ -74,11 +78,6 @@ function semanticParams() {
   return {
     action: "record_meal",
     source_text: sourceText,
-    received_at: "2026-08-20T12:30:00+08:00",
-    timezone: "Asia/Shanghai",
-    operation_id: "operation-openclaw-semantic-001",
-    source_message_id: "message-openclaw-semantic-001",
-    conversation_id: "conversation-openclaw-semantic",
     semantic_candidate: semanticCandidate(sourceText),
   };
 }
@@ -198,7 +197,7 @@ describe("OpenClaw semantic meal candidate boundary", () => {
       expect(result.details).toMatchObject({
         action: "record_meal",
         committed: true,
-        operation_id: "operation-openclaw-semantic-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
       });
       expect(eventCount(root)).toBe(1);
     } finally {
@@ -214,8 +213,6 @@ describe("OpenClaw semantic meal candidate boundary", () => {
     const params = {
       ...semanticParams(),
       source_text: sourceText,
-      operation_id: "operation-openclaw-other-001",
-      source_message_id: "message-openclaw-other-001",
       semantic_candidate: {
         ...semanticCandidate(sourceText),
         subject: {
@@ -244,7 +241,7 @@ describe("OpenClaw semantic meal candidate boundary", () => {
         action: "record_meal",
         status: "ignored",
         committed: false,
-        operation_id: "operation-openclaw-other-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         reason_code: "non_self_subject",
       });
       expect(eventCount(root)).toBe(0);
@@ -254,24 +251,17 @@ describe("OpenClaw semantic meal candidate boundary", () => {
     }
   });
 
-  it.each([
-    "source_text",
-    "received_at",
-    "timezone",
-    "operation_id",
-    "source_message_id",
-    "conversation_id",
-  ])("does not let semantic_candidate replace host authority field %s", async (field) => {
+  it("does not let semantic_candidate replace required source_text", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-openclaw-authority-${randomUUID()}-`));
     const registered = registerPlugin(root);
     const params = semanticParams() as Record<string, unknown>;
-    delete params[field];
+    delete params.source_text;
     try {
-      const result = await registered.tool.execute(`tool-call-missing-${field}`, params);
+      const result = await registered.tool.execute("tool-call-missing-source-text", params);
       expect(result.details).toMatchObject({
         status: "failed",
         committed: false,
-        error_code: "APPLICATION_AUTHORITY_REQUIRED",
+        error_code: "INVALID_REQUEST",
       });
     } finally {
       await registered.lifecycle()?.cleanup();
@@ -402,8 +392,6 @@ describe("OpenClaw semantic meal candidate boundary", () => {
     const params = {
       ...semanticParams(),
       source_text: sourceText,
-      operation_id: `operation-openclaw-zero-${randomUUID()}`,
-      source_message_id: `message-openclaw-zero-${randomUUID()}`,
       semantic_candidate: {
         ...semanticCandidate(sourceText),
         items: suppliedItems ?? eggItems,

@@ -55,8 +55,11 @@ describe("public package boundary", () => {
 
     expect(pkg.bin).toEqual({ "diet-manager": "./dist/cli/agent.js" });
     expect(pkg.exports).toEqual({
-      ".": { import: "./dist/index.js" },
-      "./openclaw": { import: "./dist/openclaw/index.js" },
+      ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+      "./openclaw": {
+        types: "./dist/openclaw/index.d.ts",
+        import: "./dist/openclaw/index.js",
+      },
     });
     expect(pkg.files).toEqual(["dist", "skills", "openclaw.plugin.json"]);
     expect(pkg.scripts["pack:portable"]).toBe(
@@ -65,6 +68,16 @@ describe("public package boundary", () => {
     expect(pkg.peerDependencies.openclaw).toBe(">=2026.5.17");
     expect(pkg.peerDependenciesMeta.openclaw.optional).toBe(true);
     expect(pkg.openclaw.extensions).toEqual(["./dist/openclaw/index.js"]);
+  });
+
+  it("emits separate portable-root and OpenClaw declaration entries", () => {
+    const rootDeclaration = join(projectRoot, "dist", "index.d.ts");
+    const openClawDeclaration = join(projectRoot, "dist", "openclaw", "index.d.ts");
+
+    expect(existsSync(rootDeclaration)).toBe(true);
+    expect(existsSync(openClawDeclaration)).toBe(true);
+    expect(readFileSync(rootDeclaration, "utf8")).not.toContain("openclaw");
+    expect(readFileSync(openClawDeclaration, "utf8")).toContain("./plugin.js");
   });
 
   it("imports the compiled root without resolving OpenClaw or typebox", () => {

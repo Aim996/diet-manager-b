@@ -35,8 +35,12 @@ function registerPlugin(
   let lifecycle: RuntimeLifecycle | undefined;
   const api = {
     pluginConfig,
-    registerTool(tool: RegisteredTool): void {
-      tools.push(tool);
+    registerTool(
+      tool: RegisteredTool | ((context: { sessionKey?: string; sessionId?: string }) => RegisteredTool),
+    ): void {
+      tools.push(typeof tool === "function"
+        ? tool({ sessionKey: "openclaw-core-session" })
+        : tool);
     },
     lifecycle: {
       registerRuntimeLifecycle(value: RuntimeLifecycle): void {
@@ -55,11 +59,6 @@ function mealParams(): Record<string, unknown> {
   return {
     action: "record_meal",
     source_text: "吃了一个苹果。",
-    received_at: "2026-08-11T08:30:00+08:00",
-    timezone: "Asia/Shanghai",
-    operation_id: "operation-openclaw-meal-001",
-    source_message_id: "message-openclaw-meal-001",
-    conversation_id: "conversation-openclaw-core",
   };
 }
 
@@ -69,15 +68,10 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     const properties = metadata?.tools[0]?.parameters.properties as Record<string, unknown>;
     expect(Object.keys(properties).sort()).toEqual([
       "action",
-      "conversation_id",
       "items",
       "occurred_at_text",
-      "operation_id",
-      "received_at",
       "semantic_candidate",
-      "source_message_id",
       "source_text",
-      "timezone",
     ]);
     expect(metadata?.tools[0]?.parameters).toMatchObject({
       required: ["action"],
@@ -94,25 +88,22 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     }
   });
 
-  it("accepts the legacy public shape but requires application authority before writing", async () => {
+  it("accepts legacy business evidence while the adapter supplies host authority", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-legacy-${randomUUID()}-`));
     const registered = registerPlugin({ official_data_root: root });
     try {
       const result = await registered.tool.execute("tool-call-legacy-001", {
         action: "record_meal",
-        operation_id: "legacy-operation-001",
         source_text: "刚吃了一个苹果",
         occurred_at_text: "刚才",
         items: [{ name: "苹果", quantity: 1, unit: "个" }],
       });
-      expect(result.details).toEqual({
+      expect(result.details).toMatchObject({
         action: "record_meal",
-        status: "failed",
-        committed: false,
-        operation_id: "legacy-operation-001",
-        error_code: "APPLICATION_AUTHORITY_REQUIRED",
+        committed: true,
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
       });
-      expect(readdirSync(root)).toEqual([]);
+      expect(readdirSync(root)).not.toEqual([]);
     } finally {
       await registered.lifecycle()?.cleanup();
       rmSync(root, { recursive: true, force: false });
@@ -131,7 +122,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       expect(result.details).toMatchObject({
         action: "record_meal",
         committed: true,
-        operation_id: "operation-openclaw-meal-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
       });
     } finally {
       await registered.lifecycle()?.cleanup();
@@ -149,7 +140,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         action: "record_meal",
         status: "committed_with_issues",
         committed: true,
-        operation_id: "operation-openclaw-meal-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         record_id: expect.stringMatching(/^event-[a-f0-9]{32}$/),
       });
       expect(registered.lifecycle()).toMatchObject({ id: "diet-manager-b-runtime" });
@@ -162,7 +153,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         ).all()).toEqual([{
           event_type: "diet_meal",
           fact_kind: "meal",
-          operation_id: "operation-openclaw-meal-001",
+          operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         }]);
       } finally {
         inspection.close();
@@ -217,8 +208,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       const result = await registered.tool.execute("tool-call-fdc-001", {
         ...mealParams(),
         source_text: "喝了250ml牛奶。",
-        operation_id: "operation-openclaw-fdc-001",
-        source_message_id: "message-openclaw-fdc-001",
       });
       expect(result.details).toMatchObject({
         committed: true,
@@ -246,14 +235,12 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         ...mealParams(),
         action: "add_inventory",
         source_text: "买了牛奶、鸡蛋和苹果。",
-        operation_id: "operation-openclaw-purchase-001",
-        source_message_id: "message-openclaw-purchase-001",
       });
       expect(result.details).toMatchObject({
         action: "add_inventory",
         status: "committed",
         committed: true,
-        operation_id: "operation-openclaw-purchase-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         record_id: expect.stringMatching(/^event-[a-f0-9]{32}$/u),
         record_ids: [
           expect.stringMatching(/^event-[a-f0-9]{32}$/u),
@@ -269,9 +256,9 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         expect(inspection.database.prepare(
           "SELECT operation_id FROM event_records ORDER BY committed_at",
         ).all()).toEqual([
-          { operation_id: "operation-openclaw-purchase-001:item:0" },
-          { operation_id: "operation-openclaw-purchase-001:item:1" },
-          { operation_id: "operation-openclaw-purchase-001:item:2" },
+          { operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}:item:0$/u) },
+          { operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}:item:1$/u) },
+          { operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}:item:2$/u) },
         ]);
       } finally {
         inspection.close();
@@ -290,14 +277,12 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         ...mealParams(),
         action: "record_water",
         source_text: "喝了500ml白水。",
-        operation_id: "operation-openclaw-water-001",
-        source_message_id: "message-openclaw-water-001",
       });
       expect(result.details).toMatchObject({
         action: "record_water",
         status: "committed",
         committed: true,
-        operation_id: "operation-openclaw-water-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         record_id: expect.stringMatching(/^event-[a-f0-9]{32}$/),
       });
       const inspection = openDietDatabase({ privateRuntimeRoot: root });
@@ -307,7 +292,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         ).all()).toEqual([{
           event_type: "diet_water",
           fact_kind: "water",
-          operation_id: "operation-openclaw-water-001",
+          operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
           meal_id: null,
           meal_slot: null,
         }]);
@@ -327,14 +312,12 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       const result = await registered.tool.execute("tool-call-ignore-001", {
         ...mealParams(),
         source_text: "明天准备吃鸡蛋。",
-        operation_id: "operation-openclaw-ignore-001",
-        source_message_id: "message-openclaw-ignore-001",
       });
-      expect(result.details).toEqual({
+      expect(result.details).toMatchObject({
         action: "record_meal",
         status: "ignored",
         committed: false,
-        operation_id: "operation-openclaw-ignore-001",
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
         reason_code: "future_plan",
       });
       expect(readdirSync(root)).toEqual([]);
@@ -358,7 +341,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         action: "record_meal",
         status: "failed",
         committed: false,
-        operation_id: "operation-openclaw-meal-001",
         error_code: "INVALID_REQUEST",
       });
       expect(readdirSync(root)).toEqual([]);
@@ -380,7 +362,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         action: "record_meal",
         status: "failed",
         committed: false,
-        operation_id: "operation-openclaw-meal-001",
         error_code: "INVALID_REQUEST",
       });
     } finally {
@@ -539,7 +520,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       expect(first.details).toMatchObject({ committed: true });
       config.official_data_root = root.toUpperCase();
       const result = await registered.tool.execute("tool-call-root-002", mealParams());
-      expect(result.details).toEqual(first.details);
+      expect(result.details).toMatchObject({ committed: true });
     } finally {
       await registered.lifecycle()?.cleanup();
       rmSync(root, { recursive: true, force: false });
@@ -578,8 +559,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         .toMatchObject({ committed: true });
       const sharedSecond = await second.tool.execute("tool-call-shared-b", {
         ...mealParams(),
-        operation_id: "operation-openclaw-shared-b",
-        source_message_id: "message-openclaw-shared-b",
       });
       expect(sharedSecond.details, JSON.stringify(sharedSecond.details)).toMatchObject({ committed: true });
 
@@ -587,8 +566,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
 
       expect((await second.tool.execute("tool-call-shared-c", {
         ...mealParams(),
-        operation_id: "operation-openclaw-shared-c",
-        source_message_id: "message-openclaw-shared-c",
       })).details).toMatchObject({ committed: true });
     } finally {
       await first.lifecycle()?.cleanup();
@@ -608,8 +585,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         .toMatchObject({ committed: true });
       expect((await second.tool.execute("tool-call-drift-b", {
         ...mealParams(),
-        operation_id: "operation-openclaw-drift-b",
-        source_message_id: "message-openclaw-drift-b",
       })).details).toMatchObject({ committed: true });
 
       firstConfig.official_data_root = secondRoot;
@@ -618,8 +593,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
 
       expect((await second.tool.execute("tool-call-drift-c", {
         ...mealParams(),
-        operation_id: "operation-openclaw-drift-c",
-        source_message_id: "message-openclaw-drift-c",
       })).details).toMatchObject({ committed: true });
     } finally {
       await first.lifecycle()?.cleanup();
@@ -641,8 +614,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         .toMatchObject({ committed: true });
       expect((await rejected.tool.execute("tool-call-lifecycle-rejected", {
         ...mealParams(),
-        operation_id: "operation-openclaw-lifecycle-rejected",
-        source_message_id: "message-openclaw-lifecycle-rejected",
       })).details).toMatchObject({
         committed: false,
         error_code: "PLUGIN_RUNTIME_UNAVAILABLE",
@@ -650,8 +621,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
 
       expect((await owner.tool.execute("tool-call-lifecycle-after", {
         ...mealParams(),
-        operation_id: "operation-openclaw-lifecycle-after",
-        source_message_id: "message-openclaw-lifecycle-after",
       })).details).toMatchObject({ committed: true });
     } finally {
       await owner.lifecycle()?.cleanup();
@@ -669,7 +638,6 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
         action: "record_meal",
         status: "failed",
         committed: false,
-        operation_id: "operation-openclaw-meal-001",
         error_code: "PLUGIN_RUNTIME_UNAVAILABLE",
       });
       const publicBytes = JSON.stringify(result.details);

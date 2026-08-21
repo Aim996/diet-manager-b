@@ -4,7 +4,7 @@
 
 ## 命令对象 Schema
 
-标准输入对象只允许下列字段；未知字段、缺少必填字段、数组顶层或错误类型会被拒绝。
+标准输入对象只允许下列字段；任意对象层级的重复键、未知字段、缺少必填字段、数组顶层或错误类型都会被拒绝。
 
 | 字段 | 必填 | 精确约束 |
 |---|---:|---|
@@ -13,7 +13,7 @@
 | `source_text` | 是 | 用户当前消息的逐字原文，1–4096 个 UTF-16 code units；不改写、不摘要、不补字段 |
 | `semantic_candidate` | 否 | 只可用于 `record_meal`；结构必须符合下方 Schema，且其 `source_text` 与外层逐字相同 |
 
-Agent 不提供数据根或宿主上下文。命令中不得出现 `official_data_root`、数据库路径、secret、token、`received_at`、`timezone`、`operation_id`、`source_message_id`、`conversation_id`、`prior_context` 或其他宿主字段。部署管理员配置数据根；CLI 生成时间和调用标识。
+Agent 不提供数据根或宿主上下文。命令中不得出现 `official_data_root`、数据库路径、secret、token、`received_at`、`timezone`、`operation_id`、`source_message_id`、`conversation_id`、`prior_context` 或其他宿主字段。部署管理员配置数据根；CLI 生成时间和调用标识。契约适配器也必须在模型参数之外取得或生成这些字段：当前 OpenClaw 适配器从可信的 Tool factory 会话上下文取得会话域，以宿主 `toolCallId` 派生调用/消息标识，并使用适配器时钟；会话上下文缺失时关闭失败，模型提供的同名字段会被拒绝。同一 OpenClaw 进程内，相同会话与 `toolCallId` 的宿主重试复用第一次可信上下文并返回同一提交，不产生第二条业务记录；进程重启后核心身份仍相同，时间差异只会复用既有结果或关闭冲突，不会补偿式再次提交。
 
 最小命令：
 

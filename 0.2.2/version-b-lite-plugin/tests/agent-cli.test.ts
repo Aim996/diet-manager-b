@@ -115,7 +115,8 @@ function parseSuccessfulOutcome(result: SpawnSyncReturns<string>): DietManagerOu
 function expectProtocolFailure(
   result: SpawnSyncReturns<string>,
   code: "DIET_AGENT_CLI_CONFIG_REQUIRED" | "DIET_AGENT_CLI_INPUT_TOO_LARGE" |
-    "DIET_AGENT_CLI_INVALID_INPUT" | "DIET_AGENT_CLI_UNAVAILABLE",
+    "DIET_AGENT_CLI_INVALID_INPUT" | "DIET_AGENT_CLI_OUTPUT_FAILED" |
+    "DIET_AGENT_CLI_UNAVAILABLE",
 ): void {
   expect(result.error).toBeUndefined();
   expect(result.signal).toBeNull();
@@ -217,6 +218,57 @@ describe("standalone agent JSON CLI", () => {
     expect(existsSync(databasePath(root))).toBe(false);
   });
 
+  it("rejects a duplicate required JSON key before the last value can reach SQLite", () => {
+    const root = newRoot();
+    const input = [
+      "{",
+      '"schema_version":"diet-manager/agent-command/v1",',
+      '"action":"record_water",',
+      '"source_text":"我没有喝水",',
+      '"source_text":"我喝了500毫升白水"',
+      "}\n",
+    ].join("");
+
+    const result = runRawCli({ root, input, conversationId: "cli-test-conversation" });
+
+    expectProtocolFailure(result, "DIET_AGENT_CLI_INVALID_INPUT");
+    expect(existsSync(databasePath(root))).toBe(false);
+  });
+
+  it("rejects a nested duplicate JSON key in an otherwise valid semantic command", () => {
+    const root = newRoot();
+    const sourceText = "中午吃了两碗米饭";
+    const valid = {
+      ...command("record_meal", sourceText),
+      semantic_candidate: {
+        schema_version: "diet-manager/semantic-candidate/v1",
+        intent: "record_meal",
+        source_text: sourceText,
+        subject: {
+          kind: "self",
+          basis: "private_agent_default",
+          evidence_span: null,
+          explicit_other_spans: [],
+        },
+        items: [{
+          raw_name: "米饭",
+          normalized_hint: "rice",
+          amount: { kind: "exact", value: 2, unit: "bowl", evidence_span: "两碗米饭" },
+        }],
+        time: { kind: "source_text", evidence_span: "中午" },
+      },
+    };
+    const input = `${JSON.stringify(valid).replace(
+      '"raw_name":"米饭"',
+      '"raw_name":"伪造食物","raw_name":"米饭"',
+    )}\n`;
+
+    const result = runRawCli({ root, input, conversationId: "cli-test-conversation" });
+
+    expectProtocolFailure(result, "DIET_AGENT_CLI_INVALID_INPUT");
+    expect(existsSync(databasePath(root))).toBe(false);
+  });
+
   it.each([
     "official_data_root",
     "secret",
@@ -250,6 +302,37 @@ describe("standalone agent JSON CLI", () => {
 
     expectProtocolFailure(result, "DIET_AGENT_CLI_INPUT_TOO_LARGE");
     expect(existsSync(databasePath(root))).toBe(false);
+  });
+
+  it("maps a stdout EPIPE to one stable diagnostic without retrying the committed write", () => {
+    const root = newRoot("diet-agent-cli-epipe-");
+    const preload = join(root, "stdout-epipe.mjs");
+    writeFileSync(preload, `
+const sensitive = process.env.DIET_CLI_TEST_SENSITIVE_PATH;
+process.stdout.write = function (_chunk, encoding, callback) {
+  const done = typeof encoding === "function" ? encoding : callback;
+  const error = Object.assign(new Error("broken pipe at " + sensitive), { code: "EPIPE" });
+  queueMicrotask(() => {
+    if (typeof done === "function") done(error);
+    process.stdout.emit("error", error);
+  });
+  return false;
+};
+`, "utf8");
+
+    const result = runRawCli({
+      root,
+      input: `${JSON.stringify(command("record_water", "我喝了500毫升白水"))}\n`,
+      conversationId: "cli-test-conversation",
+      environment: {
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+        DIET_CLI_TEST_SENSITIVE_PATH: root,
+      },
+    });
+
+    expectProtocolFailure(result, "DIET_AGENT_CLI_OUTPUT_FAILED");
+    expect(result.stderr).not.toContain(root);
+    expect(businessRowCount(root, "event_records")).toBe(1);
   });
 
   it("returns an ignored future plan with zero business rows instead of treating it as a meal fact", () => {
