@@ -102,7 +102,23 @@ describe("OpenClaw trusted host context", () => {
         action: "record_water",
         committed: true,
         operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
+        progress: [{ metrics: expect.arrayContaining([expect.objectContaining({
+          key: "water_ml",
+          current: { kind: "exact", value: "500" },
+        })]) }],
       });
+      const database = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        const row = database.database.prepare(
+          "SELECT payload_json FROM envelope_finalizations",
+        ).get() as { payload_json: string };
+        const frozen = (JSON.parse(row.payload_json) as {
+          payload: { progress: unknown };
+        }).payload.progress;
+        expect((result.details as { progress: unknown }).progress).toEqual(frozen);
+      } finally {
+        database.close();
+      }
     } finally {
       await registered.cleanup();
       rmSync(root, { recursive: true, force: false });

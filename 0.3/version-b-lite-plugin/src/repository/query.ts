@@ -682,6 +682,11 @@ export function summarizeDailyProgress(input: DateRangeQuery): DailyNutritionSum
         (row.coverage_status !== "complete" && row.coverage_status !== "partial") ||
         payload.coverage_status !== row.coverage_status
       ) return invalid("daily_progress_authority");
+      const payloadKeys = Object.keys(payload).sort().join("\u0000");
+      if (payloadKeys !== "authority_kind\u0000coverage_status\u0000date\u0000nutrients\u0000timezone" &&
+          payloadKeys !== "authority_kind\u0000coverage_status\u0000date\u0000nutrients\u0000progress_state\u0000timezone") {
+        return invalid("daily_progress_authority");
+      }
       if (row.coverage_status === "partial") partial = true;
       const nutrients = payload.nutrients as Record<string, unknown>;
       if (Object.keys(nutrients).sort().join("\u0000") !== [...NUTRIENT_FIELDS].sort().join("\u0000")) {

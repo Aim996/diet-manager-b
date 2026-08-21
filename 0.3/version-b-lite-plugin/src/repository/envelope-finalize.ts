@@ -4,7 +4,23 @@ import { canonicalJson } from "../authority/canonical-json.js";
 import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
 import { dietManagerActions, type DietManagerAction } from "../contracts/actions.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
-import { deriveDomainId } from "../domain/identity.js";
+import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
+import {
+  readEffectiveConfiguredGoals,
+  readEffectiveDailyProgressState,
+} from "../domain/read-model.js";
+import {
+  addProgressMetricStates,
+  emptyProgressMetricState,
+  freezeDateProgress,
+  freezeStoredProgressState,
+  positiveProgressMetricDelta,
+  progressStateFromNutrients,
+  storedProgressState,
+  type ProgressNutrientValues,
+  type ProgressMetricStateMap,
+} from "../domain/progress.js";
+import type { FrozenDateProgressV1 } from "../contracts/progress-receipt-v1.js";
 import { assertProgressReservationFinalizerAuthority } from "./progress-reservation.js";
 import { assertAppliedInventoryLocationCorrectionAuthority } from "./inventory-location-correction-authority.js";
 import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
@@ -151,6 +167,7 @@ export interface FrozenDailyProgress {
 export interface DailyProgressProjection {
   readonly progress: FrozenDailyProgress;
   readonly previous_generated_at: string | null;
+  readonly previous_state: Readonly<ProgressMetricStateMap>;
 }
 
 function invalid(reason: string): never {
@@ -291,7 +308,11 @@ export function readLatestAuthoritativeDailyProgress(
   database: DatabaseSync,
   date: string,
   timezone: "Asia/Shanghai",
-): { readonly progress: FrozenDailyProgress | null; readonly generated_at: string | null } {
+): {
+  readonly progress: FrozenDailyProgress | null;
+  readonly generated_at: string | null;
+  readonly state: Readonly<ProgressMetricStateMap>;
+} {
   const previousRow = database.prepare(
     `SELECT generated_at, payload_json FROM daily_progress_snapshots
      WHERE date = ? AND timezone = ?
@@ -300,7 +321,11 @@ export function readLatestAuthoritativeDailyProgress(
     generated_at: string;
     payload_json: string;
   } | undefined;
-  if (!previousRow) return Object.freeze({ progress: null, generated_at: null });
+  if (!previousRow) return Object.freeze({
+    progress: null,
+    generated_at: null,
+    state: Object.freeze(emptyProgressMetricState()),
+  });
   let value: unknown;
   try {
     value = JSON.parse(previousRow.payload_json) as unknown;
@@ -310,22 +335,26 @@ export function readLatestAuthoritativeDailyProgress(
   if (canonicalJson(value) !== previousRow.payload_json) {
     return authorityInvalid("daily_progress_previous");
   }
-  const record = plainRecord(
-    value,
-    ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
-    "daily_progress_previous",
-  );
+  const record = plainRecord(value, Object.hasOwn(value as object, "progress_state")
+    ? ["authority_kind", "coverage_status", "date", "nutrients", "progress_state", "timezone"]
+    : ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+  "daily_progress_previous");
   if (record.authority_kind !== "diet-manager/daily-progress/v1") {
     return authorityInvalid("daily_progress_previous");
   }
-  return Object.freeze({
-    progress: parseDailyProgress({
+  const progress = parseDailyProgress({
       coverage_status: record.coverage_status,
       date: record.date,
       nutrients: record.nutrients,
       timezone: record.timezone,
-    }, "daily_progress_previous"),
+    }, "daily_progress_previous");
+  const state = Object.hasOwn(record, "progress_state")
+    ? freezeStoredProgressState(record.progress_state).metrics
+    : progressStateFromNutrients(progress.nutrients, "legacy-progress");
+  return Object.freeze({
+    progress,
     generated_at: previousRow.generated_at,
+    state,
   });
 }
 
@@ -346,6 +375,7 @@ export function projectDailyProgressContribution(
   return Object.freeze({
     progress: addDailyProgress(cumulative, contribution),
     previous_generated_at: previous.generated_at,
+    previous_state: previous.state,
   });
 }
 
@@ -422,6 +452,139 @@ function zeroDailyProgress(date: string, timezone: "Asia/Shanghai"): FrozenDaily
       water_ml_milli: 0,
     }),
   });
+}
+
+const PROGRESS_NUTRIENT_FIELDS = Object.freeze([
+  ["energy_kcal", "energy_kcal_milli"],
+  ["protein_g", "protein_mg"],
+  ["fat_g", "fat_mg"],
+  ["carbohydrate_g", "carbohydrate_mg"],
+  ["fiber_g", "fiber_mg"],
+  ["water_ml", "water_ml_milli"],
+] as const);
+
+function parseProgressNutrients(value: unknown, reason: string): ProgressNutrientValues {
+  const record = plainRecord(value, DAILY_NUTRIENT_FIELDS, reason);
+  const nutrients = {} as Record<(typeof DAILY_NUTRIENT_FIELDS)[number], number | null>;
+  for (const field of DAILY_NUTRIENT_FIELDS) {
+    const candidate = record[field];
+    if (candidate !== null && (!Number.isSafeInteger(candidate) || Number(candidate) < 0)) {
+      return authorityInvalid(reason);
+    }
+    nutrients[field] = candidate as number | null;
+  }
+  return Object.freeze(nutrients);
+}
+
+function contributionProgressState(
+  commandType: DietManagerAction,
+  executionItems: unknown,
+  operationId: string,
+  contribution: FrozenDailyProgress,
+  envelopeId: string,
+): ProgressMetricStateMap {
+  if (commandType === "record_water") {
+    const water = contribution.nutrients.water_ml_milli;
+    if (water === null) return authorityInvalid("water_progress_contribution");
+    // Plain water has a known zero contribution to every nutrient metric. The
+    // legacy aggregate stores null there, but null must not contaminate later totals.
+    return progressStateFromNutrients(Object.freeze({
+      energy_kcal_milli: 0,
+      protein_mg: 0,
+      fat_mg: 0,
+      carbohydrate_mg: 0,
+      fiber_mg: 0,
+      water_ml_milli: water,
+    }), `envelope:${envelopeId}`);
+  }
+  if (commandType !== "record_meal" || !Array.isArray(executionItems)) {
+    return authorityInvalid("meal_progress_items");
+  }
+  const operationResults = executionItems.filter((candidate) =>
+    typeof candidate === "object" && candidate !== null && !Array.isArray(candidate) &&
+    (candidate as Record<string, unknown>).operation_id === operationId);
+  if (operationResults.length !== 1) return authorityInvalid("meal_progress_items");
+  const mealItems = (operationResults[0] as Record<string, unknown>).meal_items;
+  if (!Array.isArray(mealItems) || mealItems.length === 0 || mealItems.length > 256) {
+    return authorityInvalid("meal_progress_items");
+  }
+  let state = emptyProgressMetricState();
+  for (let index = 0; index < mealItems.length; index += 1) {
+    const item = mealItems[index];
+    if (typeof item !== "object" || item === null || Array.isArray(item) ||
+        !Object.hasOwn(item, "nutrients")) return authorityInvalid("meal_progress_items");
+    const nutrients = parseProgressNutrients(
+      (item as Record<string, unknown>).nutrients,
+      "meal_progress_nutrients",
+    );
+    state = addProgressMetricStates(
+      state,
+      progressStateFromNutrients(nutrients, `envelope:${envelopeId}:item:${index}`),
+    );
+  }
+  for (const [metric, nutrient] of PROGRESS_NUTRIENT_FIELDS) {
+    const aggregate = contribution.nutrients[nutrient];
+    const metricState = state[metric];
+    if (aggregate === null) {
+      if (metricState.unknown_sources.length === 0) {
+        return authorityInvalid("meal_progress_aggregate");
+      }
+    } else if (metricState.unknown_sources.length !== 0 || metricState.known_milli !== aggregate) {
+      return authorityInvalid("meal_progress_aggregate");
+    }
+  }
+  return state;
+}
+
+function contributionEffectiveAt(
+  database: DatabaseSync,
+  envelopeId: string,
+  operationId: string,
+): string {
+  const rows = database.prepare(
+    `SELECT occurred_at_text, received_at FROM event_records
+     WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(envelopeId, operationId) as Array<{
+    occurred_at_text: string | null;
+    received_at: string;
+  }>;
+  if (rows.length !== 1) return authorityInvalid("progress_event_time");
+  const value = rows[0]!.occurred_at_text ?? rows[0]!.received_at;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.valueOf())) return authorityInvalid("progress_event_time");
+  return parsed.toISOString();
+}
+
+function correctionEffectiveTimes(
+  database: DatabaseSync,
+  envelopeId: string,
+): ReadonlyMap<string, string> {
+  const rows = database.prepare(
+    `SELECT payload_json FROM event_records
+     WHERE envelope_id = ? AND fact_kind = 'correction'`,
+  ).all(envelopeId) as Array<{ payload_json: string }>;
+  if (rows.length !== 1) return authorityInvalid("correction_progress_time");
+  let value: unknown;
+  try { value = JSON.parse(rows[0]!.payload_json) as unknown; } catch {
+    return authorityInvalid("correction_progress_time");
+  }
+  if (canonicalJson(value) !== rows[0]!.payload_json || typeof value !== "object" || value === null ||
+      Array.isArray(value)) return authorityInvalid("correction_progress_time");
+  const record = value as Record<string, unknown>;
+  const result = new Map<string, string>();
+  for (const key of ["before_snapshot", "after_snapshot"] as const) {
+    const snapshot = record[key];
+    if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) {
+      return authorityInvalid("correction_progress_time");
+    }
+    const occurredAt = (snapshot as Record<string, unknown>).occurred_at;
+    if (typeof occurredAt !== "string") return authorityInvalid("correction_progress_time");
+    const parsed = new Date(occurredAt);
+    if (!Number.isFinite(parsed.valueOf())) return authorityInvalid("correction_progress_time");
+    const canonical = parsed.toISOString();
+    result.set(toNaturalDate(canonical, "Asia/Shanghai"), canonical);
+  }
+  return result;
 }
 
 function freezeMealDailyProgress(
@@ -585,6 +748,18 @@ function freezeMealDailyProgress(
 
   const projection = projectDailyProgressContribution(input.database, contribution);
   const cumulative = projection.progress;
+  const contributionState = contributionProgressState(
+    input.commandType,
+    execution.items,
+    bundle.operation_id,
+    contribution,
+    envelopeId,
+  );
+  const cumulativeState = readEffectiveDailyProgressState(
+    input.database,
+    cumulative.date,
+    envelopeId,
+  );
   const generatedAt = nextProgressGeneratedAt(
     input.database,
     cumulative.date,
@@ -592,19 +767,39 @@ function freezeMealDailyProgress(
     input.finalizedAt,
     projection.previous_generated_at,
   );
+  const effectiveGoals = readEffectiveConfiguredGoals(
+    input.database,
+    "user:self",
+    contributionEffectiveAt(input.database, envelopeId, bundle.operation_id),
+  );
+  const frozenProgress = freezeDateProgress({
+    date: cumulative.date,
+    timezone: cumulative.timezone,
+    goal_version_id: effectiveGoals.goal_version_id,
+    goals: effectiveGoals.goals,
+    current: cumulativeState,
+    increment: contributionState,
+    generated_at: generatedAt,
+    idempotency_key: idempotencyKey,
+  });
   input.database.prepare(
     `INSERT INTO daily_progress_snapshots(
       progress_snapshot_id, idempotency_result_id, date, timezone,
       goal_version_id, coverage_status, generated_at, payload_json
-    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     deriveDomainId("progress", idempotencyKey, 0),
     idempotencyKey,
     cumulative.date,
     cumulative.timezone,
+    effectiveGoals.goal_version_id,
     cumulative.coverage_status,
     generatedAt,
-    canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...cumulative }),
+    canonicalJson({
+      authority_kind: "diet-manager/daily-progress/v1",
+      ...cumulative,
+      progress_state: storedProgressState(cumulativeState),
+    }),
   );
   const finalExecution = {
     ...execution,
@@ -612,6 +807,7 @@ function freezeMealDailyProgress(
       authority_kind: "diet-manager/domain-execution/v1",
       daily_progress: cumulative,
       daily_progress_by_date: [cumulative],
+      progress: [frozenProgress],
       quick_prompts: quickPrompts,
       receipt_data: rebaseReceiptProgress(receipt, cumulative),
     },
@@ -868,6 +1064,8 @@ function freezeCorrectionDailyProgress(
     return authorityInvalid("correction_progress_bundle");
   }
   const finalizedReplacements: FrozenDailyProgress[] = [];
+  const frozenProgressByDate: FrozenDateProgressV1[] = [];
+  const effectiveTimes = correctionEffectiveTimes(input.database, envelopeId);
   for (let index = 0; index < alignedReplacements.length; index += 1) {
     const boundReplacement = alignedReplacements[index]!;
     const boundBefore = alignedBefores[index]!;
@@ -896,11 +1094,10 @@ function freezeCorrectionDailyProgress(
       if (canonicalJson(previousValue) !== previousRow.payload_json) {
         return authorityInvalid("correction_progress_previous");
       }
-      const previousRecord = plainRecord(
-        previousValue,
-        ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
-        "correction_progress_previous",
-      );
+      const previousRecord = plainRecord(previousValue, Object.hasOwn(previousValue as object, "progress_state")
+        ? ["authority_kind", "coverage_status", "date", "nutrients", "progress_state", "timezone"]
+        : ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+      "correction_progress_previous");
       if (previousRecord.authority_kind !== "diet-manager/daily-progress/v1") {
         return authorityInvalid("correction_progress_previous");
       }
@@ -923,21 +1120,52 @@ function freezeCorrectionDailyProgress(
       input.finalizedAt,
       previousGeneratedAt,
     );
+    const beforeState = readEffectiveDailyProgressState(
+      input.database,
+      finalizedReplacement.date,
+    );
+    const finalizedState = readEffectiveDailyProgressState(
+      input.database,
+      finalizedReplacement.date,
+      envelopeId,
+    );
+    const incrementState = positiveProgressMetricDelta(beforeState, finalizedState);
+    const effectiveGoals = readEffectiveConfiguredGoals(
+      input.database,
+      "user:self",
+      effectiveTimes.get(finalizedReplacement.date) ?? authorityInvalid("correction_progress_time"),
+    );
+    const frozenProgress = freezeDateProgress({
+      date: finalizedReplacement.date,
+      timezone: finalizedReplacement.timezone,
+      goal_version_id: effectiveGoals.goal_version_id,
+      goals: effectiveGoals.goals,
+      current: finalizedState,
+      increment: incrementState,
+      generated_at: generatedAt,
+      idempotency_key: idempotencyKey,
+    });
     input.database.prepare(
       `INSERT INTO daily_progress_snapshots(
         progress_snapshot_id, idempotency_result_id, date, timezone,
         goal_version_id, coverage_status, generated_at, payload_json
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       deriveDomainId("progress", idempotencyKey, index),
       idempotencyKey,
       finalizedReplacement.date,
       finalizedReplacement.timezone,
+      effectiveGoals.goal_version_id,
       finalizedReplacement.coverage_status,
       generatedAt,
-      canonicalJson({ authority_kind: "diet-manager/daily-progress/v1", ...finalizedReplacement }),
+      canonicalJson({
+        authority_kind: "diet-manager/daily-progress/v1",
+        ...finalizedReplacement,
+        progress_state: storedProgressState(finalizedState),
+      }),
     );
     finalizedReplacements.push(finalizedReplacement);
+    frozenProgressByDate.push(frozenProgress);
   }
   if (!Array.isArray(execution.items) || execution.items.length !== 1) {
     return authorityInvalid("correction_progress_items");
@@ -980,6 +1208,7 @@ function freezeCorrectionDailyProgress(
       authority_kind: "diet-manager/domain-execution/v1",
       daily_progress: finalizedByDate[0],
       daily_progress_by_date: finalizedByDate,
+      progress: frozenProgressByDate,
     },
     status: input.resultStatus,
   };

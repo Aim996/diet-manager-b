@@ -649,6 +649,33 @@ function correctionEnvelope(options: {
   };
 }
 
+function timeCorrectionEnvelope(options: {
+  suffix: string;
+  targetEventId: string;
+  baseRevision: number;
+  replacementOccurredAt: string;
+}): DomainEnvelopeInput {
+  return {
+    envelope_id: `envelope-correction-time-${options.suffix}`,
+    idempotency_key: `idem-correction-time-${options.suffix}`,
+    command_type: "correct_record",
+    subject_scope: "user:self",
+    source_message_id: `message-correction-time-${options.suffix}`,
+    conversation_id: "conversation-correction-matrix",
+    received_at: "2026-08-13T05:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    operations: [{
+      kind: "correct_record",
+      correction_kind: "meal_time",
+      operation_id: `operation-correction-time-${options.suffix}`,
+      target_event_id: options.targetEventId,
+      base_revision: options.baseRevision,
+      replacement_occurred_at: options.replacementOccurredAt,
+      replacement_meal_slot: "lunch",
+    }],
+  };
+}
+
 function undoEnvelope(options: {
   suffix: string;
   targetEventId: string;
@@ -3518,7 +3545,10 @@ describe("B-SLICE-001 meal, nutrition, inventory and progress matrix", () => {
 });
 
 describe("B-SLICE-001 append-only corrections and effective views", () => {
-  function createCorrectionFixture(options: { readonly sourceEnergy?: number } = {}) {
+  function createCorrectionFixture(options: {
+    readonly sourceEnergy?: number;
+    readonly additionalKnownMinItems?: number;
+  } = {}) {
     const root = newTestRoot();
     const runtime = openDietDatabase({ privateRuntimeRoot: root });
     const service = createDietDomainService({
@@ -3562,7 +3592,20 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
             },
           }),
         }],
-      })],
+      }), ...Array.from({ length: options.additionalKnownMinItems ?? 0 }, (_, index) => mealItem({
+        name: `known-min-extra-${index}`,
+        unit: "piece",
+        observed: 1_000_000,
+        adopted: 1_000_000,
+        deducted: null,
+        sources: [nutritionSource(
+          "public_fixture",
+          `public-known-min-extra-${index}-v1`,
+          1,
+          null,
+          { kind: "per_item", microunits: 1_000_000, unit: "piece" },
+        )],
+      }))],
     });
     previewAndExecute(service, meal);
     return {
@@ -3608,6 +3651,50 @@ describe("B-SLICE-001 append-only corrections and effective views", () => {
     appendPreparedOperationFact(prepared.fact);
     return { envelope, operation, preview };
   }
+
+  it("freezes backward cross-date correction progress in ascending date order", () => {
+    const fixture = createCorrectionFixture({ additionalKnownMinItems: 64 });
+    const envelope = timeCorrectionEnvelope({
+      suffix: "backward-progress-order",
+      targetEventId: fixture.targetEventId,
+      baseRevision: 1,
+      replacementOccurredAt: "2026-08-11T04:00:00.000Z",
+    });
+    try {
+      const first = previewAndExecute(fixture.service, envelope);
+      const replay = previewAndExecute(fixture.service, envelope);
+      const progress = (first.payload as { progress: readonly Array<{
+        date: string;
+        metrics: readonly Array<{
+          key: string;
+          current: unknown;
+          unknown_source_count: number;
+          unknown_sources: readonly string[];
+        }>;
+      }> }).progress;
+
+      expect(progress.map((date) => date.date)).toEqual(["2026-08-11", "2026-08-12"]);
+      expect(progress.every((date) => date.metrics.length === 6)).toBe(true);
+      expect(progress[0]!.metrics.find((metric) => metric.key === "energy_kcal")?.current)
+        .toEqual({ kind: "exact", value: "6600" });
+      expect(progress[1]!.metrics.find((metric) => metric.key === "energy_kcal")?.current)
+        .toEqual({ kind: "exact", value: "0" });
+      expect(progress[0]!.metrics.find((metric) => metric.key === "fiber_g")).toMatchObject({
+        current: { kind: "unknown" },
+        unknown_source_count: 65,
+      });
+      expect(progress[0]!.metrics.find((metric) => metric.key === "fiber_g")?.unknown_sources)
+        .toHaveLength(64);
+      expect(progress[1]!.metrics.find((metric) => metric.key === "fiber_g")).toMatchObject({
+        current: { kind: "exact", value: "0" },
+        unknown_source_count: 0,
+      });
+      expect(replay).toEqual(first);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
 
   it("claims retryable correction outboxes once, clears the old reason, and finishes attempt two", () => {
     const fixture = createCorrectionFixture();

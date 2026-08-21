@@ -36,7 +36,7 @@ function request(
   return {
     action,
     source_text: sourceText,
-    received_at: "2026-08-12T12:00:00+08:00",
+    received_at: "2026-08-12T12:00:02+08:00",
     timezone: "Asia/Shanghai" as const,
     operation_id: operationId,
     source_message_id: `message-${operationId}`,

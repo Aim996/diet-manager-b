@@ -294,7 +294,10 @@ function boundedInteger(value: unknown, field: string, min: number, max: number)
 
 function nullablePositiveFinite(value: unknown, field: string): number | null {
   if (value === null) return null;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return invalid(field);
+  // Progress stores natural units at milli precision. A target below 0.1 can
+  // make the percentage of a maximum safe stored current exceed JSON's safe
+  // integer domain, so reject it before any fact/effect can become stable.
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0.1) return invalid(field);
   return value;
 }
 
@@ -1550,11 +1553,11 @@ export function createDietDomainService(
         return invalid("envelope_id");
       }
       assertMealFactPreviewAuthority(authority, expectedPreviewMaterial);
-      const existingProgressReservation = readEnvelopeProgressReservation(
-        options.database,
-        envelope.envelope_id,
-      );
       const firstOperation = operations[0];
+      const existingProgressReservation = firstOperation.kind === "correct_record" ||
+          firstOperation.kind === "undo_record" || firstOperation.kind === "restore_record"
+        ? undefined
+        : readEnvelopeProgressReservation(options.database, envelope.envelope_id);
       const progressReservation = existingProgressReservation ??
         (authority.envelope_state === "received"
           ? firstOperation.kind === "record_water"

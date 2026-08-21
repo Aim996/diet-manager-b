@@ -541,7 +541,7 @@ describe("SEL-CORE Task 8 nullable meal authority", () => {
       }).toEqual({
         preview: "B5B05B42125FBA459BD65DD0B830FC0C2E85CAFDE6DFB7640EDC0C0384FAC6D6",
         fact: "97B92A38E73341B82E51726BF82E3AC40670DEB02C0EB4A56ABD87652B3396A3",
-        result: "26DDFD7260A4D89FCEC971F3B1124E9DB656910B70DE37EE5F9DF28BCE574330",
+        result: "EB0373C407782421F13FD2140F9F6C1A9C7EFD08C9499C5A4AA98A176422BE60",
       });
     } finally {
       runtime.close();
@@ -1716,6 +1716,10 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
             target_event_id: mealId,
             current_active: false,
           },
+          progress: [{
+            schema_version: "diet-manager/frozen-date-progress/v1",
+            metrics: expect.any(Array),
+          }],
         });
 
         const secondUndo = handleCoreRequest(runtime, {

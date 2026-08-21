@@ -9,6 +9,8 @@ import {
   type NutritionOutcomeItem,
 } from "../../src/contracts.js";
 import { committedOutcome } from "../../src/application/outcome.js";
+import { emptyConfiguredGoals } from "../../src/domain/goal-derivation.js";
+import { emptyProgressMetricState, freezeDateProgress } from "../../src/domain/progress.js";
 
 const expectedIds = [
   "CASE-NUTR-001", "CASE-NUTR-002", "CASE-NUTR-003", "CASE-NUTR-004",
@@ -47,8 +49,19 @@ describe("SEL-NUTR-001 shared catalog contract", () => {
 
 describe("SEL-NUTR-001 public nutrition outcome", () => {
   it("accepts and recursively freezes exact nutrition items only on committed outcomes", () => {
+    const progress = freezeDateProgress({
+      date: "2026-08-21",
+      timezone: "Asia/Shanghai",
+      goal_version_id: null,
+      goals: emptyConfiguredGoals(),
+      current: emptyProgressMetricState(),
+      increment: emptyProgressMetricState(),
+      generated_at: "2026-08-21T04:00:00.000Z",
+      idempotency_key: "operation-nutrition",
+    });
     const outcome = committedOutcome(
       "record_meal", "operation-nutrition", "committed", "event-meal", undefined, [nutritionItem],
+      undefined, undefined, [progress],
     );
 
     expect(assertDietManagerOutcome(outcome)).toBe(outcome);
@@ -57,6 +70,10 @@ describe("SEL-NUTR-001 public nutrition outcome", () => {
     expect(Object.isFrozen(outcome.nutrition_items)).toBe(true);
     expect(Object.isFrozen(outcome.nutrition_items?.[0])).toBe(true);
     expect(Object.isFrozen(outcome.nutrition_items?.[0]?.amount_range)).toBe(true);
+    const { progress: _progress, ...missingProgress } = outcome;
+    expect(() => assertDietManagerOutcome(missingProgress)).toThrow(
+      "DIET_MANAGER_OUTCOME_INVALID:frozen_progress_required",
+    );
 
     expect(() => assertDietManagerOutcome({
       action: "record_meal", status: "failed", committed: false,

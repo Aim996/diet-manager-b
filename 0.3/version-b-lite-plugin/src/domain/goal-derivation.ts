@@ -1,6 +1,8 @@
 // DEC-030 §4 六项参考目标派生（Mifflin-St Jeor + 状态系数）。
 // 中间量一律不取整，只有六个最终目标值各自 round_half_up 到整数。
 
+import { ratioProgress } from "./progress.js";
+
 export type PersonalProfileSex = "male" | "female";
 export type PersonalProfileGoalState = "cut" | "maintain" | "bulk";
 
@@ -160,15 +162,13 @@ export interface GoalProgressBar {
 export function goalProgressBar(current: number, target: number): GoalProgressBar {
   if (!Number.isFinite(current) || current < 0) return invalid("progress_current");
   if (!Number.isFinite(target) || target <= 0) return invalid("progress_target");
-  const ratio = current / target;
-  const percentage = roundHalfUp(ratio * 100);
-  const filledCells = Math.min(10, Math.max(0, roundHalfUp(ratio * 10)));
+  const frozen = ratioProgress(String(current), String(target));
   return Object.freeze({
     current,
     target,
-    percentage,
-    filled_cells: filledCells,
-    bar_text: "█".repeat(filledCells) + "░".repeat(10 - filledCells),
+    percentage: frozen.percentage,
+    filled_cells: frozen.filled_cells,
+    bar_text: frozen.bar_text,
   });
 }
 

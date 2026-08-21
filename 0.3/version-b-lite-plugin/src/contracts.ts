@@ -77,6 +77,7 @@ export interface NonWritingOutcome {
   inventory_view?: Readonly<InventoryView>;
   correction?: Readonly<CorrectionOutcomeView>;
   pending_candidate?: Readonly<PendingCandidateOutcomeView>;
+  progress?: readonly import("./contracts/progress-receipt-v1.js").FrozenDateProgressV1[];
   record_id?: never;
   record_ids?: never;
 }
@@ -293,6 +294,7 @@ export interface CommittedOutcome {
   profile_saved?: Readonly<ProfileSavedOutcomeView>;
   goal_recommendation?: Readonly<GoalRecommendationOutcomeView>;
   goal_update?: Readonly<GoalUpdateOutcomeView>;
+  progress?: readonly import("./contracts/progress-receipt-v1.js").FrozenDateProgressV1[];
 }
 
 export type DietManagerOutcome =
@@ -748,6 +750,87 @@ function assertGoalUpdate(value: unknown): void {
   assertGoalValues(candidate.goals, "configured");
 }
 
+const FROZEN_PROGRESS_ORDER = [
+  ["energy_kcal", "热量", "kcal"],
+  ["protein_g", "蛋白", "g"],
+  ["fat_g", "脂肪", "g"],
+  ["carbohydrate_g", "碳水", "g"],
+  ["fiber_g", "纤维", "g"],
+  ["water_ml", "饮水", "ml"],
+] as const;
+
+function assertProgressQuantity(value: unknown, label: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome(label);
+  const quantity = value as Record<string, unknown>;
+  if (quantity.kind === "none" || quantity.kind === "unknown") {
+    if (Object.keys(quantity).join("\0") !== "kind") return invalidOutcome(label);
+    return;
+  }
+  if ((quantity.kind !== "exact" && quantity.kind !== "lower_bound") ||
+      Object.keys(quantity).sort().join("\0") !== "kind\0value" ||
+      typeof quantity.value !== "string" || !/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(quantity.value)) {
+    return invalidOutcome(label);
+  }
+}
+
+function assertFrozenProgress(value: unknown): void {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32) return invalidOutcome("frozen_progress");
+  for (const dateValue of value) {
+    if (typeof dateValue !== "object" || dateValue === null || Array.isArray(dateValue)) {
+      return invalidOutcome("frozen_progress");
+    }
+    const date = dateValue as Record<string, unknown>;
+    if (Object.keys(date).sort().join("\0") !==
+        "date\0generated_at\0goal_notice\0goal_version_id\0idempotency_key\0metrics\0schema_version\0timezone" ||
+        date.schema_version !== "diet-manager/frozen-date-progress/v1" ||
+        typeof date.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(date.date) ||
+        date.timezone !== "Asia/Shanghai" ||
+        (date.goal_version_id !== null && (typeof date.goal_version_id !== "string" || date.goal_version_id.length === 0)) ||
+        (date.goal_notice !== null && date.goal_notice !== "目标未配置，进度条不可用。") ||
+        typeof date.generated_at !== "string" || !Number.isFinite(Date.parse(date.generated_at)) ||
+        typeof date.idempotency_key !== "string" || date.idempotency_key.length === 0 ||
+        !Array.isArray(date.metrics) || date.metrics.length !== 6) return invalidOutcome("frozen_progress");
+    let configured = 0;
+    for (let index = 0; index < FROZEN_PROGRESS_ORDER.length; index += 1) {
+      const metricValue = date.metrics[index];
+      if (typeof metricValue !== "object" || metricValue === null || Array.isArray(metricValue)) {
+        return invalidOutcome("frozen_progress_metric");
+      }
+      const metric = metricValue as Record<string, unknown>;
+      if (Object.keys(metric).sort().join("\0") !==
+          "bar_text\0coverage_status\0current\0delta\0display_name\0filled_cells\0increment_percent\0increment_percent_text\0key\0percent\0target\0unit\0unknown_source_count\0unknown_sources" ||
+          metric.key !== FROZEN_PROGRESS_ORDER[index]![0] ||
+          metric.display_name !== FROZEN_PROGRESS_ORDER[index]![1] ||
+          metric.unit !== FROZEN_PROGRESS_ORDER[index]![2] ||
+          !["known", "known_min", "unknown"].includes(String(metric.coverage_status)) ||
+          (metric.target !== null && (typeof metric.target !== "string" ||
+            !/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(metric.target) || Number(metric.target) <= 0)) ||
+          (metric.percent !== null && (!Number.isInteger(metric.percent) || Number(metric.percent) < 0)) ||
+          (metric.filled_cells !== null && (!Number.isInteger(metric.filled_cells) ||
+            Number(metric.filled_cells) < 0 || Number(metric.filled_cells) > 10)) ||
+          (metric.bar_text !== null && (typeof metric.bar_text !== "string" || !/^[█░]{10}$/u.test(metric.bar_text))) ||
+          (metric.increment_percent !== null && (!Number.isInteger(metric.increment_percent) || Number(metric.increment_percent) < 0)) ||
+          (metric.increment_percent_text !== null && (typeof metric.increment_percent_text !== "string" ||
+            !/^\+(?:<1|[0-9]+)%$/u.test(metric.increment_percent_text))) ||
+          !Array.isArray(metric.unknown_sources) || metric.unknown_sources.length > 64 ||
+          metric.unknown_sources.some((source) => typeof source !== "string" || source.length === 0 || source.length > 128) ||
+          !Number.isSafeInteger(metric.unknown_source_count) ||
+          Number(metric.unknown_source_count) < metric.unknown_sources.length) {
+        return invalidOutcome("frozen_progress_metric");
+      }
+      assertProgressQuantity(metric.current, "frozen_progress_current");
+      assertProgressQuantity(metric.delta, "frozen_progress_delta");
+      if (metric.target !== null) configured += 1;
+      if (metric.target === null && (metric.percent !== null || metric.filled_cells !== null || metric.bar_text !== null)) {
+        return invalidOutcome("frozen_progress_target");
+      }
+    }
+    if ((configured === 0) !== (date.goal_notice === "目标未配置，进度条不可用。")) {
+      return invalidOutcome("frozen_progress_notice");
+    }
+  }
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -807,11 +890,11 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate"]);
+      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate", "progress"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], [
       "record_ids", "nutrition_items", "receipt", "correction", "profile_saved",
-      "goal_recommendation", "goal_update",
+      "goal_recommendation", "goal_update", "progress",
     ]);
   }
   if (candidate.clarification !== undefined) {
@@ -890,6 +973,20 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     if (candidate.action !== "query_daily_summary" || candidate.status !== "ignored" ||
         candidate.reason_code !== "read_only_result") return invalidOutcome("daily_progress_status");
     assertDailyProgress(candidate.daily_progress);
+  }
+  if (candidate.progress !== undefined) {
+    const allowed = hasCommittedStatus ||
+      (candidate.action === "query_daily_summary" && candidate.status === "ignored" &&
+       candidate.reason_code === "read_only_result");
+    if (!allowed) return invalidOutcome("frozen_progress_status");
+    assertFrozenProgress(candidate.progress);
+  }
+  const requiresFrozenProgress = candidate.action === "record_meal" || candidate.action === "record_water" ||
+    candidate.action === "undo_record" || candidate.action === "restore_record" ||
+    candidate.correction !== undefined ||
+    (candidate.action === "correct_record" && candidate.nutrition_items !== undefined);
+  if (hasCommittedStatus && requiresFrozenProgress && candidate.progress === undefined) {
+    return invalidOutcome("frozen_progress_required");
   }
   if (candidate.meal_history !== undefined) {
     if (candidate.action !== "query_meals" || candidate.status !== "ignored" ||

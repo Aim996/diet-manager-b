@@ -437,11 +437,12 @@ export function prepareCorrectionOperation(
         makeReplacementReservation(input.database, date, mealNutrition, mealNutrition),
       ]);
     } else {
-      affectedDates = Object.freeze([date, newDate]);
-      progressReservations = Object.freeze([
+      const datedReservations = [
         makeReplacementReservation(input.database, date, mealNutrition, zeroVector),
         makeReplacementReservation(input.database, newDate, zeroVector, mealNutrition),
-      ]);
+      ].sort((left, right) => left.date.localeCompare(right.date));
+      affectedDates = Object.freeze(datedReservations.map((reservation) => reservation.date));
+      progressReservations = Object.freeze(datedReservations);
     }
     progressBefore = mealNutrition;
     progressAfter = newDate === date ? mealNutrition : zeroVector;

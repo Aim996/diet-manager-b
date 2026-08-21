@@ -140,6 +140,22 @@ function goalVersions(
 }
 
 describe("DEC-030 C-3 set_goal domain write path", () => {
+  it("rejects a target below the safe frozen-percentage domain before any write", () => {
+    const fixture = createFixture();
+    try {
+      const envelope = setGoalEnvelope({
+        suffix: "unsafe-tiny-target",
+        receivedAt: "2026-08-12T04:00:01.000Z",
+        goals: { energy_kcal: 1e-7 },
+      });
+      expect(() => fixture.service.preview(envelope)).toThrow("DIET_DOMAIN_REQUEST_INVALID");
+      expect(goalVersions(fixture)).toEqual([]);
+    } finally {
+      fixture.runtime.close();
+      removeOwnedRoot(fixture.root);
+    }
+  });
+
   it("merges an arbitrary subset onto current formal goals and versions the change", () => {
     const fixture = createFixture();
     try {

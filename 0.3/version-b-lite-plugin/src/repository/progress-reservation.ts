@@ -319,11 +319,10 @@ function latest(
     return invalid("daily_progress_previous");
   }
   if (canonicalJson(parsed) !== row.payload_json) return invalid("daily_progress_previous");
-  const payload = exactRecord(
-    parsed,
-    ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
-    "daily_progress_previous",
-  );
+  const payload = exactRecord(parsed, Object.hasOwn(parsed as object, "progress_state")
+    ? ["authority_kind", "coverage_status", "date", "nutrients", "progress_state", "timezone"]
+    : ["authority_kind", "coverage_status", "date", "nutrients", "timezone"],
+  "daily_progress_previous");
   if (payload.authority_kind !== "diet-manager/daily-progress/v1") {
     return invalid("daily_progress_previous");
   }

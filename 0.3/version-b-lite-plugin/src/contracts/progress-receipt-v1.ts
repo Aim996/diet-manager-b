@@ -12,6 +12,7 @@ export const progressQuantityV1Schema = Type.Union([
     value: decimalTextSchema,
   }, { additionalProperties: false }),
   Type.Object({ kind: Type.Literal("unknown") }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal("none") }, { additionalProperties: false }),
 ]);
 
 export const frozenProgressMetricV1Schema = Type.Object({
@@ -37,14 +38,24 @@ export const frozenProgressMetricV1Schema = Type.Object({
   delta: progressQuantityV1Schema,
   percent: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
   filled_cells: Type.Union([Type.Integer({ minimum: 0, maximum: 10 }), Type.Null()]),
+  bar_text: Type.Union([
+    Type.String({ pattern: "^[█░]{10}$" }),
+    Type.Null(),
+  ]),
+  increment_percent: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  increment_percent_text: Type.Union([
+    Type.String({ pattern: "^\\+(?:<1|[0-9]+)%$" }),
+    Type.Null(),
+  ]),
   coverage_status: Type.Union([
-    Type.Literal("complete"),
-    Type.Literal("partial"),
+    Type.Literal("known"),
+    Type.Literal("known_min"),
     Type.Literal("unknown"),
   ]),
   unknown_sources: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
     maxItems: 64,
   }),
+  unknown_source_count: Type.Integer({ minimum: 0 }),
 }, { additionalProperties: false });
 
 export const frozenDateProgressV1Schema = Type.Object({
@@ -52,6 +63,10 @@ export const frozenDateProgressV1Schema = Type.Object({
   date: Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }),
   timezone: Type.Literal("Asia/Shanghai"),
   goal_version_id: Type.Union([Type.String({ minLength: 1, maxLength: 128 }), Type.Null()]),
+  goal_notice: Type.Union([
+    Type.Literal("目标未配置，进度条不可用。"),
+    Type.Null(),
+  ]),
   metrics: Type.Array(frozenProgressMetricV1Schema, { minItems: 6, maxItems: 6 }),
   generated_at: Type.String({ minLength: 1, maxLength: 64 }),
   idempotency_key: Type.String({ minLength: 1, maxLength: 128 }),

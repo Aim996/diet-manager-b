@@ -29,7 +29,7 @@ function seedWater(runtime: ReturnType<typeof createCoreRuntime>): { waterId: st
   return { waterId: outcome.record_id };
 }
 
-it("reclassifies plain water as milk, zeroes water progress, and keeps the original immutable", () => {
+it("reclassifies plain water as milk, removes the plain-water tally, and keeps the original immutable", () => {
   const root = mkdtempSync(join(tmpdir(), `diet-manager-water-correction-${randomUUID()}-`));
   const runtime = createCoreRuntime({ officialDataRoot: root, now: () => "2026-08-14T12:00:01.000Z" });
   try {
@@ -54,6 +54,10 @@ it("reclassifies plain water as milk, zeroes water progress, and keeps the origi
     expect(outcome, JSON.stringify(outcome)).toMatchObject({
       status: "committed",
       correction: { operation: "change_water_classification", target_event_id: waterId },
+      progress: [{ metrics: expect.arrayContaining([expect.objectContaining({
+        key: "water_ml",
+        current: { kind: "unknown" },
+      })]) }],
     });
 
     const after = openDietDatabase({ privateRuntimeRoot: root });
@@ -85,7 +89,8 @@ it("reclassifies plain water as milk, zeroes water progress, and keeps the origi
         base_revision: 1,
       });
 
-      // Water hydration progress returns to zero for the affected day.
+      // The legacy plain-water tally returns to zero; the frozen six-metric
+      // view separately keeps the milk's unverified water content unknown.
       const progress = after.database.prepare(
         `SELECT payload_json FROM daily_progress_snapshots
          WHERE date = ? AND timezone = 'Asia/Shanghai'

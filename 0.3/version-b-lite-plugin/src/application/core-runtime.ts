@@ -26,6 +26,7 @@ import {
   type DailyProgressView,
   type DietManagerAction,
   type DietManagerOutcome,
+  type FrozenDateProgressV1,
   type InventoryView,
   type MealHistoryView,
   type MealReceipt,
@@ -38,8 +39,17 @@ import {
   resolveExpiration,
 } from "../domain/inventory-service.js";
 import { deriveDomainId, toNaturalDate } from "../domain/identity.js";
-import { currentConfiguredGoals, readAppliedCorrectionResult } from "../domain/effect-bundle.js";
-import { computeGoalProgressBars, type ConfiguredGoals } from "../domain/goal-derivation.js";
+import { readAppliedCorrectionResult } from "../domain/effect-bundle.js";
+import {
+  readEffectiveConfiguredGoals,
+  readEffectiveDailyProgressState,
+} from "../domain/read-model.js";
+import {
+  emptyProgressMetricState,
+  freezeDateProgress,
+  freezeStoredProgressState,
+  type ProgressMetricStateMap,
+} from "../domain/progress.js";
 import { readAppliedWaterClassificationResult } from "../domain/water-correction.js";
 import { createDietDomainService, type DietDomainService } from "../domain/service.js";
 import type {
@@ -1080,6 +1090,27 @@ function sanitizedCode(error: unknown): string {
   return /^[A-Z][A-Z0-9_]*$/u.test(code) ? code : "CORE_APPLICATION_FAILED";
 }
 
+const CORRECTION_SETTLE_WAIT = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+
+function resolveCorrectionTargetAfterPending(
+  input: Parameters<typeof resolveCorrectionTarget>[0],
+): ResolvedCorrectionTarget {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      return resolveCorrectionTarget(input);
+    } catch (error) {
+      if (!(error instanceof Error) ||
+          error.message !== "CORRECTION_TARGET_INVALID:pending_correction" || attempt === 99) {
+        throw error;
+      }
+      // A competing correction commits its fact and effects before finalization.
+      // Wait briefly for that bounded state to settle, then re-read authority.
+      Atomics.wait(CORRECTION_SETTLE_WAIT, 0, 0, 5);
+    }
+  }
+  throw new Error("CORRECTION_TARGET_INVALID:pending_correction");
+}
+
 interface PurchaseReference {
   readonly order: number;
   readonly raw_name: string;
@@ -1459,10 +1490,15 @@ function executeCandidate(
   });
 }
 
+interface DailyProgressRead {
+  readonly daily_progress: Readonly<DailyProgressView>;
+  readonly progress: readonly FrozenDateProgressV1[];
+}
+
 function readDailyProgress(
   session: CoreRuntimeSession,
   request: Readonly<CoreApplicationRequest>,
-): Readonly<DailyProgressView> {
+): DailyProgressRead {
   const date = toNaturalDate(new Date(request.received_at).toISOString(), "Asia/Shanghai");
   const summary = session.service.query(Object.freeze({
     kind: "query_daily_summary" as const,
@@ -1513,15 +1549,44 @@ function readDailyProgress(
   );
   const waterTotal = water.reduce((sum, item) => sum + item.plain_water_ml_milli, 0);
   if (!Number.isSafeInteger(waterTotal)) throw new Error("CORE_APPLICATION_QUERY_INVALID:water_sum");
-  const configuredGoals: ConfiguredGoals = currentConfiguredGoals(session.database, "user:self");
+  const effectiveGoals = readEffectiveConfiguredGoals(
+    session.database,
+    "user:self",
+    new Date(request.received_at).toISOString(),
+  );
+  const configuredGoals = effectiveGoals.goals;
   const nutrients = summary.nutrients;
-  const current = Object.freeze({
-    energy_kcal: nutrients.energy_kcal_milli === null ? 0 : nutrients.energy_kcal_milli / 1_000,
-    protein_g: nutrients.protein_mg === null ? 0 : nutrients.protein_mg / 1_000,
-    fat_g: nutrients.fat_mg === null ? 0 : nutrients.fat_mg / 1_000,
-    carbohydrate_g: nutrients.carbohydrate_mg === null ? 0 : nutrients.carbohydrate_mg / 1_000,
-    fiber_g: nutrients.fiber_mg === null ? 0 : nutrients.fiber_mg / 1_000,
-    water_ml: nutrients.water_ml_milli === null ? 0 : nutrients.water_ml_milli / 1_000,
+  const snapshot = session.database.prepare(
+    `SELECT generated_at, payload_json FROM daily_progress_snapshots
+     WHERE date = ? AND timezone = 'Asia/Shanghai'
+     ORDER BY generated_at DESC, progress_snapshot_id DESC LIMIT 1`,
+  ).get(date) as { generated_at: string; payload_json: string } | undefined;
+  let state: Readonly<ProgressMetricStateMap>;
+  if (snapshot === undefined) {
+    state = Object.freeze(emptyProgressMetricState());
+  } else {
+    let payload: unknown;
+    try { payload = JSON.parse(snapshot.payload_json) as unknown; } catch {
+      throw new Error("CORE_APPLICATION_QUERY_INVALID:progress_state");
+    }
+    if (canonicalJson(payload) !== snapshot.payload_json || typeof payload !== "object" ||
+        payload === null || Array.isArray(payload)) {
+      throw new Error("CORE_APPLICATION_QUERY_INVALID:progress_state");
+    }
+    const record = payload as Record<string, unknown>;
+    state = Object.hasOwn(record, "progress_state")
+      ? freezeStoredProgressState(record.progress_state).metrics
+      : readEffectiveDailyProgressState(session.database, date);
+  }
+  const frozenProgress = freezeDateProgress({
+    date,
+    timezone: "Asia/Shanghai",
+    goal_version_id: effectiveGoals.goal_version_id,
+    goals: configuredGoals,
+    current: state,
+    increment: null,
+    generated_at: new Date(request.received_at).toISOString(),
+    idempotency_key: request.operation_id,
   });
   const configured_goals = Object.freeze({
     energy_kcal: configuredGoals.energy_kcal,
@@ -1531,8 +1596,18 @@ function readDailyProgress(
     fiber_g: configuredGoals.fiber_g,
     water_ml: configuredGoals.water_ml,
   });
-  const progress = computeGoalProgressBars(configuredGoals, current);
-  return Object.freeze({
+  const progress = Object.freeze(Object.fromEntries(frozenProgress.metrics.flatMap((metric) => {
+    if (metric.target === null || !("value" in metric.current) || metric.percent === null ||
+        metric.filled_cells === null || metric.bar_text === null) return [];
+    return [[metric.key, Object.freeze({
+      current: Number(metric.current.value),
+      target: Number(metric.target),
+      percentage: metric.percent,
+      filled_cells: metric.filled_cells,
+      bar_text: metric.bar_text,
+    })]];
+  })));
+  const dailyProgress = Object.freeze({
     date,
     timezone: "Asia/Shanghai" as const,
     meals: Object.freeze({ count: meals.meals.length }),
@@ -1547,6 +1622,38 @@ function readDailyProgress(
     configured_goals,
     progress,
   });
+  return Object.freeze({
+    daily_progress: dailyProgress,
+    progress: Object.freeze([frozenProgress]),
+  });
+}
+
+function storedFrozenProgress(
+  database: DatabaseSync,
+  eventId: string,
+): readonly FrozenDateProgressV1[] {
+  const row = database.prepare(
+    `SELECT f.payload_json FROM event_records e
+     JOIN envelope_finalizations f ON f.envelope_id = e.envelope_id
+     WHERE e.event_id = ?`,
+  ).get(eventId) as { payload_json: string } | undefined;
+  if (row === undefined) throw new Error("CORE_APPLICATION_PROGRESS_INVALID:missing");
+  let execution: unknown;
+  try { execution = JSON.parse(row.payload_json) as unknown; } catch {
+    throw new Error("CORE_APPLICATION_PROGRESS_INVALID:json");
+  }
+  if (canonicalJson(execution) !== row.payload_json || typeof execution !== "object" ||
+      execution === null || Array.isArray(execution)) {
+    throw new Error("CORE_APPLICATION_PROGRESS_INVALID:authority");
+  }
+  const payload = (execution as Record<string, unknown>).payload;
+  const progress = typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>).progress
+    : undefined;
+  if (!Array.isArray(progress) || progress.length < 1) {
+    throw new Error("CORE_APPLICATION_PROGRESS_INVALID:shape");
+  }
+  return Object.freeze(progress) as unknown as readonly FrozenDateProgressV1[];
 }
 
 function readMealHistory(
@@ -1702,9 +1809,13 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         "ignored",
         "read_only_result",
         undefined,
-        progress,
+        progress?.daily_progress,
         meals,
         inventory,
+        undefined,
+        undefined,
+        undefined,
+        progress?.progress,
       );
     } catch (error) {
       return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
@@ -1881,15 +1992,17 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           current_active: true,
           compensation_transaction_id: correctionResult.compensation_transaction_id,
         };
+        const correctionEventId = recordId(session.database, envelope, envelope.operations[0]!);
         return committedOutcome(
           request.action,
           request.operation_id,
           correctionResult.status,
-          recordId(session.database, envelope, envelope.operations[0]!),
+          correctionEventId,
           undefined,
           undefined,
           undefined,
           correctionView,
+          storedFrozenProgress(session.database, correctionEventId),
         );
       }
       const resolvedTarget = resolveCorrectionTarget({
@@ -1961,22 +2074,24 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         current_active: true,
         compensation_transaction_id: correctionResult.compensation_transaction_id,
       };
+      const correctionEventId = recordId(session.database, envelope, envelope.operations[0]!);
       return committedOutcome(
         request.action,
         request.operation_id,
         correctionResult.status,
-        recordId(session.database, envelope, envelope.operations[0]!),
+        correctionEventId,
         undefined,
         undefined,
         undefined,
         correctionView,
+        storedFrozenProgress(session.database, correctionEventId),
       );
     }
     if (parsed.command.action === "undo_record") {
       const session = acquireSession(runtime);
       let resolvedTarget;
       try {
-        resolvedTarget = resolveCorrectionTarget({
+        resolvedTarget = resolveCorrectionTargetAfterPending({
           database: session.database,
           authoritySecret: session.authoritySecret,
           conversationId: request.conversation_id,
@@ -2031,7 +2146,7 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
           message.startsWith("PREVIEW_STALE:data_revision")
         ) {
-          const rechecked = resolveCorrectionTarget({
+          const rechecked = resolveCorrectionTargetAfterPending({
             database: session.database,
             authoritySecret: session.authoritySecret,
             conversationId: request.conversation_id,
@@ -2073,20 +2188,22 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         current_active: false,
         compensation_transaction_id: correctionResult.compensation_transaction_id,
       };
+      const correctionEventId = recordId(session.database, envelope, envelope.operations[0]!);
       return committedOutcome(
         request.action,
         request.operation_id,
         correctionResult.status,
-        recordId(session.database, envelope, envelope.operations[0]!),
+        correctionEventId,
         undefined,
         undefined,
         undefined,
         correctionView,
+        storedFrozenProgress(session.database, correctionEventId),
       );
     }
     if (parsed.command.action === "restore_record") {
       const session = acquireSession(runtime);
-      const resolvedTarget = resolveCorrectionTarget({
+      const resolvedTarget = resolveCorrectionTargetAfterPending({
         database: session.database,
         authoritySecret: session.authoritySecret,
         conversationId: request.conversation_id,
@@ -2121,7 +2238,7 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
           message.startsWith("PREVIEW_STALE:data_revision")
         ) {
-          const rechecked = resolveCorrectionTarget({
+          const rechecked = resolveCorrectionTargetAfterPending({
             database: session.database,
             authoritySecret: session.authoritySecret,
             conversationId: request.conversation_id,
@@ -2163,15 +2280,17 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         current_active: true,
         compensation_transaction_id: correctionResult.compensation_transaction_id,
       };
+      const correctionEventId = recordId(session.database, envelope, envelope.operations[0]!);
       return committedOutcome(
         request.action,
         request.operation_id,
         correctionResult.status,
-        recordId(session.database, envelope, envelope.operations[0]!),
+        correctionEventId,
         undefined,
         undefined,
         undefined,
         correctionView,
+        storedFrozenProgress(session.database, correctionEventId),
       );
     }
     const result = executeCandidate(runtime, request, parsed.command);
@@ -2211,7 +2330,19 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         },
       );
     }
-    return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
+    return committedOutcome(
+      request.action,
+      request.operation_id,
+      result.status,
+      result.record_id,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      parsed.command.action === "record_meal" || parsed.command.action === "record_water"
+        ? storedFrozenProgress(acquireSession(runtime).database, result.record_id)
+        : undefined,
+    );
   } catch (error) {
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
   }
@@ -2715,6 +2846,7 @@ async function handleNutritionSupplement(
       session,
       correctionResolution,
     );
+    const frozenProgress = storedFrozenProgress(session.database, execution.record_id);
     const supplementEvent = session.database.prepare(
       "SELECT committed_at FROM event_records WHERE event_id = ?",
     ).get(execution.record_id) as { committed_at: string } | undefined;
@@ -2732,7 +2864,17 @@ async function handleNutritionSupplement(
     try {
       assertNutritionRecordsPersisted(session.database, records);
     } catch {
-      return committedOutcome(request.action, request.operation_id, "committed_with_issues", execution.record_id);
+      return committedOutcome(
+        request.action,
+        request.operation_id,
+        "committed_with_issues",
+        execution.record_id,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        frozenProgress,
+      );
     }
     return committedOutcome(
       request.action,
@@ -2741,6 +2883,9 @@ async function handleNutritionSupplement(
       execution.record_id,
       undefined,
       [nutritionOutcomeItem(target.normalized_name, records[0]!)],
+      undefined,
+      undefined,
+      frozenProgress,
     );
   } catch (error) {
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
@@ -2802,12 +2947,17 @@ export async function handleCoreRequestAsync(
       undefined,
       material.nutrition_evidence,
     );
+    const frozenProgress = storedFrozenProgress(session.database, execution.record_id);
     const outcome = committedOutcome(
       request.action,
       request.operation_id,
       execution.status,
       execution.record_id,
       execution.record_ids,
+      undefined,
+      undefined,
+      undefined,
+      frozenProgress,
     );
     if (!outcome.committed) return outcome;
     const event = session.database.prepare("SELECT committed_at FROM event_records WHERE event_id = ?")
@@ -2832,7 +2982,8 @@ export async function handleCoreRequestAsync(
       assertNutritionRecordsPersisted(session.database, records);
     } catch {
       return committedOutcome(request.action, request.operation_id, "committed_with_issues", outcome.record_id,
-        "record_ids" in outcome ? outcome.record_ids : undefined);
+        "record_ids" in outcome ? outcome.record_ids : undefined,
+        undefined, undefined, undefined, frozenProgress);
     }
     const nutritionItems = records.map((record, index) =>
       nutritionOutcomeItem(storedItems[index]!.normalized_name, record));
@@ -2840,7 +2991,9 @@ export async function handleCoreRequestAsync(
     return committedOutcome(request.action, request.operation_id, outcome.status, outcome.record_id,
       "record_ids" in outcome ? outcome.record_ids : undefined,
       nutritionItems,
-      receipt);
+      receipt,
+      undefined,
+      frozenProgress);
   } catch (error) {
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
   }

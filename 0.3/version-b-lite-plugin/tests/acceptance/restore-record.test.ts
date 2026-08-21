@@ -180,6 +180,10 @@ describe("DEC-031 restore_record", () => {
       expect(undo).toMatchObject({
         status: "committed",
         correction: { operation: "void_event", current_active: false },
+        progress: [{ metrics: expect.arrayContaining([expect.objectContaining({
+          key: "energy_kcal",
+          current: { kind: "exact", value: "0" },
+        })]) }],
       });
 
       const afterUndo = dailySummary(runtime, "operation-restore-summary-2");
@@ -194,6 +198,10 @@ describe("DEC-031 restore_record", () => {
         status: "committed",
         committed: true,
         correction: { operation: "restore_event", current_active: true },
+        progress: [{ metrics: expect.arrayContaining([expect.objectContaining({
+          key: "energy_kcal",
+          current: (meal.progress?.[0]?.metrics.find((metric) => metric.key === "energy_kcal"))?.current,
+        })]) }],
       });
 
       const afterRestore = dailySummary(runtime, "operation-restore-summary-3");

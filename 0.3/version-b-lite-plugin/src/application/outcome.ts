@@ -14,7 +14,26 @@ import type {
   ProfileSavedOutcomeView,
   GoalRecommendationOutcomeView,
   GoalUpdateOutcomeView,
+  FrozenDateProgressV1,
 } from "../contracts.js";
+
+function freezeProgress(progress: readonly Readonly<FrozenDateProgressV1>[]): readonly FrozenDateProgressV1[] {
+  return Object.freeze(progress.map((date) => Object.freeze({
+    schema_version: date.schema_version,
+    date: date.date,
+    timezone: date.timezone,
+    goal_version_id: date.goal_version_id,
+    goal_notice: date.goal_notice,
+    metrics: Object.freeze(date.metrics.map((metric) => Object.freeze({
+      ...metric,
+      current: Object.freeze({ ...metric.current }),
+      delta: Object.freeze({ ...metric.delta }),
+      unknown_sources: Object.freeze([...metric.unknown_sources]),
+    }))),
+    generated_at: date.generated_at,
+    idempotency_key: date.idempotency_key,
+  }))) as unknown as readonly FrozenDateProgressV1[];
+}
 
 function freezeNutritionItem(item: Readonly<NutritionOutcomeItem>): NutritionOutcomeItem {
   return Object.freeze({
@@ -58,6 +77,7 @@ export function nonWritingOutcome(
   question?: string,
   missingItems?: readonly string[],
   pendingCandidate?: Readonly<PendingCandidateOutcomeView>,
+  progress?: readonly Readonly<FrozenDateProgressV1>[],
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -68,6 +88,7 @@ export function nonWritingOutcome(
     ...(question === undefined ? {} : { question }),
     ...(missingItems === undefined ? {} : { missing_items: Object.freeze([...missingItems]) }),
     ...(pendingCandidate === undefined ? {} : { pending_candidate: Object.freeze({ ...pendingCandidate }) }),
+    ...(progress === undefined ? {} : { progress: freezeProgress(progress) }),
     ...(clarification === undefined ? {} : { clarification }),
     ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
       date: dailyProgress.date,
@@ -110,6 +131,7 @@ export function committedOutcome(
   nutritionItems?: readonly Readonly<NutritionOutcomeItem>[],
   receipt?: Readonly<MealReceipt>,
   correction?: Readonly<CorrectionOutcomeView>,
+  progress?: readonly Readonly<FrozenDateProgressV1>[],
 ): CommittedOutcome {
   return Object.freeze({
     action,
@@ -139,6 +161,7 @@ export function committedOutcome(
       current_active: correction.current_active,
       compensation_transaction_id: correction.compensation_transaction_id,
     }) }),
+    ...(progress === undefined ? {} : { progress: freezeProgress(progress) }),
   });
 }
 

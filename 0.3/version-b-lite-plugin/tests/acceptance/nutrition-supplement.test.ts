@@ -151,6 +151,12 @@ it("appends a nutrition supplement fact and preserves the original unknown snaps
     } as const;
     const supplement = await handleCoreRequestAsync(runtime, supplementRequest);
     expect(supplement.committed, JSON.stringify(supplement)).toBe(true);
+    expect(supplement).toMatchObject({
+      progress: [{ metrics: expect.arrayContaining([
+        expect.objectContaining({ key: "energy_kcal", current: { kind: "exact", value: "160" } }),
+        expect.objectContaining({ key: "fiber_g", current: { kind: "unknown" } }),
+      ]) }],
+    });
     expect(supplement.record_id).not.toBe(meal.record_id);
     const replay = await handleCoreRequestAsync(runtime, supplementRequest);
     expect(replay).toEqual(supplement);
