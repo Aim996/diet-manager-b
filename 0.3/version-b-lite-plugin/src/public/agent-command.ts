@@ -1,12 +1,32 @@
 import { isProxy } from "node:util/types";
 
-import { dietManagerActions, type DietManagerAction } from "../contracts.js";
+import {
+  dietManagerActions,
+  type DietManagerAction,
+} from "../contracts/actions.js";
+import {
+  AGENT_COMMAND_V1_SCHEMA_VERSION,
+  AGENT_COMMAND_V2_SCHEMA_VERSION,
+  agentCommandParametersSchema,
+  agentCommandV1Schema,
+  agentCommandV2Schema,
+  cloneAgentCommandV2,
+  type AgentCommandV2,
+} from "../contracts/agent-command-v2.js";
 import {
   cloneSemanticCandidate,
   type SemanticMealCandidateV1,
 } from "../semantic/candidate.js";
 
-export const AGENT_COMMAND_SCHEMA_VERSION = "diet-manager/agent-command/v1" as const;
+export const AGENT_COMMAND_SCHEMA_VERSION = AGENT_COMMAND_V1_SCHEMA_VERSION;
+export {
+  AGENT_COMMAND_V2_SCHEMA_VERSION,
+  agentCommandParametersSchema,
+  agentCommandV1Schema,
+  agentCommandV2Schema,
+  cloneAgentCommandV2,
+};
+export type { AgentCommandV2 };
 
 export interface AgentCommandV1 {
   readonly schema_version: typeof AGENT_COMMAND_SCHEMA_VERSION;
@@ -14,6 +34,7 @@ export interface AgentCommandV1 {
   readonly source_text: string;
   readonly semantic_candidate?: SemanticMealCandidateV1;
 }
+export type AgentCommand = AgentCommandV1 | AgentCommandV2;
 
 export interface HostExecutionContextV1 {
   readonly received_at: string;
@@ -101,6 +122,17 @@ export function cloneAgentCommandV1(value: unknown): Readonly<AgentCommandV1> {
     source_text: sourceText,
     semantic_candidate: candidate,
   });
+}
+
+export function cloneAgentCommand(value: unknown): Readonly<AgentCommand> {
+  if (typeof value !== "object" || value === null || isProxy(value)) invalid("shape");
+  const descriptor = Object.getOwnPropertyDescriptor(value, "schema_version");
+  if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) {
+    return invalid("schema_version:descriptor");
+  }
+  if (descriptor.value === AGENT_COMMAND_V1_SCHEMA_VERSION) return cloneAgentCommandV1(value);
+  if (descriptor.value === AGENT_COMMAND_V2_SCHEMA_VERSION) return cloneAgentCommandV2(value);
+  return invalid("schema_version");
 }
 
 export function cloneHostExecutionContextV1(value: unknown): Readonly<HostExecutionContextV1> {

@@ -14,8 +14,21 @@ export type {
 
 export {
   assertDietManagerOutcome,
+  agentCommandParametersSchema,
+  agentCommandV1Schema,
+  agentCommandV2Schema,
   dietManagerContract,
   dietManagerStatuses,
+  frozenDateProgressV1Schema,
+  frozenIngestionOutcomeV2Schema,
+  frozenReceiptV1Schema,
+  semanticProposalV2Schema,
+} from "./contracts.js";
+export type {
+  FrozenDateProgressV1,
+  FrozenIngestionOutcomeV2,
+  FrozenReceiptV1,
+  SemanticProposalV2,
 } from "./contracts.js";
 
 export type { SemanticMealCandidateV1 } from "./semantic/candidate.js";
@@ -41,10 +54,15 @@ export type {
 
 export {
   AGENT_COMMAND_SCHEMA_VERSION,
+  AGENT_COMMAND_V2_SCHEMA_VERSION,
+  cloneAgentCommand,
   cloneAgentCommandV1,
+  cloneAgentCommandV2,
 } from "./public/agent-command.js";
 export type {
+  AgentCommand,
   AgentCommandV1,
+  AgentCommandV2,
   HostExecutionContextV1,
 } from "./public/agent-command.js";
 export { executeAgentCommand } from "./public/execute.js";

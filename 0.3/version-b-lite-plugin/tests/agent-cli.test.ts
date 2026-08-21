@@ -189,6 +189,33 @@ describe("standalone agent JSON CLI", () => {
     expect(query.meal_history?.meals).toHaveLength(1);
   }, 60_000);
 
+  it("accepts Agent Command v2 through the same standalone CLI boundary", () => {
+    const root = newRoot("diet-agent-cli-v2-");
+    const result = parseSuccessfulOutcome(runCli(root, {
+      schema_version: "diet-manager/agent-command/v2",
+      action: "record_water",
+      source_text: "我喝了500毫升白水",
+      semantic_proposal: {
+        kind: "water",
+        subject: {
+          kind: "self",
+          basis: "explicit",
+          evidence_span: "我",
+          explicit_other_spans: [],
+        },
+        amount: {
+          kind: "exact",
+          value: 500,
+          unit: "ml",
+          evidence_span: "500毫升",
+        },
+        occurred_at: { kind: "unspecified", evidence_span: null },
+      },
+    }));
+
+    expect(result).toMatchObject({ action: "record_water", committed: true });
+  });
+
   it("requires exactly the execute subcommand so protocol typos cannot open the runtime", () => {
     const root = newRoot();
     const result = runRawCli({

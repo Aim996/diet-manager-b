@@ -65,18 +65,32 @@ function mealParams(): Record<string, unknown> {
 describe("SEL-CORE Task 9 OpenClaw adapter", () => {
   it("publishes only exact ordinary request fields and no authority parameters", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
-    const properties = metadata?.tools[0]?.parameters.properties as Record<string, unknown>;
-    expect(Object.keys(properties).sort()).toEqual([
+    const branches = metadata?.tools[0]?.parameters.anyOf as Array<{
+      properties: Record<string, unknown>;
+      required: string[];
+      additionalProperties: boolean;
+    }>;
+    const legacyProperties = branches[0]!.properties;
+    const v2Properties = branches[2]!.properties;
+    expect(Object.keys(legacyProperties).sort()).toEqual([
       "action",
       "items",
       "occurred_at_text",
       "semantic_candidate",
       "source_text",
     ]);
-    expect(metadata?.tools[0]?.parameters).toMatchObject({
-      required: ["action"],
-      additionalProperties: false,
-    });
+    expect(Object.keys(v2Properties).sort()).toEqual([
+      "action",
+      "schema_version",
+      "semantic_proposal",
+      "source_text",
+    ]);
+    expect(branches.map((branch) => branch.required)).toEqual([
+      ["action"],
+      ["schema_version", "action", "source_text"],
+      ["schema_version", "action", "source_text"],
+    ]);
+    expect(branches.every((branch) => branch.additionalProperties === false)).toBe(true);
     for (const forbidden of [
       "official_data_root",
       "secret",
@@ -84,7 +98,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       "data_revision",
       "prior_context",
     ]) {
-      expect(properties).not.toHaveProperty(forbidden);
+      for (const branch of branches) expect(branch.properties).not.toHaveProperty(forbidden);
     }
   });
 

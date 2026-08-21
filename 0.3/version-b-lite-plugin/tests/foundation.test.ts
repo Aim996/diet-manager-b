@@ -72,21 +72,32 @@ describe("diet manager B core plugin boundary", () => {
     expect(manifest).not.toHaveProperty("tools");
     expect(metadata?.tools.map((tool) => tool.name)).toEqual(["diet_manager"]);
 
-    const actionSchema = dietManagerParameters.properties.action as {
+    const parameterBranches = dietManagerParameters.anyOf;
+    const legacyParameters = parameterBranches[0]!;
+    const v2Parameters = parameterBranches[2]!;
+    const actionSchema = legacyParameters.properties.action as {
       anyOf: Array<{ const: string }>;
     };
     expect(actionSchema.anyOf.map((item) => item.const)).toEqual(expectedActions);
-    expect(Object.keys(dietManagerParameters.properties).sort()).toEqual([
+    expect(Object.keys(legacyParameters.properties).sort()).toEqual([
       "action",
       "items",
       "occurred_at_text",
       "semantic_candidate",
       "source_text",
     ]);
-    expect(dietManagerParameters.required).toEqual(["action"]);
-    expect(dietManagerParameters.additionalProperties).toBe(false);
+    expect(Object.keys(v2Parameters.properties).sort()).toEqual([
+      "action",
+      "schema_version",
+      "semantic_proposal",
+      "source_text",
+    ]);
+    expect(legacyParameters.required).toEqual(["action"]);
+    expect(parameterBranches[1]!.required).toEqual(["schema_version", "action", "source_text"]);
+    expect(v2Parameters.required).toEqual(["schema_version", "action", "source_text"]);
+    expect(parameterBranches.every((branch) => branch.additionalProperties === false)).toBe(true);
     for (const field of ["official_data_root", "secret", "token", "data_revision", "prior_context"]) {
-      expect(dietManagerParameters.properties).not.toHaveProperty(field);
+      for (const branch of parameterBranches) expect(branch.properties).not.toHaveProperty(field);
     }
   });
 
@@ -121,7 +132,7 @@ describe("diet manager B core plugin boundary", () => {
   test("teaches natural-language callers the complete runtime authority recipe", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
     const tool = metadata?.tools[0];
-    const properties = dietManagerParameters.properties as Record<string, {
+    const properties = dietManagerParameters.anyOf[2]!.properties as Record<string, {
       description?: string;
     }>;
 
@@ -137,7 +148,9 @@ describe("diet manager B core plugin boundary", () => {
     expect(tool?.description).toContain("Never advise the user to repeat the same unchanged request");
     expect(properties.source_text?.description).toContain("Copy the user's current message verbatim");
     for (const field of ["received_at", "timezone", "operation_id", "source_message_id", "conversation_id"]) {
-      expect(properties).not.toHaveProperty(field);
+      for (const branch of dietManagerParameters.anyOf) {
+        expect(branch.properties).not.toHaveProperty(field);
+      }
     }
   });
 

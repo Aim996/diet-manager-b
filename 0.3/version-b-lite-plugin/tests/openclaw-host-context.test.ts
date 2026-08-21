@@ -44,13 +44,21 @@ function registerPlugin(
 describe("OpenClaw trusted host context", () => {
   it("keeps host authority out of the model schema", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
-    const properties = metadata?.tools[0]?.parameters.properties ?? {};
+    const branches = metadata?.tools[0]?.parameters.anyOf as Array<{
+      properties: Record<string, unknown>;
+    }>;
 
-    expect(Object.keys(properties).sort()).toEqual([
+    expect(Object.keys(branches[0]!.properties).sort()).toEqual([
       "action",
       "items",
       "occurred_at_text",
       "semantic_candidate",
+      "source_text",
+    ]);
+    expect(Object.keys(branches[2]!.properties).sort()).toEqual([
+      "action",
+      "schema_version",
+      "semantic_proposal",
       "source_text",
     ]);
     for (const field of [
@@ -60,7 +68,44 @@ describe("OpenClaw trusted host context", () => {
       "source_message_id",
       "conversation_id",
     ]) {
-      expect(properties).not.toHaveProperty(field);
+      for (const branch of branches) expect(branch.properties).not.toHaveProperty(field);
+    }
+  });
+
+  it("executes a v2 tool command while keeping host authority adapter-owned", async () => {
+    const root = mkdtempSync(join(tmpdir(), "diet-openclaw-host-context-v2-"));
+    const registered = registerPlugin(root);
+    try {
+      const result = await registered.tool.execute("trusted-tool-call-v2-001", {
+        schema_version: "diet-manager/agent-command/v2",
+        action: "record_water",
+        source_text: "我喝了500毫升白水",
+        semantic_proposal: {
+          kind: "water",
+          subject: {
+            kind: "self",
+            basis: "explicit",
+            evidence_span: "我",
+            explicit_other_spans: [],
+          },
+          amount: {
+            kind: "exact",
+            value: 500,
+            unit: "ml",
+            evidence_span: "500毫升",
+          },
+          occurred_at: { kind: "unspecified", evidence_span: null },
+        },
+      });
+
+      expect(result.details).toMatchObject({
+        action: "record_water",
+        committed: true,
+        operation_id: expect.stringMatching(/^openclaw-operation-[a-f0-9]{64}$/u),
+      });
+    } finally {
+      await registered.cleanup();
+      rmSync(root, { recursive: true, force: false });
     }
   });
 

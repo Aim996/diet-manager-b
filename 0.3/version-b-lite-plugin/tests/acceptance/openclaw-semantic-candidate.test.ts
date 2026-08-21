@@ -97,12 +97,15 @@ describe("OpenClaw semantic meal candidate boundary", () => {
   it("registers the exact optional semantic meal candidate schema", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
     const parameters = metadata?.tools[0]?.parameters as {
-      required?: string[];
-      properties?: Record<string, unknown>;
+      anyOf?: Array<{
+        required?: string[];
+        properties?: Record<string, unknown>;
+      }>;
     };
+    const legacyParameters = parameters.anyOf?.[0];
 
-    expect(parameters.required).toEqual(["action"]);
-    expect(parameters.properties?.semantic_candidate).toEqual({
+    expect(legacyParameters?.required).toEqual(["action"]);
+    expect(legacyParameters?.properties?.semantic_candidate).toEqual({
       type: "object",
       additionalProperties: false,
       required: ["schema_version", "intent", "source_text", "subject", "items", "time"],

@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,6 +47,8 @@ describe("public package boundary", () => {
   it("keeps the root import portable and gives OpenClaw a separate entry", () => {
     expect(portable).toHaveProperty("executeAgentCommand");
     expect(portable).toHaveProperty("createCoreRuntime");
+    expect(portable).toHaveProperty("agentCommandV2Schema");
+    expect(portable).toHaveProperty("semanticProposalV2Schema");
     expect(portable).not.toHaveProperty("default");
     expect(openClawEntry).toHaveProperty("register");
   });
@@ -80,12 +83,16 @@ describe("public package boundary", () => {
     expect(readFileSync(openClawDeclaration, "utf8")).toContain("./plugin.js");
   });
 
-  it("imports the compiled root without resolving OpenClaw or typebox", () => {
+  it("imports the compiled root with its declared TypeBox dependency and without OpenClaw", () => {
     const root = temporaryDirectory("diet-manager-portable-root-");
     expect(nodeModulesAncestor(root)).toBeUndefined();
 
     const isolatedDist = join(root, "dist");
     cpSync(join(projectRoot, "dist"), isolatedDist, { recursive: true });
+    const isolatedTypeBox = join(root, "node_modules", "typebox");
+    cpSync(realpathSync(join(projectRoot, "node_modules", "typebox")), isolatedTypeBox, {
+      recursive: true,
+    });
     const entryUrl = pathToFileURL(join(isolatedDist, "index.js")).href;
     const child = spawnSync(process.execPath, [
       "--input-type=module",
@@ -94,6 +101,7 @@ describe("public package boundary", () => {
         "const entry = await import(process.argv[1]);",
         "if (typeof entry.executeAgentCommand !== 'function') throw new Error('missing executeAgentCommand');",
         "if (typeof entry.createCoreRuntime !== 'function') throw new Error('missing createCoreRuntime');",
+        "if (entry.agentCommandV2Schema?.properties?.schema_version?.const !== 'diet-manager/agent-command/v2') throw new Error('missing v2 schema');",
         "if (Object.hasOwn(entry, 'default')) throw new Error('unexpected default export');",
       ].join("\n"),
       entryUrl,

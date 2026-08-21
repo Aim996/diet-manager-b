@@ -1,24 +1,15 @@
-export const dietManagerContract = Object.freeze({
-  id: "diet-manager/contract-v3",
-  version: 3,
-  sha256: "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC",
-} as const);
+import {
+  dietManagerActions,
+  type DietManagerAction,
+} from "./contracts/actions.js";
 
-export const dietManagerActions = [
-  "record_meal",
-  "record_water",
-  "add_inventory",
-  "query_inventory",
-  "query_meals",
-  "query_daily_summary",
-  "correct_record",
-  "undo_record",
-  "set_profile",
-  "set_goal",
-  "restore_record",
-] as const;
-
-export type DietManagerAction = (typeof dietManagerActions)[number];
+export { dietManagerActions } from "./contracts/actions.js";
+export type { DietManagerAction } from "./contracts/actions.js";
+export { dietManagerContract } from "./contracts/identity.js";
+export * from "./contracts/agent-command-v2.js";
+export * from "./contracts/semantic-proposal-v2.js";
+export * from "./contracts/outcome-v2.js";
+export * from "./contracts/progress-receipt-v1.js";
 
 export const dietManagerStatuses = [
   "committed",

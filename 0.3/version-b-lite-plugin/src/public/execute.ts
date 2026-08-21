@@ -2,18 +2,18 @@ import { handleCoreRequestAsync } from "../application/command-handler.js";
 import type { CoreRuntime } from "../application/runtime.js";
 import { assertDietManagerOutcome, type DietManagerOutcome } from "../contracts.js";
 import {
-  cloneAgentCommandV1,
+  cloneAgentCommand,
   cloneHostExecutionContextV1,
-  type AgentCommandV1,
+  type AgentCommand,
   type HostExecutionContextV1,
 } from "./agent-command.js";
 
 export async function executeAgentCommand(
   runtime: CoreRuntime,
-  commandValue: AgentCommandV1,
+  commandValue: AgentCommand,
   contextValue: HostExecutionContextV1,
 ): Promise<DietManagerOutcome> {
-  const command = cloneAgentCommandV1(commandValue);
+  const command = cloneAgentCommand(commandValue);
   const context = cloneHostExecutionContextV1(contextValue);
   return assertDietManagerOutcome(await handleCoreRequestAsync(runtime, {
     action: command.action,
@@ -24,8 +24,9 @@ export async function executeAgentCommand(
     source_message_id: context.source_message_id,
     conversation_id: context.conversation_id,
     prior_context: [],
-    ...(command.semantic_candidate === undefined
-      ? {}
-      : { semantic_candidate: command.semantic_candidate }),
+    ...(command.schema_version === "diet-manager/agent-command/v1" &&
+      command.semantic_candidate !== undefined
+      ? { semantic_candidate: command.semantic_candidate }
+      : {}),
   }));
 }

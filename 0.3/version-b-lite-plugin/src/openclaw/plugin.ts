@@ -10,8 +10,11 @@ import { failedOutcome } from "../application/outcome.js";
 import { createCoreRuntime, type CoreRuntime } from "../application/runtime.js";
 import {
   AGENT_COMMAND_SCHEMA_VERSION,
+  AGENT_COMMAND_V2_SCHEMA_VERSION,
+  agentCommandParametersSchema,
+  cloneAgentCommandV2,
   cloneAgentCommandV1,
-  type AgentCommandV1,
+  type AgentCommand,
   type HostExecutionContextV1,
 } from "../public/agent-command.js";
 import { executeAgentCommand } from "../public/execute.js";
@@ -23,7 +26,6 @@ import { OfflineUsdaAdapter } from "../nutrition/offline-usda.js";
 import { FoodDataCentralAdapter } from "../nutrition/adapters/fooddata-central.js";
 import { FoodDataCentralHttpTransport } from "../nutrition/adapters/fooddata-central-http.js";
 import type { NutritionRuntimeConfig, NutritionSourceAdapter, SourceContext } from "../nutrition/types.js";
-import { cloneSemanticCandidate } from "../semantic/candidate.js";
 import {
   assertDietManagerOutcome,
   dietManagerActions,
@@ -32,117 +34,7 @@ import {
   type DietManagerOutcome,
 } from "../contracts.js";
 
-const actionSchema = Type.Union([
-  Type.Literal("record_meal"),
-  Type.Literal("record_water"),
-  Type.Literal("add_inventory"),
-  Type.Literal("query_inventory"),
-  Type.Literal("query_meals"),
-  Type.Literal("query_daily_summary"),
-  Type.Literal("correct_record"),
-  Type.Literal("undo_record"),
-  Type.Literal("set_profile"),
-  Type.Literal("set_goal"),
-  Type.Literal("restore_record"),
-]);
-
-const legacyItemSchema = Type.Object(
-  {
-    name: Type.String(),
-    quantity: Type.Optional(Type.Number()),
-    unit: Type.Optional(Type.String()),
-    per_item_amount: Type.Optional(Type.Number()),
-    per_item_unit: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-
-const exactAmountSchema = Type.Object(
-  {
-    kind: Type.Literal("exact"),
-    value: Type.Number({ exclusiveMinimum: 0 }),
-    unit: Type.String({ minLength: 1, maxLength: 64 }),
-    evidence_span: Type.String({ minLength: 1, maxLength: 256 }),
-  },
-  { additionalProperties: false },
-);
-
-const unknownAmountSchema = Type.Object(
-  { kind: Type.Literal("unknown") },
-  { additionalProperties: false },
-);
-
-const semanticMealCandidateSchema = Type.Object(
-  {
-    schema_version: Type.Literal("diet-manager/semantic-candidate/v1"),
-    intent: Type.Literal("record_meal"),
-    source_text: Type.String({ minLength: 1, maxLength: 4096 }),
-    subject: Type.Object(
-      {
-        kind: Type.Literal("self"),
-        basis: Type.Union([
-          Type.Literal("explicit"),
-          Type.Literal("private_agent_default"),
-        ]),
-        evidence_span: Type.Union([
-          Type.String({ minLength: 1, maxLength: 256 }),
-          Type.Null(),
-        ]),
-        explicit_other_spans: Type.Array(
-          Type.String({ minLength: 1, maxLength: 256 }),
-          { minItems: 0, maxItems: 64 },
-        ),
-      },
-      { additionalProperties: false },
-    ),
-    items: Type.Array(
-      Type.Object(
-        {
-          raw_name: Type.String({ minLength: 1, maxLength: 256 }),
-          normalized_hint: Type.String({ minLength: 1, maxLength: 256 }),
-          amount: Type.Union([exactAmountSchema, unknownAmountSchema]),
-        },
-        { additionalProperties: false },
-      ),
-      { minItems: 1, maxItems: 64 },
-    ),
-    time: Type.Object(
-      {
-        kind: Type.Union([
-          Type.Literal("source_text"),
-          Type.Literal("unspecified"),
-        ]),
-        evidence_span: Type.Union([
-          Type.String({ minLength: 1, maxLength: 256 }),
-          Type.Null(),
-        ]),
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const dietManagerParameters = Type.Object(
-  {
-    action: actionSchema,
-    source_text: Type.Optional(Type.String({
-      description:
-        "Copy the user's current message verbatim; never normalize or invent food facts.",
-    })),
-    occurred_at_text: Type.Optional(Type.String({
-      description: "Legacy compatibility evidence; never substitutes for received_at.",
-    })),
-    items: Type.Optional(Type.Array(legacyItemSchema, {
-      description: "Legacy compatibility evidence; the core parses source_text authoritatively.",
-    })),
-    semantic_candidate: Type.Optional(semanticMealCandidateSchema),
-  },
-  {
-    additionalProperties: false,
-    "x-diet-manager-contract": dietManagerContract,
-  },
-);
+export const dietManagerParameters = agentCommandParametersSchema;
 
 const nutritionSourceConfigSchema = Type.Object({
   source_id: Type.Literal("public.usda_fooddata_central"),
@@ -184,6 +76,8 @@ const PARAMETER_FIELDS = Object.freeze([
   "occurred_at_text",
   "items",
   "semantic_candidate",
+  "schema_version",
+  "semantic_proposal",
 ] as const);
 
 interface PluginRuntimeState {
@@ -255,15 +149,40 @@ function dataDescriptors(
   return descriptors;
 }
 
-function cloneToolRequest(value: unknown): Readonly<AgentCommandV1> {
+function cloneToolRequest(value: unknown): Readonly<AgentCommand> {
   const descriptors = dataDescriptors(value, PARAMETER_FIELDS, ["action", "source_text"]);
+  const schemaVersion = descriptors.schema_version?.value;
+  if (schemaVersion === AGENT_COMMAND_V2_SCHEMA_VERSION) {
+    if (descriptors.occurred_at_text !== undefined || descriptors.items !== undefined ||
+        descriptors.semantic_candidate !== undefined) {
+      throw new TypeError("OPENCLAW_AUTHORITY_INVALID:v2_legacy_fields");
+    }
+    return cloneAgentCommandV2({
+      schema_version: AGENT_COMMAND_V2_SCHEMA_VERSION,
+      action: descriptors.action?.value,
+      source_text: descriptors.source_text?.value,
+      ...(descriptors.semantic_proposal === undefined
+        ? {}
+        : { semantic_proposal: descriptors.semantic_proposal.value }),
+    });
+  }
+  if (schemaVersion !== undefined && schemaVersion !== AGENT_COMMAND_SCHEMA_VERSION) {
+    throw new TypeError("OPENCLAW_AUTHORITY_INVALID:schema_version");
+  }
+  if (descriptors.semantic_proposal !== undefined) {
+    throw new TypeError("OPENCLAW_AUTHORITY_INVALID:semantic_proposal_version");
+  }
+  if (schemaVersion === AGENT_COMMAND_SCHEMA_VERSION &&
+      (descriptors.occurred_at_text !== undefined || descriptors.items !== undefined)) {
+    throw new TypeError("OPENCLAW_AUTHORITY_INVALID:v1_legacy_fields");
+  }
   return cloneAgentCommandV1({
     schema_version: AGENT_COMMAND_SCHEMA_VERSION,
     action: descriptors.action?.value,
     source_text: descriptors.source_text?.value,
     ...(descriptors.semantic_candidate === undefined
       ? {}
-      : { semantic_candidate: cloneSemanticCandidate(descriptors.semantic_candidate.value) }),
+      : { semantic_candidate: descriptors.semantic_candidate.value }),
   });
 }
 
@@ -434,7 +353,7 @@ async function executeDietManager(
       "APPLICATION_AUTHORITY_REQUIRED",
     ));
   }
-  let request: Readonly<AgentCommandV1>;
+  let request: Readonly<AgentCommand>;
   try {
     request = cloneToolRequest(value);
   } catch {
@@ -482,7 +401,7 @@ async function executeDietManager(
 }
 
 const DIET_MANAGER_DESCRIPTION =
-  "Record/query Diet Manager facts. Send action and the exact source_text only; OpenClaw supplies trusted timing, operation, message, and conversation authority outside model parameters. For record_meal, when the user's natural wording is not safely represented by the legacy parser, send semantic_candidate with the exact same source_text, explicit evidence spans, and unknown amounts left unknown. Never invent amounts, units, times, people, or normalized food names. An explicit other person overrides private-agent default self. Follow committed/status/reason_code/error_code exactly in the final reply. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.";
+  "Record/query Diet Manager facts. Send action and the exact source_text only as authoritative message content. Prefer Agent Command v2 with schema_version and the matching semantic_proposal; the unversioned and v1 branches remain compatibility paths. OpenClaw supplies trusted timing, operation, message, and conversation authority outside model parameters. For legacy record_meal calls, when the user's natural wording is not safely represented by the legacy parser, send semantic_candidate with the exact same source_text, explicit evidence spans, and unknown amounts left unknown. Never invent amounts, units, times, people, or normalized food names. An explicit other person overrides private-agent default self. Follow committed/status/reason_code/error_code exactly in the final reply. Call diet_manager at most once for one inbound message. After a non-committed write result, do not retry, inspect files, run commands, use memory, or switch to another tool; report the result and ask only the returned clarification. When committed=false, the first sentence must say the request was not recorded. Never say recorded, noted, saved, or updated when committed=false. Never advise the user to repeat the same unchanged request after a failed, conflicting, or unimplemented result; ask only for a genuinely missing quantity, specification, or time. For an explicit future plan or negative statement, make no tool call, say it was not recorded, and only create a reminder when the user explicitly asks. For read_only_result, answer only from the returned data without claiming a write; do not write a note, memory, or fallback record. Keep the reply to the result and one necessary clarification. Do not add encouragement, onboarding, capability offers, or reminder suggestions. Use only returned nutrition data and never estimate nutrition values yourself.";
 
 export default defineToolPlugin({
   id: "diet-manager-b",

@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 
 import {
-  cloneAgentCommandV1,
+  cloneAgentCommand,
   createCoreRuntime,
   executeAgentCommand,
 } from "../index.js";
@@ -166,7 +166,7 @@ function parseCommand(input: string) {
     return invalidInput();
   }
   try {
-    return cloneAgentCommandV1(value);
+    return cloneAgentCommand(value);
   } catch {
     return invalidInput();
   }
