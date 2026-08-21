@@ -257,7 +257,13 @@ it("stores unknown nutrition when no allowlisted source is configured", async ()
           unit: "ml",
           derived: false,
           nutrition: { status: "unknown", source: "unknown" },
-          inventory: { status: "skipped_insufficient" },
+          inventory: {
+            status: "skipped_insufficient",
+            deducted_quantity: 0,
+            deducted_unit: null,
+            shortage_quantity: 250,
+            message: "未匹配有效库存",
+          },
         }],
       },
       nutrition_items: [{

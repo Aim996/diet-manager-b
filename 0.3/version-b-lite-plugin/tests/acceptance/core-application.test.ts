@@ -1657,6 +1657,15 @@ describe("SEL-CORE Task 8 truthful public application outcomes", () => {
           unit: "carton",
           quantity_status: "available",
           effective_status: "active",
+          quantity_balance: {
+            package_unit: "carton",
+            package_milliunits: 24_000,
+            whole_packages: 24,
+            base_unit: "ml",
+            remaining_base_microunits: 6_000_000,
+            remainder_base_microunits: 0,
+            revision: 1,
+          },
         }] },
       });
       expect(assertDietManagerOutcome(meals)).toBe(meals);

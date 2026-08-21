@@ -17,7 +17,18 @@ import type {
 } from "../domain/types.js";
 import { buildPantryPurchaseReceiptItem } from "../domain/receipt.js";
 import { deriveDomainId } from "../domain/identity.js";
+import {
+  availableInventoryMicrounits,
+  consumeInventoryQuantity,
+  createInventoryQuantityFromPackageEvidence,
+  inventoryQuantityBalance,
+} from "../domain/inventory-quantity.js";
 import type { PreparedEnvelopeOperation } from "../repository/fact-commit.js";
+import {
+  consumeInventoryQuantityRemaining,
+  readInventoryQuantityModel,
+  type InventoryQuantityModel,
+} from "../repository/inventory-quantity-repository.js";
 import {
   assertAppliedInventoryLocationCorrectionAuthority,
   assertAuthenticatedInventoryLocationCorrectionFactAuthority,
@@ -33,6 +44,17 @@ export interface PreparePantryPurchaseInput {
   readonly quantity_microunits: number | null;
   readonly unit: string;
   readonly template_reference_microunits: number | null;
+}
+
+function domainInventoryQuantity(model: Readonly<InventoryQuantityModel>) {
+  return Object.freeze({
+    package_unit: model.package_unit,
+    original_package_microunits: model.original_package_microunits,
+    per_package_base_microunits: model.per_package_base_microunits,
+    base_unit: model.base_unit,
+    remaining_base_microunits: model.remaining_base_microunits,
+    conversion_source: model.conversion_source,
+  });
 }
 
 export interface PreparedPantryPurchase {
@@ -397,7 +419,6 @@ export function parseInventoryAllocationPlan(value: unknown): Readonly<Inventory
     return invalid("inventory_allocation_batches");
   }
   const issueByStatus: Readonly<Record<string, InventoryAllocationPlan["issue_code"]>> = Object.freeze({
-    matched: null,
     skipped_outside: null,
     skipped_by_user: null,
     skipped_amount_unknown: "inventory_amount_unknown",
@@ -406,7 +427,9 @@ export function parseInventoryAllocationPlan(value: unknown): Readonly<Inventory
     skipped_insufficient: "inventory_insufficient",
   });
   const issue = record.issue_code;
-  if (issue !== issueByStatus[record.status]) return invalid("inventory_allocation_issue");
+  if (record.status === "matched") {
+    if (issue !== null && issue !== "inventory_insufficient") return invalid("inventory_allocation_issue");
+  } else if (issue !== issueByStatus[record.status]) return invalid("inventory_allocation_issue");
   const noRead = record.status === "skipped_outside" || record.status === "skipped_by_user" ||
     record.status === "skipped_amount_unknown";
   if (record.read_required !== !noRead) return invalid("inventory_allocation_read_required");
@@ -415,7 +438,10 @@ export function parseInventoryAllocationPlan(value: unknown): Readonly<Inventory
       return invalid("inventory_allocation_matched");
     }
     const total = allocations.reduce((sum, allocation) => sum + BigInt(allocation.deducted_microunits), 0n);
-    if (total !== BigInt(requested)) return invalid("inventory_allocation_total");
+    if (issue === null && total !== BigInt(requested) ||
+        issue === "inventory_insufficient" && (total <= 0n || total >= BigInt(requested))) {
+      return invalid("inventory_allocation_total");
+    }
   } else if (allocations.length !== 0) {
     return invalid("inventory_allocation_skipped");
   }
@@ -812,8 +838,10 @@ export function listPantryAllocationCandidates(
   authoritySecret: Uint8Array,
   normalizedName: string,
   occurredAt: string,
+  requestedUnit?: string,
 ): Readonly<PantryAllocationCandidateRead> | null {
   safeText(normalizedName, "inventory_candidate_name");
+  const requested = requestedUnit === undefined ? undefined : safeText(requestedUnit, "inventory_candidate_unit");
   const occurredEpoch = Date.parse(occurredAt);
   if (!Number.isFinite(occurredEpoch)) return invalid("inventory_candidate_time");
   const rows = database.prepare(
@@ -859,7 +887,27 @@ export function listPantryAllocationCandidates(
     );
     const expiration = projection.pantry_evidence.expiration.effective_at;
     const expired = expiration !== null && Date.parse(expiration) <= occurredEpoch;
-    const available = projection.quantity_microunits ?? 0;
+    const quantityModel = readInventoryQuantityModel(database, row.batch_id);
+    if (quantityModel !== undefined) {
+      const expected = createInventoryQuantityFromPackageEvidence(batch.pantry_evidence.package_quantity);
+      if (
+        expected === null || expected.package_unit !== quantityModel.package_unit ||
+        expected.original_package_microunits !== quantityModel.original_package_microunits ||
+        expected.per_package_base_microunits !== quantityModel.per_package_base_microunits ||
+        expected.base_unit !== quantityModel.base_unit || expected.conversion_source !== quantityModel.conversion_source ||
+        quantityModel.remaining_base_microunits !== null && expected.remaining_base_microunits !== null &&
+          quantityModel.remaining_base_microunits > expected.remaining_base_microunits
+      ) return invalid("inventory_quantity_model");
+    }
+    const converted = requested === undefined || quantityModel === undefined
+      ? projection.quantity_microunits
+      : availableInventoryMicrounits(
+          domainInventoryQuantity(quantityModel),
+          requested,
+          projection.quantity_microunits ?? undefined,
+        );
+    const available = converted ?? projection.quantity_microunits ?? 0;
+    const allocationUnit = converted === null || requested === undefined ? projection.unit : requested;
     const status = expired || row.effective_status === "expired"
       ? "expired" as const
       : row.effective_status === "active" && row.quantity_status === "available" && available > 0
@@ -870,7 +918,7 @@ export function listPantryAllocationCandidates(
       product_identity_fingerprint: product.identity_fingerprint,
       batch_id: row.batch_id,
       available_microunits: available,
-      unit: projection.unit,
+      unit: allocationUnit,
       effective_expiration_at: expiration,
       stocked_at: row.stocked_at,
       effective_status: status,
@@ -959,12 +1007,19 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
     }
     const projection = parseProjectionPayloadJson(row.payload_json);
     const batch = parseBatchPayloadJson(row.batch_payload_json);
+    const quantityModel = readInventoryQuantityModel(input.database, allocation.batch_id);
+    const convertedAvailable = quantityModel === undefined ? null : availableInventoryMicrounits(
+      domainInventoryQuantity(quantityModel),
+      allocation.unit,
+      projection.quantity_microunits ?? undefined,
+    );
     if (
       projection.version !== 2 || projection.pantry_evidence === null ||
       batch.version !== 2 || batch.pantry_evidence === null ||
       projection.product_id !== allocation.product_id || projection.batch_id !== allocation.batch_id ||
-      projection.quantity_microunits !== allocation.before_microunits ||
-      projection.unit !== allocation.unit
+      (quantityModel === undefined
+        ? projection.quantity_microunits !== allocation.before_microunits || projection.unit !== allocation.unit
+        : convertedAvailable !== allocation.before_microunits)
     ) return invalid("inventory_allocation_projection");
     assertCurrentInventoryLocationCorrectionLineage(
       input.database,
@@ -1005,11 +1060,37 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
         unit: allocation.unit,
       }),
     );
+    let projectionAfter = allocation.after_microunits;
+    let projectionUnit = allocation.unit;
+    let hasRemaining = allocation.after_microunits > 0;
+    if (quantityModel !== undefined) {
+      const consumed = consumeInventoryQuantity(domainInventoryQuantity(quantityModel), {
+        requested_microunits: allocation.deducted_microunits,
+        unit: allocation.unit,
+        ...(projection.quantity_microunits === null
+          ? {}
+          : { available_package_microunits: projection.quantity_microunits }),
+      });
+      if (consumed.disposition !== "applied") return invalid("inventory_quantity_consumption");
+      consumeInventoryQuantityRemaining(input.database, {
+        batch_id: quantityModel.batch_id,
+        expected_revision: quantityModel.revision,
+        expected_remaining_base_microunits: quantityModel.remaining_base_microunits,
+        remaining_base_microunits: consumed.quantity.remaining_base_microunits,
+      });
+      projectionAfter = (consumed.quantity.remaining_base_microunits === null
+        ? consumed.remaining_package_milliunits
+        : inventoryQuantityBalance(consumed.quantity).package_milliunits) * 1_000;
+      projectionUnit = quantityModel.package_unit;
+      hasRemaining = consumed.quantity.remaining_base_microunits === null
+        ? consumed.remaining_package_milliunits > 0
+        : consumed.quantity.remaining_base_microunits > 0;
+    }
     const nextPayload = createPantryProjectionPayload({
       batch_id: allocation.batch_id,
       product_id: allocation.product_id,
-      quantity_microunits: allocation.after_microunits,
-      unit: allocation.unit,
+      quantity_microunits: projectionAfter,
+      unit: projectionUnit,
       pantry_evidence: projection.pantry_evidence,
     });
     input.database.prepare(
@@ -1019,8 +1100,8 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
     ).run(
       input.event_id,
       input.committed_at,
-      allocation.after_microunits === 0 ? "empty" : "available",
-      allocation.after_microunits === 0 ? "empty" : "active",
+      hasRemaining ? "available" : "empty",
+      hasRemaining ? "active" : "empty",
       canonicalJson(nextPayload),
       allocation.batch_id,
       row.payload_json,

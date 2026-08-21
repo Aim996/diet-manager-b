@@ -41,6 +41,16 @@ import {
 import { assertEffectTransition, assertEnvelopeTransition } from "../state/transition-guard.js";
 import { deriveDomainId } from "./identity.js";
 import { toNaturalDate } from "./identity.js";
+import {
+  availableInventoryMicrounits,
+  consumeInventoryQuantity,
+  inventoryQuantityBalance,
+  restoreInventoryQuantity,
+} from "./inventory-quantity.js";
+import {
+  readInventoryQuantityModel,
+  updateInventoryQuantityRemaining,
+} from "../repository/inventory-quantity-repository.js";
 import { resolveInventoryAllocation } from "./inventory-service.js";
 import {
   validateAndFreezeInventoryLocationCorrectionFactPayload,
@@ -1497,6 +1507,7 @@ export function prepareMealInventoryPlans(
       authoritySecret,
       item.normalized_name,
       operation.occurred_at,
+      item.amount.unit,
     );
     if (read === null && operation.inventory_policy === undefined) return null;
     return resolveInventoryAllocation({
@@ -3568,9 +3579,81 @@ export function applyCorrectionEffects(
         ).get(originalTransaction.batch_id) as { payload_json: string } | undefined;
         if (!projectionRow) throw new Error("CORRECTION_EFFECT_INVALID:projection");
         const projection = parseCanonical(projectionRow.payload_json, "correction_projection");
+        const parsedProjection = parseProjectionPayloadJson(projectionRow.payload_json);
         const current = Number(projection.quantity_microunits);
-        const remaining = current - inventoryDelta;
-        if (!Number.isSafeInteger(current) || !Number.isSafeInteger(remaining) || remaining < 0) {
+        const quantityModel = readInventoryQuantityModel(input.database, originalTransaction.batch_id);
+        let transactionAfter = current - inventoryDelta;
+        let projectionAfter = transactionAfter;
+        let projectionUnit = originalTransaction.unit;
+        let hasRemaining = projectionAfter > 0;
+        let projectionPayload: Readonly<Record<string, unknown>> = Object.freeze({
+          authority_kind: "diet-manager/inventory-projection/v1" as const,
+          batch_id: originalTransaction.batch_id,
+          product_id: originalTransaction.product_id,
+          quantity_microunits: projectionAfter,
+          unit: projectionUnit,
+        });
+        let nextModelRemaining: number | null | undefined;
+        let insufficient = !Number.isSafeInteger(current) || quantityModel === undefined &&
+          (!Number.isSafeInteger(transactionAfter) || transactionAfter < 0);
+        if (!insufficient && quantityModel !== undefined) {
+          if (parsedProjection.version !== 2 || parsedProjection.pantry_evidence === null ||
+              parsedProjection.product_id !== originalTransaction.product_id ||
+              parsedProjection.batch_id !== originalTransaction.batch_id) {
+            throw new Error("CORRECTION_EFFECT_INVALID:quantity_model_projection");
+          }
+          const quantity = Object.freeze({
+            package_unit: quantityModel.package_unit,
+            original_package_microunits: quantityModel.original_package_microunits,
+            per_package_base_microunits: quantityModel.per_package_base_microunits,
+            base_unit: quantityModel.base_unit,
+            remaining_base_microunits: quantityModel.remaining_base_microunits,
+            conversion_source: quantityModel.conversion_source,
+          });
+          const transition = inventoryDelta > 0
+            ? consumeInventoryQuantity(quantity, {
+                requested_microunits: inventoryDelta,
+                unit: originalTransaction.unit,
+                ...(parsedProjection.quantity_microunits === null
+                  ? {}
+                  : { available_package_microunits: parsedProjection.quantity_microunits }),
+              })
+            : restoreInventoryQuantity(quantity, {
+                restored_microunits: -inventoryDelta,
+                unit: originalTransaction.unit,
+                ...(parsedProjection.quantity_microunits === null
+                  ? {}
+                  : { available_package_microunits: parsedProjection.quantity_microunits }),
+              });
+          if (transition.disposition === "needs_clarification") {
+            throw new Error("CORRECTION_EFFECT_INVALID:quantity_model_conversion");
+          }
+          if (transition.disposition === "partially_applied") {
+            insufficient = true;
+          } else {
+            nextModelRemaining = transition.quantity.remaining_base_microunits;
+            projectionAfter = (transition.quantity.remaining_base_microunits === null
+              ? transition.remaining_package_milliunits
+              : inventoryQuantityBalance(transition.quantity).package_milliunits) * 1_000;
+            projectionUnit = quantityModel.package_unit;
+            transactionAfter = availableInventoryMicrounits(
+              transition.quantity,
+              originalTransaction.unit,
+              projectionAfter,
+            ) ?? (() => { throw new Error("CORRECTION_EFFECT_INVALID:quantity_model_conversion"); })();
+            hasRemaining = transition.quantity.remaining_base_microunits === null
+              ? transition.remaining_package_milliunits > 0
+              : transition.quantity.remaining_base_microunits > 0;
+            projectionPayload = createPantryProjectionPayload({
+              batch_id: parsedProjection.batch_id,
+              product_id: parsedProjection.product_id,
+              quantity_microunits: projectionAfter,
+              unit: projectionUnit,
+              pantry_evidence: parsedProjection.pantry_evidence,
+            });
+          }
+        }
+        if (insufficient) {
           skippedCompensationEffectIds.add(correctionEffectId);
           issueCodes.push("inventory_insufficient");
           input.database.prepare(
@@ -3595,6 +3678,13 @@ export function applyCorrectionEffects(
             }),
           );
         } else {
+          if (quantityModel !== undefined && nextModelRemaining !== undefined) {
+            updateInventoryQuantityRemaining(input.database, {
+              batch_id: quantityModel.batch_id,
+              expected_revision: quantityModel.revision,
+              remaining_base_microunits: nextModelRemaining,
+            });
+          }
           const transactionId = deriveDomainId("transaction", input.idempotencyKey, itemOrder);
           compensationTransactionId ??= transactionId;
           input.database.prepare(
@@ -3621,7 +3711,7 @@ export function applyCorrectionEffects(
             input.now,
             canonicalJson({
               authority_kind: "diet-manager/inventory-transaction/v1",
-              quantity_after_microunits: remaining,
+              quantity_after_microunits: transactionAfter,
               quantity_delta_microunits: -inventoryDelta,
               unit: originalTransaction.unit,
             }),
@@ -3633,15 +3723,9 @@ export function applyCorrectionEffects(
           ).run(
             correctionEvent.event_id,
             input.now,
-            remaining === 0 ? "empty" : "available",
-            remaining === 0 ? "empty" : "active",
-            canonicalJson({
-              authority_kind: "diet-manager/inventory-projection/v1",
-              batch_id: originalTransaction.batch_id,
-              product_id: originalTransaction.product_id,
-              quantity_microunits: remaining,
-              unit: originalTransaction.unit,
-            }),
+            hasRemaining ? "available" : "empty",
+            hasRemaining ? "active" : "empty",
+            canonicalJson(projectionPayload),
             originalTransaction.batch_id,
           );
           if (changed(input.database) !== 1) {

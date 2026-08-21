@@ -48,6 +48,15 @@ export function computeRepositoryDataRevision(database: DatabaseSync): string {
        ORDER BY issue_id`,
     )
     .all();
+  const inventoryQuantityModels = database
+    .prepare(
+      `SELECT batch_id, package_unit, original_package_microunits,
+              per_package_base_microunits, base_unit, remaining_base_microunits,
+              conversion_source, revision
+       FROM inventory_quantity_models
+       ORDER BY batch_id`,
+    )
+    .all();
   return `repository-v1:${canonicalSha256({
     authority_kind: "diet-manager/repository-revision/v1",
     events,
@@ -55,5 +64,8 @@ export function computeRepositoryDataRevision(database: DatabaseSync): string {
     products,
     batches,
     issues,
+    ...(inventoryQuantityModels.length === 0
+      ? {}
+      : { inventory_quantity_models: inventoryQuantityModels }),
   })}`;
 }

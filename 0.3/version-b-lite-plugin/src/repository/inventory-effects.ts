@@ -14,6 +14,8 @@ import {
 } from "../storage/inventory-repository.js";
 import type { PantryPurchaseEvidence } from "../domain/types.js";
 import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
+import { createInventoryQuantityFromPackageEvidence } from "../domain/inventory-quantity.js";
+import { createInventoryQuantityModel } from "./inventory-quantity-repository.js";
 import {
   parseInventoryProjectionRow,
   type InventoryProjectionResult,
@@ -952,6 +954,21 @@ function applyAdd(
       intent.batch.quantityUnit,
       intent.batch.payloadJson,
     );
+  if (intent.batch.pantryEvidence !== null) {
+    const quantityModel = createInventoryQuantityFromPackageEvidence(
+      intent.batch.pantryEvidence.package_quantity,
+    );
+    if (quantityModel !== null) {
+      if (
+        intent.quantityMicrounits !== null && intent.unit === quantityModel.package_unit &&
+        intent.quantityMicrounits !== quantityModel.original_package_microunits * 1_000
+      ) return authorityInvalid("quantity_model_package_count");
+      createInventoryQuantityModel(database, {
+        batch_id: intent.batch.batchId,
+        ...quantityModel,
+      });
+    }
+  }
   insertTransaction(
     database,
     row,

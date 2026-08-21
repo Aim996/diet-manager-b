@@ -205,8 +205,8 @@ function input(overrides: Partial<InventoryAllocationInput> = {}): InventoryAllo
   };
 }
 
-describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
-  it("commits one meal and atomically allocates two cartons across FEFO then FIFO batches", () => {
+describe("SEL-PANTRY-001 FIFO inventory allocation", () => {
+  it("commits one meal and atomically allocates two cartons across FIFO batches", () => {
     const runtime = openDietDatabase({ privateRuntimeRoot: newTestRoot() });
     try {
       const service = createDietDomainService({
@@ -281,7 +281,7 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
       const payload = JSON.parse(stored.payload_json) as {
         inventory_plan: { allocations: Array<{ selection_basis: string }> };
       };
-      payload.inventory_plan.allocations[0]!.selection_basis = "fifo";
+      payload.inventory_plan.allocations[0]!.selection_basis = "fefo";
       runtime.database.prepare("UPDATE meal_items SET payload_json = ? WHERE item_id = ?").run(
         canonicalJson(payload),
         stored.item_id,
@@ -359,28 +359,28 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
     }
   });
 
-  it("uses all-or-none persistence when Pantry stock is insufficient", () => {
+  it("deducts the available Pantry stock without changing the larger intake fact", () => {
     const runtime = openDietDatabase({ privateRuntimeRoot: newTestRoot() });
     try {
       const service = createDietDomainService({ database: runtime.database, secret, now: () => "2026-08-14T09:00:01.000Z" });
       executeEnvelope(service, purchaseEnvelope(
         "insufficient", "fixture-batch-milk-insufficient", "2026-08-14T08:00:00.000Z", null,
-        { quantityMicrounits: 500_000 },
       ));
-      const before = runtime.database.prepare(
-        "SELECT payload_json FROM inventory_batch_projections WHERE batch_id = ?",
-      ).get("fixture-batch-milk-insufficient");
-      const result = executeEnvelope(service, mealEnvelope({ suffix: "insufficient", requestedMicrounits: 1_000_000 }));
+      const result = executeEnvelope(service, mealEnvelope({ suffix: "insufficient", requestedMicrounits: 2_000_000 }));
       expect(result).toMatchObject({
         status: "committed_with_issues",
-        items: [{ inventory_match: "skipped_insufficient", issue_codes: ["inventory_insufficient"] }],
+        items: [{
+          inventory_match: "matched",
+          issue_codes: ["inventory_insufficient"],
+          meal_items: [{ observed_microunits: 2_000_000 }],
+        }],
       });
       expect(runtime.database.prepare(
-        "SELECT payload_json FROM inventory_batch_projections WHERE batch_id = ?",
-      ).get("fixture-batch-milk-insufficient")).toEqual(before);
+        "SELECT quantity_status, json_extract(payload_json, '$.quantity_microunits') AS quantity FROM inventory_batch_projections WHERE batch_id = ?",
+      ).get("fixture-batch-milk-insufficient")).toEqual({ quantity_status: "empty", quantity: 0 });
       expect(runtime.database.prepare(
         "SELECT COUNT(*) AS count FROM inventory_transactions WHERE direction = 'out'",
-      ).get()).toEqual({ count: 0 });
+      ).get()).toEqual({ count: 1 });
     } finally {
       runtime.close();
     }
@@ -707,7 +707,7 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
     });
   });
 
-  it("allocates across same-product batches in FEFO then FIFO order", () => {
+  it("allocates across same-product batches in FIFO order regardless of expiration", () => {
     expect(resolveInventoryAllocation(input({
       requested_microunits: 2_000_000,
       candidates: [
@@ -719,8 +719,8 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
       status: "matched",
       candidate_count: 3,
       allocations: [
-        { batch_id: "batch-first", deducted_microunits: 1_000_000, selection_basis: "fefo" },
-        { batch_id: "batch-later", deducted_microunits: 1_000_000, selection_basis: "fefo" },
+        { batch_id: "batch-no-expiry", deducted_microunits: 1_000_000, selection_basis: "fifo" },
+        { batch_id: "batch-later", deducted_microunits: 1_000_000, selection_basis: "fifo" },
       ],
     });
   });
@@ -742,7 +742,7 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
     });
   });
 
-  it("prioritizes an explicit compatible batch before FEFO", () => {
+  it("prioritizes an explicit compatible batch before FIFO", () => {
     expect(resolveInventoryAllocation(input({
       specified_batch_id: "batch-specified",
       candidates: [
@@ -801,15 +801,23 @@ describe("SEL-PANTRY-001 FEFO/FIFO inventory allocation", () => {
     });
   });
 
-  it("uses all-or-none semantics when total stock is insufficient", () => {
+  it("allocates all available stock when the requested total is larger", () => {
     expect(resolveInventoryAllocation(input({
       requested_microunits: 2_000_000,
       candidates: [candidate({ batch: "batch-half", available: 500_000 })],
     }))).toEqual({
-      status: "skipped_insufficient",
+      status: "matched",
       requested_microunits: 2_000_000,
       unit: "carton",
-      allocations: [],
+      allocations: [{
+        product_id: "product-milk-whole-250",
+        batch_id: "batch-half",
+        before_microunits: 500_000,
+        deducted_microunits: 500_000,
+        after_microunits: 0,
+        unit: "carton",
+        selection_basis: "fifo",
+      }],
       candidate_count: 1,
       issue_code: "inventory_insufficient",
       read_required: true,

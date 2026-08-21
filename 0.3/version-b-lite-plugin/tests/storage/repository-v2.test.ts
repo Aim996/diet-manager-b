@@ -132,21 +132,27 @@ describe("migration v2 repositories", () => {
       const created = inventory.createInventoryQuantityModel(opened.database, {
         batch_id: "batch-v2",
         package_unit: "package",
-        original_package_microunits: 2_000_000,
-        per_package_base_microunits: 250_000_000,
+        original_package_microunits: 2_000,
+        per_package_base_microunits: 250_000,
         base_unit: "ml",
-        remaining_base_microunits: 500_000_000,
+        remaining_base_microunits: 500_000,
         conversion_source: "explicit",
       });
-      expect(created).toMatchObject({ revision: 1, remaining_base_microunits: 500_000_000 });
+      expect(created).toMatchObject({ revision: 1, remaining_base_microunits: 500_000 });
       expect(inventory.updateInventoryQuantityRemaining(opened.database, {
         batch_id: "batch-v2",
         expected_revision: 1,
-        remaining_base_microunits: 350_000_000,
-      })).toMatchObject({ revision: 2, remaining_base_microunits: 350_000_000 });
+        remaining_base_microunits: 350_000,
+      })).toMatchObject({ revision: 2, remaining_base_microunits: 350_000 });
+      expect(inventory.consumeInventoryQuantityRemaining(opened.database, {
+        batch_id: "batch-v2",
+        expected_revision: 2,
+        expected_remaining_base_microunits: 350_000,
+        remaining_base_microunits: 100_000,
+      })).toMatchObject({ revision: 3, remaining_base_microunits: 100_000 });
       expect(() => inventory.updateInventoryQuantityRemaining(opened.database, {
         batch_id: "batch-v2",
-        expected_revision: 1,
+        expected_revision: 2,
         remaining_base_microunits: 1,
       })).toThrow("INVENTORY_QUANTITY_REPOSITORY_INVALID:revision_conflict");
     } finally {

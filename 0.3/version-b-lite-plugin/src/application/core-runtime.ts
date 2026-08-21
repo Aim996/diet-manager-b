@@ -85,6 +85,12 @@ import {
   updatePendingCandidate,
   type PendingCandidate,
 } from "../repository/pending-candidate-repository.js";
+import { readInventoryQuantityModel } from "../repository/inventory-quantity-repository.js";
+import {
+  availableInventoryMicrounits,
+  createInventoryQuantityFromPackageEvidence,
+  inventoryQuantityBalance,
+} from "../domain/inventory-quantity.js";
 import {
   clonePendingCandidateDraft,
   createPendingCandidateDraft,
@@ -1576,7 +1582,53 @@ function readInventoryView(
   }));
   if (result.kind !== "inventory") throw new Error("CORE_APPLICATION_QUERY_INVALID:kind");
   return Object.freeze({
-    batches: Object.freeze(result.batches.map((batch) => Object.freeze({
+    batches: Object.freeze(result.batches.map((batch) => {
+      const model = readInventoryQuantityModel(session.database, batch.batch_id);
+      let quantityBalance;
+      if (model !== undefined) {
+        const expected = batch.pantry_evidence === undefined ? null :
+          createInventoryQuantityFromPackageEvidence(batch.pantry_evidence.package_quantity);
+        if (expected === null || expected.package_unit !== model.package_unit ||
+            expected.original_package_microunits !== model.original_package_microunits ||
+            expected.per_package_base_microunits !== model.per_package_base_microunits ||
+            expected.base_unit !== model.base_unit || expected.conversion_source !== model.conversion_source) {
+          throw new Error("CORE_APPLICATION_QUERY_INVALID:inventory_quantity_model");
+        }
+        const quantity = Object.freeze({
+          package_unit: model.package_unit,
+          original_package_microunits: model.original_package_microunits,
+          per_package_base_microunits: model.per_package_base_microunits,
+          base_unit: model.base_unit,
+          remaining_base_microunits: model.remaining_base_microunits,
+          conversion_source: model.conversion_source,
+        });
+        const derived = inventoryQuantityBalance(quantity);
+        const packageMilliunits = model.remaining_base_microunits === null
+          ? batch.quantity_microunits === null
+            ? model.original_package_microunits
+            : (() => {
+                if (batch.unit !== model.package_unit || batch.quantity_microunits % 1_000 !== 0) {
+                  throw new Error("CORE_APPLICATION_QUERY_INVALID:inventory_quantity_projection");
+                }
+                return batch.quantity_microunits / 1_000;
+              })()
+          : derived.package_milliunits;
+        if (model.remaining_base_microunits !== null) {
+          const expectedProjection = batch.quantity_microunits === null
+            ? null
+            : availableInventoryMicrounits(quantity, batch.unit);
+          if (expectedProjection === null || expectedProjection !== batch.quantity_microunits) {
+            throw new Error("CORE_APPLICATION_QUERY_INVALID:inventory_quantity_projection");
+          }
+        }
+        quantityBalance = Object.freeze({
+          ...derived,
+          package_milliunits: packageMilliunits,
+          whole_packages: Math.floor(packageMilliunits / 1_000),
+          revision: model.revision,
+        });
+      }
+      return Object.freeze({
       batch_id: batch.batch_id,
       product_id: batch.product_id,
       name: batch.normalized_name,
@@ -1587,7 +1639,9 @@ function readInventoryView(
       effective_status: batch.effective_status,
       expiration_at: batch.effective_expiration_at ?? null,
       location: batch.pantry_evidence?.location.value ?? "unknown",
-    }))),
+      ...(quantityBalance === undefined ? {} : { quantity_balance: quantityBalance }),
+    });
+    })),
   });
 }
 
@@ -2384,12 +2438,26 @@ async function resolveNutritionMaterial(
 function storedMealItems(database: DatabaseSync, eventId: string): readonly Readonly<{
   item_id: string;
   normalized_name: string;
+  payload_json: string;
 }>[] {
-  return Object.freeze(database.prepare(`SELECT item_id, normalized_name FROM meal_items
+  return Object.freeze(database.prepare(`SELECT item_id, normalized_name, payload_json FROM meal_items
     WHERE event_id = ? ORDER BY item_order`).all(eventId) as unknown as Array<{
       item_id: string;
       normalized_name: string;
+      payload_json: string;
     }>);
+}
+
+function inventoryReceiptMessage(status: MealReceiptInventoryStatus, shortageMicrounits: number | null): string {
+  if (status === "matched") return shortageMicrounits !== null && shortageMicrounits > 0
+    ? "库存不足，已扣减现有量"
+    : "库存已扣减";
+  if (status === "skipped_insufficient") return "未匹配有效库存";
+  if (status === "skipped_unit_incompatible") return "库存单位无法可靠换算";
+  if (status === "skipped_ambiguous") return "存在多个库存候选，未自动扣减";
+  if (status === "skipped_outside") return "未联动家庭库存";
+  if (status === "skipped_by_user") return "已按要求不扣库存";
+  return "数量不明确，未扣库存";
 }
 
 function storedMealReceipt(
@@ -2398,10 +2466,13 @@ function storedMealReceipt(
   nutritionItems: readonly Readonly<NutritionOutcomeItem>[],
 ): Readonly<MealReceipt> {
   const row = database.prepare(
-    `SELECT e.envelope_id,e.payload_json,f.payload_json AS finalization_payload
+    `SELECT e.envelope_id,e.payload_json,f.payload_json AS finalization_payload,c.idempotency_key
      FROM event_records e JOIN envelope_finalizations f ON f.envelope_id = e.envelope_id
+     JOIN command_envelopes c ON c.envelope_id = e.envelope_id
      WHERE e.event_id = ? AND e.event_type = 'diet_meal'`,
-  ).get(eventId) as { envelope_id: string; payload_json: string; finalization_payload: string } | undefined;
+  ).get(eventId) as {
+    envelope_id: string; payload_json: string; finalization_payload: string; idempotency_key: string;
+  } | undefined;
   if (row === undefined) throw new Error("CORE_APPLICATION_RECEIPT_INVALID:missing");
   let eventPayload: unknown;
   let finalization: unknown;
@@ -2444,6 +2515,52 @@ function storedMealReceipt(
         typeof inventory?.status !== "string" || nutrition.item_id !== stored.item_id) {
       throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item");
     }
+    let itemPayload: unknown;
+    try { itemPayload = JSON.parse(stored.payload_json); } catch {
+      throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_payload");
+    }
+    if (canonicalJson(itemPayload) !== stored.payload_json || typeof itemPayload !== "object" ||
+        itemPayload === null || Array.isArray(itemPayload) ||
+        typeof (itemPayload as Record<string, unknown>).amount !== "object" ||
+        (itemPayload as Record<string, unknown>).amount === null) {
+      throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_payload");
+    }
+    const storedAmount = (itemPayload as Record<string, unknown>).amount as Record<string, unknown>;
+    const requestedDeduction = storedAmount.inventory_deduction_microunits;
+    if (requestedDeduction !== null &&
+        (!Number.isSafeInteger(requestedDeduction) || Number(requestedDeduction) < 0)) {
+      throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_amount");
+    }
+    const effectId = deriveDomainId("effect", row.idempotency_key, index * 10);
+    const transactionRows = database.prepare(
+      `SELECT unit,payload_json FROM inventory_transactions
+       WHERE event_id = ? AND idempotency_key = ? AND direction = 'out'
+         AND reason_code = 'meal_consumption' AND lifecycle_status = 'active'
+       ORDER BY transaction_id`,
+    ).all(eventId, effectId) as Array<{ unit: string; payload_json: string }>;
+    let deductedMicrounits = 0;
+    for (const transaction of transactionRows) {
+      let payload: unknown;
+      try { payload = JSON.parse(transaction.payload_json); } catch {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
+      }
+      if (canonicalJson(payload) !== transaction.payload_json || typeof payload !== "object" ||
+          payload === null || Array.isArray(payload)) {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
+      }
+      const delta = (payload as Record<string, unknown>).quantity_delta_microunits;
+      if (!Number.isSafeInteger(delta) || Number(delta) >= 0 || transaction.unit !== amount.unit) {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
+      }
+      deductedMicrounits += -Number(delta);
+      if (!Number.isSafeInteger(deductedMicrounits)) {
+        throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
+      }
+    }
+    const shortageMicrounits = requestedDeduction === null
+      ? null
+      : Math.max(0, Number(requestedDeduction) - deductedMicrounits);
+    const inventoryStatus = inventory.status as MealReceiptInventoryStatus;
     return Object.freeze({
       item_id: stored.item_id,
       name: stored.normalized_name,
@@ -2451,7 +2568,13 @@ function storedMealReceipt(
       unit: observed === null ? null : amount.unit,
       derived: amount.evidence === "estimated",
       nutrition: Object.freeze({ status: nutrition.coverage_status, source: nutrition.source_label }),
-      inventory: Object.freeze({ status: inventory.status as MealReceiptInventoryStatus }),
+      inventory: Object.freeze({
+        status: inventoryStatus,
+        deducted_quantity: deductedMicrounits / 1_000_000,
+        deducted_unit: deductedMicrounits === 0 ? null : amount.unit,
+        shortage_quantity: shortageMicrounits === null ? null : shortageMicrounits / 1_000_000,
+        message: inventoryReceiptMessage(inventoryStatus, shortageMicrounits),
+      }),
     });
   });
   return Object.freeze({

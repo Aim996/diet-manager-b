@@ -874,22 +874,17 @@ export function resolveInventoryAllocation(
     const leftSpecified = left.batch_id === specifiedBatch;
     const rightSpecified = right.batch_id === specifiedBatch;
     if (leftSpecified !== rightSpecified) return leftSpecified ? -1 : 1;
-    if (left.effective_expiration_epoch === null && right.effective_expiration_epoch !== null) return 1;
-    if (left.effective_expiration_epoch !== null && right.effective_expiration_epoch === null) return -1;
-    if (
-      left.effective_expiration_epoch !== null && right.effective_expiration_epoch !== null &&
-      left.effective_expiration_epoch !== right.effective_expiration_epoch
-    ) return left.effective_expiration_epoch - right.effective_expiration_epoch;
     if (left.stocked_at.epoch !== right.stocked_at.epoch) return left.stocked_at.epoch - right.stocked_at.epoch;
     return ordinal(left.batch_id, right.batch_id);
   });
   const availableTotal = ordered.reduce((sum, candidate) => sum + BigInt(candidate.available_microunits), 0n);
-  if (availableTotal < BigInt(requested)) {
+  if (availableTotal === 0n) {
     return emptyAllocationPlan(
       "skipped_insufficient", requested, unit, compatible.length, "inventory_insufficient", true,
     );
   }
-  let remaining = requested;
+  const partial = availableTotal < BigInt(requested);
+  let remaining = partial ? Number(availableTotal) : requested;
   const allocations = [];
   for (const candidate of ordered) {
     if (remaining === 0) break;
@@ -904,9 +899,7 @@ export function resolveInventoryAllocation(
       unit,
       selection_basis: candidate.batch_id === specifiedBatch
         ? "explicit_batch" as const
-        : candidate.effective_expiration_at === null
-          ? "fifo" as const
-          : "fefo" as const,
+        : "fifo" as const,
     }));
   }
   if (remaining !== 0) return invalid("inventory_allocation.remaining");
@@ -916,7 +909,7 @@ export function resolveInventoryAllocation(
     unit,
     allocations: Object.freeze(allocations),
     candidate_count: compatible.length,
-    issue_code: null,
+    issue_code: partial ? "inventory_insufficient" : null,
     read_required: true,
   });
 }

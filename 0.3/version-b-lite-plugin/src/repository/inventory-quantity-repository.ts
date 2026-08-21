@@ -59,6 +59,17 @@ export function createInventoryQuantityModel(database: DatabaseSync, value: unkn
       (model.per_package_base_microunits === null) !== (model.remaining_base_microunits === null)) {
     return invalidRepository(PREFIX, "base_amount");
   }
+  if ((model.per_package_base_microunits === null) !== (model.conversion_source === "unknown")) {
+    return invalidRepository(PREFIX, "conversion_source");
+  }
+  if (model.per_package_base_microunits !== null && model.remaining_base_microunits !== null) {
+    const totalNumerator = BigInt(model.original_package_microunits) *
+      BigInt(model.per_package_base_microunits);
+    if (totalNumerator % 1_000n !== 0n ||
+        BigInt(model.remaining_base_microunits) > totalNumerator / 1_000n) {
+      return invalidRepository(PREFIX, "base_amount");
+    }
+  }
   try {
     database.prepare(`INSERT INTO inventory_quantity_models(
       batch_id,package_unit,original_package_microunits,per_package_base_microunits,
@@ -83,9 +94,47 @@ export function updateInventoryQuantityRemaining(database: DatabaseSync, value: 
   const revision = repositoryInteger(input.expected_revision, PREFIX, "expected_revision", 1);
   const remaining = input.remaining_base_microunits === null ? null :
     repositoryInteger(input.remaining_base_microunits, PREFIX, "remaining_base_microunits");
+  const current = readInventoryQuantityModel(database, id);
+  if (current === undefined || (current.per_package_base_microunits === null) !== (remaining === null)) {
+    return invalidRepository(PREFIX, "remaining_base_microunits");
+  }
+  if (remaining !== null && current.per_package_base_microunits !== null) {
+    const maximum = BigInt(current.original_package_microunits) *
+      BigInt(current.per_package_base_microunits) / 1_000n;
+    if (BigInt(remaining) > maximum) return invalidRepository(PREFIX, "remaining_base_microunits");
+  }
   const result = database.prepare(`UPDATE inventory_quantity_models
     SET remaining_base_microunits = ?, revision = revision + 1
     WHERE batch_id = ? AND revision = ?`).run(remaining, id, revision);
+  if (result.changes !== 1) return invalidRepository(PREFIX, "revision_conflict");
+  return readInventoryQuantityModel(database, id)!;
+}
+
+export function consumeInventoryQuantityRemaining(database: DatabaseSync, value: unknown) {
+  assertCurrentMigrationAuthority(database);
+  const input = exactRepositoryInput(value, [
+    "batch_id", "expected_revision", "expected_remaining_base_microunits",
+    "remaining_base_microunits",
+  ], PREFIX);
+  const id = repositoryText(input.batch_id, PREFIX, "batch_id", 128);
+  const revision = repositoryInteger(input.expected_revision, PREFIX, "expected_revision", 1);
+  const expected = input.expected_remaining_base_microunits === null ? null :
+    repositoryInteger(input.expected_remaining_base_microunits, PREFIX, "expected_remaining_base_microunits");
+  const remaining = input.remaining_base_microunits === null ? null :
+    repositoryInteger(input.remaining_base_microunits, PREFIX, "remaining_base_microunits");
+  if ((expected === null) !== (remaining === null) ||
+      expected !== null && remaining !== null && remaining > expected) {
+    return invalidRepository(PREFIX, "remaining_base_microunits");
+  }
+  const result = expected === null
+    ? database.prepare(`UPDATE inventory_quantity_models
+        SET remaining_base_microunits = NULL, revision = revision + 1
+        WHERE batch_id = ? AND revision = ? AND remaining_base_microunits IS NULL`)
+      .run(id, revision)
+    : database.prepare(`UPDATE inventory_quantity_models
+        SET remaining_base_microunits = ?, revision = revision + 1
+        WHERE batch_id = ? AND revision = ? AND remaining_base_microunits = ?`)
+      .run(remaining, id, revision, expected);
   if (result.changes !== 1) return invalidRepository(PREFIX, "revision_conflict");
   return readInventoryQuantityModel(database, id)!;
 }

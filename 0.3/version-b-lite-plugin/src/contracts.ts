@@ -121,6 +121,15 @@ export interface InventoryView {
     readonly effective_status: "active" | "empty";
     readonly expiration_at: string | null;
     readonly location: string;
+    readonly quantity_balance?: Readonly<{
+      readonly package_unit: string;
+      readonly package_milliunits: number;
+      readonly whole_packages: number;
+      readonly base_unit: string | null;
+      readonly remaining_base_microunits: number | null;
+      readonly remainder_base_microunits: number | null;
+      readonly revision: number;
+    }>;
   }>[];
 }
 
@@ -226,7 +235,13 @@ export interface MealReceiptItem {
     readonly status: NutritionOutcomeItem["coverage_status"];
     readonly source: NutritionOutcomeItem["source_label"];
   }>;
-  readonly inventory: Readonly<{ readonly status: MealReceiptInventoryStatus }>;
+  readonly inventory: Readonly<{
+    readonly status: MealReceiptInventoryStatus;
+    readonly deducted_quantity: number;
+    readonly deducted_unit: string | null;
+    readonly shortage_quantity: number | null;
+    readonly message: string;
+  }>;
 }
 
 export interface MealReceipt {
@@ -390,7 +405,16 @@ function assertMealReceipt(value: unknown): asserts value is MealReceipt {
         !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "unknown"]
           .includes(String(nutrition.source)) ||
         typeof inventory !== "object" || inventory === null || Array.isArray(inventory) ||
-        Object.keys(inventory).join("\0") !== "status" || !inventoryStatuses.includes(String(inventory.status))) {
+        Object.keys(inventory).sort().join("\0") !==
+          "deducted_quantity\0deducted_unit\0message\0shortage_quantity\0status" ||
+        !inventoryStatuses.includes(String(inventory.status)) ||
+        !Number.isFinite(inventory.deducted_quantity) || Number(inventory.deducted_quantity) < 0 ||
+        (Number(inventory.deducted_quantity) === 0) !== (inventory.deducted_unit === null) ||
+        (inventory.deducted_unit !== null &&
+          (typeof inventory.deducted_unit !== "string" || inventory.deducted_unit.length < 1)) ||
+        (inventory.shortage_quantity !== null &&
+          (!Number.isFinite(inventory.shortage_quantity) || Number(inventory.shortage_quantity) < 0)) ||
+        typeof inventory.message !== "string" || inventory.message.length < 1 || inventory.message.length > 128) {
       return invalidOutcome("receipt_item_effects");
     }
   }
@@ -549,8 +573,11 @@ function assertInventoryView(value: unknown): asserts value is InventoryView {
       return invalidOutcome("inventory_batch");
     }
     const batch = batchValue as Record<string, unknown>;
-    if (Object.keys(batch).sort().join("\0") !==
-        "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit" ||
+    const batchKeys = Object.keys(batch).sort().join("\0");
+    if (batchKeys !==
+          "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit" &&
+        batchKeys !==
+          "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_balance\0quantity_microunits\0quantity_status\0unit" ||
         (batch.quantity_microunits !== null &&
           (!Number.isSafeInteger(batch.quantity_microunits) || Number(batch.quantity_microunits) < 0)) ||
         !["available", "empty", "unknown"].includes(String(batch.quantity_status)) ||
@@ -564,6 +591,26 @@ function assertInventoryView(value: unknown): asserts value is InventoryView {
     boundedText(batch.product_type, "inventory_product_type", 64);
     boundedText(batch.unit, "inventory_unit", 64);
     boundedText(batch.location, "inventory_location", 128);
+    if (batch.quantity_balance !== undefined) {
+      if (typeof batch.quantity_balance !== "object" || batch.quantity_balance === null ||
+          Array.isArray(batch.quantity_balance)) return invalidOutcome("inventory_quantity_balance");
+      const balance = batch.quantity_balance as Record<string, unknown>;
+      if (Object.keys(balance).sort().join("\0") !==
+          "base_unit\0package_milliunits\0package_unit\0remainder_base_microunits\0remaining_base_microunits\0revision\0whole_packages" ||
+          !Number.isSafeInteger(balance.package_milliunits) || Number(balance.package_milliunits) < 0 ||
+          !Number.isSafeInteger(balance.whole_packages) || Number(balance.whole_packages) < 0 ||
+          !Number.isSafeInteger(balance.revision) || Number(balance.revision) < 1 ||
+          (balance.base_unit === null) !== (balance.remaining_base_microunits === null) ||
+          (balance.base_unit === null) !== (balance.remainder_base_microunits === null) ||
+          balance.remaining_base_microunits !== null &&
+            (!Number.isSafeInteger(balance.remaining_base_microunits) || Number(balance.remaining_base_microunits) < 0) ||
+          balance.remainder_base_microunits !== null &&
+            (!Number.isSafeInteger(balance.remainder_base_microunits) || Number(balance.remainder_base_microunits) < 0)) {
+        return invalidOutcome("inventory_quantity_balance");
+      }
+      boundedText(balance.package_unit, "inventory_package_unit", 64);
+      if (balance.base_unit !== null) boundedText(balance.base_unit, "inventory_base_unit", 64);
+    }
   }
 }
 
