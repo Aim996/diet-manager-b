@@ -75,9 +75,12 @@ function identity(request: Readonly<CoreApplicationRequest>): string {
     .update(request.conversation_id, "utf8").digest("hex").toUpperCase();
 }
 
-function mealSlot(sourceText: string): string {
+function mealSlot(command: Readonly<CoreMealCommandCandidate>): string {
+  if (command.semantic_meal_slot !== undefined && command.semantic_meal_slot !== "unknown") {
+    return command.semantic_meal_slot;
+  }
   for (const token of ["早餐", "午餐", "晚餐", "加餐", "夜宵"] as const) {
-    if (sourceText.includes(token)) return token;
+    if (command.source_text.includes(token)) return token;
   }
   return "unknown";
 }
@@ -158,7 +161,7 @@ function mealOrWaterOperation(
   return {
     kind: "record_meal", operation_id: command.operation_id,
     occurred_at: new Date(command.occurred_time.resolved_start).toISOString(),
-    meal_slot: mealSlot(command.source_text), location: location(command),
+    meal_slot: mealSlot(command), location: location(command),
     inventory_policy: {
       mode: "pantry_v2",
       missing_candidate_behavior: "skip_insufficient",

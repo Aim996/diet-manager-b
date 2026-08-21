@@ -58,8 +58,9 @@ import type {
   CorePurchaseCommandCandidate,
   CorePurchaseItemCandidate,
 } from "../parser/types.js";
-import { cloneSemanticCandidate } from "../semantic/candidate.js";
+import { cloneSemanticCandidate, cloneSemanticProposalV2 } from "../semantic/candidate.js";
 import { validateSemanticMealCandidate } from "../semantic/validate-candidate.js";
+import { validateSemanticProposalV2 } from "../semantic/validate-proposal-v2.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { openDietDatabase, type DietDatabaseRuntime } from "../storage/database.js";
 import {
@@ -682,6 +683,7 @@ function acquireSession(runtime: CoreRuntime): CoreRuntimeSession {
 const REQUEST_FIELDS = Object.freeze(["action", "source_text", "received_at", "timezone",
   "operation_id", "source_message_id", "conversation_id", "prior_context"] as const);
 const SEMANTIC_CANDIDATE_FIELD = "semantic_candidate" as const;
+const SEMANTIC_PROPOSAL_FIELD = "semantic_proposal" as const;
 
 function requestInvalid(reason: string): never {
   throw new TypeError(`CORE_APPLICATION_REQUEST_INVALID:${reason}`);
@@ -692,13 +694,18 @@ function cloneRequest(value: unknown): Readonly<CoreApplicationRequest> {
       isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype) return requestInvalid("shape");
   const keys = Reflect.ownKeys(value);
   const hasSemanticCandidate = keys.includes(SEMANTIC_CANDIDATE_FIELD);
-  const expectedLength = REQUEST_FIELDS.length + (hasSemanticCandidate ? 1 : 0);
+  const hasSemanticProposal = keys.includes(SEMANTIC_PROPOSAL_FIELD);
+  if (hasSemanticCandidate && hasSemanticProposal) return requestInvalid("semantic_fields");
+  const expectedLength = REQUEST_FIELDS.length + (hasSemanticCandidate || hasSemanticProposal ? 1 : 0);
   if (keys.length !== expectedLength || keys.some((key) => typeof key !== "string") ||
       REQUEST_FIELDS.some((key) => !keys.includes(key))) return requestInvalid("keys");
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  for (const key of hasSemanticCandidate
-    ? [...REQUEST_FIELDS, SEMANTIC_CANDIDATE_FIELD]
-    : REQUEST_FIELDS) {
+  const optionalField = hasSemanticCandidate
+    ? SEMANTIC_CANDIDATE_FIELD
+    : hasSemanticProposal
+      ? SEMANTIC_PROPOSAL_FIELD
+      : null;
+  for (const key of optionalField === null ? REQUEST_FIELDS : [...REQUEST_FIELDS, optionalField]) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, "value") || descriptor.enumerable !== true) {
       return requestInvalid(`${key}:descriptor`);
@@ -712,9 +719,23 @@ function cloneRequest(value: unknown): Readonly<CoreApplicationRequest> {
     .filter((key) => key !== "action").map((key) => [key, descriptors[key].value])) as CoreApplicationRequest);
   const ordinary = JSON.parse(canonicalJson(parseInput)) as Omit<
     CoreApplicationRequest,
-    "action" | "semantic_candidate"
+    "action" | "semantic_candidate" | "semantic_proposal"
   >;
-  if (!hasSemanticCandidate) return Object.freeze({ action: action as DietManagerAction, ...ordinary });
+  if (!hasSemanticCandidate && !hasSemanticProposal) {
+    return Object.freeze({ action: action as DietManagerAction, ...ordinary });
+  }
+  if (hasSemanticProposal) {
+    const semanticProposal = cloneSemanticProposalV2(
+      descriptors.semantic_proposal.value,
+      action as DietManagerAction,
+      ordinary.source_text,
+    );
+    return Object.freeze({
+      action: action as DietManagerAction,
+      ...ordinary,
+      semantic_proposal: semanticProposal,
+    });
+  }
   const semanticCandidate = cloneSemanticCandidate(descriptors.semantic_candidate.value);
   return Object.freeze({
     action: action as DietManagerAction,
@@ -724,8 +745,26 @@ function cloneRequest(value: unknown): Readonly<CoreApplicationRequest> {
 }
 
 function parseApplicationRequest(request: Readonly<CoreApplicationRequest>) {
+  if (request.semantic_proposal !== undefined) {
+    return validateSemanticProposalV2({
+      semantic_proposal: request.semantic_proposal,
+      action: request.action,
+      source_text: request.source_text,
+      received_at: request.received_at as OffsetIsoTimestamp,
+      timezone: request.timezone,
+      operation_id: request.operation_id,
+      source_message_id: request.source_message_id,
+      conversation_id: request.conversation_id,
+      prior_context: request.prior_context,
+    });
+  }
   if (request.semantic_candidate === undefined) {
-    const { action: _action, semantic_candidate: _candidate, ...parseInput } = request;
+    const {
+      action: _action,
+      semantic_candidate: _candidate,
+      semantic_proposal: _proposal,
+      ...parseInput
+    } = request;
     return parseCoreCommand(parseInput);
   }
   return validateSemanticMealCandidate({
@@ -1287,7 +1326,7 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
   let parsed: ReturnType<typeof parseApplicationRequest> | undefined;
-  if (request.semantic_candidate !== undefined) {
+  if (request.semantic_candidate !== undefined || request.semantic_proposal !== undefined) {
     try {
       parsed = parseApplicationRequest(request);
     } catch {

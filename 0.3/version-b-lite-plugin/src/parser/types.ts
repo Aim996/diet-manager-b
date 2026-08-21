@@ -2,6 +2,11 @@ import type { DietManagerAction } from "../contracts.js";
 
 export type CoreScene = "home" | "outside" | "company" | "unknown";
 
+export type CoreParserVersion =
+  | "diet-manager/core-parser-v1"
+  | "diet-manager/semantic-candidate-v1"
+  | "diet-manager/semantic-proposal/v2";
+
 type OffsetIsoZone = "Z" | `${"+" | "-"}${number}:${number}`;
 // Runtime input authority freezes the exact grammar, including its 0-3 digit
 // millisecond limit. TypeScript cannot express that digit bound without an
@@ -123,8 +128,8 @@ export interface CoreMealCommandCandidate {
   readonly meal_identity_seed: string;
   readonly source_text: string;
   readonly parser_version:
-    | "diet-manager/core-parser-v1"
-    | "diet-manager/semantic-candidate-v1";
+    CoreParserVersion;
+  readonly semantic_meal_slot?: "breakfast" | "lunch" | "dinner" | "snack" | "unknown";
   readonly occurred_time: OccurredTimeEvidence;
   readonly subject: CoreSubjectEvidence;
   readonly items: readonly CoreMealItem[];
@@ -148,7 +153,7 @@ export interface CoreWaterCommandCandidate {
   readonly action: "record_water";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly occurred_time: OccurredTimeEvidence;
   readonly plain_water_ml_milli: number;
   readonly amount_evidence: CoreAmountEvidence;
@@ -195,8 +200,8 @@ export interface CorePurchaseItemCandidate {
   readonly package_quantity: Readonly<CorePurchasePackageQuantity>;
   readonly location: Readonly<{
     readonly value: string;
-    readonly evidence_kind: "configured_home_default";
-    readonly rule_version: "diet-manager/default-location-v1";
+    readonly evidence_kind: "explicit" | "configured_home_default";
+    readonly rule_version: "diet-manager/default-location-v1" | null;
   }>;
   readonly opening: Readonly<{
     readonly status: "opened";
@@ -215,7 +220,7 @@ export interface CorePurchaseCommandCandidate {
   readonly action: "add_inventory";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly stocked_at: OffsetIsoTimestamp;
   readonly items: readonly Readonly<CorePurchaseItemCandidate>[];
 }
@@ -262,7 +267,7 @@ export interface CoreUndoCommandCandidate {
   readonly action: "undo_record";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly target: CoreCorrectionTargetReference;
 }
 
@@ -270,7 +275,7 @@ export interface CoreRestoreCommandCandidate {
   readonly action: "restore_record";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly target: CoreCorrectionTargetReference;
 }
 
@@ -315,7 +320,7 @@ export interface CoreProfileCommandCandidate {
   readonly action: "set_profile";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly height_cm: number;
   readonly weight_kg: number;
   readonly sex: "male" | "female" | null;
@@ -327,7 +332,7 @@ export interface CoreGoalCommandCandidate {
   readonly action: "set_goal";
   readonly operation_id: string;
   readonly source_text: string;
-  readonly parser_version: "diet-manager/core-parser-v1";
+  readonly parser_version: CoreParserVersion;
   readonly goals: Readonly<{
     readonly energy_kcal?: number | null;
     readonly protein_g?: number | null;

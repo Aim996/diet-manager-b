@@ -28,5 +28,9 @@ export async function executeAgentCommand(
       command.semantic_candidate !== undefined
       ? { semantic_candidate: command.semantic_candidate }
       : {}),
+    ...(command.schema_version === "diet-manager/agent-command/v2" &&
+      command.semantic_proposal !== undefined
+      ? { semantic_proposal: command.semantic_proposal }
+      : {}),
   }));
 }
