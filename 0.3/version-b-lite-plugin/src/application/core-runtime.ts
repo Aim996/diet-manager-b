@@ -84,8 +84,6 @@ import {
 import { listInventoryProjection, listWaterEvents } from "../repository/query.js";
 import {
   readEffectiveMealState,
-  resolveCorrectionTarget,
-  resolveWaterCorrectionTarget,
   type ResolvedCorrectionTarget,
 } from "../repository/correction-target.js";
 import { normalizeMealLexeme } from "../parser/meal.js";
@@ -131,6 +129,12 @@ import {
   failedOutcome,
   nonWritingOutcome,
 } from "./outcome.js";
+import {
+  assertMutationReplayEnvelope,
+  resolveMealMutationTarget,
+  resolveWaterMutationTarget,
+  type MutationReplayIdentity,
+} from "./mutation-orchestrator.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { createEstimateProvider } from "../nutrition/estimate-provider.js";
 import { resolveProductLabelEvidence } from "../nutrition/product-label-service.js";
@@ -1090,27 +1094,6 @@ function sanitizedCode(error: unknown): string {
   return /^[A-Z][A-Z0-9_]*$/u.test(code) ? code : "CORE_APPLICATION_FAILED";
 }
 
-const CORRECTION_SETTLE_WAIT = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
-
-function resolveCorrectionTargetAfterPending(
-  input: Parameters<typeof resolveCorrectionTarget>[0],
-): ResolvedCorrectionTarget {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      return resolveCorrectionTarget(input);
-    } catch (error) {
-      if (!(error instanceof Error) ||
-          error.message !== "CORRECTION_TARGET_INVALID:pending_correction" || attempt === 99) {
-        throw error;
-      }
-      // A competing correction commits its fact and effects before finalization.
-      // Wait briefly for that bounded state to settle, then re-read authority.
-      Atomics.wait(CORRECTION_SETTLE_WAIT, 0, 0, 5);
-    }
-  }
-  throw new Error("CORRECTION_TARGET_INVALID:pending_correction");
-}
-
 interface PurchaseReference {
   readonly order: number;
   readonly raw_name: string;
@@ -1447,6 +1430,61 @@ function recordId(database: DatabaseSync, envelope: DomainEnvelopeInput, operati
   return rows[0].event_id;
 }
 
+function replayedCorrectionOutcome(
+  session: Readonly<CoreRuntimeSession>,
+  request: Readonly<CoreApplicationRequest>,
+  replay: Readonly<MutationReplayIdentity>,
+  operation: CorrectionOutcomeView["operation"],
+  currentActive: boolean,
+  waterClassification = false,
+): DietManagerOutcome {
+  const rows = session.database.prepare(
+    `SELECT event_id, event_type, fact_kind, operation_id
+     FROM event_records WHERE envelope_id = ? AND operation_id = ?`,
+  ).all(replay.envelope_id, request.operation_id) as Array<{
+    event_id: string;
+    event_type: string;
+    fact_kind: string;
+    operation_id: string;
+  }>;
+  if (rows.length !== 1 || rows[0]?.event_type !== "diet_correction" ||
+      rows[0]?.fact_kind !== "correction" || rows[0]?.operation_id !== request.operation_id) {
+    throw new Error("MUTATION_REPLAY_INVALID:event_identity");
+  }
+  const correctionResult = (waterClassification
+    ? readAppliedWaterClassificationResult
+    : readAppliedCorrectionResult)({
+    database: session.database,
+    envelopeId: replay.envelope_id,
+    operationId: request.operation_id,
+    operationSequence: 0,
+    idempotencyKey: replay.idempotency_key,
+  });
+  const storedOperation = waterClassification ? "change_food_type" : operation;
+  if (correctionResult.operation !== storedOperation) {
+    throw new Error("MUTATION_REPLAY_INVALID:operation");
+  }
+  const correctionView: CorrectionOutcomeView = {
+    correction_id: correctionResult.correction_id,
+    target_event_id: correctionResult.target_event_id,
+    revision: correctionResult.revision,
+    operation,
+    current_active: currentActive,
+    compensation_transaction_id: correctionResult.compensation_transaction_id,
+  };
+  return committedOutcome(
+    request.action,
+    request.operation_id,
+    correctionResult.status,
+    rows[0].event_id,
+    undefined,
+    undefined,
+    undefined,
+    correctionView,
+    storedFrozenProgress(session.database, rows[0].event_id),
+  );
+}
+
 function executeCandidate(
   runtime: CoreRuntime,
   request: Readonly<CoreApplicationRequest>,
@@ -1694,6 +1732,9 @@ function readMealHistory(
           quantity_microunits: observed as number | null,
           unit,
           quantity_evidence: evidence as "explicit" | "estimated_upper_bound" | "unknown",
+          ...(item.nutrition_source === undefined
+            ? {}
+            : { nutrition_source: Object.freeze({ ...item.nutrition_source }) }),
         });
       })),
     }))),
@@ -1925,13 +1966,23 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
       }
       if (parsed.command.correction_kind === "water_classification") {
-        const resolvedTarget = resolveWaterCorrectionTarget({
+        const mutationTarget = resolveWaterMutationTarget({
           database: session.database,
           authoritySecret: session.authoritySecret,
-          conversationId: request.conversation_id,
+          request,
           reference: parsed.command.target,
         });
-        if (!resolvedTarget.active) {
+        if (mutationTarget.status === "not_found") {
+          return nonWritingOutcome(request.action, request.operation_id, "ignored", "target_not_found");
+        }
+        if (mutationTarget.status === "ambiguous") {
+          return nonWritingOutcome(
+            request.action, request.operation_id, "needs_clarification", "target_ambiguous",
+            undefined, undefined, undefined, undefined, mutationTarget.question,
+          );
+        }
+        const resolvedTarget = mutationTarget.target;
+        if (!mutationTarget.replay && !resolvedTarget.active) {
           return nonWritingOutcome(
             request.action,
             request.operation_id,
@@ -1949,6 +2000,23 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           Object.freeze([]),
           correctionResolution,
         );
+        if (mutationTarget.replay !== false) {
+          assertMutationReplayEnvelope({
+            database: session.database,
+            replay: mutationTarget.replay,
+            envelope,
+            reference: parsed.command.target,
+            targetEventId: resolvedTarget.target_event_id,
+          });
+          return replayedCorrectionOutcome(
+            session,
+            request,
+            mutationTarget.replay,
+            "change_water_classification",
+            true,
+            true,
+          );
+        }
         const preview = session.service.preview(envelope);
         let result;
         try {
@@ -2005,13 +2073,26 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           storedFrozenProgress(session.database, correctionEventId),
         );
       }
-      const resolvedTarget = resolveCorrectionTarget({
+      const mutationTarget = resolveMealMutationTarget({
         database: session.database,
         authoritySecret: session.authoritySecret,
-        conversationId: request.conversation_id,
+        request,
         reference: parsed.command.target,
+        allowedOperations: parsed.command.correction_kind === "meal_amount"
+          ? ["change_amount"]
+          : ["change_time"],
       });
-      if (!resolvedTarget.active) {
+      if (mutationTarget.status === "not_found") {
+        return nonWritingOutcome(request.action, request.operation_id, "ignored", "target_not_found");
+      }
+      if (mutationTarget.status === "ambiguous") {
+        return nonWritingOutcome(
+          request.action, request.operation_id, "needs_clarification", "target_ambiguous",
+          undefined, undefined, undefined, undefined, mutationTarget.question,
+        );
+      }
+      const resolvedTarget = mutationTarget.target;
+      if (!mutationTarget.replay && !resolvedTarget.active) {
         return nonWritingOutcome(
           request.action,
           request.operation_id,
@@ -2031,6 +2112,22 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         Object.freeze([]),
         correctionResolution,
       );
+      if (mutationTarget.replay !== false) {
+        assertMutationReplayEnvelope({
+          database: session.database,
+          replay: mutationTarget.replay,
+          envelope,
+          reference: parsed.command.target,
+          targetEventId: resolvedTarget.target_event_id,
+        });
+        return replayedCorrectionOutcome(
+          session,
+          request,
+          mutationTarget.replay,
+          parsed.command.correction_kind === "meal_amount" ? "change_amount" : "change_time",
+          true,
+        );
+      }
       const preview = session.service.preview(envelope);
       let result;
       try {
@@ -2089,35 +2186,24 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     }
     if (parsed.command.action === "undo_record") {
       const session = acquireSession(runtime);
-      let resolvedTarget;
-      try {
-        resolvedTarget = resolveCorrectionTargetAfterPending({
-          database: session.database,
-          authoritySecret: session.authoritySecret,
-          conversationId: request.conversation_id,
-          reference: parsed.command.target,
-        });
-      } catch (error) {
-        if (
-          parsed.command.target.kind === "sole_active_meal_in_conversation" &&
-          error instanceof Error &&
-          error.message === "CORRECTION_TARGET_AMBIGUOUS"
-        ) {
-          return nonWritingOutcome(
-            request.action,
-            request.operation_id,
-            "needs_clarification",
-            "target_ambiguous",
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            "同一会话里有多条有效饮食记录，请说明要撤销哪一条。",
-          );
-        }
-        throw error;
+      const mutationTarget = resolveMealMutationTarget({
+        database: session.database,
+        authoritySecret: session.authoritySecret,
+        request,
+        reference: parsed.command.target,
+        allowedOperations: ["void_event"],
+      });
+      if (mutationTarget.status === "not_found") {
+        return nonWritingOutcome(request.action, request.operation_id, "ignored", "target_not_found");
       }
-      if (!resolvedTarget.active) {
+      if (mutationTarget.status === "ambiguous") {
+        return nonWritingOutcome(
+          request.action, request.operation_id, "needs_clarification", "target_ambiguous",
+          undefined, undefined, undefined, undefined, mutationTarget.question,
+        );
+      }
+      const resolvedTarget = mutationTarget.target;
+      if (!mutationTarget.replay && !resolvedTarget.active) {
         return nonWritingOutcome(
           request.action,
           request.operation_id,
@@ -2131,6 +2217,22 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         resolvedTarget.target_event_id,
         resolvedTarget.base_revision,
       );
+      if (mutationTarget.replay !== false) {
+        assertMutationReplayEnvelope({
+          database: session.database,
+          replay: mutationTarget.replay,
+          envelope,
+          reference: parsed.command.target,
+          targetEventId: resolvedTarget.target_event_id,
+        });
+        return replayedCorrectionOutcome(
+          session,
+          request,
+          mutationTarget.replay,
+          "void_event",
+          false,
+        );
+      }
       const preview = session.service.preview(envelope);
       let result;
       try {
@@ -2146,13 +2248,30 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
           message.startsWith("PREVIEW_STALE:data_revision")
         ) {
-          const rechecked = resolveCorrectionTargetAfterPending({
+          const rechecked = resolveMealMutationTarget({
             database: session.database,
             authoritySecret: session.authoritySecret,
-            conversationId: request.conversation_id,
+            request,
             reference: parsed.command.target,
+            allowedOperations: ["void_event"],
           });
-          if (!rechecked.active) {
+          if (rechecked.status === "resolved" && rechecked.replay !== false) {
+            assertMutationReplayEnvelope({
+              database: session.database,
+              replay: rechecked.replay,
+              envelope,
+              reference: parsed.command.target,
+              targetEventId: rechecked.target.target_event_id,
+            });
+            return replayedCorrectionOutcome(
+              session,
+              request,
+              rechecked.replay,
+              "void_event",
+              false,
+            );
+          }
+          if (rechecked.status === "resolved" && !rechecked.target.active) {
             return nonWritingOutcome(
               request.action,
               request.operation_id,
@@ -2203,13 +2322,24 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
     }
     if (parsed.command.action === "restore_record") {
       const session = acquireSession(runtime);
-      const resolvedTarget = resolveCorrectionTargetAfterPending({
+      const mutationTarget = resolveMealMutationTarget({
         database: session.database,
         authoritySecret: session.authoritySecret,
-        conversationId: request.conversation_id,
+        request,
         reference: parsed.command.target,
+        allowedOperations: ["restore_event"],
       });
-      if (resolvedTarget.active) {
+      if (mutationTarget.status === "not_found") {
+        return nonWritingOutcome(request.action, request.operation_id, "ignored", "target_not_found");
+      }
+      if (mutationTarget.status === "ambiguous") {
+        return nonWritingOutcome(
+          request.action, request.operation_id, "needs_clarification", "target_ambiguous",
+          undefined, undefined, undefined, undefined, mutationTarget.question,
+        );
+      }
+      const resolvedTarget = mutationTarget.target;
+      if (!mutationTarget.replay && resolvedTarget.active) {
         return nonWritingOutcome(
           request.action,
           request.operation_id,
@@ -2223,6 +2353,22 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
         resolvedTarget.target_event_id,
         resolvedTarget.base_revision,
       );
+      if (mutationTarget.replay !== false) {
+        assertMutationReplayEnvelope({
+          database: session.database,
+          replay: mutationTarget.replay,
+          envelope,
+          reference: parsed.command.target,
+          targetEventId: resolvedTarget.target_event_id,
+        });
+        return replayedCorrectionOutcome(
+          session,
+          request,
+          mutationTarget.replay,
+          "restore_event",
+          true,
+        );
+      }
       const preview = session.service.preview(envelope);
       let result;
       try {
@@ -2238,13 +2384,30 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
           message.startsWith("CORRECTION_TARGET_INVALID:stale_revision") ||
           message.startsWith("PREVIEW_STALE:data_revision")
         ) {
-          const rechecked = resolveCorrectionTargetAfterPending({
+          const rechecked = resolveMealMutationTarget({
             database: session.database,
             authoritySecret: session.authoritySecret,
-            conversationId: request.conversation_id,
+            request,
             reference: parsed.command.target,
+            allowedOperations: ["restore_event"],
           });
-          if (rechecked.active) {
+          if (rechecked.status === "resolved" && rechecked.replay !== false) {
+            assertMutationReplayEnvelope({
+              database: session.database,
+              replay: rechecked.replay,
+              envelope,
+              reference: parsed.command.target,
+              targetEventId: rechecked.target.target_event_id,
+            });
+            return replayedCorrectionOutcome(
+              session,
+              request,
+              rechecked.replay,
+              "restore_event",
+              true,
+            );
+          }
+          if (rechecked.status === "resolved" && rechecked.target.active) {
             return nonWritingOutcome(
               request.action,
               request.operation_id,

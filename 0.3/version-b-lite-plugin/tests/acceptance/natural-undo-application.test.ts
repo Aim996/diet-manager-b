@@ -128,14 +128,16 @@ describe("natural undo application safety", () => {
         undoRequest("operation-natural-undo-ambiguous", "conversation-ambiguous", "前面鸡蛋那次算错了，帮我去掉。"),
       );
 
-      expect(undo).toEqual({
+      expect(undo).toMatchObject({
         action: "undo_record",
         status: "needs_clarification",
         committed: false,
         operation_id: "operation-natural-undo-ambiguous",
         reason_code: "target_ambiguous",
-        question: "同一会话里有多条有效饮食记录，请说明要撤销哪一条。",
       });
+      expect(undo.question).toContain("2026-08-20 14:00");
+      expect(undo.question).toContain("2026-08-20 14:01");
+      expect(undo.question).toContain("鸡蛋");
       expect(correctionCount(root)).toBe(0);
     } finally {
       runtime.close();

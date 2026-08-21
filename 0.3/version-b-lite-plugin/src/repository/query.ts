@@ -7,6 +7,10 @@ import {
   validateAndFreezeOccurredTimeEvidence,
 } from "../authority/meal-fact.js";
 import { authenticateStoredPreviewAuthority } from "../preview/store.js";
+import {
+  validateAndFreezeResolvedNutritionEvidence,
+  type ResolvedNutritionEvidence,
+} from "../nutrition/types.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
 import {
   assertAuthenticatedPantryPurchaseRoot,
@@ -75,6 +79,13 @@ export interface MealListItem {
     readonly item_type: string;
     readonly normalized_name: string;
     readonly amount: Readonly<Record<string, unknown>>;
+    readonly nutrition_source?: Readonly<{
+      readonly source_id: string;
+      readonly source_type: ResolvedNutritionEvidence["source_type"];
+      readonly source_ref: string;
+      readonly source_version: string;
+      readonly coverage_status: ResolvedNutritionEvidence["coverage_status"];
+    }>;
   }[];
 }
 
@@ -171,6 +182,7 @@ interface EffectiveMealSnapshotRow {
     item_type: string;
     normalized_name: string;
     amount: Record<string, unknown>;
+    nutrition_evidence?: unknown;
   }>;
 }
 
@@ -384,6 +396,22 @@ function parseCanonicalRecord(value: string, label: string): Record<string, unkn
   return parsed as Record<string, unknown>;
 }
 
+function nutritionSourceView(value: unknown): NonNullable<MealListItem["items"][number]["nutrition_source"]> {
+  let evidence: Readonly<ResolvedNutritionEvidence>;
+  try {
+    evidence = validateAndFreezeResolvedNutritionEvidence(value);
+  } catch {
+    return invalid("meal_nutrition_source");
+  }
+  return Object.freeze({
+    source_id: evidence.source_id,
+    source_type: evidence.source_type,
+    source_ref: evidence.source_ref,
+    source_version: evidence.source_version,
+    coverage_status: evidence.coverage_status,
+  });
+}
+
 export function listMealProjection(input: DateRangeQuery): readonly MealListItem[] {
   const query = dateQuery(input);
   return readOnly(query.database, () => {
@@ -484,6 +512,9 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
             item_type: item.item_type,
             normalized_name: item.normalized_name,
             amount: Object.freeze({ ...item.amount }),
+            ...(item.nutrition_evidence === undefined
+              ? {}
+              : { nutrition_source: nutritionSourceView(item.nutrition_evidence) }),
           });
         });
         return [Object.freeze({
@@ -511,6 +542,9 @@ export function listMealProjection(input: DateRangeQuery): readonly MealListItem
           item_type: item.item_type,
           normalized_name: item.normalized_name,
           amount: Object.freeze({ ...(payload.amount as Record<string, unknown>) }),
+          ...(payload.nutrition_evidence === undefined
+            ? {}
+            : { nutrition_source: nutritionSourceView(payload.nutrition_evidence) }),
         });
       });
       return [Object.freeze({

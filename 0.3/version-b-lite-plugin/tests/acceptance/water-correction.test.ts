@@ -41,7 +41,7 @@ it("reclassifies plain water as milk, removes the plain-water tally, and keeps t
     ).get(waterId) as { payload_json: string };
     before.close();
 
-    const outcome = handleCoreRequest(runtime, {
+    const correctionRequest = {
       action: "correct_record",
       source_text: "刚才那杯不是白水，是牛奶",
       received_at: "2026-08-14T12:05:00+08:00",
@@ -50,7 +50,8 @@ it("reclassifies plain water as milk, removes the plain-water tally, and keeps t
       source_message_id: "message-water-classification-001",
       conversation_id: "conversation-water-correction-001",
       prior_context: [],
-    });
+    } as const;
+    const outcome = handleCoreRequest(runtime, correctionRequest);
     expect(outcome, JSON.stringify(outcome)).toMatchObject({
       status: "committed",
       correction: { operation: "change_water_classification", target_event_id: waterId },
@@ -59,6 +60,7 @@ it("reclassifies plain water as milk, removes the plain-water tally, and keeps t
         current: { kind: "unknown" },
       })]) }],
     });
+    expect(handleCoreRequest(runtime, correctionRequest)).toEqual(outcome);
 
     const after = openDietDatabase({ privateRuntimeRoot: root });
     try {

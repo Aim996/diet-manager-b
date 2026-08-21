@@ -12,6 +12,7 @@ import {
   type ResolvedNutritionEvidence,
 } from "../nutrition/types.js";
 import type { CoreCorrectionTargetReference } from "../parser/types.js";
+import { normalizeMealLexeme } from "../parser/meal.js";
 import { authenticateStoredPreviewAuthority, type StoredPreviewAuthority } from "../preview/store.js";
 import type { NutritionVector, StructuredAmount } from "../domain/types.js";
 import { assertCurrentMigrationAuthority } from "../storage/migration-guard.js";
@@ -53,6 +54,19 @@ export interface ResolvedCorrectionTarget {
   readonly base_revision: number;
   readonly active: boolean;
   readonly event_kind: "diet_meal";
+}
+
+export interface ActiveMealTargetCandidate {
+  readonly target_event_id: string;
+  readonly occurred_at: string;
+  readonly meal_slot: string;
+  readonly normalized_names: readonly string[];
+}
+
+export interface ActiveMealTargetCandidates {
+  readonly candidates: readonly ActiveMealTargetCandidate[];
+  readonly total: number;
+  readonly has_more: boolean;
 }
 
 // 以下两个解析辅助与 effect-bundle.ts 内同名实现保持逐字一致，以稳定既有错误码语义。
@@ -448,6 +462,62 @@ function resolveSoleActiveMealEventId(
   return activeEventId;
 }
 
+/**
+ * Returns at most four authenticated active meal summaries for minimal
+ * disambiguation. A fifth matching row is only a bounded `has_more` signal;
+ * target resolution never scans an unbounded conversation history.
+ */
+export function listActiveMealTargetCandidates(input: Readonly<{
+  database: DatabaseSync;
+  authoritySecret: Uint8Array;
+  conversationId: string;
+  itemText?: string;
+}>): ActiveMealTargetCandidates {
+  if (typeof input.database !== "object" || input.database === null) return invalid("database");
+  if (!(input.authoritySecret instanceof Uint8Array) || input.authoritySecret.byteLength < 32 ||
+      input.authoritySecret.byteLength > 1024) return invalid("authority_secret");
+  if (typeof input.conversationId !== "string" || input.conversationId.length === 0 ||
+      input.conversationId.length > 256) return invalid("conversation_id");
+  const normalizedName = input.itemText === undefined
+    ? undefined
+    : normalizeMealLexeme(input.itemText);
+  if (input.itemText !== undefined && normalizedName === null) {
+    return Object.freeze({ candidates: Object.freeze([]), total: 0, has_more: false });
+  }
+  assertCurrentMigrationAuthority(input.database);
+  const rows = input.database.prepare(
+    `SELECT event_id FROM event_records
+     WHERE conversation_id = ? AND event_type = 'diet_meal'
+     ORDER BY received_at DESC, event_id DESC LIMIT 65`,
+  ).all(input.conversationId) as Array<{ event_id: string }>;
+  const matches: ActiveMealTargetCandidate[] = [];
+  let total = 0;
+  for (const row of rows) {
+    const state = readEffectiveMealState(input.database, input.authoritySecret, row.event_id);
+    if (!state.snapshot.active ||
+        (normalizedName !== undefined &&
+          !state.snapshot.items.some((item) => item.normalized_name === normalizedName))) continue;
+    total += 1;
+    if (matches.length >= 4) continue;
+    matches.push(Object.freeze({
+      target_event_id: row.event_id,
+      occurred_at: state.snapshot.occurred_at,
+      meal_slot: state.snapshot.meal_slot,
+      normalized_names: Object.freeze([
+        ...new Set(state.snapshot.items.map((item) => item.normalized_name)),
+      ]),
+    }));
+  }
+  matches.sort((left, right) =>
+    left.occurred_at.localeCompare(right.occurred_at) ||
+    left.target_event_id.localeCompare(right.target_event_id));
+  return Object.freeze({
+    candidates: Object.freeze(matches),
+    total,
+    has_more: rows.length === 65 || total > matches.length,
+  });
+}
+
 export function resolveCorrectionTarget(input: ResolveCorrectionTargetInput): ResolvedCorrectionTarget {
   if (typeof input.database !== "object" || input.database === null) return invalid("database");
   if (
@@ -486,6 +556,20 @@ export function resolveCorrectionTarget(input: ResolveCorrectionTargetInput): Re
       input.authoritySecret,
       input.conversationId,
     );
+  } else if (reference.kind === "active_meal_item_in_conversation") {
+    if (typeof reference.item_text !== "string" || reference.item_text.length === 0 ||
+        reference.item_text.length > 256) return invalid("reference");
+    const candidates = listActiveMealTargetCandidates({
+      database: input.database,
+      authoritySecret: input.authoritySecret,
+      conversationId: input.conversationId,
+      itemText: reference.item_text,
+    });
+    if (candidates.total === 0) throw new Error("CORRECTION_TARGET_NOT_FOUND");
+    if (candidates.total !== 1 || candidates.candidates.length !== 1) {
+      throw new Error("CORRECTION_TARGET_AMBIGUOUS");
+    }
+    targetEventId = candidates.candidates[0]!.target_event_id;
   } else {
     return invalid("reference");
   }

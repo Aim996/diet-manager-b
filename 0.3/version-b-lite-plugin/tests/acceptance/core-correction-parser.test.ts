@@ -31,15 +31,31 @@ describe("core correction parser", () => {
   });
 
   it.each([
-    "刚才鸡蛋那条先取消。",
-    "前面鸡蛋那次算错了，帮我去掉。",
-  ])("parses a colloquial undo through the sole-active safety target: %s", (source_text) => {
+    ["刚才鸡蛋那条先取消。", "鸡蛋"],
+    ["前面鸡蛋那次算错了，帮我去掉。", "鸡蛋"],
+  ])("parses a colloquial undo through the named-item safety target: %s", (source_text, item_text) => {
     expect(parseCoreCommand(input({ source_text, operation_id: "operation-natural-undo-001" }))).toMatchObject({
       disposition: "candidate",
       command: {
         action: "undo_record",
         operation_id: "operation-natural-undo-001",
-        target: { kind: "sole_active_meal_in_conversation" },
+        target: { kind: "active_meal_item_in_conversation", item_text },
+      },
+    });
+  });
+
+  it("parses the confirmed colloquial negation amount correction", () => {
+    expect(parseCoreCommand(input({
+      source_text: "鸡蛋不是一个，是两个",
+      operation_id: "operation-correction-negation-001",
+    }))).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "correct_record",
+        correction_kind: "meal_amount",
+        target_item_text: "鸡蛋",
+        replacement_quantity: 2,
+        replacement_unit: "个",
       },
     });
   });

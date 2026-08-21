@@ -113,7 +113,12 @@ export function nonWritingOutcome(
         meal_slot: meal.meal_slot,
         location: meal.location,
         audit_ref: Object.freeze({ ...meal.audit_ref }),
-        items: Object.freeze(meal.items.map((item) => Object.freeze({ ...item }))),
+        items: Object.freeze(meal.items.map((item) => Object.freeze({
+          ...item,
+          ...(item.nutrition_source === undefined
+            ? {}
+            : { nutrition_source: Object.freeze({ ...item.nutrition_source }) }),
+        }))),
       }))),
     }) }),
     ...(inventoryView === undefined ? {} : { inventory_view: Object.freeze({

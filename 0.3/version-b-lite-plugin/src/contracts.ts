@@ -106,6 +106,15 @@ export interface MealHistoryView {
       readonly quantity_microunits: number | null;
       readonly unit: string;
       readonly quantity_evidence: "explicit" | "estimated_upper_bound" | "unknown";
+      readonly nutrition_source?: Readonly<{
+        readonly source_id: string;
+        readonly source_type: "product_label" | "confirmed_same_product_history" |
+          "authoritative_public_database" | "trusted_public_web" | "personal_template" |
+          "generic_template" | "generic_estimate" | "unknown";
+        readonly source_ref: string;
+        readonly source_version: string;
+        readonly coverage_status: "complete" | "partial" | "unknown";
+      }>;
     }>[];
   }>[];
 }
@@ -540,6 +549,24 @@ function boundedText(value: unknown, reason: string, max = 512): string {
   return value;
 }
 
+function assertMealNutritionSource(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("meal_history_nutrition_source");
+  }
+  const source = value as Record<string, unknown>;
+  if (Object.keys(source).sort().join("\0") !==
+      "coverage_status\0source_id\0source_ref\0source_type\0source_version" ||
+      !["product_label", "confirmed_same_product_history", "authoritative_public_database",
+        "trusted_public_web", "personal_template", "generic_template", "generic_estimate", "unknown"]
+        .includes(String(source.source_type)) ||
+      !["complete", "partial", "unknown"].includes(String(source.coverage_status))) {
+    return invalidOutcome("meal_history_nutrition_source");
+  }
+  boundedText(source.source_id, "meal_history_nutrition_source_id", 256);
+  boundedText(source.source_ref, "meal_history_nutrition_source_ref", 512);
+  boundedText(source.source_version, "meal_history_nutrition_source_version", 128);
+}
+
 function assertMealHistory(value: unknown): asserts value is MealHistoryView {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("meal_history");
   const view = value as Record<string, unknown>;
@@ -573,8 +600,11 @@ function assertMealHistory(value: unknown): asserts value is MealHistoryView {
         return invalidOutcome("meal_history_item");
       }
       const item = itemValue as Record<string, unknown>;
-      if (Object.keys(item).sort().join("\0") !==
-          "item_order\0item_type\0name\0quantity_evidence\0quantity_microunits\0unit" ||
+      const expectedItemKeys = [
+        "item_order", "item_type", "name", "quantity_evidence", "quantity_microunits", "unit",
+        ...(item.nutrition_source === undefined ? [] : ["nutrition_source"]),
+      ].sort().join("\0");
+      if (Object.keys(item).sort().join("\0") !== expectedItemKeys ||
           item.item_order !== index ||
           (item.quantity_microunits !== null &&
             (!Number.isSafeInteger(item.quantity_microunits) || Number(item.quantity_microunits) <= 0)) ||
@@ -585,6 +615,7 @@ function assertMealHistory(value: unknown): asserts value is MealHistoryView {
       boundedText(item.item_type, "meal_history_item_type", 64);
       boundedText(item.name, "meal_history_item_name", 256);
       boundedText(item.unit, "meal_history_item_unit", 64);
+      if (item.nutrition_source !== undefined) assertMealNutritionSource(item.nutrition_source);
     }
   }
 }

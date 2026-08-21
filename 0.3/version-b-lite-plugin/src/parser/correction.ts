@@ -8,10 +8,16 @@ const LATEST_MEAL_UNDO = /^撤销\s*(?:刚才那条|刚才这条|上一条|刚�
 const EVENT_ID_UNDO = /^撤销\s*记录\s*([A-Za-z0-9][A-Za-z0-9._:-]{0,127})[。.]?$/u;
 // 指示词指向某条记录、但未绑定到"刚才那条"或具体编号 —— 目标不唯一，需澄清。
 const DEICTIC_UNBOUNDED_UNDO = /^撤销\s*(?:那条|这条|那一条|这一条)\s*(?:饮食)?记录[。.]?$/u;
-// 私人 Agent 的有界口语撤销形态。食物/餐次描述限制为单句 1–24 字，且没有事件
-// 编号，因此只允许交给“同一会话唯一 active 餐食”目标；应用层若看到零条或多条，
+// 私人 Agent 的有界口语撤销形态。命名食物交给“同一会话 active 且包含该食物”
+// 目标；没有食物名的餐次描述仍走唯一 active 餐食目标。应用层若看到零条或多条，
 // 不得静默选择最新记录。
-const COLLOQUIAL_SOLE_ACTIVE_UNDO = /^(?:刚才\s*[^，,。.!！?？\r\n]{1,24}\s*那条\s*先取消|前面\s*[^，,。.!！?？\r\n]{1,24}\s*那次\s*算错了[，,]\s*帮我去掉|刚才那[^，,。.!！?？\r\n]{1,24}别算了|下班路上那个[^，,。.!！?？\r\n]{1,24}不记了|早上那顿算了[，,]\s*别记了)[。.]?$/u;
+const COLLOQUIAL_SOLE_ACTIVE_UNDO = /^早上那顿算了[，,]\s*别记了[。.]?$/u;
+const COLLOQUIAL_ITEM_UNDO = Object.freeze([
+  /^刚才\s*([^，,。.!！?？\r\n]{1,24})\s*那条\s*先取消[。.]?$/u,
+  /^前面\s*([^，,。.!！?？\r\n]{1,24})\s*那次\s*算错了[，,]\s*帮我去掉[。.]?$/u,
+  /^刚才那(?:[个片瓶盒碗块盘杯份])?([^，,。.!！?？\r\n]{1,24})别算了[。.]?$/u,
+  /^下班路上那个([^，,。.!！?？\r\n]{1,24})不记了[。.]?$/u,
+]);
 
 // 有界恢复语法：与撤销同构，只接受"恢复"前缀。恢复仅对已 void 记录生效。
 const LATEST_MEAL_RESTORE = /^恢复\s*(?:刚才那条|刚才这条|上一条|刚刚那条|刚刚这条)\s*饮食记录[。.]?$/u;
@@ -22,6 +28,7 @@ const DEICTIC_UNBOUNDED_RESTORE = /^恢复\s*(?:那条|这条|那一条|这一�
 // 正数，单位严格对齐既有餐食解析器的普通单位集合（个/片/瓶/盒/碗/块/盘/克/
 // ml/mL/ML/毫升），不接受餐食解析器无法产出的单位（如份/杯/斤/两）。
 const MEAL_AMOUNT_CORRECTION = /^把\s*刚才(?:的)?\s*(.+?)\s*改成\s*(\d+(?:\.\d+)?)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*[。.]?$/u;
+const MEAL_AMOUNT_NEGATION_CORRECTION = /^(.+?)\s*不是\s*(?:一|1)\s*个[，,]?\s*是\s*(?:两|2)\s*个\s*[。.]?$/u;
 
 // 有界餐食发生时间纠正：刚才那顿其实是昨天晚饭。目标固定为 latest_meal，
 // 只接受"相对日 + 餐次"形态（不接具体钟点），餐次按口语别名映射到中文 token。
@@ -97,6 +104,26 @@ function mealTimeOccurredAt(
  */
 export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CoreParseResult | undefined {
   const source = input.source_text.trim();
+
+  for (const pattern of COLLOQUIAL_ITEM_UNDO) {
+    const match = pattern.exec(source);
+    const itemText = match?.[1]?.trim();
+    if (itemText !== undefined && itemText.length > 0) {
+      return frozenRecord({
+        disposition: "candidate",
+        command: frozenRecord({
+          action: "undo_record",
+          operation_id: input.operation_id,
+          source_text: input.source_text,
+          parser_version: PARSER_VERSION,
+          target: frozenRecord({
+            kind: "active_meal_item_in_conversation",
+            item_text: itemText,
+          }),
+        }),
+      });
+    }
+  }
 
   if (COLLOQUIAL_SOLE_ACTIVE_UNDO.test(source)) {
     return frozenRecord({
@@ -203,6 +230,25 @@ export function parseCorrectionCommand(input: Readonly<CoreParseInput>): CorePar
         target: frozenRecord({ kind: "latest_water_in_conversation" }),
         replacement_kind: "nutritious_drink",
         replacement_name: "milk",
+      }),
+    });
+  }
+
+  const negatedAmount = MEAL_AMOUNT_NEGATION_CORRECTION.exec(source);
+  const negatedItemText = negatedAmount?.[1]?.trim();
+  if (negatedItemText !== undefined && negatedItemText.length > 0) {
+    return frozenRecord({
+      disposition: "candidate",
+      command: frozenRecord({
+        action: "correct_record",
+        operation_id: input.operation_id,
+        source_text: input.source_text,
+        parser_version: PARSER_VERSION,
+        correction_kind: "meal_amount",
+        target: frozenRecord({ kind: "latest_meal_in_conversation" }),
+        target_item_text: negatedItemText,
+        replacement_quantity: 2,
+        replacement_unit: "个",
       }),
     });
   }

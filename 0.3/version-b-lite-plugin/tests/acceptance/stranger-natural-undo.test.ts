@@ -19,12 +19,23 @@ function parse(sourceText: string) {
 
 describe("first-time user natural undo", () => {
   it.each([
-    "刚才苹果那条先取消。",
-    "前面香蕉那次算错了，帮我去掉。",
-    "刚才那碗米饭别算了。",
-    "下班路上那个苹果不记了。",
-    "早上那顿算了，别记了。",
-  ])("routes a bounded colloquial cancellation through the sole-active gate: %s", (sourceText) => {
+    ["刚才苹果那条先取消。", "苹果"],
+    ["前面香蕉那次算错了，帮我去掉。", "香蕉"],
+    ["刚才那碗米饭别算了。", "米饭"],
+    ["下班路上那个苹果不记了。", "苹果"],
+  ])("routes a named colloquial cancellation through the item target gate: %s", (sourceText, itemText) => {
+    expect(parse(sourceText)).toMatchObject({
+      disposition: "candidate",
+      command: {
+        action: "undo_record",
+        source_text: sourceText,
+        target: { kind: "active_meal_item_in_conversation", item_text: itemText },
+      },
+    });
+  });
+
+  it("keeps a generic colloquial cancellation behind the sole-active gate", () => {
+    const sourceText = "早上那顿算了，别记了。";
     expect(parse(sourceText)).toMatchObject({
       disposition: "candidate",
       command: {
