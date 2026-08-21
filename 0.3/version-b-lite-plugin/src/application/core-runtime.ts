@@ -35,6 +35,7 @@ import {
   type ProductIdentityClarification,
 } from "../contracts.js";
 import {
+  canonicalInventoryUnit,
   resolveProductIdentity,
   resolveExpiration,
 } from "../domain/inventory-service.js";
@@ -2861,6 +2862,11 @@ function storedMealReceipt(
   if (!Array.isArray(blocks)) throw new Error("CORE_APPLICATION_RECEIPT_INVALID:blocks");
   const itemBlocks = blocks.filter((block) => typeof block === "object" && block !== null && !Array.isArray(block) &&
     (block as Record<string, unknown>).kind === "item") as Array<Record<string, unknown>>;
+  const titleBlock = blocks.find((block) => typeof block === "object" && block !== null && !Array.isArray(block) &&
+    (block as Record<string, unknown>).kind === "title") as Record<string, unknown> | undefined;
+  if (titleBlock === undefined || typeof titleBlock.meal_slot !== "string") {
+    throw new Error("CORE_APPLICATION_RECEIPT_INVALID:title");
+  }
   const storedItems = storedMealItems(database, eventId);
   if (itemBlocks.length !== storedItems.length || nutritionItems.length !== storedItems.length) {
     throw new Error("CORE_APPLICATION_RECEIPT_INVALID:item_count");
@@ -2912,7 +2918,8 @@ function storedMealReceipt(
         throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
       }
       const delta = (payload as Record<string, unknown>).quantity_delta_microunits;
-      if (!Number.isSafeInteger(delta) || Number(delta) >= 0 || transaction.unit !== amount.unit) {
+      if (!Number.isSafeInteger(delta) || Number(delta) >= 0 ||
+          canonicalInventoryUnit(transaction.unit) !== canonicalInventoryUnit(amount.unit)) {
         throw new Error("CORE_APPLICATION_RECEIPT_INVALID:inventory_transaction");
       }
       deductedMicrounits += -Number(delta);
@@ -2942,6 +2949,7 @@ function storedMealReceipt(
   });
   return Object.freeze({
     raw_text: (eventPayload as Record<string, unknown>).source_text as string,
+    meal_slot: titleBlock.meal_slot,
     items: Object.freeze(items),
   });
 }

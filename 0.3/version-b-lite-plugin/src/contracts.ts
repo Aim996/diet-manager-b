@@ -60,6 +60,7 @@ export interface FailedOutcome {
   committed: false;
   operation_id?: string;
   error_code: string;
+  render_model?: Readonly<import("./domain/receipt-render-model.js").ReceiptRenderModel>;
   record_id?: never;
 }
 
@@ -78,6 +79,7 @@ export interface NonWritingOutcome {
   correction?: Readonly<CorrectionOutcomeView>;
   pending_candidate?: Readonly<PendingCandidateOutcomeView>;
   progress?: readonly import("./contracts/progress-receipt-v1.js").FrozenDateProgressV1[];
+  render_model?: Readonly<import("./domain/receipt-render-model.js").ReceiptRenderModel>;
   record_id?: never;
   record_ids?: never;
 }
@@ -256,6 +258,7 @@ export interface MealReceiptItem {
 
 export interface MealReceipt {
   readonly raw_text: string;
+  readonly meal_slot?: string;
   readonly items: readonly MealReceiptItem[];
 }
 
@@ -304,6 +307,7 @@ export interface CommittedOutcome {
   goal_recommendation?: Readonly<GoalRecommendationOutcomeView>;
   goal_update?: Readonly<GoalUpdateOutcomeView>;
   progress?: readonly import("./contracts/progress-receipt-v1.js").FrozenDateProgressV1[];
+  render_model?: Readonly<import("./domain/receipt-render-model.js").ReceiptRenderModel>;
 }
 
 export type DietManagerOutcome =
@@ -414,8 +418,11 @@ function assertNutritionItem(value: unknown): asserts value is NutritionOutcomeI
 function assertMealReceipt(value: unknown): asserts value is MealReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidOutcome("receipt");
   const receipt = value as Record<string, unknown>;
-  if (Object.keys(receipt).sort().join("\0") !== "items\0raw_text" ||
+  const receiptKeys = Object.keys(receipt).sort().join("\0");
+  if ((receiptKeys !== "items\0raw_text" && receiptKeys !== "items\0meal_slot\0raw_text") ||
       typeof receipt.raw_text !== "string" || receipt.raw_text.length === 0 || receipt.raw_text.length > 4_096 ||
+      (receipt.meal_slot !== undefined &&
+        (typeof receipt.meal_slot !== "string" || receipt.meal_slot.length === 0 || receipt.meal_slot.length > 64)) ||
       !Array.isArray(receipt.items) || receipt.items.length === 0 || receipt.items.length > 64) {
     return invalidOutcome("receipt");
   }
@@ -453,6 +460,47 @@ function assertMealReceipt(value: unknown): asserts value is MealReceipt {
         typeof inventory.message !== "string" || inventory.message.length < 1 || inventory.message.length > 128) {
       return invalidOutcome("receipt_item_effects");
     }
+  }
+}
+
+function assertReceiptRenderModel(
+  value: unknown,
+  committed: boolean,
+  nutritionItemCount: number,
+  progressCount: number,
+): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("render_model");
+  }
+  const model = value as Record<string, unknown>;
+  if (Object.keys(model).sort().join("\0") !==
+      "authority_kind\0body\0nutrition_source_labels\0progress_blocks\0text" ||
+      model.authority_kind !== "diet-manager/receipt-render-model/v1" ||
+      typeof model.body !== "string" || model.body.length === 0 || model.body.length > 4_096 ||
+      typeof model.text !== "string" || model.text.length === 0 || model.text.length > 65_536 ||
+      !Array.isArray(model.progress_blocks) || model.progress_blocks.length !== progressCount ||
+      model.progress_blocks.some((block) => typeof block !== "string" || block.length === 0 || block.length > 16_384) ||
+      !Array.isArray(model.nutrition_source_labels) ||
+      model.nutrition_source_labels.length !== nutritionItemCount) {
+    return invalidOutcome("render_model");
+  }
+  const expectedText = model.progress_blocks.length === 0
+    ? model.body
+    : `${model.body}\n\n${model.progress_blocks.join("\n\n")}`;
+  if (model.text !== expectedText || (!committed && model.progress_blocks.length !== 0) ||
+      (!committed && /已记录|已提交|[█░]{10}|🥩 蛋白/u.test(model.text))) {
+    return invalidOutcome("render_model_truthfulness");
+  }
+  const labels = new Set(["包装营养表", "本地通用营养库", "互联网来源", "估算数据", "未知"]);
+  for (const value of model.nutrition_source_labels) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return invalidOutcome("render_model_nutrition");
+    }
+    const label = value as Record<string, unknown>;
+    if (Object.keys(label).sort().join("\0") !== "item_id\0label\0name" ||
+        typeof label.item_id !== "string" || label.item_id.length === 0 || label.item_id.length > 256 ||
+        typeof label.name !== "string" || label.name.length === 0 || label.name.length > 256 ||
+        !labels.has(String(label.label))) return invalidOutcome("render_model_nutrition");
   }
 }
 
@@ -918,14 +966,15 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     return invalidOutcome("committed_identity");
   }
   if (candidate.status === "failed") {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id", "render_model"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate", "progress"]);
+      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate", "progress", "render_model"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], [
       "record_ids", "nutrition_items", "receipt", "correction", "profile_saved",
       "goal_recommendation", "goal_update", "progress",
+      "render_model",
     ]);
   }
   if (candidate.clarification !== undefined) {
@@ -1011,6 +1060,14 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
        candidate.reason_code === "read_only_result");
     if (!allowed) return invalidOutcome("frozen_progress_status");
     assertFrozenProgress(candidate.progress);
+  }
+  if (candidate.render_model !== undefined) {
+    assertReceiptRenderModel(
+      candidate.render_model,
+      hasCommittedStatus,
+      Array.isArray(candidate.nutrition_items) ? candidate.nutrition_items.length : 0,
+      Array.isArray(candidate.progress) && hasCommittedStatus ? candidate.progress.length : 0,
+    );
   }
   const requiresFrozenProgress = candidate.action === "record_meal" || candidate.action === "record_water" ||
     candidate.action === "undo_record" || candidate.action === "restore_record" ||

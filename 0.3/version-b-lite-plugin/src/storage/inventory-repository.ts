@@ -908,9 +908,13 @@ export function listPantryAllocationCandidates(
         );
     const available = converted ?? projection.quantity_microunits ?? 0;
     const allocationUnit = converted === null || requested === undefined ? projection.unit : requested;
+    const quantityAvailable = available > 0 && (
+      row.quantity_status === "available" ||
+      (quantityModel !== undefined && converted !== null)
+    );
     const status = expired || row.effective_status === "expired"
       ? "expired" as const
-      : row.effective_status === "active" && row.quantity_status === "available" && available > 0
+      : row.effective_status === "active" && quantityAvailable
         ? "available" as const
         : "unavailable" as const;
     candidates.push(Object.freeze({
@@ -1002,7 +1006,7 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
       payload_json: string;
       batch_payload_json: string;
     } | undefined;
-    if (!row || row.quantity_status !== "available" || row.effective_status !== "active") {
+    if (!row || row.effective_status !== "active") {
       return invalid("inventory_allocation_projection");
     }
     const projection = parseProjectionPayloadJson(row.payload_json);
@@ -1013,7 +1017,10 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
       allocation.unit,
       projection.quantity_microunits ?? undefined,
     );
+    const quantityStatusAuthoritative = row.quantity_status === "available" ||
+      (row.quantity_status === "unknown" && quantityModel !== undefined && convertedAvailable !== null);
     if (
+      !quantityStatusAuthoritative ||
       projection.version !== 2 || projection.pantry_evidence === null ||
       batch.version !== 2 || batch.pantry_evidence === null ||
       projection.product_id !== allocation.product_id || projection.batch_id !== allocation.batch_id ||
@@ -1096,7 +1103,7 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
     input.database.prepare(
       `UPDATE inventory_batch_projections
        SET last_event_id = ?, last_changed_at = ?, quantity_status = ?, effective_status = ?, payload_json = ?
-       WHERE batch_id = ? AND quantity_status = 'available' AND effective_status = 'active' AND payload_json = ?`,
+       WHERE batch_id = ? AND quantity_status = ? AND effective_status = 'active' AND payload_json = ?`,
     ).run(
       input.event_id,
       input.committed_at,
@@ -1104,6 +1111,7 @@ export function applyPantryAllocationsInTransaction(input: Readonly<{
       hasRemaining ? "active" : "empty",
       canonicalJson(nextPayload),
       allocation.batch_id,
+      row.quantity_status,
       row.payload_json,
     );
     if (Number((input.database.prepare("SELECT changes() AS count").get() as { count: number }).count) !== 1) {

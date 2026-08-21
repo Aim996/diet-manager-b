@@ -13,6 +13,62 @@ import type {
 
 const FREE_TEXT_LINE = "也可以直接说明实际情况，不必选择以上选项。";
 
+// Presentation vocabulary only. Stored receipt facts keep canonical names and units.
+const RECEIPT_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  apple: "苹果",
+  banana: "香蕉",
+  bread: "面包",
+  chicken: "鸡胸肉",
+  coffee: "咖啡",
+  egg: "鸡蛋",
+  fried_rice: "炒饭",
+  little_elephant_biscuit: "小象饼干",
+  milk: "牛奶",
+  multigrain_congee: "杂粮粥",
+  noodle: "面",
+  rice: "米饭",
+  soup: "汤",
+  soy_milk: "豆浆",
+  tea: "茶",
+});
+
+const RECEIPT_DISPLAY_UNITS: Readonly<Record<string, string>> = Object.freeze({
+  bowl: "碗",
+  carton: "盒",
+  cup: "杯",
+  g: "克",
+  gram: "克",
+  item: "个",
+  ml: "毫升",
+  package: "包",
+  piece: "个",
+  slice: "片",
+});
+
+export function receiptDisplayName(name: string, rawText: string): string {
+  if (/[^\u0000-\u007F]/u.test(name)) return name;
+  if (name === "bread" && rawText.includes("全麦面包")) return "全麦面包";
+  return RECEIPT_DISPLAY_NAMES[name] ?? name.replaceAll("_", " ");
+}
+
+export function receiptInventorySubject(name: string): string {
+  return name.endsWith("面包") ? "面包" : name;
+}
+
+export function receiptDisplayUnit(unit: string | null): string {
+  if (unit === null) return "";
+  return RECEIPT_DISPLAY_UNITS[unit] ?? unit;
+}
+
+export function receiptMealSlotLabel(value: string | undefined): string {
+  if (value === "breakfast" || value === "早餐") return "早餐";
+  if (value === "lunch" || value === "午餐" || value === "午饭") return "午饭";
+  if (value === "dinner" || value === "晚餐" || value === "晚饭") return "晚饭";
+  if (value === "snack" || value === "加餐") return "加餐";
+  if (value === "夜宵") return "夜宵";
+  return "饮食";
+}
+
 export type QuickPromptIssueCode =
   | "inventory_multiple_candidates"
   | "inventory_insufficient"

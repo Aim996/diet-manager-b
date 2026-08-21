@@ -148,6 +148,7 @@ export function committedOutcome(
     ...(nutritionItems === undefined ? {} : { nutrition_items: Object.freeze(nutritionItems.map(freezeNutritionItem)) }),
     ...(receipt === undefined ? {} : { receipt: Object.freeze({
       raw_text: receipt.raw_text,
+      ...(receipt.meal_slot === undefined ? {} : { meal_slot: receipt.meal_slot }),
       items: Object.freeze(receipt.items.map((item) => Object.freeze({
         item_id: item.item_id,
         name: item.name,

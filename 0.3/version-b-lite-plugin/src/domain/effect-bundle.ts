@@ -56,7 +56,7 @@ import {
   readInventoryQuantityModel,
   updateInventoryQuantityRemaining,
 } from "../repository/inventory-quantity-repository.js";
-import { resolveInventoryAllocation } from "./inventory-service.js";
+import { canonicalInventoryUnit, resolveInventoryAllocation } from "./inventory-service.js";
 import {
   validateAndFreezeInventoryLocationCorrectionFactPayload,
   validateAndFreezePantryPurchaseEvidence,
@@ -1498,12 +1498,13 @@ export function prepareMealInventoryPlans(
     }
   }
   return Object.freeze(operation.items.map((item) => {
+    const allocationUnit = canonicalInventoryUnit(item.amount.unit);
     if (item.inventory_directive !== undefined) {
       return resolveInventoryAllocation({
         location: operation.location,
         explicit_skip: true,
         requested_microunits: item.amount.inventory_deduction_microunits,
-        unit: item.amount.unit,
+        unit: allocationUnit,
         specified_batch_id: null,
         candidates: Object.freeze([]),
       });
@@ -1516,14 +1517,14 @@ export function prepareMealInventoryPlans(
       authoritySecret,
       item.normalized_name,
       operation.occurred_at,
-      item.amount.unit,
+      allocationUnit,
     );
     if (read === null && operation.inventory_policy === undefined) return null;
     return resolveInventoryAllocation({
       location: operation.location,
       explicit_skip: false,
       requested_microunits: item.amount.inventory_deduction_microunits,
-      unit: item.amount.unit,
+      unit: allocationUnit,
       specified_batch_id: null,
       candidates: read?.candidates ?? Object.freeze([]),
     });

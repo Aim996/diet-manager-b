@@ -107,6 +107,22 @@ function invalid(path: string): never {
   throw new PantryEvidenceAuthorityError(path);
 }
 
+const INVENTORY_UNIT_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  箱: "box", 袋: "bag", 瓶: "bottle", 盒: "carton",
+  罐: "can", 包: "pack", 桶: "bucket",
+  个: "piece", 只: "piece", 颗: "piece", 枚: "piece",
+  片: "slice", 支: "stick", 碗: "bowl", 盘: "plate", 块: "piece",
+  克: "g", 毫升: "ml", 升: "l", 千克: "kg", 公斤: "kg",
+  mL: "ml", ML: "ml",
+});
+
+export function canonicalInventoryUnit(value: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64 || CONTROL_CHARACTERS.test(value)) {
+    return invalid("inventory_unit");
+  }
+  return INVENTORY_UNIT_ALIASES[value] ?? value;
+}
+
 function cloneOrdinary(value: unknown, path: string): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -800,7 +816,7 @@ export function resolveInventoryAllocation(
   input: Readonly<InventoryAllocationInput>,
 ): Readonly<InventoryAllocationPlan> {
   if (typeof input !== "object" || input === null || isProxy(input)) return invalid("inventory_allocation");
-  const unit = text(input.unit, "inventory_allocation.unit");
+  const unit = canonicalInventoryUnit(text(input.unit, "inventory_allocation.unit"));
   if (input.location !== "home" && input.location !== "outside") return invalid("inventory_allocation.location");
   if (typeof input.explicit_skip !== "boolean") return invalid("inventory_allocation.explicit_skip");
   const requested = input.requested_microunits === null
@@ -864,7 +880,7 @@ export function resolveInventoryAllocation(
       "skipped_ambiguous", requested, unit, eligible.length, "inventory_multiple_candidates", true,
     );
   }
-  const compatible = eligible.filter((candidate) => candidate.unit === unit);
+  const compatible = eligible.filter((candidate) => canonicalInventoryUnit(candidate.unit) === unit);
   if (eligible.length > 0 && compatible.length === 0) {
     return emptyAllocationPlan(
       "skipped_unit_incompatible", requested, unit, eligible.length, "inventory_unit_conversion_unproven", true,

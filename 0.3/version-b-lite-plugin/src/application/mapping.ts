@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { canonicalJson } from "../authority/canonical-json.js";
 import type { CoreApplicationRequest } from "../contracts.js";
-import { resolveExpiration } from "../domain/inventory-service.js";
+import { canonicalInventoryUnit, resolveExpiration } from "../domain/inventory-service.js";
 import type {
   CorrectNutritionSupplementOperation,
   DomainEnvelopeInput,
@@ -227,15 +227,9 @@ function goalOperation(
   });
 }
 
-function normalizedPackageUnit(value: string | null): string | null {
+function normalizedStorageUnit(value: string | null): string | null {
   if (value === null) return null;
-  const units: Readonly<Record<string, string>> = Object.freeze({
-    箱: "box",
-    袋: "bag",
-    瓶: "bottle",
-    盒: "carton",
-  });
-  return units[value] ?? value;
+  return canonicalInventoryUnit(value);
 }
 
 function pantryEvidence(
@@ -250,11 +244,11 @@ function pantryEvidence(
     product_identity: resolution.identity,
     package_quantity: {
       outer_count: quantity.outer_count,
-      outer_unit: normalizedPackageUnit(quantity.outer_unit),
+      outer_unit: normalizedStorageUnit(quantity.outer_unit),
       inner_per_outer: quantity.inner_per_outer,
-      inner_unit: normalizedPackageUnit(quantity.inner_unit),
+      inner_unit: normalizedStorageUnit(quantity.inner_unit),
       capacity_per_inner: quantity.capacity_per_inner,
-      capacity_unit: quantity.capacity_unit,
+      capacity_unit: normalizedStorageUnit(quantity.capacity_unit),
       total_inner: quantity.total_inner,
       total_capacity: quantity.total_capacity,
       formula: quantity.formula,
@@ -304,14 +298,14 @@ function purchaseAmount(item: Readonly<CorePurchaseItemCandidate>): Readonly<{
   const quantity = item.package_quantity;
   if (quantity.total_inner !== null && quantity.inner_unit !== null) {
     return Object.freeze({
-      unit: normalizedPackageUnit(quantity.inner_unit)!,
+      unit: normalizedStorageUnit(quantity.inner_unit)!,
       observed_microunits: quantity.total_inner * 1_000_000,
       evidence: "explicit" as const,
     });
   }
   if (quantity.total_capacity !== null && quantity.capacity_unit !== null) {
     return Object.freeze({
-      unit: quantity.capacity_unit,
+      unit: normalizedStorageUnit(quantity.capacity_unit)!,
       observed_microunits: quantity.total_capacity * 1_000_000,
       evidence: "explicit" as const,
     });

@@ -18,6 +18,7 @@ import {
   type HostExecutionContextV1,
 } from "../public/agent-command.js";
 import { executeAgentCommand } from "../public/execute.js";
+import { buildPublicAdapterResult } from "../public/receipt-adapter.js";
 import { assertPrivateRuntimeRoot } from "../storage/database.js";
 import { BoundedInsertionCache } from "./bounded-insertion-cache.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
@@ -426,10 +427,7 @@ export default defineToolPlugin({
             factoryContext,
             toolCallId,
           );
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(outcome) }],
-            details: outcome,
-          };
+          return buildPublicAdapterResult(outcome);
         },
       }),
     }),

@@ -5,6 +5,7 @@ import { realpathSync } from "node:fs";
 
 import {
   cloneAgentCommand,
+  buildPublicAdapterResult,
   createCoreRuntime,
   executeAgentCommand,
 } from "../index.js";
@@ -211,7 +212,11 @@ async function main(args: readonly string[]): Promise<void> {
       source_message_id: randomUUID(),
       conversation_id: conversationId,
     });
-    await writeOutcome(outcome);
+    const adapted = buildPublicAdapterResult(outcome);
+    await writeOutcome(Object.freeze({
+      ...outcome,
+      render_model: adapted.render_model,
+    }));
   } finally {
     runtime.close();
   }

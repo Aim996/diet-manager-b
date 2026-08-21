@@ -66,3 +66,11 @@ export type {
   HostExecutionContextV1,
 } from "./public/agent-command.js";
 export { executeAgentCommand } from "./public/execute.js";
+export { buildPublicAdapterResult } from "./public/receipt-adapter.js";
+export type { PublicReceiptAdapterResult } from "./public/receipt-adapter.js";
+export { buildReceiptRenderModel } from "./domain/receipt-render-model.js";
+export type {
+  NutritionSourceRenderLabel,
+  ReceiptNutritionSourceLabel,
+  ReceiptRenderModel,
+} from "./domain/receipt-render-model.js";
