@@ -9,6 +9,10 @@ import {
   MIGRATION_V1_ID,
   MIGRATION_V1_MAPPING_SHA256,
 } from "./migration-v1.js";
+import {
+  MIGRATION_V2_ID,
+  MIGRATION_V2_MAPPING_SHA256,
+} from "./migration-v2.js";
 
 export type MigrationScenario =
   | "fresh_install"
@@ -61,10 +65,13 @@ export function assertCurrentMigrationAuthority(database: DatabaseSync): void {
     return illegal("history", error);
   }
   if (
-    rows.length !== 1 ||
-    rows[0].version !== DIET_DATABASE_USER_VERSION ||
+    rows.length !== 2 ||
+    rows[0].version !== 1 ||
     rows[0].migration_id !== MIGRATION_V1_ID ||
-    rows[0].checksum !== MIGRATION_V1_MAPPING_SHA256
+    rows[0].checksum !== MIGRATION_V1_MAPPING_SHA256 ||
+    rows[1].version !== DIET_DATABASE_USER_VERSION ||
+    rows[1].migration_id !== MIGRATION_V2_ID ||
+    rows[1].checksum !== MIGRATION_V2_MAPPING_SHA256
   ) {
     return illegal("history");
   }
@@ -150,22 +157,22 @@ export function assertMigrationTransition(plan: MigrationTransitionPlan): void {
   const legal =
     (frozen.scenario === "fresh_install" &&
       frozen.userVersionBefore === 0 &&
-      frozen.userVersionAfter === 1 &&
+      frozen.userVersionAfter === 2 &&
       frozen.backupVerified === false &&
       frozen.outcome === "commit") ||
     (frozen.scenario === "upgrade_success" &&
-      frozen.userVersionBefore === 0 &&
-      frozen.userVersionAfter === 1 &&
+      frozen.userVersionBefore === 1 &&
+      frozen.userVersionAfter === 2 &&
       frozen.backupVerified === true &&
       frozen.outcome === "commit") ||
     (frozen.scenario === "upgrade_failure" &&
-      frozen.userVersionBefore === 0 &&
-      frozen.userVersionAfter === 0 &&
+      frozen.userVersionBefore === 1 &&
+      frozen.userVersionAfter === 1 &&
       frozen.backupVerified === true &&
       frozen.outcome === "rollback") ||
     (frozen.scenario === "recovery" &&
-      frozen.userVersionBefore === 1 &&
-      frozen.userVersionAfter === 1 &&
+      frozen.userVersionBefore === 2 &&
+      frozen.userVersionAfter === 2 &&
       frozen.backupVerified === true &&
       frozen.outcome === "preserve");
 

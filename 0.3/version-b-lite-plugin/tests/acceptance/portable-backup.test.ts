@@ -116,7 +116,7 @@ it("round-trips an authenticated portable backup into an empty target", async ()
       bytes: expect.any(Number),
       sha256: expect.stringMatching(/^[A-F0-9]{64}$/u),
       product_version: "0.1.1",
-      sqlite_user_version: 1,
+      sqlite_user_version: 2,
     });
 
     const restored = restorePortableBackup({

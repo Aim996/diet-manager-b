@@ -19,11 +19,16 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   DIET_DATABASE_APPLICATION_ID,
   DIET_DATABASE_FILENAME,
-  DIET_DATABASE_MAPPING_SHA256,
   DIET_DATABASE_USER_VERSION,
   openDietDatabase,
   type MigrationFault,
 } from "../src/storage/database.js";
+import { MIGRATION_V1_MAPPING_SHA256 } from "../src/storage/migration-v1.js";
+import {
+  MIGRATION_V2_INDEX_NAMES,
+  MIGRATION_V2_MAPPING_SHA256,
+  MIGRATION_V2_TABLE_NAMES,
+} from "../src/storage/migration-v2.js";
 
 const requireNode = createRequire(import.meta.url);
 const { DatabaseSync } = requireNode("node:sqlite") as typeof import("node:sqlite");
@@ -143,11 +148,17 @@ describe("B-STOR-001 database bootstrap", () => {
         0,
       );
 
-      expect(tableNames).toEqual(mapping.tables.map((table) => table.name).sort());
-      expect(indexNames).toEqual(mapping.indexes.map((index) => index.name).sort());
-      expect(tableNames).toHaveLength(21);
-      expect(indexNames).toHaveLength(19);
-      expect(foreignKeyCount).toBe(22);
+      expect(tableNames).toEqual([
+        ...mapping.tables.map((table) => table.name),
+        ...MIGRATION_V2_TABLE_NAMES,
+      ].sort());
+      expect(indexNames).toEqual([
+        ...mapping.indexes.map((index) => index.name),
+        ...MIGRATION_V2_INDEX_NAMES,
+      ].sort());
+      expect(tableNames).toHaveLength(25);
+      expect(indexNames).toHaveLength(25);
+      expect(foreignKeyCount).toBe(24);
 
       for (const table of mapping.tables) {
         const tableInfo = runtime.database
@@ -247,7 +258,13 @@ describe("B-STOR-001 database bootstrap", () => {
           version: 1,
           migration_id: "diet-manager/b-sqlite-migration/0001",
           applied_at: "2026-08-12T00:00:00.000Z",
-          checksum: DIET_DATABASE_MAPPING_SHA256,
+          checksum: MIGRATION_V1_MAPPING_SHA256,
+        },
+        {
+          version: 2,
+          migration_id: "diet-manager/b-sqlite-migration/0002",
+          applied_at: "2026-08-12T00:00:00.000Z",
+          checksum: MIGRATION_V2_MAPPING_SHA256,
         },
       ]);
 
@@ -264,7 +281,7 @@ describe("B-STOR-001 database bootstrap", () => {
     try {
       expect(
         scalar(reopened.database, "SELECT COUNT(*) FROM schema_migrations"),
-      ).toBe(1);
+      ).toBe(2);
     } finally {
       reopened.close();
     }

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  constants,
+  copyFileSync,
   existsSync,
   linkSync,
   lstatSync,
+  readFileSync,
   realpathSync,
   rmSync,
   unlinkSync,
@@ -20,7 +23,16 @@ import {
   MIGRATION_V1_TABLE_NAMES,
   MIGRATION_V1_TABLE_STATEMENTS,
 } from "./migration-v1.js";
-import { applyMigrationV1, type MigrationFault } from "./migrations.js";
+import {
+  MIGRATION_V2_FOREIGN_KEY_COUNT,
+  MIGRATION_V2_ID,
+  MIGRATION_V2_INDEX_NAMES,
+  MIGRATION_V2_INDEX_STATEMENTS,
+  MIGRATION_V2_MAPPING_SHA256,
+  MIGRATION_V2_TABLE_NAMES,
+  MIGRATION_V2_TABLE_STATEMENTS,
+} from "./migration-v2.js";
+import { applyMigrationV1, applyMigrationV2, type MigrationFault } from "./migrations.js";
 
 export type { MigrationFault } from "./migrations.js";
 
@@ -29,8 +41,9 @@ const { DatabaseSync } = requireNode("node:sqlite") as typeof import("node:sqlit
 
 export const DIET_DATABASE_FILENAME = "diet-manager-b.sqlite3";
 export const DIET_DATABASE_APPLICATION_ID = 1_145_913_905;
-export const DIET_DATABASE_USER_VERSION = 1;
-export const DIET_DATABASE_MAPPING_SHA256 = MIGRATION_V1_MAPPING_SHA256;
+export const DIET_DATABASE_USER_VERSION = 2;
+export const DIET_DATABASE_MAPPING_SHA256 = MIGRATION_V2_MAPPING_SHA256;
+export const DIET_DATABASE_PRE_V2_BACKUP_SUFFIX = ".pre-v2.bak";
 
 export interface OpenDietDatabaseOptions {
   privateRuntimeRoot: string;
@@ -99,11 +112,14 @@ function expectedSchemaSql(statement: string): string {
   return statement.endsWith(";") ? statement.slice(0, -1) : statement;
 }
 
-export function assertDietDatabaseIdentity(database: DatabaseSyncType): void {
+function assertDietDatabaseIdentityVersion(
+  database: DatabaseSyncType,
+  expectedVersion: 1 | 2,
+): void {
   if (scalar(database, "PRAGMA application_id") !== DIET_DATABASE_APPLICATION_ID) {
     return fail("STORAGE_IDENTITY_INVALID:application_id");
   }
-  if (scalar(database, "PRAGMA user_version") !== DIET_DATABASE_USER_VERSION) {
+  if (scalar(database, "PRAGMA user_version") !== expectedVersion) {
     return fail("STORAGE_IDENTITY_INVALID:user_version");
   }
   if (String(scalar(database, "PRAGMA journal_mode")).toLowerCase() !== "wal") {
@@ -123,43 +139,68 @@ export function assertDietDatabaseIdentity(database: DatabaseSyncType): void {
     .all() as Array<{ type: string; name: string; sql: string }>;
   const actual = new Map(schemaRows.map((row) => [`${row.type}:${row.name}`, row.sql]));
 
-  for (let index = 0; index < MIGRATION_V1_TABLE_NAMES.length; index += 1) {
-    const name = MIGRATION_V1_TABLE_NAMES[index];
-    if (actual.get(`table:${name}`) !== expectedSchemaSql(MIGRATION_V1_TABLE_STATEMENTS[index])) {
+  const tableNames = expectedVersion === 1
+    ? MIGRATION_V1_TABLE_NAMES
+    : [...MIGRATION_V1_TABLE_NAMES, ...MIGRATION_V2_TABLE_NAMES];
+  const tableStatements = expectedVersion === 1
+    ? MIGRATION_V1_TABLE_STATEMENTS
+    : [...MIGRATION_V1_TABLE_STATEMENTS, ...MIGRATION_V2_TABLE_STATEMENTS];
+  const indexNames = expectedVersion === 1
+    ? MIGRATION_V1_INDEX_NAMES
+    : [...MIGRATION_V1_INDEX_NAMES, ...MIGRATION_V2_INDEX_NAMES];
+  const indexStatements = expectedVersion === 1
+    ? MIGRATION_V1_INDEX_STATEMENTS
+    : [...MIGRATION_V1_INDEX_STATEMENTS, ...MIGRATION_V2_INDEX_STATEMENTS];
+
+  for (let index = 0; index < tableNames.length; index += 1) {
+    const name = tableNames[index]!;
+    if (actual.get(`table:${name}`) !== expectedSchemaSql(tableStatements[index]!)) {
       return fail(`STORAGE_IDENTITY_INVALID:table:${name}`);
     }
   }
-  for (let index = 0; index < MIGRATION_V1_INDEX_NAMES.length; index += 1) {
-    const name = MIGRATION_V1_INDEX_NAMES[index];
-    if (actual.get(`index:${name}`) !== expectedSchemaSql(MIGRATION_V1_INDEX_STATEMENTS[index])) {
+  for (let index = 0; index < indexNames.length; index += 1) {
+    const name = indexNames[index]!;
+    if (actual.get(`index:${name}`) !== expectedSchemaSql(indexStatements[index]!)) {
       return fail(`STORAGE_IDENTITY_INVALID:index:${name}`);
     }
   }
-  if (actual.size !== MIGRATION_V1_TABLE_NAMES.length + MIGRATION_V1_INDEX_NAMES.length) {
+  if (actual.size !== tableNames.length + indexNames.length) {
     return fail("STORAGE_IDENTITY_INVALID:schema_count");
   }
 
   let foreignKeyCount = 0;
-  for (const table of MIGRATION_V1_TABLE_NAMES) {
+  for (const table of tableNames) {
     foreignKeyCount += database.prepare(`PRAGMA foreign_key_list("${table}")`).all().length;
   }
-  if (foreignKeyCount !== MIGRATION_V1_FOREIGN_KEY_COUNT) {
+  const expectedForeignKeyCount = MIGRATION_V1_FOREIGN_KEY_COUNT +
+    (expectedVersion === 2 ? MIGRATION_V2_FOREIGN_KEY_COUNT : 0);
+  if (foreignKeyCount !== expectedForeignKeyCount) {
     return fail("STORAGE_IDENTITY_INVALID:foreign_key_count");
   }
 
-  const migration = database
-    .prepare(
-      "SELECT version, migration_id, checksum FROM schema_migrations WHERE version = 1",
-    )
-    .get() as { version: number; migration_id: string; checksum: string } | undefined;
-  if (
-    !migration ||
-    migration.version !== 1 ||
-    migration.migration_id !== MIGRATION_V1_ID ||
-    migration.checksum !== MIGRATION_V1_MAPPING_SHA256
-  ) {
+  const migrations = database.prepare(
+    "SELECT version, migration_id, checksum FROM schema_migrations ORDER BY version",
+  ).all() as Array<{ version: number; migration_id: string; checksum: string }>;
+  const expectedMigrations = [{
+    version: 1,
+    migration_id: MIGRATION_V1_ID,
+    checksum: MIGRATION_V1_MAPPING_SHA256,
+  }, ...(expectedVersion === 2 ? [{
+    version: 2,
+    migration_id: MIGRATION_V2_ID,
+    checksum: MIGRATION_V2_MAPPING_SHA256,
+  }] : [])];
+  if (JSON.stringify(migrations) !== JSON.stringify(expectedMigrations)) {
     return fail("STORAGE_IDENTITY_INVALID:migration_history");
   }
+}
+
+export function assertDietDatabaseV1Identity(database: DatabaseSyncType): void {
+  assertDietDatabaseIdentityVersion(database, 1);
+}
+
+export function assertDietDatabaseIdentity(database: DatabaseSyncType): void {
+  assertDietDatabaseIdentityVersion(database, 2);
 }
 
 function configureConnection(database: DatabaseSyncType): void {
@@ -207,6 +248,9 @@ function createFreshDatabase(
 
     applyMigrationV1(database, {
       now: (options.now ?? (() => new Date().toISOString()))(),
+    });
+    applyMigrationV2(database, {
+      now: (options.now ?? (() => new Date().toISOString()))(),
       fault: options.migrationFault,
     });
     assertDietDatabaseIdentity(database);
@@ -228,11 +272,84 @@ function createFreshDatabase(
   }
 }
 
-function validateExistingReadOnly(databasePath: string): void {
+function validateExistingReadOnly(databasePath: string): 1 | 2 {
   let database: DatabaseSyncType | undefined;
   try {
     database = openConnection(databasePath, true);
+    if (scalar(database, "PRAGMA application_id") !== DIET_DATABASE_APPLICATION_ID) {
+      return fail("STORAGE_IDENTITY_INVALID:application_id");
+    }
+    const version = scalar(database, "PRAGMA user_version");
+    if (version === 1) {
+      assertDietDatabaseV1Identity(database);
+      return 1;
+    }
+    if (version === 2) {
+      assertDietDatabaseIdentity(database);
+      return 2;
+    }
+    return fail("STORAGE_IDENTITY_INVALID:user_version");
+  } finally {
+    database?.close();
+  }
+}
+
+function validateV1Backup(path: string): void {
+  let database: DatabaseSyncType | undefined;
+  try {
+    database = openConnection(path, true);
+    assertDietDatabaseV1Identity(database);
+  } finally {
+    database?.close();
+  }
+}
+
+function ensureV1Backup(databasePath: string): void {
+  const backupPath = `${databasePath}${DIET_DATABASE_PRE_V2_BACKUP_SUFFIX}`;
+  if (existsSync(backupPath)) {
+    assertOrdinaryDatabaseLeaf(backupPath);
+    validateV1Backup(backupPath);
+    if (!readFileSync(backupPath).equals(readFileSync(databasePath))) {
+      return fail("STORAGE_MIGRATION_FAILED:backup_conflict");
+    }
+    return;
+  }
+  try {
+    copyFileSync(databasePath, backupPath, constants.COPYFILE_EXCL);
+    assertOrdinaryDatabaseLeaf(backupPath);
+    validateV1Backup(backupPath);
+  } catch (error) {
+    if (existsSync(backupPath)) rmSync(backupPath, { force: true });
+    throw new Error("STORAGE_MIGRATION_FAILED:backup", { cause: error });
+  }
+}
+
+function upgradeExistingV1(
+  databasePath: string,
+  options: OpenDietDatabaseOptions,
+): void {
+  let database: DatabaseSyncType | undefined;
+  try {
+    database = openConnection(databasePath);
+    configureConnection(database);
+    assertDietDatabaseV1Identity(database);
+    database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+  } finally {
+    database?.close();
+  }
+
+  ensureV1Backup(databasePath);
+  database = undefined;
+  try {
+    database = openConnection(databasePath);
+    configureConnection(database);
+    assertDietDatabaseV1Identity(database);
+    applyMigrationV2(database, {
+      now: (options.now ?? (() => new Date().toISOString()))(),
+      fault: options.migrationFault,
+    });
     assertDietDatabaseIdentity(database);
+    database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
   } finally {
     database?.close();
   }
@@ -244,7 +361,8 @@ export function openDietDatabase(options: OpenDietDatabaseOptions): DietDatabase
   const databaseExists = assertOrdinaryDatabaseLeaf(databasePath);
 
   if (databaseExists) {
-    validateExistingReadOnly(databasePath);
+    const version = validateExistingReadOnly(databasePath);
+    if (version === 1) upgradeExistingV1(databasePath, options);
   } else {
     createFreshDatabase(root, databasePath, options);
   }

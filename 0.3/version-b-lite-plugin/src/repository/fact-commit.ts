@@ -3,10 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson } from "../authority/canonical-json.js";
 import { assertOffsetIsoTimestamp } from "../authority/offset-timestamp.js";
 import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
-import {
-  dietManagerActions,
-  type DietManagerAction,
-} from "../contracts.js";
+import { dietManagerActions, type DietManagerAction } from "../contracts/actions.js";
 import {
   authorizeRepositoryPreview,
   type AuthorizedRepositoryPreview,

@@ -313,7 +313,7 @@ describe("B-MERGE-C-001 migration authority guard", () => {
     });
     try {
       expect(() => assertCurrentMigrationAuthority(runtime.database)).not.toThrow();
-      expect(tableCounts(runtime.database).schema_migrations).toBe(1);
+      expect(tableCounts(runtime.database).schema_migrations).toBe(2);
       expect(
         Object.entries(tableCounts(runtime.database))
           .filter(([name]) => name !== "schema_migrations")
@@ -332,7 +332,7 @@ describe("B-MERGE-C-001 migration authority guard", () => {
       try {
         const before = tableCounts(runtime.database);
         if (drift === "user_version") {
-          runtime.database.exec("PRAGMA user_version = 2");
+          runtime.database.exec("PRAGMA user_version = 3");
         } else if (drift === "history") {
           runtime.database
             .prepare("UPDATE schema_migrations SET checksum = ? WHERE version = 1")
@@ -361,28 +361,28 @@ describe("B-MERGE-C-001 migration authority guard", () => {
       {
         scenario: "fresh_install",
         userVersionBefore: 0,
-        userVersionAfter: 1,
+        userVersionAfter: 2,
         backupVerified: false,
         outcome: "commit",
       },
       {
         scenario: "upgrade_success",
-        userVersionBefore: 0,
-        userVersionAfter: 1,
+        userVersionBefore: 1,
+        userVersionAfter: 2,
         backupVerified: true,
         outcome: "commit",
       },
       {
         scenario: "upgrade_failure",
-        userVersionBefore: 0,
-        userVersionAfter: 0,
+        userVersionBefore: 1,
+        userVersionAfter: 1,
         backupVerified: true,
         outcome: "rollback",
       },
       {
         scenario: "recovery",
-        userVersionBefore: 1,
-        userVersionAfter: 1,
+        userVersionBefore: 2,
+        userVersionAfter: 2,
         backupVerified: true,
         outcome: "preserve",
       },
@@ -395,7 +395,7 @@ describe("B-MERGE-C-001 migration authority guard", () => {
       assertMigrationTransition({ ...legal[1], backupVerified: false }),
     ).toThrow("ILLEGAL_MIGRATION:backup");
     expect(() =>
-      assertMigrationTransition({ ...legal[1], userVersionAfter: 2 }),
+      assertMigrationTransition({ ...legal[1], userVersionAfter: 3 }),
     ).toThrow("ILLEGAL_MIGRATION:transition");
     expect(() =>
       assertMigrationTransition({ ...legal[3], outcome: "commit" }),

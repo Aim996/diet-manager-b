@@ -1,9 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import {
-  dietManagerActions,
-  type DietManagerAction,
-} from "../contracts.js";
+import { dietManagerActions, type DietManagerAction } from "../contracts/actions.js";
 import { canonicalJson } from "../authority/canonical-json.js";
 
 const TOKEN_PREFIX = "dm-b-preview-v1";

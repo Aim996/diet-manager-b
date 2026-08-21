@@ -71,13 +71,13 @@ export interface PortableBackupResult {
   readonly bytes: number;
   readonly sha256: string;
   readonly product_version: "0.1.1";
-  readonly sqlite_user_version: 1;
+  readonly sqlite_user_version: 2;
 }
 
 interface PortableBackupHeaderV1 {
   readonly format: "diet-manager/portable-backup/v1";
   readonly product_version: "0.1.1";
-  readonly sqlite_user_version: 1;
+  readonly sqlite_user_version: 2;
   readonly created_at: string;
   readonly kdf: Readonly<{
     algorithm: "scrypt";
@@ -238,7 +238,7 @@ function parseEnvelope(text: string): Readonly<PortableBackupEnvelopeV1> {
   const envelope = parsed as Record<string, unknown>;
   if (envelope.format !== PORTABLE_BACKUP_FORMAT) return invalid("envelope");
   if (envelope.product_version !== "0.1.1") return invalid("envelope");
-  if (envelope.sqlite_user_version !== 1) return invalid("envelope");
+  if (envelope.sqlite_user_version !== 2) return invalid("envelope");
   if (typeof envelope.created_at !== "string" || envelope.created_at.length === 0) return invalid("envelope");
   if (typeof envelope.ciphertext_base64 !== "string" || envelope.ciphertext_base64.length === 0) {
     return invalid("envelope");
@@ -259,7 +259,7 @@ function parseEnvelope(text: string): Readonly<PortableBackupEnvelopeV1> {
   const result: PortableBackupEnvelopeV1 = {
     format: PORTABLE_BACKUP_FORMAT,
     product_version: "0.1.1",
-    sqlite_user_version: 1,
+    sqlite_user_version: 2,
     created_at: envelope.created_at as string,
     kdf: Object.freeze({
       algorithm: "scrypt" as const,
@@ -374,7 +374,7 @@ export async function createPortableBackup(
       const header: PortableBackupHeaderV1 = {
         format: PORTABLE_BACKUP_FORMAT,
         product_version: "0.1.1",
-        sqlite_user_version: 1,
+        sqlite_user_version: 2,
         created_at: input.createdAt,
         kdf: Object.freeze({
           algorithm: "scrypt",
@@ -426,7 +426,7 @@ export async function createPortableBackup(
       bytes: Number(stat.size),
       sha256: sha256File(outputPath),
       product_version: "0.1.1",
-      sqlite_user_version: 1,
+      sqlite_user_version: 2,
     });
   } finally {
     rmSync(tempDbPath, { force: true });
@@ -493,7 +493,7 @@ export function restorePortableBackup(
       bytes: Number(backupStat.size),
       sha256: expected,
       product_version: "0.1.1",
-      sqlite_user_version: 1,
+      sqlite_user_version: 2,
     });
   } catch (error) {
     if (installed && existsSync(databasePath)) unlinkSync(databasePath);

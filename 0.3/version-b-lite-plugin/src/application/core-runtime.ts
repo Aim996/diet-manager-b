@@ -19,8 +19,8 @@ import { isProxy } from "node:util/types";
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
+import { dietManagerActions } from "../contracts/actions.js";
 import {
-  dietManagerActions,
   type CoreApplicationRequest,
   type CorrectionOutcomeView,
   type DailyProgressView,

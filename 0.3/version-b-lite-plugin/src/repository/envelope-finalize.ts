@@ -2,10 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "../authority/canonical-json.js";
 import { validateAndFreezeInventoryLocationCorrectionFactPayload } from "../domain/inventory-service.js";
-import {
-  dietManagerActions,
-  type DietManagerAction,
-} from "../contracts.js";
+import { dietManagerActions, type DietManagerAction } from "../contracts/actions.js";
 import { authorizeRepositoryPreview } from "../preview/store.js";
 import { deriveDomainId } from "../domain/identity.js";
 import { assertProgressReservationFinalizerAuthority } from "./progress-reservation.js";

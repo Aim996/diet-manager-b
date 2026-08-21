@@ -1,10 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import {
-  dietManagerActions,
-  type DietManagerAction,
-} from "../contracts.js";
+import { dietManagerActions, type DietManagerAction } from "../contracts/actions.js";
 import { canonicalJson, canonicalSha256 } from "../authority/canonical-json.js";
 import {
   parseMealFactPreviewMaterial,
