@@ -10,6 +10,7 @@ import type {
   ProductIdentityClarification,
   MealReceipt,
   NutritionOutcomeItem,
+  PendingCandidateOutcomeView,
 } from "../contracts.js";
 
 function freezeNutritionItem(item: Readonly<NutritionOutcomeItem>): NutritionOutcomeItem {
@@ -53,6 +54,7 @@ export function nonWritingOutcome(
   inventoryView?: Readonly<InventoryView>,
   question?: string,
   missingItems?: readonly string[],
+  pendingCandidate?: Readonly<PendingCandidateOutcomeView>,
 ): NonWritingOutcome {
   return Object.freeze({
     action,
@@ -62,6 +64,7 @@ export function nonWritingOutcome(
     reason_code: reasonCode,
     ...(question === undefined ? {} : { question }),
     ...(missingItems === undefined ? {} : { missing_items: Object.freeze([...missingItems]) }),
+    ...(pendingCandidate === undefined ? {} : { pending_candidate: Object.freeze({ ...pendingCandidate }) }),
     ...(clarification === undefined ? {} : { clarification }),
     ...(dailyProgress === undefined ? {} : { daily_progress: Object.freeze({
       date: dailyProgress.date,

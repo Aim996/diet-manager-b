@@ -77,6 +77,23 @@ import {
 } from "../repository/correction-target.js";
 import { normalizeMealLexeme } from "../parser/meal.js";
 import {
+  createPendingCandidate,
+  consumePendingCandidate,
+  listOpenPendingCandidates,
+  readLatestPendingCandidateForConversation,
+  transitionPendingCandidate,
+  updatePendingCandidate,
+  type PendingCandidate,
+} from "../repository/pending-candidate-repository.js";
+import {
+  clonePendingCandidateDraft,
+  createPendingCandidateDraft,
+  isPendingReplyText,
+  mergePendingCandidateReply,
+  minimalClarificationQuestion,
+  type PendingCandidateDraft,
+} from "../semantic/pending-candidate.js";
+import {
   mapResolvedNutritionAmountMicrounits,
   mapResolvedNutritionEvidenceToDomainSource,
   mapCoreCandidateToEnvelope,
@@ -777,6 +794,260 @@ function parseApplicationRequest(request: Readonly<CoreApplicationRequest>) {
   });
 }
 
+const PENDING_CANDIDATE_TTL_MS = 5 * 60 * 1_000;
+
+type PendingRequestPreparation =
+  | Readonly<{ readonly kind: "request"; readonly request: Readonly<CoreApplicationRequest> }>
+  | Readonly<{ readonly kind: "outcome"; readonly outcome: DietManagerOutcome }>;
+
+function pendingCandidateIdentity(request: Readonly<CoreApplicationRequest>): Readonly<{
+  readonly candidate_id: string;
+  readonly idempotency_key: string;
+}> {
+  const digest = createHash("sha256")
+    .update("diet-manager/pending-candidate/v1\n", "ascii")
+    .update(request.conversation_id, "utf8").update("\0", "ascii")
+    .update(request.source_message_id, "utf8").digest("hex");
+  return Object.freeze({
+    candidate_id: `pending-${digest.slice(0, 32)}`,
+    idempotency_key: `pending-${digest}`,
+  });
+}
+
+function pendingTimestamp(value: string): string {
+  return new Date(value).toISOString();
+}
+
+function pendingStatusOutcome(
+  request: Readonly<CoreApplicationRequest>,
+  reasonCode: string,
+  status: "ignored" | "needs_clarification" = "ignored",
+  question?: string,
+  pendingCandidate?: Readonly<{
+    readonly missing_field: string;
+    readonly expires_at: string;
+    readonly revision: number;
+  }>,
+): DietManagerOutcome {
+  return nonWritingOutcome(
+    request.action,
+    request.operation_id,
+    status,
+    reasonCode,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    question,
+    undefined,
+    pendingCandidate,
+  );
+}
+
+function latestPendingStatusOutcome(
+  request: Readonly<CoreApplicationRequest>,
+  latest: Readonly<PendingCandidate> | undefined,
+): DietManagerOutcome {
+  if (latest === undefined) return pendingStatusOutcome(request, "pending_candidate_not_found");
+  if (latest.status === "expired") return pendingStatusOutcome(request, "pending_candidate_expired");
+  if (latest.status === "cancelled") return pendingStatusOutcome(request, "pending_candidate_cancelled");
+  if (latest.status === "consumed") return pendingStatusOutcome(request, "pending_candidate_consumed");
+  return pendingStatusOutcome(
+    request,
+    "pending_candidate_ambiguous",
+    "needs_clarification",
+    "存在多个待补充记录，请把要记录的内容完整说一遍。",
+  );
+}
+
+function persistPendingClarification(
+  runtime: CoreRuntime,
+  request: Readonly<CoreApplicationRequest>,
+  reasonCode: string,
+): DietManagerOutcome | null {
+  if (request.semantic_proposal === undefined) return null;
+  const createdAt = pendingTimestamp(request.received_at);
+  const expiresAt = new Date(Date.parse(createdAt) + PENDING_CANDIDATE_TTL_MS).toISOString();
+  const draft = createPendingCandidateDraft({
+    action: request.action,
+    source_text: request.source_text,
+    proposal: request.semantic_proposal,
+    created_at: createdAt,
+    expires_at: expiresAt,
+  });
+  if (draft.missing_fields.length !== 1) return null;
+  const identity = pendingCandidateIdentity(request);
+  const session = acquireSession(runtime);
+  const candidate = createPendingCandidate(session.database, {
+    ...identity,
+    conversation_id: request.conversation_id,
+    action: request.action,
+    original_proposal: draft,
+    current_proposal: draft,
+    missing_fields: draft.missing_fields,
+    created_at: draft.created_at,
+    expires_at: draft.expires_at,
+  });
+  if (candidate.status !== "open") return latestPendingStatusOutcome(request, candidate);
+  return pendingStatusOutcome(
+    request,
+    reasonCode,
+    "needs_clarification",
+    minimalClarificationQuestion(draft),
+    Object.freeze({
+      missing_field: draft.missing_fields[0]!,
+      expires_at: candidate.expires_at,
+      revision: candidate.revision,
+    }),
+  );
+}
+
+function updateStoredPendingDraft(
+  database: DatabaseSync,
+  candidate: Readonly<PendingCandidate>,
+  draft: Readonly<PendingCandidateDraft>,
+): Readonly<PendingCandidate> {
+  return updatePendingCandidate(database, {
+    candidate_id: candidate.candidate_id,
+    expected_revision: candidate.revision,
+    current_proposal: draft,
+    missing_fields: draft.missing_fields,
+    expires_at: draft.expires_at,
+  });
+}
+
+function preparePendingReply(
+  runtime: CoreRuntime,
+  request: Readonly<CoreApplicationRequest>,
+): PendingRequestPreparation {
+  if (request.semantic_candidate !== undefined || request.semantic_proposal !== undefined ||
+      !["record_meal", "record_water", "set_profile"].includes(request.action) ||
+      !isPendingReplyText(request.source_text)) {
+    return Object.freeze({ kind: "request" as const, request });
+  }
+  const session = acquireSession(runtime);
+  const now = pendingTimestamp(request.received_at);
+  const open = listOpenPendingCandidates(session.database, request.conversation_id, now);
+  if (open.length === 0) {
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: latestPendingStatusOutcome(
+        request,
+        readLatestPendingCandidateForConversation(session.database, request.conversation_id),
+      ),
+    });
+  }
+  if (open.length !== 1) {
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(
+        request,
+        "pending_candidate_ambiguous",
+        "needs_clarification",
+        "存在多个待补充记录，请把要记录的内容完整说一遍。",
+      ),
+    });
+  }
+  let candidate = open[0]!;
+  if (candidate.action !== request.action) {
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(
+        request,
+        "pending_candidate_action_mismatch",
+        "needs_clarification",
+        "这条回复与待补充记录的类型不一致，请把完整内容重新说一遍。",
+      ),
+    });
+  }
+  let draft: Readonly<PendingCandidateDraft>;
+  try {
+    draft = clonePendingCandidateDraft(candidate.current_proposal);
+  } catch {
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: failedOutcome(request.action, request.operation_id, "PENDING_CANDIDATE_INVALID"),
+    });
+  }
+  if (canonicalJson(candidate.missing_fields) !== canonicalJson(draft.missing_fields)) {
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: failedOutcome(request.action, request.operation_id, "PENDING_CANDIDATE_INVALID"),
+    });
+  }
+  const merged = mergePendingCandidateReply(draft, request.source_text, now);
+  if (merged.disposition === "expired") {
+    transitionPendingCandidate(session.database, {
+      candidate_id: candidate.candidate_id,
+      expected_revision: candidate.revision,
+      status: "expired",
+      transitioned_at: now,
+    });
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(request, "pending_candidate_expired"),
+    });
+  }
+  if (merged.disposition === "cancelled") {
+    transitionPendingCandidate(session.database, {
+      candidate_id: candidate.candidate_id,
+      expected_revision: candidate.revision,
+      status: "cancelled",
+      transitioned_at: now,
+    });
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(request, "pending_candidate_cancelled"),
+    });
+  }
+  if (merged.disposition === "still_missing") {
+    candidate = updateStoredPendingDraft(session.database, candidate, merged.draft);
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(
+        request,
+        "pending_candidate_still_missing",
+        "needs_clarification",
+        minimalClarificationQuestion(merged.draft),
+        Object.freeze({
+          missing_field: merged.draft.missing_fields[0]!,
+          expires_at: candidate.expires_at,
+          revision: candidate.revision,
+        }),
+      ),
+    });
+  }
+  if (merged.disposition === "exhausted") {
+    candidate = updateStoredPendingDraft(session.database, candidate, merged.draft);
+    transitionPendingCandidate(session.database, {
+      candidate_id: candidate.candidate_id,
+      expected_revision: candidate.revision,
+      status: "cancelled",
+      transitioned_at: now,
+    });
+    return Object.freeze({
+      kind: "outcome" as const,
+      outcome: pendingStatusOutcome(request, "pending_candidate_exhausted"),
+    });
+  }
+  consumePendingCandidate(session.database, {
+    candidate_id: candidate.candidate_id,
+    expected_revision: candidate.revision,
+    current_proposal: merged.draft,
+    missing_fields: merged.draft.missing_fields,
+    expires_at: merged.draft.expires_at,
+    consumed_at: now,
+  });
+  return Object.freeze({
+    kind: "request" as const,
+    request: Object.freeze({
+      ...request,
+      source_text: merged.draft.source_text,
+      semantic_proposal: merged.draft.proposal,
+    }),
+  });
+}
+
 function sanitizedCode(error: unknown): string {
   if (!(error instanceof Error)) return "CORE_APPLICATION_FAILED";
   if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "idempotency_conflict";
@@ -1325,6 +1596,13 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
+  try {
+    const prepared = preparePendingReply(runtime, request);
+    if (prepared.kind === "outcome") return prepared.outcome;
+    request = prepared.request;
+  } catch (error) {
+    return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+  }
   let parsed: ReturnType<typeof parseApplicationRequest> | undefined;
   if (request.semantic_candidate !== undefined || request.semantic_proposal !== undefined) {
     try {
@@ -1373,6 +1651,14 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
   if (parsed.disposition !== "candidate") {
     if (parsed.action !== request.action) {
       return failedOutcome(request.action, request.operation_id, "ACTION_CONFLICT");
+    }
+    if (parsed.disposition === "needs_clarification") {
+      try {
+        const pending = persistPendingClarification(runtime, request, parsed.reason_code);
+        if (pending !== null) return pending;
+      } catch (error) {
+        return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+      }
     }
     return nonWritingOutcome(
       request.action,
@@ -2278,6 +2564,13 @@ export async function handleCoreRequestAsync(
   try { request = cloneRequest(value); } catch {
     return failedOutcome("record_meal", undefined, "INVALID_REQUEST");
   }
+  try {
+    const prepared = preparePendingReply(runtime, request);
+    if (prepared.kind === "outcome") return prepared.outcome;
+    request = prepared.request;
+  } catch (error) {
+    return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+  }
   let parsed;
   try {
     parsed = parseApplicationRequest(request);
@@ -2287,13 +2580,21 @@ export async function handleCoreRequestAsync(
   if (parsed.disposition === "rejected") {
     return failedOutcome(request.action, request.operation_id, parsed.error_code);
   }
+  if (parsed.disposition === "needs_clarification") {
+    try {
+      const pending = persistPendingClarification(runtime, request, parsed.reason_code);
+      if (pending !== null) return pending;
+    } catch (error) {
+      return failedOutcome(request.action, request.operation_id, sanitizedCode(error));
+    }
+  }
   if (
     parsed.disposition === "candidate" && parsed.command.action === "correct_record" &&
     "kind" in parsed.command && parsed.command.kind === "nutrition_supplement"
   ) return handleNutritionSupplement(runtime, request, parsed.command);
-  if (request.action !== "record_meal") return handleCoreRequest(runtime, value);
+  if (request.action !== "record_meal") return handleCoreRequest(runtime, request);
   if (parsed.disposition !== "candidate" || parsed.command.action !== "record_meal") {
-    return handleCoreRequest(runtime, value);
+    return handleCoreRequest(runtime, request);
   }
   try {
     const session = acquireSession(runtime);

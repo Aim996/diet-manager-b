@@ -44,6 +44,15 @@ function chineseNumber(token: string): number | null {
   return tens === null || ones === null ? null : tens * 10 + ones;
 }
 
+export function parseEvidenceNumberToken(token: string): number | null {
+  if (/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(token)) {
+    const value = Number(token);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  const value = chineseNumber(token);
+  return value !== null && value > 0 ? value : null;
+}
+
 function chineseTokens(text: string): readonly number[] {
   return Object.freeze(Array.from(text.matchAll(/[零〇一二两俩三四五六七八九十]+/gu))
     .map((match) => chineseNumber(match[0]))

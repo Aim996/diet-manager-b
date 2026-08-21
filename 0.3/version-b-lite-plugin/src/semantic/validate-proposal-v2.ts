@@ -204,8 +204,7 @@ function mealResult(
   const items: CoreMealItem[] = [];
   const missing: string[] = [];
   for (const item of proposal.items) {
-    if (!input.source_text.includes(item.raw_name) ||
-        (item.amount.kind === "exact" && !item.amount.evidence_span.includes(item.raw_name))) {
+    if (!input.source_text.includes(item.raw_name)) {
       return rejected("SEMANTIC_ENTITY_MISMATCH");
     }
     const normalizedName = normalizeMealLexeme(item.raw_name) ?? item.normalized_hint;

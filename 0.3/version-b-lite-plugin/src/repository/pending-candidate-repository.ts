@@ -147,6 +147,55 @@ export function updatePendingCandidate(database: DatabaseSync, value: unknown): 
   return readPendingCandidate(database, id)!;
 }
 
+export function transitionPendingCandidate(
+  database: DatabaseSync,
+  value: unknown,
+): Readonly<PendingCandidate> {
+  assertCurrentMigrationAuthority(database);
+  const input = exactRepositoryInput(value, [
+    "candidate_id", "expected_revision", "status", "transitioned_at",
+  ], PREFIX);
+  const id = repositoryText(input.candidate_id, PREFIX, "candidate_id", 128);
+  const revision = repositoryInteger(input.expected_revision, PREFIX, "expected_revision", 1);
+  const status = input.status;
+  if (status !== "consumed" && status !== "cancelled" && status !== "expired") {
+    return invalidRepository(PREFIX, "status");
+  }
+  const transitionedAt = repositoryTimestamp(input.transitioned_at, PREFIX, "transitioned_at");
+  const result = database.prepare(`UPDATE pending_candidates
+    SET status = ?, consumed_at = ?, revision = revision + 1
+    WHERE candidate_id = ? AND status = 'open' AND revision = ?`)
+    .run(status, status === "consumed" ? transitionedAt : null, id, revision);
+  if (result.changes !== 1) return invalidRepository(PREFIX, "revision_conflict");
+  return readPendingCandidate(database, id)!;
+}
+
+export function consumePendingCandidate(
+  database: DatabaseSync,
+  value: unknown,
+): Readonly<PendingCandidate> {
+  assertCurrentMigrationAuthority(database);
+  const input = exactRepositoryInput(value, [
+    "candidate_id", "expected_revision", "current_proposal", "missing_fields",
+    "expires_at", "consumed_at",
+  ], PREFIX);
+  const id = repositoryText(input.candidate_id, PREFIX, "candidate_id", 128);
+  const revision = repositoryInteger(input.expected_revision, PREFIX, "expected_revision", 1);
+  const currentJson = repositoryJson(input.current_proposal);
+  const fields = missingFields(input.missing_fields);
+  if (fields.length !== 0) return invalidRepository(PREFIX, "missing_fields");
+  const missingJson = repositoryJson(fields);
+  const expiresAt = repositoryTimestamp(input.expires_at, PREFIX, "expires_at");
+  const consumedAt = repositoryTimestamp(input.consumed_at, PREFIX, "consumed_at");
+  const result = database.prepare(`UPDATE pending_candidates
+    SET current_proposal_json = ?, missing_fields_json = ?, expires_at = ?,
+        status = 'consumed', consumed_at = ?, revision = revision + 1
+    WHERE candidate_id = ? AND status = 'open' AND revision = ?`)
+    .run(currentJson, missingJson, expiresAt, consumedAt, id, revision);
+  if (result.changes !== 1) return invalidRepository(PREFIX, "revision_conflict");
+  return readPendingCandidate(database, id)!;
+}
+
 export function listOpenPendingCandidates(
   database: DatabaseSync,
   conversationId: string,
@@ -162,4 +211,16 @@ export function listOpenPendingCandidates(
     WHERE conversation_id = ? AND status = 'open' ORDER BY created_at, candidate_id`)
     .all(conversation) as unknown as PendingCandidateRow[];
   return Object.freeze(rows.map((row) => fromRow(row)!));
+}
+
+export function readLatestPendingCandidateForConversation(
+  database: DatabaseSync,
+  conversationId: string,
+): Readonly<PendingCandidate> | undefined {
+  assertCurrentMigrationAuthority(database);
+  const conversation = repositoryText(conversationId, PREFIX, "conversation_id", 128);
+  const row = database.prepare(`SELECT * FROM pending_candidates
+    WHERE conversation_id = ? ORDER BY created_at DESC, candidate_id DESC LIMIT 1`)
+    .get(conversation) as unknown as PendingCandidateRow | undefined;
+  return fromRow(row);
 }

@@ -76,8 +76,15 @@ export interface NonWritingOutcome {
   meal_history?: Readonly<MealHistoryView>;
   inventory_view?: Readonly<InventoryView>;
   correction?: Readonly<CorrectionOutcomeView>;
+  pending_candidate?: Readonly<PendingCandidateOutcomeView>;
   record_id?: never;
   record_ids?: never;
+}
+
+export interface PendingCandidateOutcomeView {
+  readonly missing_field: string;
+  readonly expires_at: string;
+  readonly revision: number;
 }
 
 export interface MealHistoryView {
@@ -643,7 +650,7 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "error_code"], ["operation_id"]);
   } else if (candidate.status === "needs_clarification" || candidate.status === "ignored") {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
-      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction"]);
+      ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate"]);
   } else {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt", "correction"]);
   }
@@ -654,6 +661,19 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.question !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("question_status");
     boundedText(candidate.question, "question", 512);
+  }
+  if (candidate.pending_candidate !== undefined) {
+    if (candidate.status !== "needs_clarification" ||
+        typeof candidate.pending_candidate !== "object" || candidate.pending_candidate === null ||
+        Array.isArray(candidate.pending_candidate)) return invalidOutcome("pending_candidate");
+    const pending = candidate.pending_candidate as Record<string, unknown>;
+    if (Object.keys(pending).sort().join("\0") !== "expires_at\0missing_field\0revision" ||
+        typeof pending.missing_field !== "string" || pending.missing_field.length < 1 ||
+        pending.missing_field.length > 128 || /[\u0000-\u001F\u007F]/u.test(pending.missing_field) ||
+        typeof pending.expires_at !== "string" || !Number.isFinite(Date.parse(pending.expires_at)) ||
+        !Number.isSafeInteger(pending.revision) || Number(pending.revision) < 1) {
+      return invalidOutcome("pending_candidate");
+    }
   }
   if (candidate.missing_items !== undefined) {
     if (candidate.action !== "add_inventory" ||
