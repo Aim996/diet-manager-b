@@ -123,11 +123,17 @@ export function mapResolvedNutritionEvidenceToDomainSource(
   const versionHex = createHash("sha256")
     .update(`${evidence.source_id}\0${evidence.source_ref}\0${evidence.source_version}`, "utf8")
     .digest("hex").slice(0, 12);
+  const productId = evidence.source_type === "product_label"
+    ? evidence.applicable_product_id ?? null
+    : null;
+  if (evidence.source_type === "product_label" && productId === null) {
+    throw new TypeError("CORE_APPLICATION_MAPPING_INVALID:product_identity");
+  }
   return Object.freeze({
-    source_type: "public_fixture" as const,
+    source_type: evidence.source_type === "product_label" ? "product_label" as const : "public_fixture" as const,
     source_ref: evidence.source_ref,
     profile_version: Number.parseInt(versionHex, 16) + 1,
-    applicable_product_id: null,
+    applicable_product_id: productId,
     basis_kind: evidence.basis_kind,
     basis_microunits: decimalMicrounits(evidence.basis_amount, 1_000_000n, "basis_amount"),
     basis_unit: evidence.basis_unit,

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { getToolPluginMetadata } from "openclaw/plugin-sdk/tool-plugin";
 
 import pluginEntry from "../../src/openclaw/index.js";
+import { listNutritionSearchAudit } from "../../src/repository/nutrition-search-audit-repository.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
 interface RegisteredTool {
@@ -178,7 +179,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     }
   });
 
-  it("uses the configured private FDC credential without exposing it in the public request", async () => {
+  it("uses the configured private FDC credential after local sources miss without exposing it", async () => {
     const root = mkdtempSync(join(tmpdir(), `diet-manager-task9-fdc-${randomUUID()}-`));
     const previousKey = process.env.FDC_API_KEY;
     const previousFetch = globalThis.fetch;
@@ -191,7 +192,7 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       return new Response(JSON.stringify({
         foods: [{
           fdcId: 746782,
-          description: "Milk, whole",
+          description: "Traceable snack",
           dataType: "Foundation",
           publicationDate: "2026-04-01",
           foodNutrients: [
@@ -220,8 +221,26 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
     });
     try {
       const result = await registered.tool.execute("tool-call-fdc-001", {
-        ...mealParams(),
-        source_text: "喝了250ml牛奶。",
+        schema_version: "diet-manager/agent-command/v2",
+        action: "record_meal",
+        source_text: "吃了100g可追溯点心。",
+        semantic_proposal: {
+          kind: "meal",
+          subject: {
+            kind: "self",
+            basis: "private_agent_default",
+            evidence_span: null,
+            explicit_other_spans: [],
+          },
+          occurrence: "completed",
+          meal_slot: "unknown",
+          items: [{
+            raw_name: "可追溯点心",
+            normalized_hint: "traceable_snack",
+            amount: { kind: "exact", value: 100, unit: "g", evidence_span: "100g可追溯点心" },
+          }],
+          occurred_at: { kind: "unspecified", evidence_span: null },
+        },
       });
       expect(result.details).toMatchObject({
         committed: true,
@@ -232,6 +251,18 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
       expect(observedUrl).not.toContain("test-fdc-key-001");
       expect(observedKey).toBe("test-fdc-key-001");
       expect(JSON.stringify(result.details)).not.toContain("test-fdc-key-001");
+      const inspection = openDietDatabase({ privateRuntimeRoot: root });
+      try {
+        expect(listNutritionSearchAudit(inspection.database, "traceable_snack")).toMatchObject([{
+          source_name: "USDA FoodData Central",
+          match_basis: "normalized_name_exact",
+          confidence_microunits: 950_000,
+          license_decision: "redistribution_allowed",
+          cache_decision: "cache_allowed",
+        }]);
+      } finally {
+        inspection.close();
+      }
     } finally {
       await registered.lifecycle()?.cleanup();
       globalThis.fetch = previousFetch;

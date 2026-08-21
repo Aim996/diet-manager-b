@@ -87,6 +87,25 @@ export interface NutritionAmountCandidate {
   readonly estimated: boolean | null;
 }
 
+export function nutritionRecordSubject(
+  itemName: string,
+  evidence: Readonly<ResolvedNutritionEvidence>,
+): Readonly<Pick<NutritionRecordIdentity, "subject_type" | "subject_id">> {
+  if (evidence.source_type !== "product_label") {
+    if (evidence.applicable_product_id !== undefined && evidence.applicable_product_id !== null) {
+      return invalid("non_product_identity");
+    }
+    return freezeNutritionData({ subject_type: "food" as const, subject_id: itemName });
+  }
+  if (typeof evidence.applicable_product_id !== "string" || evidence.applicable_product_id.length === 0) {
+    return invalid("product_identity");
+  }
+  return freezeNutritionData({
+    subject_type: "product" as const,
+    subject_id: evidence.applicable_product_id,
+  });
+}
+
 function invalid(reason: string): never {
   throw new TypeError(`NUTRITION_RECORD_INVALID:${reason}`);
 }
@@ -140,8 +159,8 @@ function sourceLabel(sourceType: ResolvedNutritionEvidence["source_type"]): Nutr
     case "personal_template": return "personal_template";
     case "authoritative_public_database":
     case "trusted_public_web": return "public_reference";
-    case "generic_template":
-    case "generic_estimate": return "field_inference";
+    case "generic_template": return "field_inference";
+    case "generic_estimate": return "estimate";
     case "unknown": return "unknown";
   }
 }
@@ -203,6 +222,11 @@ export function buildNutritionRecords(
   identity: Readonly<NutritionRecordIdentity>,
   evidence: Readonly<ResolvedNutritionEvidence>,
 ): Readonly<NutritionRecords> {
+  const expectedSubject = nutritionRecordSubject(identity.item_name, evidence);
+  if (identity.subject_type !== expectedSubject.subject_type ||
+      (evidence.source_type === "product_label" && identity.subject_id !== expectedSubject.subject_id)) {
+    return invalid("subject_identity");
+  }
   const profileValues = exactNutritionValues(evidence.nutrient_values);
   const knownFields = NUTRITION_FIELDS.filter((field) => profileValues[field] !== null);
   const missingFields = NUTRITION_FIELDS.filter((field) => profileValues[field] === null);
@@ -269,6 +293,7 @@ export function buildNutritionRecords(
   const snapshotKnown = NUTRITION_FIELDS.filter((field) => snapshotValues[field] !== null);
   const snapshotMissing = NUTRITION_FIELDS.filter((field) => snapshotValues[field] === null);
   const inferred = evidence.amount_range !== null;
+  const sourceEstimated = evidence.source_type === "generic_estimate";
   const snapshot = freezeNutritionData({
     snapshot_id: snapshotId,
     schema_version: "1.1.0",
@@ -285,8 +310,8 @@ export function buildNutritionRecords(
     nutrient_values: snapshotValues,
     formula: evidence.formula,
     rounding_rule: "stable_decimal_then_display_half_up",
-    estimated_fields: inferred ? snapshotKnown : [],
-    uncertainty: evidence.adopted_amount === null ? "unknown" : inferred ? "bounded" : "none",
+    estimated_fields: inferred || sourceEstimated ? snapshotKnown : [],
+    uncertainty: evidence.adopted_amount === null ? "unknown" : inferred || sourceEstimated ? "bounded" : "none",
     known_fields: snapshotKnown,
     missing_fields: snapshotMissing,
     coverage_status: evidence.coverage_status,

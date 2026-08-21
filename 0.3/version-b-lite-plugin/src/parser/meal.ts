@@ -19,11 +19,13 @@ interface Lexeme {
   readonly allowed_next: RegExp;
 }
 
-const ITEM_PREVIOUS = /[吃喝了过的个片瓶盒碗块盘升克、和与\s0-9lL]/u;
+const ITEM_PREVIOUS = /[吃喝了过的个片瓶盒碗块盘升克、和与\s0-9gGlL]/u;
 const ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不]/u;
 const DRINK_ITEM_NEXT = /[、和与，,。；;！？!?\s记重没不时]/u;
 
 const LEXICON = Object.freeze([
+  Object.freeze<Lexeme>({ normalized_name: "little_elephant_biscuit", raw_text: "小象饼干", kind: "food", allowed_previous: ITEM_PREVIOUS, allowed_next: ITEM_NEXT }),
+  Object.freeze<Lexeme>({ normalized_name: "multigrain_congee", raw_text: "杂粮粥", kind: "food", allowed_previous: ITEM_PREVIOUS, allowed_next: ITEM_NEXT }),
   Object.freeze<Lexeme>({ normalized_name: "chicken", raw_text: "鸡胸肉", kind: "food", allowed_previous: ITEM_PREVIOUS, allowed_next: ITEM_NEXT }),
   Object.freeze<Lexeme>({ normalized_name: "soy_milk", raw_text: "豆浆", kind: "nutritious_drink", allowed_previous: ITEM_PREVIOUS, allowed_next: DRINK_ITEM_NEXT }),
   Object.freeze<Lexeme>({ normalized_name: "fried_rice", raw_text: "炒饭", kind: "food", allowed_previous: ITEM_PREVIOUS, allowed_next: ITEM_NEXT }),
@@ -117,6 +119,7 @@ function occurrenceAmount(
 }
 
 function parseChineseQuantity(raw: string): number | null {
+  if (raw === "半") return 0.5;
   if (/^[0-9]+$/u.test(raw)) {
     const parsed = Number(raw);
     return Number.isSafeInteger(parsed) ? parsed : null;
@@ -144,6 +147,8 @@ function parseChineseQuantity(raw: string): number | null {
 
 // 餐食词表认可的普通单位 → 规范化单位。correct_record 的纠正单位集合必须与此对齐。
 const ALLOWED_UNITS: Readonly<Record<string, Readonly<Record<string, string>>>> = frozenRecord({
+  little_elephant_biscuit: frozenRecord({ 盒: "carton", 克: "g", g: "g" }),
+  multigrain_congee: frozenRecord({ 碗: "bowl", 克: "g", g: "g" }),
   egg: frozenRecord({ 个: "piece", 克: "g" }),
   apple: frozenRecord({ 个: "piece", 克: "g" }),
   banana: frozenRecord({ 个: "piece", 克: "g" }),
@@ -176,11 +181,11 @@ export function mealLexemeAmountQuestion(rawText: string): string {
 }
 
 // 数量在食物词之前：`1碗米饭`（锚定在食物词之前）。
-const AMOUNT_BEFORE_ITEM = /([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*$/u;
+const AMOUNT_BEFORE_ITEM = /([0-9]+|半|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|g|ml|mL|ML|毫升)\s*$/u;
 const BARE_CLASSIFIER_BEFORE_ITEM = /(个|片|瓶|盒|碗|块|盘)\s*$/u;
 // 数量在食物词之后：`米饭 1 碗`（锚定在食物词之后，单位后须是分隔符或句尾）。
-const AMOUNT_AFTER_ITEM = /^\s*([0-9]+|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)(?=$|[\s、和与，,。；;！？!?])/u;
-const PUNCTUATED_SELF_CONFIRMATION_ITEM = /^\s*[，,]\s*((?:[0-9]+|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|盒|碗|块|盘|克|ml|mL|ML|毫升)\s*(?:鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包)))(?=$|[\s，,。；;！？!?])/u;
+const AMOUNT_AFTER_ITEM = /^\s*([0-9]+|半|[一二两三四五六七八九十]+)\s*(个|片|瓶|盒|碗|块|盘|克|g|ml|mL|ML|毫升)(?=$|[\s、和与，,。；;！？!?])/u;
+const PUNCTUATED_SELF_CONFIRMATION_ITEM = /^\s*[，,]\s*((?:[0-9]+|半|[一二两三四五六七八九十]+)\s*(?:个|片|瓶|盒|碗|块|盘|克|g|ml|mL|ML|毫升)\s*(?:小象饼干|杂粮粥|鸡胸肉|鸡蛋|豆浆|炒饭|香蕉|面包|咖啡|苹果|牛奶|米饭|白水|水|汤|茶|面(?!包)))(?=$|[\s，,。；;！？!?])/u;
 
 function resolveAmountEvidence(
   quantityText: string,

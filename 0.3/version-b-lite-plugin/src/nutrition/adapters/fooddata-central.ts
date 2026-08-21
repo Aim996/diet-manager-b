@@ -14,6 +14,7 @@ export interface FoodDataCentralTransport {
     request: Readonly<SourceRequest>;
     signal: AbortSignal;
     credential: Uint8Array;
+    retrieved_at: string;
   }>): Promise<Readonly<SourceResolution>>;
 }
 
@@ -58,11 +59,13 @@ export class FoodDataCentralAdapter implements NutritionSourceAdapter {
       evidence: null, reason: "credential_missing",
     });
     try {
-      return freezeNutritionData(await this.#transport.resolve({
+      const resolution = await this.#transport.resolve({
         request: freezeNutritionData(request),
         signal: context.signal,
         credential: new Uint8Array(credential.value),
-      }));
+        retrieved_at: context.now(),
+      });
+      return freezeNutritionData(resolution);
     } catch {
       return freezeNutritionData({
         status: context.signal.aborted ? "timeout" : "error", source_id: CAPABILITY.source_id,

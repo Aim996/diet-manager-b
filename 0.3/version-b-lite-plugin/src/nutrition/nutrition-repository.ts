@@ -90,6 +90,40 @@ function insertProfile(database: DatabaseSync, profile: Readonly<NutritionProfil
       canonicalJson(profile));
 }
 
+export function persistNutritionProfile(
+  database: DatabaseSync,
+  profile: Readonly<NutritionProfileV11>,
+): void {
+  database.exec("SAVEPOINT nutrition_profile");
+  try {
+    insertProfile(database, profile);
+    database.exec("RELEASE SAVEPOINT nutrition_profile");
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK TO SAVEPOINT nutrition_profile");
+      database.exec("RELEASE SAVEPOINT nutrition_profile");
+    } catch { /* preserve the profile error */ }
+    throw error;
+  }
+}
+
+export function readNutritionProfilesBySourceType(
+  database: DatabaseSync,
+  sourceType: NutritionProfileV11["source_type"],
+): readonly Readonly<NutritionProfileV11>[] {
+  const rows = database.prepare(`SELECT payload_json FROM nutrition_profiles
+    WHERE schema_version = '1.1.0' AND source_type = ?
+    ORDER BY retrieved_at DESC, nutrition_profile_id DESC`).all(sourceType) as Array<{
+      payload_json: string;
+    }>;
+  return Object.freeze(rows.map((row) => {
+    let profile: unknown;
+    try { profile = JSON.parse(row.payload_json) as unknown; } catch { return invalid("profile_json"); }
+    if (canonicalJson(profile) !== row.payload_json) return invalid("profile_canonical");
+    return freezeNutritionData(profile) as Readonly<NutritionProfileV11>;
+  }));
+}
+
 function insertSnapshot(database: DatabaseSync, snapshot: Readonly<NutritionSnapshotV11>): void {
   const existing = database.prepare("SELECT * FROM nutrition_snapshots WHERE snapshot_id = ?")
     .get(snapshot.snapshot_id) as unknown as StoredSnapshotRow | undefined;

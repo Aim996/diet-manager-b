@@ -76,7 +76,11 @@ function emptyResolution(status: SourceResolution["status"], reason: string): Re
   });
 }
 
-function parseFood(value: unknown): Readonly<SourceResolution> {
+function normalizedMatchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\u4E00-\u9FFF]+/gu, " ").trim();
+}
+
+function parseFood(value: unknown, query: string, retrievedAt: string): Readonly<SourceResolution> {
   const root = ordinaryRecord(value);
   const foods = root?.foods;
   if (!Array.isArray(foods) || foods.length === 0) return emptyResolution("no_results", "no_match");
@@ -141,6 +145,11 @@ function parseFood(value: unknown): Readonly<SourceResolution> {
     amount_range: null,
     formula: "profile_value * consumed_amount / basis_amount",
   };
+  const normalizedQuery = normalizedMatchText(query);
+  const normalizedDescription = normalizedMatchText(food.description);
+  const exact = normalizedQuery === normalizedDescription;
+  const contained = !exact && normalizedQuery.length > 0 && normalizedDescription.length > 0 &&
+    (normalizedDescription.includes(normalizedQuery) || normalizedQuery.includes(normalizedDescription));
   return freezeNutritionData({
     status: complete ? "ok" : "partial",
     source_id: "public.usda_fooddata_central",
@@ -150,6 +159,17 @@ function parseFood(value: unknown): Readonly<SourceResolution> {
     retained_fields_sha256: canonicalSha256(retained),
     evidence,
     reason: null,
+    audit: {
+      source_name: "USDA FoodData Central",
+      source_url: evidence.source_ref,
+      retrieved_at: retrievedAt,
+      match_basis: exact ? "normalized_name_exact"
+        : contained ? "normalized_name_contained"
+        : "provider_ranked_candidate",
+      confidence_microunits: exact ? 950_000 : contained ? 850_000 : 650_000,
+      license_decision: "redistribution_allowed",
+      cache_decision: exact ? "cache_allowed" : "cache_forbidden",
+    },
   });
 }
 
@@ -177,6 +197,7 @@ export class FoodDataCentralHttpTransport implements FoodDataCentralTransport {
     request: Readonly<SourceRequest>;
     signal: AbortSignal;
     credential: Uint8Array;
+    retrieved_at: string;
   }>): Promise<Readonly<SourceResolution>> {
     const query = input.request.normalized_food_name.trim();
     if (query.length === 0 || query.length > 256 || /[\u0000-\u001F\u007F]/u.test(query)) {
@@ -202,6 +223,6 @@ export class FoodDataCentralHttpTransport implements FoodDataCentralTransport {
       return emptyResolution("auth_failed", "credential_rejected");
     }
     if (!response.ok) return emptyResolution("error", "source_unavailable");
-    return parseFood(await boundedJson(response));
+    return parseFood(await boundedJson(response), query, input.retrieved_at);
   }
 }

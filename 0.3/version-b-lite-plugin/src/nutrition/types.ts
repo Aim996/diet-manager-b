@@ -31,6 +31,7 @@ export const REGISTERED_SOURCE_TIERS: Readonly<Record<string, SourceTier>> = Obj
   "public.usda_fooddata_central_bundled": "authoritative_public_database",
   "public.china_cdc_phscience_food_composition": "authoritative_public_database",
   "trusted.open_food_facts_read_only": "allowlisted_trusted_internet",
+  "trusted.traceable_web": "allowlisted_trusted_internet",
   "local.personal_template": "versioned_common_dish_template",
   "local.versioned_common_dish_template": "versioned_common_dish_template",
   "local.generic_estimate": "generic_estimate",
@@ -81,6 +82,7 @@ export interface ResolvedNutritionEvidence {
     "generic_template" | "generic_estimate" | "unknown";
   readonly source_ref: string;
   readonly source_version: string;
+  readonly applicable_product_id?: string | null;
   readonly basis_kind: "per_100g" | "per_100ml" | "per_serving" | "per_item" |
     "per_package" | "custom_recipe";
   readonly basis_amount: string;
@@ -103,13 +105,28 @@ export interface ResolvedNutritionEvidence {
 const V1_ALLOWED_NUTRITION_SOURCE_TYPES: Readonly<Record<string, ResolvedNutritionEvidence["source_type"]>> =
   Object.freeze({
     "local.current_exact_label": "product_label",
+    "conditional.manufacturer_exact": "trusted_public_web",
+    "local.confirmed_same_product_history": "confirmed_same_product_history",
     "local.personal_template": "personal_template",
     "local.versioned_common_dish_template": "generic_template",
     "public.usda_fooddata_central": "authoritative_public_database",
     "public.usda_fooddata_central_bundled": "authoritative_public_database",
     "public.china_cdc_phscience_food_composition": "authoritative_public_database",
+    "trusted.open_food_facts_read_only": "trusted_public_web",
+    "trusted.traceable_web": "trusted_public_web",
+    "local.generic_estimate": "generic_estimate",
     "terminal.unknown": "unknown",
   });
+
+export interface NutritionSearchAuditMetadata {
+  readonly source_name: string;
+  readonly source_url: string;
+  readonly retrieved_at: string;
+  readonly match_basis: string;
+  readonly confidence_microunits: number;
+  readonly license_decision: string;
+  readonly cache_decision: "cache_allowed" | "cache_forbidden";
+}
 
 export function assertV1NutritionSource(
   sourceId: string,
@@ -125,6 +142,11 @@ const NUTRITION_EVIDENCE_FIELDS = [
   "adopted_amount", "adopted_unit", "amount_range", "basis_amount", "basis_kind", "basis_unit",
   "coverage_status", "field_evidence", "formula", "nutrient_values", "source_id", "source_ref",
   "source_type", "source_version",
+] as const;
+
+const NUTRITION_EVIDENCE_FIELDS_WITH_PRODUCT = [
+  ...NUTRITION_EVIDENCE_FIELDS,
+  "applicable_product_id",
 ] as const;
 
 const NUTRIENT_VALUE_FIELDS = [
@@ -183,7 +205,13 @@ function compareEvidenceDecimal(left: string, right: string): number {
 export function validateAndFreezeResolvedNutritionEvidence(
   value: unknown,
 ): Readonly<ResolvedNutritionEvidence> {
-  const evidence = exactObject(value, NUTRITION_EVIDENCE_FIELDS, "shape");
+  const hasApplicableProduct = typeof value === "object" && value !== null &&
+    !Array.isArray(value) && Object.hasOwn(value, "applicable_product_id");
+  const evidence = exactObject(
+    value,
+    hasApplicableProduct ? NUTRITION_EVIDENCE_FIELDS_WITH_PRODUCT : NUTRITION_EVIDENCE_FIELDS,
+    "shape",
+  );
   evidenceText(evidence.source_id, "source_id");
   evidenceText(evidence.source_ref, "source_ref");
   evidenceText(evidence.source_version, "source_version");
@@ -198,6 +226,14 @@ export function validateAndFreezeResolvedNutritionEvidence(
   if (!sourceTypes.includes(String(evidence.source_type))) return evidenceInvalid("source_type");
   if (!basisKinds.includes(String(evidence.basis_kind))) return evidenceInvalid("basis_kind");
   if (!coverageStatuses.includes(String(evidence.coverage_status))) return evidenceInvalid("coverage_status");
+  const applicableProductId = hasApplicableProduct && evidence.applicable_product_id !== null
+    ? evidenceText(evidence.applicable_product_id, "applicable_product_id")
+    : null;
+  if (evidence.source_type === "product_label") {
+    if (applicableProductId === null) return evidenceInvalid("product_label_identity");
+  } else if (applicableProductId !== null) {
+    return evidenceInvalid("non_product_identity");
+  }
   evidenceDecimal(evidence.basis_amount, "basis_amount");
   const nutrients = exactObject(evidence.nutrient_values, NUTRIENT_VALUE_FIELDS, "nutrients");
   for (const field of NUTRIENT_VALUE_FIELDS) {
@@ -246,6 +282,7 @@ export interface SourceResolution {
   readonly retained_fields_sha256: string | null;
   readonly evidence: Readonly<ResolvedNutritionEvidence> | null;
   readonly reason: string | null;
+  readonly audit?: Readonly<NutritionSearchAuditMetadata>;
 }
 
 export interface SourceRuntimeEntry {

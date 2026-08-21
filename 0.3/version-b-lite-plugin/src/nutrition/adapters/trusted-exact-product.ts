@@ -74,9 +74,10 @@ export class TrustedExactProductAdapter implements NutritionSourceAdapter {
       evidence: null, reason: "source_disabled",
     });
     try {
-      return freezeNutritionData(await this.#transport.resolve({
+      const resolution = await this.#transport.resolve({
         request: freezeNutritionData(request), signal: context.signal, credential: this.#credential(context),
-      }));
+      });
+      return freezeNutritionData(resolution);
     } catch {
       return freezeNutritionData({
         status: context.signal.aborted ? "timeout" : "error", source_id: this.#capability.source_id,

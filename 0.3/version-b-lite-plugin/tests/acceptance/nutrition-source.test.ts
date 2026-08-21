@@ -139,9 +139,37 @@ describe("nutrition source authority", () => {
     expect(Object.isFrozen(resolved.nutrient_values)).toBe(true);
   });
 
-  it("rejects a generic numeric source before calling its adapter", async () => {
+  it("marks an unmatched first FDC candidate low-confidence and cache-forbidden", async () => {
+    const retrievedAt = "2026-08-21T08:00:00.000Z";
+    const transport = new FoodDataCentralHttpTransport(async () => new Response(JSON.stringify({
+      foods: [{
+        fdcId: 54321,
+        description: "Apple pie filling",
+        dataType: "Foundation",
+        publicationDate: "2026-04-01",
+        foodNutrients: [{ nutrientId: 1008, unitName: "kcal", value: 100 }],
+      }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const resolution = await transport.resolve({
+      request,
+      signal: new AbortController().signal,
+      credential: new TextEncoder().encode("test-key-123"),
+      retrieved_at: retrievedAt,
+    });
+    expect(resolution.audit).toEqual({
+      source_name: "USDA FoodData Central",
+      source_url: "https://fdc.nal.usda.gov/fdc-app.html#/food-details/54321/nutrients",
+      retrieved_at: retrievedAt,
+      match_basis: "provider_ranked_candidate",
+      confidence_microunits: 650_000,
+      license_decision: "redistribution_allowed",
+      cache_decision: "cache_forbidden",
+    });
+  });
+
+  it("rejects an unregistered numeric source before calling its adapter", async () => {
     const calls: string[] = [];
-    const sourceId = "local.generic_estimate";
+    const sourceId = "local.unregistered_numeric";
     const context: SourceContext = {
       signal: new AbortController().signal,
       deadline_at: new Date(Date.now() + 5_000).toISOString(),
@@ -154,7 +182,7 @@ describe("nutrition source authority", () => {
         source_record_id: "record-1", source_version: "v1", retained_fields_sha256: "A".repeat(64),
         evidence: { ...evidence(sourceId), source_type: "generic_estimate" }, reason: null,
       })],
-    })).rejects.toThrow("NUTRITION_SOURCE_NOT_ALLOWED:local.generic_estimate");
+    })).rejects.toThrow("NUTRITION_SOURCE_NOT_ALLOWED:local.unregistered_numeric");
     expect(calls).toEqual([]);
   });
 
@@ -184,7 +212,7 @@ describe("nutrition source authority", () => {
     expect(Object.isFrozen(first.sources)).toBe(true);
   });
 
-  it("traverses exact rank order and stops before lower-tier preemption", async () => {
+  it("traverses the four-stage policy order and stops before lower-stage preemption", async () => {
     const calls: string[] = [];
     const noResult = (sourceId: string, tier: SourceCapability["tier"]): SourceResolution => ({
       status: "no_results", source_id: sourceId,
@@ -213,7 +241,7 @@ describe("nutrition source authority", () => {
           noResult("local.current_exact_label", "current_exact_label")),
       ],
     });
-    expect(calls).toEqual(["local.current_exact_label", winnerId]);
+    expect(calls).toEqual(["local.current_exact_label", "local.personal_template", winnerId]);
     expect(resolved.source_id).toBe(winnerId);
     expect(Object.isFrozen(resolved.nutrient_values)).toBe(true);
   });

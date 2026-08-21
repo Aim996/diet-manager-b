@@ -209,7 +209,7 @@ export interface NutritionOutcomeItem {
   readonly amount_range: Readonly<NutritionOutcomeAmountRange> | null;
   readonly quantity_evidence: "explicit" | "field_inference" | "unknown";
   readonly source_label: "explicit" | "confirmed_history" | "personal_template" |
-    "public_reference" | "field_inference" | "unknown";
+    "public_reference" | "field_inference" | "estimate" | "unknown";
   readonly coverage_status: "complete" | "partial" | "unknown";
   readonly known_fields: readonly string[];
   readonly missing_fields: readonly string[];
@@ -340,7 +340,7 @@ function assertNutritionItem(value: unknown): asserts value is NutritionOutcomeI
       typeof item.item_id !== "string" || item.item_id.length === 0 || item.item_id.length > 128 ||
       typeof item.name !== "string" || item.name.length === 0 || item.name.length > 256 ||
       !["explicit", "field_inference", "unknown"].includes(item.quantity_evidence as string) ||
-      !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "unknown"].includes(item.source_label as string) ||
+      !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "estimate", "unknown"].includes(item.source_label as string) ||
       !["complete", "partial", "unknown"].includes(item.coverage_status as string)) {
     return invalidOutcome("nutrition_item");
   }
@@ -402,7 +402,7 @@ function assertMealReceipt(value: unknown): asserts value is MealReceipt {
     if (typeof nutrition !== "object" || nutrition === null || Array.isArray(nutrition) ||
         Object.keys(nutrition).sort().join("\0") !== "source\0status" ||
         !["complete", "partial", "unknown"].includes(String(nutrition.status)) ||
-        !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "unknown"]
+        !["explicit", "confirmed_history", "personal_template", "public_reference", "field_inference", "estimate", "unknown"]
           .includes(String(nutrition.source)) ||
         typeof inventory !== "object" || inventory === null || Array.isArray(inventory) ||
         Object.keys(inventory).sort().join("\0") !==

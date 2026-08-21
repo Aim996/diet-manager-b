@@ -63,6 +63,7 @@ import {
 } from "./receipt.js";
 import {
   buildNutritionRecords,
+  nutritionRecordSubject,
   type NutritionRecords,
 } from "../nutrition/nutrition-service.js";
 import {
@@ -1170,8 +1171,7 @@ function v11NutritionRecords(
     meal_event_id: eventId,
     intake_item_id: item.item_id,
     item_name: item.normalized_name,
-    subject_type: evidence.source_type === "product_label" ? "product" : "food",
-    subject_id: item.normalized_name,
+    ...nutritionRecordSubject(item.normalized_name, evidence),
     created_at: committedAt,
   }, evidence);
 }

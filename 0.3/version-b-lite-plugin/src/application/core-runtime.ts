@@ -114,6 +114,12 @@ import {
 } from "./mapping.js";
 import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
+import { createEstimateProvider } from "../nutrition/estimate-provider.js";
+import { resolveProductLabelEvidence } from "../nutrition/product-label-service.js";
+import {
+  findReusableNutritionWebEvidence,
+  recordNutritionWebResolution,
+} from "../nutrition/search-audit.js";
 import { resolveNutrition } from "../nutrition/source-client.js";
 import {
   claimNutritionResolution,
@@ -123,6 +129,7 @@ import {
 import {
   buildNutritionRecords,
   adoptNutritionAmount,
+  nutritionRecordSubject,
   nutritionOutcomeItem,
   type NutritionRecords,
 } from "../nutrition/nutrition-service.js";
@@ -631,11 +638,15 @@ function exactOptions(value: unknown): CreateCoreRuntimeOptions {
         typeof (adapter as NutritionSourceAdapter).resolve !== "function")) return runtimeInvalid("nutrition_adapters");
   const credential = descriptors.nutritionCredential?.value ?? (() => undefined);
   if (typeof credential !== "function") return runtimeInvalid("nutrition_credential");
+  const adapters = [...(adaptersValue as NutritionSourceAdapter[])];
+  if (!adapters.some((adapter) => adapter.describe().source_id === "local.generic_estimate")) {
+    adapters.push(createEstimateProvider());
+  }
   return Object.freeze({
     officialDataRoot: root,
     now: now as () => string,
     nutritionConfig: nutritionConfig as Readonly<NutritionRuntimeConfig>,
-    nutritionAdapters: Object.freeze([...(adaptersValue as NutritionSourceAdapter[])]),
+    nutritionAdapters: Object.freeze(adapters),
     nutritionCredential: credential as SourceContext["credential"],
   });
 }
@@ -2394,9 +2405,21 @@ async function resolveNutritionMaterial(
       });
       const values: Readonly<ResolvedNutritionEvidence>[] = [];
       for (const item of command.items) {
-        const resolved = await resolveNutrition(nutritionSourceRequest(item), context, {
+        const sourceRequest = nutritionSourceRequest(item);
+        const exactProduct = resolveProductLabelEvidence(session.database, item);
+        const resolved = exactProduct ?? await resolveNutrition(sourceRequest, context, {
           adapters: state.nutritionAdapters,
           config: state.nutritionConfig,
+          reusableWebEvidence: (candidate) =>
+            findReusableNutritionWebEvidence(session.database, candidate),
+          onWebResolution: (candidate, resolution, adopted) =>
+            recordNutritionWebResolution(
+              session.database,
+              candidate,
+              resolution,
+              adopted,
+              request.source_text,
+            ),
         });
         values.push(adoptNutritionAmount(item, resolved));
       }
@@ -2657,8 +2680,7 @@ async function handleNutritionSupplement(
       meal_event_id: target.event_id,
       intake_item_id: target.item_id,
       item_name: target.normalized_name,
-      subject_type: evidence.source_type === "product_label" ? "product" : "food",
-      subject_id: target.normalized_name,
+      ...nutritionRecordSubject(target.normalized_name, evidence),
       created_at: supplementEvent.committed_at,
     }, evidence)];
     try {
@@ -2756,8 +2778,7 @@ export async function handleCoreRequestAsync(
         meal_event_id: outcome.record_id,
         intake_item_id: stored.item_id,
         item_name: stored.normalized_name,
-        subject_type: material.nutrition_evidence[index]!.source_type === "product_label" ? "product" : "food",
-        subject_id: stored.normalized_name,
+         ...nutritionRecordSubject(stored.normalized_name, material.nutrition_evidence[index]!),
         created_at: event.committed_at,
       }, material.nutrition_evidence[index]!);
     });
