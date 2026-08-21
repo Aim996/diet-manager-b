@@ -8,8 +8,11 @@ import type { ResolvedNutritionEvidence } from "../nutrition/types.js";
 import type {
   ConfiguredGoals,
   GoalOverrides,
-  SixGoalValues,
 } from "./goal-derivation.js";
+import type {
+  GoalRecommendationBasis,
+  GoalRecommendationValues,
+} from "./goal-recommendation.js";
 
 export interface NutritionVector {
   readonly energy_kcal_milli: number | null;
@@ -397,8 +400,10 @@ export interface SetProfileOperationResult {
   readonly error_code: null;
   readonly fact_status: "committed";
   readonly profile_id: string;
-  readonly goal_version_id: string;
-  readonly goals: Readonly<SixGoalValues>;
+  readonly recommendation_id: string;
+  readonly recommendation_status: "pending";
+  readonly recommendation_goals: Readonly<GoalRecommendationValues>;
+  readonly recommendation_basis: Readonly<GoalRecommendationBasis>;
 }
 
 export interface SetGoalOperation {
@@ -414,7 +419,10 @@ export interface SetGoalOperationResult {
   readonly error_code: null;
   readonly fact_status: "committed";
   readonly goal_version_id: string;
+  readonly effective_from: string;
+  readonly previous_goals: Readonly<ConfiguredGoals>;
   readonly goals: Readonly<ConfiguredGoals>;
+  readonly confirmed_recommendation_id: string | null;
 }
 
 export interface QueryInventoryOperation {

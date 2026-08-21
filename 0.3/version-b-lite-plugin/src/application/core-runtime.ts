@@ -45,8 +45,11 @@ import { createDietDomainService, type DietDomainService } from "../domain/servi
 import type {
   DomainEnvelopeInput,
   DomainOperation,
+  DomainOperationResult,
   KnownStructuredAmount,
   ProductIdentityEvidence,
+  SetGoalOperationResult,
+  SetProfileOperationResult,
 } from "../domain/types.js";
 import { cloneCoreParseInput } from "../parser/input-authority.js";
 import { parseCoreCommand } from "../parser/parse-command.js";
@@ -112,7 +115,12 @@ import {
   type ResolvedCorePurchaseItem,
   type ResolvedCoreWaterClassification,
 } from "./mapping.js";
-import { committedOutcome, failedOutcome, nonWritingOutcome } from "./outcome.js";
+import {
+  committedGoalDetailsOutcome,
+  committedOutcome,
+  failedOutcome,
+  nonWritingOutcome,
+} from "./outcome.js";
 import { cloneNutritionRuntimeConfig } from "../nutrition/config.js";
 import { createEstimateProvider } from "../nutrition/estimate-provider.js";
 import { resolveProductLabelEvidence } from "../nutrition/product-label-service.js";
@@ -1419,7 +1427,8 @@ function executeCandidate(
   >,
   nutritionEvidence: readonly Readonly<ResolvedNutritionEvidence>[] = Object.freeze([]),
 ): { readonly status: "committed" | "committed_with_issues";
-    readonly record_id: string; readonly record_ids?: readonly string[] } {
+    readonly record_id: string; readonly record_ids?: readonly string[];
+    readonly operation_result: Readonly<DomainOperationResult> } {
   const envelope = mapCoreCandidateToEnvelope(
     request,
     command,
@@ -1445,6 +1454,7 @@ function executeCandidate(
   return Object.freeze({
     status: result.status,
     record_id: recordIds[0]!,
+    operation_result: result.items[0]!,
     ...(recordIds.length === 1 ? {} : { record_ids: recordIds }),
   });
 }
@@ -2165,6 +2175,42 @@ export function handleCoreRequest(runtime: CoreRuntime, value: CoreApplicationRe
       );
     }
     const result = executeCandidate(runtime, request, parsed.command);
+    if (parsed.command.action === "set_profile") {
+      const profile = result.operation_result as SetProfileOperationResult;
+      return committedGoalDetailsOutcome(
+        "set_profile",
+        request.operation_id,
+        result.status,
+        result.record_id,
+        {
+          profile_saved: { profile_id: profile.profile_id },
+          goal_recommendation: {
+            recommendation_id: profile.recommendation_id,
+            status: profile.recommendation_status,
+            goals: profile.recommendation_goals,
+            unavailable_reasons: profile.recommendation_basis.unavailable_reasons,
+          },
+        },
+      );
+    }
+    if (parsed.command.action === "set_goal") {
+      const goal = result.operation_result as SetGoalOperationResult;
+      return committedGoalDetailsOutcome(
+        "set_goal",
+        request.operation_id,
+        result.status,
+        result.record_id,
+        {
+          goal_update: {
+            goal_version_id: goal.goal_version_id,
+            effective_from: goal.effective_from,
+            previous_goals: goal.previous_goals,
+            goals: goal.goals,
+            confirmed_recommendation_id: goal.confirmed_recommendation_id,
+          },
+        },
+      );
+    }
     return committedOutcome(request.action, request.operation_id, result.status, result.record_id);
   } catch (error) {
     return failedOutcome(request.action, request.operation_id, sanitizedCode(error));

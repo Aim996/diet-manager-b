@@ -140,7 +140,7 @@ function goalVersions(
 }
 
 describe("DEC-030 C-3 set_goal domain write path", () => {
-  it("merges an arbitrary subset onto the current derived goals and versions the change", () => {
+  it("merges an arbitrary subset onto current formal goals and versions the change", () => {
     const fixture = createFixture();
     try {
       fixture.setClock("2026-08-12T04:00:01.000Z");
@@ -163,9 +163,16 @@ describe("DEC-030 C-3 set_goal domain write path", () => {
       });
 
       fixture.setClock("2026-08-12T04:00:02.000Z");
+      previewAndExecute(fixture.service, setGoalEnvelope({
+        suffix: "confirm-a",
+        receivedAt: "2026-08-12T04:00:02.000Z",
+        goals: derived,
+      }));
+
+      fixture.setClock("2026-08-12T04:00:03.000Z");
       const result = previewAndExecute(fixture.service, setGoalEnvelope({
         suffix: "override-a",
-        receivedAt: "2026-08-12T04:00:02.000Z",
+        receivedAt: "2026-08-12T04:00:03.000Z",
         goals: { energy_kcal: 1800 },
       }));
 
@@ -185,14 +192,14 @@ describe("DEC-030 C-3 set_goal domain write path", () => {
 
       const versions = goalVersions(fixture);
       expect(versions.length).toBe(2);
-      // 旧版本（set_profile 派生）已被 set_goal 关闭。
-      expect(versions[0]!.effective_to).toBe("2026-08-12T04:00:02.000Z");
+      // 旧的正式版本已被本次更新关闭；pending 推荐从未成为版本。
+      expect(versions[0]!.effective_to).toBe("2026-08-12T04:00:03.000Z");
       expect(JSON.parse(versions[0]!.payload_json as string)).toEqual({
         authority_kind: "diet-manager/goal-version/v1",
         goals: derived,
       });
       // 新版本（合并后）当前生效，effective_to 为空。
-      expect(versions[1]!.effective_from).toBe("2026-08-12T04:00:02.000Z");
+      expect(versions[1]!.effective_from).toBe("2026-08-12T04:00:03.000Z");
       expect(versions[1]!.effective_to).toBeNull();
       expect(JSON.parse(versions[1]!.payload_json as string)).toEqual({
         authority_kind: "diet-manager/goal-version/v1",
@@ -218,9 +225,16 @@ describe("DEC-030 C-3 set_goal domain write path", () => {
       const derived = deriveSixGoals({ height_cm: 175, weight_kg: 68 });
 
       fixture.setClock("2026-08-12T04:00:02.000Z");
+      previewAndExecute(fixture.service, setGoalEnvelope({
+        suffix: "formal-b",
+        receivedAt: "2026-08-12T04:00:02.000Z",
+        goals: derived,
+      }));
+
+      fixture.setClock("2026-08-12T04:00:03.000Z");
       const result = previewAndExecute(fixture.service, setGoalEnvelope({
         suffix: "clear-b",
-        receivedAt: "2026-08-12T04:00:02.000Z",
+        receivedAt: "2026-08-12T04:00:03.000Z",
         goals: { protein_g: null },
       }));
 

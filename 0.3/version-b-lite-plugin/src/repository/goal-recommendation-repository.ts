@@ -49,6 +49,14 @@ export function readGoalRecommendation(database: DatabaseSync, recommendationId:
     .get(id) as unknown as GoalRow | undefined);
 }
 
+export function readPendingGoalRecommendation(database: DatabaseSync, userId: string) {
+  assertCurrentMigrationAuthority(database);
+  const id = repositoryText(userId, PREFIX, "user_id", 128);
+  return fromRow(database.prepare(
+    "SELECT * FROM goal_recommendations WHERE user_id = ? AND status = 'pending'",
+  ).get(id) as unknown as GoalRow | undefined);
+}
+
 export function createGoalRecommendation(database: DatabaseSync, value: unknown) {
   assertCurrentMigrationAuthority(database);
   const input = exactRepositoryInput(value, [

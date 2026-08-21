@@ -11,6 +11,9 @@ import type {
   MealReceipt,
   NutritionOutcomeItem,
   PendingCandidateOutcomeView,
+  ProfileSavedOutcomeView,
+  GoalRecommendationOutcomeView,
+  GoalUpdateOutcomeView,
 } from "../contracts.js";
 
 function freezeNutritionItem(item: Readonly<NutritionOutcomeItem>): NutritionOutcomeItem {
@@ -136,5 +139,42 @@ export function committedOutcome(
       current_active: correction.current_active,
       compensation_transaction_id: correction.compensation_transaction_id,
     }) }),
+  });
+}
+
+export function committedGoalDetailsOutcome(
+  action: "set_profile" | "set_goal",
+  operationId: string,
+  status: "committed" | "committed_with_issues",
+  recordId: string,
+  details: Readonly<{
+    profile_saved?: Readonly<ProfileSavedOutcomeView>;
+    goal_recommendation?: Readonly<GoalRecommendationOutcomeView>;
+    goal_update?: Readonly<GoalUpdateOutcomeView>;
+  }>,
+): CommittedOutcome {
+  const base = committedOutcome(action, operationId, status, recordId);
+  return Object.freeze({
+    ...base,
+    ...(details.profile_saved === undefined ? {} : {
+      profile_saved: Object.freeze({ ...details.profile_saved }),
+    }),
+    ...(details.goal_recommendation === undefined ? {} : {
+      goal_recommendation: Object.freeze({
+        recommendation_id: details.goal_recommendation.recommendation_id,
+        status: details.goal_recommendation.status,
+        goals: Object.freeze({ ...details.goal_recommendation.goals }),
+        unavailable_reasons: Object.freeze({ ...details.goal_recommendation.unavailable_reasons }),
+      }),
+    }),
+    ...(details.goal_update === undefined ? {} : {
+      goal_update: Object.freeze({
+        goal_version_id: details.goal_update.goal_version_id,
+        effective_from: details.goal_update.effective_from,
+        previous_goals: Object.freeze({ ...details.goal_update.previous_goals }),
+        goals: Object.freeze({ ...details.goal_update.goals }),
+        confirmed_recommendation_id: details.goal_update.confirmed_recommendation_id,
+      }),
+    }),
   });
 }

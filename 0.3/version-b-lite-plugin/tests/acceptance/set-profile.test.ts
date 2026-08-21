@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { deriveSixGoals } from "../../src/domain/goal-derivation.js";
+import { deriveGoalRecommendation } from "../../src/domain/goal-recommendation.js";
 import {
   createDietDomainService,
   type DietDomainService,
@@ -13,8 +13,7 @@ import {
 import type { DomainEnvelopeInput } from "../../src/domain/types.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
-// DEC-030 C-2：set_profile 领域写路径 —— user_profiles + goal_versions 派生落库。
-// 本测试直接以 DomainEnvelopeInput 驱动 preview → execute，验证持久化与六项目标派生。
+// Task 8：set_profile 领域写路径 —— user_profiles + pending 推荐落库，正式目标零写入。
 
 const secret = Buffer.from("DEC-030 C-2 set_profile secret 0001", "utf8");
 const ownedRoots = new Set<string>();
@@ -97,8 +96,8 @@ function createFixture(): Fixture {
   return { root, runtime, service };
 }
 
-describe("DEC-030 C-2 set_profile domain write path", () => {
-  it("persists a full profile and its six derived goals", () => {
+describe("Task 8 set_profile domain write path", () => {
+  it("persists a full profile and six pending recommendations", () => {
     const fixture = createFixture();
     try {
       const envelope = profileEnvelope({
@@ -121,7 +120,7 @@ describe("DEC-030 C-2 set_profile domain write path", () => {
         fact_status: "committed",
       });
 
-      const expectedGoals = deriveSixGoals({
+      const expectedRecommendation = deriveGoalRecommendation({
         height_cm: 180,
         weight_kg: 70,
         sex: "male",
@@ -130,9 +129,11 @@ describe("DEC-030 C-2 set_profile domain write path", () => {
       });
 
       const item = result.items[0] as Record<string, unknown>;
-      expect(item.goals).toEqual(expectedGoals);
+      expect(item.recommendation_goals).toEqual(expectedRecommendation.goals);
+      expect(item.recommendation_basis).toEqual(expectedRecommendation.basis);
+      expect(item.recommendation_status).toBe("pending");
       expect(item.profile_id).toEqual(expect.any(String));
-      expect(item.goal_version_id).toEqual(expect.any(String));
+      expect(item.recommendation_id).toEqual(expect.any(String));
 
       const profiles = fixture.runtime.database.prepare(
         "SELECT * FROM user_profiles WHERE user_id = ?",
@@ -158,21 +159,21 @@ describe("DEC-030 C-2 set_profile domain write path", () => {
       const goalVersions = fixture.runtime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ?",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(goalVersions.length).toBe(1);
-      const goalVersion = goalVersions[0]!;
-      expect(goalVersion.timezone).toBe("Asia/Shanghai");
-      expect(goalVersion.effective_to).toBeNull();
-      expect(JSON.parse(goalVersion.payload_json as string)).toEqual({
-        authority_kind: "diet-manager/goal-version/v1",
-        goals: expectedGoals,
-      });
+      expect(goalVersions).toHaveLength(0);
+      const recommendations = fixture.runtime.database.prepare(
+        "SELECT * FROM goal_recommendations WHERE user_id = ?",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(recommendations).toHaveLength(1);
+      expect(recommendations[0]!.status).toBe("pending");
+      expect(JSON.parse(recommendations[0]!.goals_json as string)).toEqual(expectedRecommendation.goals);
+      expect(JSON.parse(recommendations[0]!.basis_json as string)).toEqual(expectedRecommendation.basis);
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);
     }
   });
 
-  it("defaults omitted sex, age and goal_state to null-derived goals", () => {
+  it("does not invent omitted sex, age or goal_state in recommendations", () => {
     const fixture = createFixture();
     try {
       const envelope = profileEnvelope({
@@ -195,11 +196,14 @@ describe("DEC-030 C-2 set_profile domain write path", () => {
       const goalVersions = fixture.runtime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ?",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(goalVersions.length).toBe(1);
-      expect(JSON.parse(goalVersions[0]!.payload_json as string)).toEqual({
-        authority_kind: "diet-manager/goal-version/v1",
-        goals: deriveSixGoals({ height_cm: 175, weight_kg: 68 }),
-      });
+      expect(goalVersions).toHaveLength(0);
+      const recommendation = fixture.runtime.database.prepare(
+        "SELECT goals_json, basis_json, status FROM goal_recommendations WHERE user_id = ?",
+      ).get("user:self") as Record<string, unknown>;
+      const expectedRecommendation = deriveGoalRecommendation({ height_cm: 175, weight_kg: 68 });
+      expect(recommendation.status).toBe("pending");
+      expect(JSON.parse(recommendation.goals_json as string)).toEqual(expectedRecommendation.goals);
+      expect(JSON.parse(recommendation.basis_json as string)).toEqual(expectedRecommendation.basis);
     } finally {
       fixture.runtime.close();
       removeOwnedRoot(fixture.root);

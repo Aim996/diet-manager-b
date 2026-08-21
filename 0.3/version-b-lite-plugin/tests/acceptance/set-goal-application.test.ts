@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { handleCoreRequest } from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
-import { deriveSixGoals } from "../../src/domain/goal-derivation.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
 // DEC-030 C-3：set_goal 应用层端到端 —— 自然语言解析 → 映射 → 运行时落库
@@ -79,23 +78,22 @@ describe("DEC-030 C-3 set_goal application path", () => {
     });
     runtime.close();
 
-    const derived = deriveSixGoals({
-      height_cm: 180,
-      weight_kg: 70,
-      sex: "male",
-      age: 30,
-      goal_state: "cut",
-    });
-
     const dbRuntime = openDietDatabase({ privateRuntimeRoot: root });
     try {
       const versions = dbRuntime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ? ORDER BY effective_from",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(versions.length).toBe(2);
-      expect(JSON.parse(versions[1]!.payload_json as string)).toEqual({
+      expect(versions.length).toBe(1);
+      expect(JSON.parse(versions[0]!.payload_json as string)).toEqual({
         authority_kind: "diet-manager/goal-version/v1",
-        goals: { ...derived, energy_kcal: 1800 },
+        goals: {
+          energy_kcal: 1800,
+          protein_g: null,
+          fat_g: null,
+          carbohydrate_g: null,
+          fiber_g: null,
+          water_ml: null,
+        },
       });
     } finally {
       dbRuntime.close();
@@ -127,17 +125,22 @@ describe("DEC-030 C-3 set_goal application path", () => {
     });
     runtime.close();
 
-    const derived = deriveSixGoals({ height_cm: 175, weight_kg: 68 });
-
     const dbRuntime = openDietDatabase({ privateRuntimeRoot: root });
     try {
       const versions = dbRuntime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ? ORDER BY effective_from",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(versions.length).toBe(2);
-      expect(JSON.parse(versions[1]!.payload_json as string)).toEqual({
+      expect(versions.length).toBe(1);
+      expect(JSON.parse(versions[0]!.payload_json as string)).toEqual({
         authority_kind: "diet-manager/goal-version/v1",
-        goals: { ...derived, protein_g: null },
+        goals: {
+          energy_kcal: null,
+          protein_g: null,
+          fat_g: null,
+          carbohydrate_g: null,
+          fiber_g: null,
+          water_ml: null,
+        },
       });
     } finally {
       dbRuntime.close();
@@ -196,8 +199,8 @@ describe("DEC-030 C-3 set_goal application path", () => {
       const versions = dbRuntime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ? ORDER BY effective_from",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(versions).toHaveLength(3);
-      const latest = JSON.parse(versions[2]!.payload_json as string) as {
+      expect(versions).toHaveLength(2);
+      const latest = JSON.parse(versions[1]!.payload_json as string) as {
         authority_kind: string;
         goals: Record<string, number | null>;
       };

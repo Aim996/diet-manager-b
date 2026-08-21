@@ -14,6 +14,11 @@ import {
 } from "../repository/inventory-effects.js";
 import { computeRepositoryDataRevision } from "../repository/revision.js";
 import {
+  createGoalRecommendation,
+  readPendingGoalRecommendation,
+  transitionGoalRecommendation,
+} from "../repository/goal-recommendation-repository.js";
+import {
   createReplacementProgressReservation,
   reservationFromEventPayload,
   reservationsFromEventPayload,
@@ -102,14 +107,17 @@ import type {
   UndoRecordOperation,
 } from "./types.js";
 import {
-  deriveSixGoals,
   emptyConfiguredGoals,
   GOAL_FIELDS,
   mergeGoalOverrides,
   type ConfiguredGoals,
   type GoalOverrides,
-  type SixGoalValues,
 } from "./goal-derivation.js";
+import {
+  deriveGoalRecommendation,
+  type GoalRecommendationBasis,
+  type GoalRecommendationValues,
+} from "./goal-recommendation.js";
 
 export interface PurchaseOperationResult {
   readonly sequence: number;
@@ -4322,9 +4330,10 @@ export function readAppliedCorrectionResult(
   return freezeJson(JSON.parse(canonicalJson(result)) as CorrectionOperationResult);
 }
 
-// ── DEC-030 C-2：set_profile 领域写路径 ─────────────────────────────────────
-// prepareProfileOperation 冻结个人档案 + 六项目标派生为单个 profile_effect；
-// applyProfileEffect 在 effect_bundle 事务内追加落 user_profiles 与 goal_versions。
+// ── Task 8：set_profile 领域写路径 ──────────────────────────────────────────
+// prepareProfileOperation 冻结个人档案 + pending 推荐为单个 profile_effect；
+// applyProfileEffect 在 effect_bundle 事务内追加 user_profiles 与 goal_recommendations，
+// 未经确认绝不写 goal_versions。
 
 const PROFILE_FACT_AUTHORITY_KIND = "diet-manager/profile-fact/v1" as const;
 const PROFILE_PAYLOAD_AUTHORITY_KIND = "diet-manager/profile/v1" as const;
@@ -4395,7 +4404,7 @@ export interface PreparedProfile {
 export function prepareProfileOperation(input: PrepareProfileInput): PreparedProfile {
   const { operation } = input;
   if (operation.kind !== "set_profile") return invalid("profile_operation");
-  const goals = deriveSixGoals({
+  const recommendation = deriveGoalRecommendation({
     height_cm: operation.height_cm,
     weight_kg: operation.weight_kg,
     sex: operation.sex,
@@ -4403,7 +4412,7 @@ export function prepareProfileOperation(input: PrepareProfileInput): PreparedPro
     goal_state: operation.goal_state,
   });
   const profileId = deriveDomainId("profile", input.idempotencyKey, input.sequence);
-  const goalVersionId = deriveDomainId("goal", input.idempotencyKey, input.sequence);
+  const recommendationId = deriveDomainId("recommendation", input.idempotencyKey, input.sequence);
   const eventId = deriveDomainId("event", input.idempotencyKey, input.sequence);
   const effectId = deriveDomainId("effect", input.idempotencyKey, input.sequence);
   const outboxId = deriveDomainId("outbox", input.idempotencyKey, input.sequence);
@@ -4411,7 +4420,7 @@ export function prepareProfileOperation(input: PrepareProfileInput): PreparedPro
   const effectInput = Object.freeze({
     kind: "profile_apply" as const,
     profile_id: profileId,
-    goal_version_id: goalVersionId,
+    recommendation_id: recommendationId,
     user_id: input.subjectScope,
     timezone: "Asia/Shanghai" as const,
     height_cm: operation.height_cm,
@@ -4419,7 +4428,7 @@ export function prepareProfileOperation(input: PrepareProfileInput): PreparedPro
     sex: operation.sex,
     age: operation.age,
     goal_state: operation.goal_state,
-    goals,
+    recommendation,
   });
   const result: SetProfileOperationResult = Object.freeze({
     sequence: input.sequence,
@@ -4428,8 +4437,10 @@ export function prepareProfileOperation(input: PrepareProfileInput): PreparedPro
     error_code: null,
     fact_status: "committed",
     profile_id: profileId,
-    goal_version_id: goalVersionId,
-    goals,
+    recommendation_id: recommendationId,
+    recommendation_status: "pending",
+    recommendation_goals: recommendation.goals,
+    recommendation_basis: recommendation.basis,
   });
   return Object.freeze({
     fact: Object.freeze({
@@ -4522,14 +4533,15 @@ export interface ApplyProfileEffectsInput {
 
 interface StoredProfileIntent {
   readonly profileId: string;
-  readonly goalVersionId: string;
+  readonly recommendationId: string;
   readonly userId: string;
   readonly heightCm: number;
   readonly weightKg: number;
   readonly sex: "male" | "female" | null;
   readonly age: number | null;
   readonly goalState: "cut" | "maintain" | "bulk" | null;
-  readonly goals: Readonly<SixGoalValues>;
+  readonly recommendationGoals: Readonly<GoalRecommendationValues>;
+  readonly recommendationBasis: Readonly<GoalRecommendationBasis>;
 }
 
 function profileIntentFromStoredFact(
@@ -4556,11 +4568,11 @@ function profileIntentFromStoredFact(
   const intent = effectInputs[effectId] as Record<string, unknown>;
   if (typeof intent !== "object" || intent === null || Array.isArray(intent)) return profileEffectError("effect_input");
   profileExactKeys(intent, [
-    "kind", "profile_id", "goal_version_id", "user_id", "timezone", "height_cm",
-    "weight_kg", "sex", "age", "goal_state", "goals",
+    "kind", "profile_id", "recommendation_id", "user_id", "timezone", "height_cm",
+    "weight_kg", "sex", "age", "goal_state", "recommendation",
   ], "profile_effect_input");
   if (intent.kind !== "profile_apply" || intent.timezone !== "Asia/Shanghai") return profileEffectError("effect_input");
-  if (typeof intent.profile_id !== "string" || typeof intent.goal_version_id !== "string" ||
+  if (typeof intent.profile_id !== "string" || typeof intent.recommendation_id !== "string" ||
       typeof intent.user_id !== "string") return profileEffectError("effect_input");
   if (!Number.isFinite(intent.height_cm) || (intent.height_cm as number) <= 0 ||
       !Number.isFinite(intent.weight_kg) || (intent.weight_kg as number) <= 0) return profileEffectError("effect_input");
@@ -4570,25 +4582,27 @@ function profileIntentFromStoredFact(
     intent.age !== null &&
     (!Number.isInteger(intent.age) || (intent.age as number) <= 0)
   ) return profileEffectError("effect_input");
-  const storedGoals = intent.goals as Record<string, unknown>;
-  const expectedGoals = deriveSixGoals({
+  const expectedRecommendation = deriveGoalRecommendation({
     height_cm: intent.height_cm as number,
     weight_kg: intent.weight_kg as number,
     sex,
     age: intent.age as number | null,
     goal_state: goalState,
   });
-  if (canonicalJson(storedGoals) !== canonicalJson(expectedGoals)) return profileEffectError("goals");
+  if (canonicalJson(intent.recommendation) !== canonicalJson(expectedRecommendation)) {
+    return profileEffectError("recommendation");
+  }
   return {
     profileId: intent.profile_id,
-    goalVersionId: intent.goal_version_id,
+    recommendationId: intent.recommendation_id,
     userId: intent.user_id,
     heightCm: intent.height_cm as number,
     weightKg: intent.weight_kg as number,
     sex,
     age: intent.age as number | null,
     goalState,
-    goals: expectedGoals,
+    recommendationGoals: expectedRecommendation.goals,
+    recommendationBasis: expectedRecommendation.basis,
   };
 }
 
@@ -4633,9 +4647,44 @@ function profileResult(input: ApplyProfileEffectsInput, intent: StoredProfileInt
     error_code: null,
     fact_status: "committed",
     profile_id: intent.profileId,
-    goal_version_id: intent.goalVersionId,
-    goals: intent.goals,
+    recommendation_id: intent.recommendationId,
+    recommendation_status: "pending",
+    recommendation_goals: intent.recommendationGoals,
+    recommendation_basis: intent.recommendationBasis,
   });
+}
+
+type VersionedStateTable = "user_profiles" | "goal_versions";
+
+function strictlyMonotonicEffectiveFrom(
+  database: DatabaseSync,
+  table: VersionedStateTable,
+  userId: string,
+  requested: string,
+): string {
+  const requestedMilliseconds = Date.parse(requested);
+  if (!Number.isFinite(requestedMilliseconds)) {
+    throw new Error("VERSION_EFFECTIVE_TIME_INVALID:requested");
+  }
+  const rows = database.prepare(
+    table === "user_profiles"
+      ? "SELECT effective_from FROM user_profiles WHERE user_id = ?"
+      : "SELECT effective_from FROM goal_versions WHERE user_id = ?",
+  ).all(userId) as Array<{ effective_from: string }>;
+  let latestMilliseconds = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    const milliseconds = Date.parse(row.effective_from);
+    if (!Number.isFinite(milliseconds)) {
+      throw new Error("VERSION_EFFECTIVE_TIME_INVALID:stored");
+    }
+    latestMilliseconds = Math.max(latestMilliseconds, milliseconds);
+  }
+  if (requestedMilliseconds > latestMilliseconds) return requested;
+  const nextMilliseconds = latestMilliseconds + 1;
+  if (!Number.isFinite(nextMilliseconds)) {
+    throw new Error("VERSION_EFFECTIVE_TIME_INVALID:overflow");
+  }
+  return new Date(nextMilliseconds).toISOString();
 }
 
 export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileOperationResult {
@@ -4667,14 +4716,15 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
       }
       const effect = bundle.effects[0] as Record<string, unknown>;
       if (typeof effect !== "object" || effect === null || Array.isArray(effect)) return profileEffectError("terminal_bundle");
-      profileExactKeys(effect, ["effect_id", "goals", "state"], "profile_terminal");
+      profileExactKeys(effect, ["effect_id", "effective_from", "recommendation_id", "state"], "profile_terminal");
       const outboxes = input.database.prepare(
         "SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
       ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
       if (outboxes.length !== 1 || outboxes[0]?.effect_id !== effectId ||
           outboxes[0].effect_kind !== PROFILE_EFFECT_KIND || outboxes[0].state !== "succeeded" ||
           effect.effect_id !== effectId || effect.state !== "succeeded" ||
-          canonicalJson(effect.goals) !== canonicalJson(intent.goals)) {
+          typeof effect.effective_from !== "string" || !Number.isFinite(Date.parse(effect.effective_from)) ||
+          effect.recommendation_id !== intent.recommendationId) {
         return profileEffectError("terminal_bundle");
       }
       input.database.exec("ROLLBACK");
@@ -4692,6 +4742,16 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
        AND state = ?`,
     ).run(input.now, input.envelopeId, input.operationId, outbox.state);
     if (changed(input.database) !== 1) return profileEffectError("claim");
+    const effectiveFrom = strictlyMonotonicEffectiveFrom(
+      input.database,
+      "user_profiles",
+      intent.userId,
+      input.now,
+    );
+    input.database.prepare(
+      `UPDATE user_profiles SET effective_to = ?
+       WHERE user_id = ? AND effective_to IS NULL`,
+    ).run(effectiveFrom, intent.userId);
     input.database.prepare(
       `INSERT INTO user_profiles(
         profile_id, user_id, schema_version, height_cm, weight_kg, sex, age, goal_state,
@@ -4706,8 +4766,8 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
       intent.sex,
       intent.age,
       intent.goalState,
-      input.now,
-      input.now,
+      effectiveFrom,
+      effectiveFrom,
       canonicalJson({
         authority_kind: PROFILE_PAYLOAD_AUTHORITY_KIND,
         height_cm: intent.heightCm,
@@ -4717,22 +4777,23 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
         goal_state: intent.goalState,
       }),
     );
-    input.database.prepare(
-      `INSERT INTO goal_versions(
-        goal_version_id, schema_version, user_id, timezone, effective_from, effective_to, created_at, payload_json
-      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
-    ).run(
-      intent.goalVersionId,
-      "domain/v2",
-      intent.userId,
-      "Asia/Shanghai",
-      input.now,
-      input.now,
-      canonicalJson({
-        authority_kind: GOAL_VERSION_PAYLOAD_AUTHORITY_KIND,
-        goals: intent.goals,
-      }),
-    );
+    const previousPending = readPendingGoalRecommendation(input.database, intent.userId);
+    if (previousPending !== undefined && previousPending.recommendation_id !== intent.recommendationId) {
+      transitionGoalRecommendation(input.database, {
+        recommendation_id: previousPending.recommendation_id,
+        expected_revision: previousPending.revision,
+        status: "superseded",
+        changed_at: effectiveFrom,
+      });
+    }
+    createGoalRecommendation(input.database, {
+      recommendation_id: intent.recommendationId,
+      user_id: intent.userId,
+      profile_version: intent.profileId,
+      goals: intent.recommendationGoals,
+      basis: intent.recommendationBasis,
+      created_at: effectiveFrom,
+    });
     assertEffectTransition("processing", "succeeded");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
@@ -4746,7 +4807,12 @@ export function applyProfileEffect(input: ApplyProfileEffectsInput): SetProfileO
     ).run(input.now, canonicalJson({
       authority_kind: "diet-manager/effect-bundle/v1",
       data_revision: computeRepositoryDataRevision(input.database),
-      effects: [{ effect_id: authority.effectId, state: "succeeded", goals: intent.goals }],
+      effects: [{
+        effect_id: authority.effectId,
+        state: "succeeded",
+        effective_from: effectiveFrom,
+        recommendation_id: intent.recommendationId,
+      }],
       operation_sequence: input.operationSequence,
     }), input.envelopeId, input.operationId);
     if (changed(input.database) !== 1) return profileEffectError("bundle");
@@ -5003,13 +5069,35 @@ function goalIntentFromStoredFact(
 
 export function currentConfiguredGoals(database: DatabaseSync, userId: string): ConfiguredGoals {
   const row = database.prepare(
-    `SELECT payload_json FROM goal_versions WHERE user_id = ? ORDER BY effective_from DESC LIMIT 1`,
+    `SELECT payload_json FROM goal_versions
+     WHERE user_id = ? AND effective_to IS NULL
+     ORDER BY effective_from DESC LIMIT 1`,
   ).get(userId) as { payload_json: string } | undefined;
   if (!row) return emptyConfiguredGoals();
   const payload = goalParseCanonical(row.payload_json, "goal_version");
   goalExactKeys(payload, ["authority_kind", "goals"], "goal_version");
   if (payload.authority_kind !== GOAL_VERSION_PAYLOAD_AUTHORITY_KIND) return goalEffectError("goal_version");
   return parseConfiguredGoals(payload.goals, "goal_version_goals");
+}
+
+function matchingPendingRecommendation(
+  database: DatabaseSync,
+  userId: string,
+  overrides: Readonly<GoalOverrides>,
+) {
+  const pending = readPendingGoalRecommendation(database, userId);
+  if (pending === undefined || typeof pending.goals !== "object" || pending.goals === null ||
+      Array.isArray(pending.goals)) return undefined;
+  const numeric = Object.entries(pending.goals as Record<string, unknown>)
+    .filter((entry): entry is [string, number] =>
+      (GOAL_FIELDS as readonly string[]).includes(entry[0]) &&
+      typeof entry[1] === "number" && Number.isFinite(entry[1]) && entry[1] > 0);
+  if (numeric.length < 5) return undefined;
+  if (!numeric.every(([field, value]) =>
+    Object.hasOwn(overrides, field) && overrides[field as keyof GoalOverrides] === value)) {
+    return undefined;
+  }
+  return pending;
 }
 
 function assertPendingGoalAuthority(input: ApplyGoalEffectsInput): { readonly effectId: string } {
@@ -5048,7 +5136,10 @@ function assertPendingGoalAuthority(input: ApplyGoalEffectsInput): { readonly ef
 function goalResult(
   input: ApplyGoalEffectsInput,
   intent: StoredGoalIntent,
+  previousGoals: ConfiguredGoals,
   goals: ConfiguredGoals,
+  confirmedRecommendationId: string | null,
+  effectiveFrom: string,
 ): SetGoalOperationResult {
   return Object.freeze({
     sequence: input.operationSequence,
@@ -5057,7 +5148,10 @@ function goalResult(
     error_code: null,
     fact_status: "committed",
     goal_version_id: intent.goalVersionId,
+    effective_from: effectiveFrom,
+    previous_goals: previousGoals,
     goals,
+    confirmed_recommendation_id: confirmedRecommendationId,
   });
 }
 
@@ -5090,19 +5184,31 @@ export function applyGoalEffect(input: ApplyGoalEffectsInput): SetGoalOperationR
       }
       const effect = bundle.effects[0] as Record<string, unknown>;
       if (typeof effect !== "object" || effect === null || Array.isArray(effect)) return goalEffectError("terminal_bundle");
-      goalExactKeys(effect, ["effect_id", "goals", "state"], "goal_terminal");
+      goalExactKeys(effect, [
+        "effect_id", "effective_from", "goals", "previous_goals", "recommendation_id", "state",
+      ], "goal_terminal");
       const outboxes = input.database.prepare(
         "SELECT outbox_id, effect_id, effect_kind, state FROM effect_outbox WHERE envelope_id = ? AND operation_id = ?",
       ).all(input.envelopeId, input.operationId) as Array<{ outbox_id: string; effect_id: string; effect_kind: string; state: string }>;
       if (outboxes.length !== 1 || outboxes[0]?.effect_id !== effectId ||
           outboxes[0].effect_kind !== GOAL_EFFECT_KIND || outboxes[0].state !== "succeeded" ||
-          effect.effect_id !== effectId || effect.state !== "succeeded") {
+          effect.effect_id !== effectId || effect.state !== "succeeded" ||
+          (effect.recommendation_id !== null && typeof effect.recommendation_id !== "string") ||
+          typeof effect.effective_from !== "string") {
         return goalEffectError("terminal_bundle");
       }
+      const previous = parseConfiguredGoals(effect.previous_goals, "goal_terminal_previous_goals");
       const merged = parseConfiguredGoals(effect.goals, "goal_terminal_goals");
       input.database.exec("ROLLBACK");
       transactionOpen = false;
-      return goalResult(input, intent, merged);
+      return goalResult(
+        input,
+        intent,
+        previous,
+        merged,
+        effect.recommendation_id as string | null,
+        effect.effective_from,
+      );
     }
     const authority = assertPendingGoalAuthority(input);
     const outbox = input.database.prepare(
@@ -5115,10 +5221,22 @@ export function applyGoalEffect(input: ApplyGoalEffectsInput): SetGoalOperationR
        AND state = ?`,
     ).run(input.now, input.envelopeId, input.operationId, outbox.state);
     if (changed(input.database) !== 1) return goalEffectError("claim");
-    const merged = mergeGoalOverrides(currentConfiguredGoals(input.database, intent.userId), intent.overrides);
+    const confirmedRecommendation = matchingPendingRecommendation(
+      input.database,
+      intent.userId,
+      intent.overrides,
+    );
+    const previous = currentConfiguredGoals(input.database, intent.userId);
+    const merged = mergeGoalOverrides(previous, intent.overrides);
+    const effectiveFrom = strictlyMonotonicEffectiveFrom(
+      input.database,
+      "goal_versions",
+      intent.userId,
+      input.now,
+    );
     input.database.prepare(
-      `UPDATE goal_versions SET effective_to = ? WHERE user_id = ? AND effective_to IS NULL AND effective_from < ?`,
-    ).run(input.now, intent.userId, input.now);
+      `UPDATE goal_versions SET effective_to = ? WHERE user_id = ? AND effective_to IS NULL`,
+    ).run(effectiveFrom, intent.userId);
     input.database.prepare(
       `INSERT INTO goal_versions(
         goal_version_id, schema_version, user_id, timezone, effective_from, effective_to, created_at, payload_json
@@ -5128,13 +5246,21 @@ export function applyGoalEffect(input: ApplyGoalEffectsInput): SetGoalOperationR
       "domain/v2",
       intent.userId,
       "Asia/Shanghai",
-      input.now,
-      input.now,
+      effectiveFrom,
+      effectiveFrom,
       canonicalJson({
         authority_kind: GOAL_VERSION_PAYLOAD_AUTHORITY_KIND,
         goals: merged,
       }),
     );
+    if (confirmedRecommendation !== undefined) {
+      transitionGoalRecommendation(input.database, {
+        recommendation_id: confirmedRecommendation.recommendation_id,
+        expected_revision: confirmedRecommendation.revision,
+        status: "confirmed",
+        changed_at: effectiveFrom,
+      });
+    }
     assertEffectTransition("processing", "succeeded");
     input.database.prepare(
       `UPDATE effect_outbox SET state = 'succeeded', reason = NULL, updated_at = ?
@@ -5148,13 +5274,27 @@ export function applyGoalEffect(input: ApplyGoalEffectsInput): SetGoalOperationR
     ).run(input.now, canonicalJson({
       authority_kind: "diet-manager/effect-bundle/v1",
       data_revision: computeRepositoryDataRevision(input.database),
-      effects: [{ effect_id: authority.effectId, state: "succeeded", goals: merged }],
+      effects: [{
+        effect_id: authority.effectId,
+        state: "succeeded",
+        effective_from: effectiveFrom,
+        previous_goals: previous,
+        goals: merged,
+        recommendation_id: confirmedRecommendation?.recommendation_id ?? null,
+      }],
       operation_sequence: input.operationSequence,
     }), input.envelopeId, input.operationId);
     if (changed(input.database) !== 1) return goalEffectError("bundle");
     input.database.exec("COMMIT");
     transactionOpen = false;
-    return goalResult(input, intent, merged);
+    return goalResult(
+      input,
+      intent,
+      previous,
+      merged,
+      confirmedRecommendation?.recommendation_id ?? null,
+      effectiveFrom,
+    );
   } catch (error) {
     if (transactionOpen) {
       try { input.database.exec("ROLLBACK"); } catch { /* preserve primary */ }

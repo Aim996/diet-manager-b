@@ -258,6 +258,28 @@ export interface CorrectionOutcomeView {
   readonly compensation_transaction_id: string | null;
 }
 
+export interface ProfileSavedOutcomeView {
+  readonly profile_id: string;
+}
+
+export interface GoalRecommendationOutcomeView {
+  readonly recommendation_id: string;
+  readonly status: "pending";
+  readonly goals: Readonly<import("./domain/goal-recommendation.js").GoalRecommendationValues>;
+  readonly unavailable_reasons: Readonly<Partial<Record<
+    import("./domain/goal-derivation.js").GoalField,
+    string
+  >>>;
+}
+
+export interface GoalUpdateOutcomeView {
+  readonly goal_version_id: string;
+  readonly effective_from: string;
+  readonly previous_goals: Readonly<import("./domain/goal-derivation.js").ConfiguredGoals>;
+  readonly goals: Readonly<import("./domain/goal-derivation.js").ConfiguredGoals>;
+  readonly confirmed_recommendation_id: string | null;
+}
+
 export interface CommittedOutcome {
   action: DietManagerAction;
   status: "committed" | "committed_with_issues";
@@ -268,6 +290,9 @@ export interface CommittedOutcome {
   nutrition_items?: readonly NutritionOutcomeItem[];
   receipt?: Readonly<MealReceipt>;
   correction?: Readonly<CorrectionOutcomeView>;
+  profile_saved?: Readonly<ProfileSavedOutcomeView>;
+  goal_recommendation?: Readonly<GoalRecommendationOutcomeView>;
+  goal_update?: Readonly<GoalUpdateOutcomeView>;
 }
 
 export type DietManagerOutcome =
@@ -638,6 +663,91 @@ function assertCorrection(value: unknown): asserts value is CorrectionOutcomeVie
   }
 }
 
+const GOAL_OUTCOME_FIELDS = [
+  "energy_kcal", "protein_g", "fat_g", "carbohydrate_g", "fiber_g", "water_ml",
+] as const;
+
+function assertGoalValues(value: unknown, mode: "configured" | "recommendation"): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome(`${mode}_goals`);
+  }
+  const candidate = value as Record<string, unknown>;
+  const required = mode === "configured" ? GOAL_OUTCOME_FIELDS : GOAL_OUTCOME_FIELDS.slice(0, 5);
+  const keys = Object.keys(candidate);
+  if (required.some((field) => !Object.hasOwn(candidate, field)) ||
+      keys.some((field) => !(GOAL_OUTCOME_FIELDS as readonly string[]).includes(field)) ||
+      (mode === "configured" && keys.length !== GOAL_OUTCOME_FIELDS.length)) {
+    return invalidOutcome(`${mode}_goals`);
+  }
+  for (const field of keys) {
+    const goal = candidate[field];
+    if (goal !== null && (typeof goal !== "number" || !Number.isFinite(goal) || goal <= 0)) {
+      return invalidOutcome(`${mode}_goals`);
+    }
+    if (mode === "recommendation" && field === "water_ml" && goal === null) {
+      return invalidOutcome("recommendation_goals");
+    }
+  }
+}
+
+function assertProfileSaved(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("profile_saved");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).join("\0") !== "profile_id") return invalidOutcome("profile_saved");
+  boundedText(candidate.profile_id, "profile_id", 128);
+}
+
+function assertGoalRecommendation(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("goal_recommendation");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).sort().join("\0") !==
+      "goals\0recommendation_id\0status\0unavailable_reasons") {
+    return invalidOutcome("goal_recommendation");
+  }
+  boundedText(candidate.recommendation_id, "recommendation_id", 128);
+  if (candidate.status !== "pending") return invalidOutcome("recommendation_status");
+  assertGoalValues(candidate.goals, "recommendation");
+  if (typeof candidate.unavailable_reasons !== "object" || candidate.unavailable_reasons === null ||
+      Array.isArray(candidate.unavailable_reasons)) return invalidOutcome("recommendation_reasons");
+  const goals = candidate.goals as Record<string, unknown>;
+  const reasons = candidate.unavailable_reasons as Record<string, unknown>;
+  if (Object.keys(reasons).some((field) =>
+      !(GOAL_OUTCOME_FIELDS as readonly string[]).includes(field) ||
+      (Object.hasOwn(goals, field) ? goals[field] !== null : field !== "water_ml") ||
+      typeof reasons[field] !== "string" || (reasons[field] as string).length === 0 ||
+      (reasons[field] as string).length > 128)) return invalidOutcome("recommendation_reasons");
+  if (Object.entries(goals).some(([field, goal]) => goal === null && !Object.hasOwn(reasons, field))) {
+    return invalidOutcome("recommendation_reasons");
+  }
+  if (!Object.hasOwn(goals, "water_ml") && !Object.hasOwn(reasons, "water_ml")) {
+    return invalidOutcome("recommendation_reasons");
+  }
+}
+
+function assertGoalUpdate(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidOutcome("goal_update");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).sort().join("\0") !==
+      "confirmed_recommendation_id\0effective_from\0goal_version_id\0goals\0previous_goals") {
+    return invalidOutcome("goal_update");
+  }
+  boundedText(candidate.goal_version_id, "goal_version_id", 128);
+  if (typeof candidate.effective_from !== "string" || !Number.isFinite(Date.parse(candidate.effective_from))) {
+    return invalidOutcome("goal_effective_from");
+  }
+  if (candidate.confirmed_recommendation_id !== null) {
+    boundedText(candidate.confirmed_recommendation_id, "confirmed_recommendation_id", 128);
+  }
+  assertGoalValues(candidate.previous_goals, "configured");
+  assertGoalValues(candidate.goals, "configured");
+}
+
 export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalidOutcome("shape");
@@ -699,7 +809,10 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
     exactOutcomeKeys(candidate, ["action", "status", "committed", "reason_code"],
       ["operation_id", "question", "missing_items", "clarification", "daily_progress", "meal_history", "inventory_view", "correction", "pending_candidate"]);
   } else {
-    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], ["record_ids", "nutrition_items", "receipt", "correction"]);
+    exactOutcomeKeys(candidate, ["action", "status", "committed", "operation_id", "record_id"], [
+      "record_ids", "nutrition_items", "receipt", "correction", "profile_saved",
+      "goal_recommendation", "goal_update",
+    ]);
   }
   if (candidate.clarification !== undefined) {
     if (candidate.status !== "needs_clarification") return invalidOutcome("clarification_status");
@@ -757,6 +870,21 @@ export function assertDietManagerOutcome(value: unknown): DietManagerOutcome {
   if (candidate.receipt !== undefined) {
     if (!hasCommittedStatus || candidate.action !== "record_meal") return invalidOutcome("receipt_status");
     assertMealReceipt(candidate.receipt);
+  }
+  if ((hasCommittedStatus && candidate.action === "set_profile") ||
+      candidate.profile_saved !== undefined || candidate.goal_recommendation !== undefined) {
+    if (!hasCommittedStatus || candidate.action !== "set_profile" || candidate.goal_update !== undefined ||
+        candidate.profile_saved === undefined || candidate.goal_recommendation === undefined) {
+      return invalidOutcome("profile_goal_details_status");
+    }
+    assertProfileSaved(candidate.profile_saved);
+    assertGoalRecommendation(candidate.goal_recommendation);
+  }
+  if ((hasCommittedStatus && candidate.action === "set_goal") || candidate.goal_update !== undefined) {
+    if (!hasCommittedStatus || candidate.action !== "set_goal" ||
+        candidate.goal_update === undefined || candidate.profile_saved !== undefined ||
+        candidate.goal_recommendation !== undefined) return invalidOutcome("goal_update_status");
+    assertGoalUpdate(candidate.goal_update);
   }
   if (candidate.daily_progress !== undefined) {
     if (candidate.action !== "query_daily_summary" || candidate.status !== "ignored" ||

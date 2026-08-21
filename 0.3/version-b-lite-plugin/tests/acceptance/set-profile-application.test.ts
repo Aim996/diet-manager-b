@@ -6,12 +6,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { handleCoreRequest } from "../../src/application/command-handler.js";
 import { createCoreRuntime } from "../../src/application/runtime.js";
-import { deriveSixGoals } from "../../src/domain/goal-derivation.js";
+import { deriveGoalRecommendation } from "../../src/domain/goal-recommendation.js";
 import { openDietDatabase } from "../../src/storage/database.js";
 
-// DEC-030 C-2：set_profile 应用层端到端 —— 自然语言解析 → 映射 → 运行时落库
-// user_profiles + 派生六项目标 goal_versions。与 domain 层测试互补，覆盖 mapping
-// 与 core-runtime 的 set_profile 接线。
+// Task 8：set_profile 应用层端到端 —— 自然语言解析 → 映射 → 运行时落库
+// user_profiles + pending goal_recommendations，且不自动写正式 goal_versions。
 
 const ownedRoots = new Set<string>();
 
@@ -43,8 +42,8 @@ function request(sourceText: string, operationId: string) {
   };
 }
 
-describe("DEC-030 C-2 set_profile application path", () => {
-  it("commits a profile through the runtime and persists the profile plus six derived goals", () => {
+describe("Task 8 set_profile application path", () => {
+  it("commits a profile and persists six pending recommendations without active goals", () => {
     const root = newRoot();
     const runtime = createCoreRuntime({
       officialDataRoot: root,
@@ -81,18 +80,21 @@ describe("DEC-030 C-2 set_profile application path", () => {
       const goalVersions = dbRuntime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ?",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(goalVersions.length).toBe(1);
-      expect(goalVersions[0]!.timezone).toBe("Asia/Shanghai");
-      expect(JSON.parse(goalVersions[0]!.payload_json as string)).toEqual({
-        authority_kind: "diet-manager/goal-version/v1",
-        goals: deriveSixGoals({
+      expect(goalVersions).toHaveLength(0);
+      const recommendations = dbRuntime.database.prepare(
+        "SELECT * FROM goal_recommendations WHERE user_id = ?",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(recommendations).toHaveLength(1);
+      expect(recommendations[0]!.status).toBe("pending");
+      expect(JSON.parse(recommendations[0]!.goals_json as string)).toEqual(
+        deriveGoalRecommendation({
           height_cm: 180,
           weight_kg: 70,
           sex: "male",
           age: 30,
           goal_state: "cut",
-        }),
-      });
+        }).goals,
+      );
     } finally {
       dbRuntime.close();
     }
@@ -138,7 +140,11 @@ describe("DEC-030 C-2 set_profile application path", () => {
       const goalVersions = dbRuntime.database.prepare(
         "SELECT * FROM goal_versions WHERE user_id = ?",
       ).all("user:self") as Array<Record<string, unknown>>;
-      expect(goalVersions).toHaveLength(1);
+      expect(goalVersions).toHaveLength(0);
+      const recommendations = dbRuntime.database.prepare(
+        "SELECT status FROM goal_recommendations WHERE user_id = ?",
+      ).all("user:self") as Array<Record<string, unknown>>;
+      expect(recommendations).toEqual([{ status: "pending" }]);
     } finally {
       dbRuntime.close();
     }
