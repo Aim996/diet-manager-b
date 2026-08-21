@@ -4,7 +4,7 @@
 
 - `evidence_id`: `EV-20260821-046`
 - `recorded_at`: `2026-08-21`
-- `scope_range`: `33478984b320ab8e8d96b9b14b77de071d0a39ca..HEAD`
+- `scope_range`: `33478984b320ab8e8d96b9b14b77de071d0a39ca..6f319a600bc27e1dadaf3d2a99c418da1fada110`
 - `verified_product_head`: `6f319a600bc27e1dadaf3d2a99c418da1fada110`
 - `whole_branch_review_range`: `30676bda830055fbc4de19ab9059b77b8f680e40..6f319a600bc27e1dadaf3d2a99c418da1fada110`
 - `local_result`: `PASS`
@@ -19,7 +19,8 @@ The platform-neutral API, CLI, package, Windows/Linux persistence smokes, public
 - TypeScript `tsc -p tsconfig.json --noEmit`: exit `0`, no diagnostics.
 - Focused command category (`agent-command`, CLI, public package, portable package, foundation): final exit `0`; `5/5` files and `78/78` tests passed.
 - The first focused invocation had no `npm_execpath`, so all 24 portable-package cases rejected their test precondition while the other 54 tests passed. Binding the existing npm CLI and rerunning the same group produced the final `78/78`; no source or test file changed.
-- Adjacent command category: exit `1`; `4` files and `102/102` collected tests passed, while three core suites could not collect because the known temporary `0.2.2/shared` fixture was absent. The authoritative run below supplied the already-documented ordinary fixtures and included those three suites successfully.
+- The first adjacent diagnostic attempt had no temporary `0.2.2/shared` fixture: `4` files and `102/102` collected tests passed, three suites could not collect, and the process exited `1`.
+- The required adjacent command was then rerun with an ordinary, worktree-contained copy of the documented `shared` fixture: exit `0`; `7/7` files and `401/401` tests passed. The exact temporary target was checked as an ordinary directory and removed; its post-cleanup existence check was `False`.
 
 ## One authoritative complete suite
 
@@ -43,7 +44,7 @@ Only one complete `vitest run` invocation was made.
 
 ## Real Windows standalone smoke
 
-The compiled CLI was invoked as a fresh Node process for each step, with no OpenClaw entry, process, WebUI or adapter loaded. Standard input/output/error were explicit UTF-8.
+The compiled CLI was invoked as a fresh Node process for each step, with no OpenClaw entry, process, WebUI or adapter loaded. The invocation form was `node <worktree>/0.2.2/version-b-lite-plugin/dist/cli/agent.js execute`; JSON was written to stdin and stdout/stderr were captured with explicit UTF-8. The controlled data-root label was `%TEMP%/diet-universal-task6-6f319a6/windows-standalone-data` and the conversation label was `task6-windows-smoke`.
 
 - `record_meal`: `committed=true`, status `committed_with_issues`.
 - `record_water`: `committed=true`, status `committed`.
@@ -69,29 +70,29 @@ Status: `PASS`.
 
 ### Environment 01 — standalone CLI
 
-- The candidate was unpacked under a test-only package root and used a new test-only data root.
+- The candidate was unpacked under an Env01 test-only package root and invoked as `node <candidate-root>/dist/cli/agent.js execute` against a fresh Env01 standalone data root.
 - `record_meal` with the synthetic input “我吃了两个鸡蛋” returned `committed_with_issues`, `committed=true`.
 - A new CLI process ran `query_meals`, returning `ignored/read_only` with one meal.
 - Independent SQLite counts: `event_records=1`, `meal_items=1`, `idempotency_records=2`, `command_envelopes=2`.
 
 ### Environment 02 — public Node API without OpenClaw
 
-- The public `dist/index.js` root imported with `rootDefault=false`; the OpenClaw entry was not resolved.
+- Env02 imported `<candidate-root>/dist/index.js` directly from Node with `rootDefault=false`; the OpenClaw entry was not resolved.
 - `executeAgentCommand(record_water)` returned `committed`, `committed=true`; `query_daily_summary` returned `ignored`, `committed=false`.
 - Independent SQLite counts: `event_records=1`, `idempotency_records=1`, `command_envelopes=1`.
 - Repeating the same idempotent write returned exactly the keys `action`, `committed`, `operation_id`, `record_id`, `status`.
 
 ### Environment 03 — real optional OpenClaw adapter
 
-- Before mutation, the instance configuration, last-good state, npm state and plugin Skill state were archived on the same host and hashed.
-- The official plugin installer installed the candidate into the real extension mechanism and linked the OpenClaw peer. Initial loading failed closed because required `official_data_root` deployment authority was absent.
+- Before mutation, the instance configuration, last-good state, npm state and plugin Skill state were archived in a same-host test backup and hashed.
+- The exact official install form was `openclaw plugins install candidate.tgz`. It installed adapter version `0.2.2` into OpenClaw's real extension mechanism and linked its plugin Skill. Initial loading failed closed because required `official_data_root` deployment authority was absent.
 - Only after backup, the plugin configuration was pointed to a test-only root. Plugin status became `loaded`; after restart the gateway readiness check passed.
 - The actual installed entry registered tool `diet_manager` with lifecycle `diet-manager-b-runtime`. A real `record_water` request returned `committed`, `committed=true`.
 - Its public outcome keys exactly matched environment 02. Independent SQLite counts were `event_records=1`, `idempotency_records=1`, `command_envelopes=1`.
 
 ### Restoration and cleanup
 
-- The official forced uninstall ran; the exact extension and plugin-Skill targets were realpath-validated before removal.
+- The official plugin uninstall with `--force` ran; the exact extension and plugin-Skill targets were realpath-validated before removal.
 - Configuration was restored from the same-host backup. After restart, all three environments were healthy, plugin count was zero, and configuration discovery returned zero Diet Manager entries.
 - Each environment's configuration SHA-256 exactly matched its pre-test baseline.
 - All three container test roots, the router temporary root and the local candidate temporary root were verified and removed. No candidate tarball or test database remained.
@@ -109,5 +110,5 @@ Status: `PASS`.
 ## Remaining limitations
 
 1. No real macOS smoke was available; macOS is covered only by platform-neutral Node tests and the no-platform-shell package tests.
-2. The direct adjacent invocation cannot be reported exit `0` without its documented fixture; its same suites passed inside the single authoritative run after controlled fixture preparation.
+2. Exact Env01/02/03 absolute test-root strings and the three configuration digest values were intentionally not retained in this evidence. The retained checks were: package digest equality, same-host backup before mutation, exact pre/post configuration digest equality for each environment, absence of a pre-existing Diet Manager database, and verified removal of every test-only root.
 3. Live OpenClaw state SQLite byte hashes are not stable across ordinary runtime/WAL activity; the applicable safety proof is restored configuration equality plus isolation and removal of all Diet Manager business writes.
