@@ -347,10 +347,22 @@ function validateExpiration(value: unknown, path: string): Readonly<ExpirationEv
   return record as unknown as Readonly<ExpirationEvidence>;
 }
 
+function validatePrice(value: unknown, path: string): PantryPurchaseEvidence["price"] {
+  if (value === null) return null;
+  const record = exactRecord(value, ["amount", "currency", "evidence_span"], path);
+  if (typeof record.amount !== "number" || !Number.isFinite(record.amount) ||
+      record.amount <= 0 || record.amount > Number.MAX_SAFE_INTEGER) return invalid(`${path}.amount`);
+  enumValue(record.currency, ["CNY"], `${path}.currency`);
+  text(record.evidence_span, `${path}.evidence_span`);
+  return record as unknown as NonNullable<PantryPurchaseEvidence["price"]>;
+}
+
 export function validateAndFreezePantryPurchaseEvidence(value: unknown): Readonly<PantryPurchaseEvidence> {
   const cloned = cloneOrdinary(value, "pantry_evidence");
+  const hasPrice = typeof cloned === "object" && cloned !== null && Object.hasOwn(cloned, "price");
   const record = exactRecord(cloned, [
     "schema_version", "product_identity", "package_quantity", "location", "opening", "expiration",
+    ...(hasPrice ? ["price"] : []),
   ], "pantry_evidence");
   enumValue(record.schema_version, ["diet-manager/pantry-evidence/v1"], "pantry_evidence.schema_version");
   validateProductIdentity(record.product_identity, "pantry_evidence.product_identity");
@@ -358,6 +370,7 @@ export function validateAndFreezePantryPurchaseEvidence(value: unknown): Readonl
   validateLocation(record.location, "pantry_evidence.location");
   validateOpening(record.opening, "pantry_evidence.opening");
   validateExpiration(record.expiration, "pantry_evidence.expiration");
+  if (hasPrice) validatePrice(record.price, "pantry_evidence.price");
   return record as unknown as Readonly<PantryPurchaseEvidence>;
 }
 

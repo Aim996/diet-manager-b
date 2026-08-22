@@ -133,6 +133,11 @@ export interface InventoryView {
     readonly effective_status: "active" | "empty";
     readonly expiration_at: string | null;
     readonly location: string;
+    readonly price?: Readonly<{
+      readonly amount: number;
+      readonly currency: "CNY";
+      readonly evidence_span: string;
+    }> | null;
     readonly quantity_balance?: Readonly<{
       readonly package_unit: string;
       readonly package_milliunits: number;
@@ -680,10 +685,13 @@ function assertInventoryView(value: unknown): asserts value is InventoryView {
     }
     const batch = batchValue as Record<string, unknown>;
     const batchKeys = Object.keys(batch).sort().join("\0");
-    if (batchKeys !==
-          "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit" &&
-        batchKeys !==
-          "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_balance\0quantity_microunits\0quantity_status\0unit" ||
+    const allowedBatchKeys = [
+      "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit",
+      "batch_id\0effective_status\0expiration_at\0location\0name\0product_id\0product_type\0quantity_balance\0quantity_microunits\0quantity_status\0unit",
+      "batch_id\0effective_status\0expiration_at\0location\0name\0price\0product_id\0product_type\0quantity_microunits\0quantity_status\0unit",
+      "batch_id\0effective_status\0expiration_at\0location\0name\0price\0product_id\0product_type\0quantity_balance\0quantity_microunits\0quantity_status\0unit",
+    ];
+    if (!allowedBatchKeys.includes(batchKeys) ||
         (batch.quantity_microunits !== null &&
           (!Number.isSafeInteger(batch.quantity_microunits) || Number(batch.quantity_microunits) < 0)) ||
         !["available", "empty", "unknown"].includes(String(batch.quantity_status)) ||
@@ -697,6 +705,18 @@ function assertInventoryView(value: unknown): asserts value is InventoryView {
     boundedText(batch.product_type, "inventory_product_type", 64);
     boundedText(batch.unit, "inventory_unit", 64);
     boundedText(batch.location, "inventory_location", 128);
+    if (batch.price !== undefined && batch.price !== null) {
+      if (typeof batch.price !== "object" || Array.isArray(batch.price)) {
+        return invalidOutcome("inventory_price");
+      }
+      const price = batch.price as Record<string, unknown>;
+      if (Object.keys(price).sort().join("\0") !== "amount\0currency\0evidence_span" ||
+          typeof price.amount !== "number" || !Number.isFinite(price.amount) ||
+          price.amount <= 0 || price.amount > Number.MAX_SAFE_INTEGER || price.currency !== "CNY") {
+        return invalidOutcome("inventory_price");
+      }
+      boundedText(price.evidence_span, "inventory_price_evidence", 256);
+    }
     if (batch.quantity_balance !== undefined) {
       if (typeof batch.quantity_balance !== "object" || batch.quantity_balance === null ||
           Array.isArray(batch.quantity_balance)) return invalidOutcome("inventory_quantity_balance");

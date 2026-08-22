@@ -210,10 +210,15 @@ export interface CorePurchaseItemCandidate {
     readonly rule_version: "diet-manager/opening-evidence/v1";
   }> | null;
   readonly expiration: Readonly<{
-    readonly reliability: "unknown" | "unreliable";
-    readonly explicit_at: null;
+    readonly reliability: "explicit" | "unknown" | "unreliable";
+    readonly explicit_at: OffsetIsoTimestamp | null;
     readonly matched_span: string | null;
   }>;
+  readonly price?: Readonly<{
+    readonly amount: number;
+    readonly currency: "CNY";
+    readonly evidence_span: string;
+  }> | null;
 }
 
 export interface CorePurchaseCommandCandidate {

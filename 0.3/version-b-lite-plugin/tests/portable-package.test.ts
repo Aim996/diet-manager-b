@@ -29,7 +29,11 @@ const mandatoryFiles = [
   "dist/openclaw/index.js",
   "dist/openclaw/index.d.ts",
   "skills/diet-manager-b/SKILL.md",
-  "skills/diet-manager-b/references/agent-command-v1.md",
+  "skills/diet-manager-b/references/agent-command-v2.md",
+  "skills/diet-manager-b/references/natural-language-boundaries.md",
+  "skills/diet-manager-b/references/receipt-and-progress.md",
+  "skills/diet-manager-b/references/inventory-and-nutrition.md",
+  "skills/diet-manager-b/references/correction-and-recovery.md",
 ] as const;
 const ownedTempRoots: string[] = [];
 

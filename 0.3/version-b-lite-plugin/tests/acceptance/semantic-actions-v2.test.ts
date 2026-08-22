@@ -148,6 +148,46 @@ describe("Agent Command v2 semantic application", () => {
     }
   });
 
+  it("keeps explicit inventory expiration and price bound to the committed batch", async () => {
+    const opened = runtime();
+    try {
+      const sourceText = "刚买了两盒纯牛奶，每盒250毫升，保质期到下周五，放冰箱冷藏层，一共12块钱。";
+      const outcome = await executeAgentCommand(opened.runtime, {
+        schema_version: "diet-manager/agent-command/v2",
+        action: "add_inventory",
+        source_text: sourceText,
+        semantic_proposal: {
+          kind: "inventory",
+          product: { raw_name: "纯牛奶", normalized_hint: "milk", evidence_span: "纯牛奶" },
+          package_amount: { kind: "exact", value: 2, unit: "盒", evidence_span: "两盒" },
+          per_package_content: {
+            kind: "exact", value: 250, unit: "ml", evidence_span: "每盒250毫升",
+          },
+          location: { value: "冰箱冷藏层", evidence_span: "冰箱冷藏层" },
+          expires_at: { kind: "source_text", evidence_span: "下周五" },
+          price: { amount: 12, currency: "CNY", evidence_span: "一共12块钱" },
+        },
+      }, context("inventory-facts"));
+      expect(outcome, JSON.stringify(outcome)).toMatchObject({
+        action: "add_inventory", committed: true,
+      });
+
+      const query = await executeAgentCommand(opened.runtime, {
+        schema_version: "diet-manager/agent-command/v2",
+        action: "query_inventory",
+        source_text: "查库存",
+      }, context("inventory-facts-query"));
+      expect(query.inventory_view?.batches).toHaveLength(1);
+      expect(query.inventory_view?.batches[0]).toMatchObject({
+        expiration_at: "2026-08-28T08:00:00.000Z",
+        location: "冰箱冷藏层",
+        price: { amount: 12, currency: "CNY", evidence_span: "一共12块钱" },
+      });
+    } finally {
+      opened.runtime.close();
+    }
+  });
+
   it.each([
     ["negative", "我没吃两个蛋糕", "蛋糕", 2, "两个蛋糕"],
     ["future", "明天准备吃一个苹果", "苹果", 1, "一个苹果"],

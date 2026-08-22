@@ -102,7 +102,9 @@ describe("OpenClaw semantic meal candidate boundary", () => {
         properties?: Record<string, unknown>;
       }>;
     };
-    const legacyParameters = parameters.anyOf?.[0];
+    const legacyParameters = parameters.anyOf?.find((branch) =>
+      branch.properties?.schema_version === undefined &&
+      branch.properties?.semantic_candidate !== undefined);
 
     expect(legacyParameters?.required).toEqual(["action"]);
     expect(legacyParameters?.properties?.semantic_candidate).toEqual({

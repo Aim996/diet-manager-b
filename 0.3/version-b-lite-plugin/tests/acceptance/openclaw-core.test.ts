@@ -67,29 +67,33 @@ describe("SEL-CORE Task 9 OpenClaw adapter", () => {
   it("publishes only exact ordinary request fields and no authority parameters", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
     const branches = metadata?.tools[0]?.parameters.anyOf as Array<{
-      properties: Record<string, unknown>;
+      properties: Record<string, { const?: string }>;
       required: string[];
       additionalProperties: boolean;
     }>;
-    const legacyProperties = branches[0]!.properties;
-    const v2Properties = branches[2]!.properties;
-    expect(Object.keys(legacyProperties).sort()).toEqual([
+    const legacyProperties = branches.find((branch) =>
+      branch.properties.schema_version === undefined)?.properties;
+    const v2Properties = branches.find((branch) =>
+      branch.properties.schema_version?.const === "diet-manager/agent-command/v2")?.properties;
+    expect(legacyProperties).toBeDefined();
+    expect(v2Properties).toBeDefined();
+    expect(Object.keys(legacyProperties!).sort()).toEqual([
       "action",
       "items",
       "occurred_at_text",
       "semantic_candidate",
       "source_text",
     ]);
-    expect(Object.keys(v2Properties).sort()).toEqual([
+    expect(Object.keys(v2Properties!).sort()).toEqual([
       "action",
       "schema_version",
       "semantic_proposal",
       "source_text",
     ]);
     expect(branches.map((branch) => branch.required)).toEqual([
+      ["schema_version", "action", "source_text"],
+      ["schema_version", "action", "source_text"],
       ["action"],
-      ["schema_version", "action", "source_text"],
-      ["schema_version", "action", "source_text"],
     ]);
     expect(branches.every((branch) => branch.additionalProperties === false)).toBe(true);
     for (const forbidden of [

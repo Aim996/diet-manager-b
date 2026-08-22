@@ -78,8 +78,8 @@ describe("SemanticProposalV2 validation", () => {
     }
   });
 
-  it("maps package count, per-package content, explicit location, and price evidence", () => {
-    const sourceText = "补货：2盒牛奶，每盒250毫升，放冰箱，一共30元。";
+  it("maps package count, per-package content, location, expiration, and price evidence", () => {
+    const sourceText = "补货：2盒牛奶，每盒250毫升，保质期到下周五，放冰箱，一共30元。";
     const result = validate("add_inventory", sourceText, {
       kind: "inventory",
       product: { raw_name: "牛奶", normalized_hint: "milk", evidence_span: "牛奶" },
@@ -88,7 +88,7 @@ describe("SemanticProposalV2 validation", () => {
         kind: "exact", value: 250, unit: "ml", evidence_span: "每盒250毫升",
       },
       location: { value: "refrigerator", evidence_span: "冰箱" },
-      expires_at: null,
+      expires_at: { kind: "source_text", evidence_span: "下周五" },
       price: { amount: 30, currency: "CNY", evidence_span: "30元" },
     });
 
@@ -108,6 +108,12 @@ describe("SemanticProposalV2 validation", () => {
             total_capacity: 500,
           },
           location: { value: "refrigerator", evidence_kind: "explicit" },
+          expiration: {
+            reliability: "explicit",
+            explicit_at: "2026-08-28T08:00:00.000Z",
+            matched_span: "下周五",
+          },
+          price: { amount: 30, currency: "CNY", evidence_span: "30元" },
         }],
       },
     });
@@ -186,6 +192,20 @@ describe("SemanticProposalV2 validation", () => {
       ...(replacement === undefined ? {} : { replacement }),
     });
     expect(result.disposition).not.toBe("rejected");
+  });
+
+  it("does not broaden an unrecognized structured mutation target to the sole active meal", () => {
+    const sourceText = "帮我撤掉昨天早餐的苹果";
+    expect(validate("undo_record", sourceText, {
+      kind: "record_mutation",
+      operation: "undo",
+      target: { description: "昨天早餐的苹果", evidence_span: "昨天早餐的苹果" },
+    })).toEqual({
+      disposition: "needs_clarification",
+      action: "undo_record",
+      reason_code: "target_ambiguous",
+      question: "请补充要撤销的记录，或说明是最近哪一条。",
+    });
   });
 
   it.each([

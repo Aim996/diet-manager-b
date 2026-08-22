@@ -27,14 +27,22 @@ const REQUIRED_FILES = Object.freeze([
   "dist/openclaw/index.js",
   "dist/openclaw/index.d.ts",
   "skills/diet-manager-b/SKILL.md",
-  "skills/diet-manager-b/references/agent-command-v1.md",
+  "skills/diet-manager-b/references/agent-command-v2.md",
+  "skills/diet-manager-b/references/natural-language-boundaries.md",
+  "skills/diet-manager-b/references/receipt-and-progress.md",
+  "skills/diet-manager-b/references/inventory-and-nutrition.md",
+  "skills/diet-manager-b/references/correction-and-recovery.md",
 ]);
 const EXACT_ALLOWED_FILES = new Set([
   "package.json",
   "openclaw.plugin.json",
   "skills/diet-manager-b/SKILL.md",
   "skills/diet-manager-b/agents/openai.yaml",
-  "skills/diet-manager-b/references/agent-command-v1.md",
+  "skills/diet-manager-b/references/agent-command-v2.md",
+  "skills/diet-manager-b/references/natural-language-boundaries.md",
+  "skills/diet-manager-b/references/receipt-and-progress.md",
+  "skills/diet-manager-b/references/inventory-and-nutrition.md",
+  "skills/diet-manager-b/references/correction-and-recovery.md",
 ]);
 const FORBIDDEN_PATH = /(?:^|\/)(?:node_modules|tests?|__tests__)(?:\/|$)|(?:^|\/)\.env(?:[./]|$)|\.sqlite(?:3)?(?:[./-]|$)|authority[-_]?secret|secret/iu;
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

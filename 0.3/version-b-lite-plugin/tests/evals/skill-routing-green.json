@@ -1,0 +1,226 @@
+{
+  "schema_version": "diet-manager/skill-routing-green/v2",
+  "evaluated_at": "2026-08-22",
+  "method": {
+    "separate_agent_turns": true,
+    "captured_fields": ["loaded_files", "user_prompt", "calls", "tool_results", "final_user_reply", "evaluation_notes"],
+    "tool_result_origin": "The evaluator supplied the recorded result to each agent so response truthfulness could be checked; the test replays every command against a fresh real runtime."
+  },
+  "route_repetitions": [
+    {
+      "session_id": "task12_evidence_replay_1",
+      "raw_model_output": {
+        "loaded_files": [
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md"
+        ],
+        "user_prompt": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+        "calls": [{
+          "tool_name": "diet_manager",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v2",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+            "semantic_proposal": {
+              "kind": "meal",
+              "subject": { "kind": "self", "basis": "explicit", "evidence_span": "我", "explicit_other_spans": [] },
+              "occurrence": "completed",
+              "meal_slot": "dinner",
+              "items": [
+                { "raw_name": "全麦面包", "normalized_hint": "bread", "amount": { "kind": "exact", "value": 2, "unit": "片", "evidence_span": "两片全麦面包" } },
+                { "raw_name": "苹果", "normalized_hint": "apple", "amount": { "kind": "exact", "value": 1, "unit": "个", "evidence_span": "一个苹果" } }
+              ],
+              "occurred_at": { "kind": "source_text", "evidence_span": "晚饭" }
+            }
+          }
+        }],
+        "tool_results": [{ "action": "record_meal", "status": "committed", "committed": true, "operation_id": "task12-evidence-replay-1", "record_id": "task12-record-replay-1" }],
+        "final_user_reply": "已记录。",
+        "evaluation_notes": { "call_count": 1, "selected_action": "record_meal", "schema_version": "diet-manager/agent-command/v2", "source_text_preserved_verbatim": true, "semantic_proposal_matches_request": true, "used_only_routed_references": true, "did_not_execute_product_commands": true, "did_not_edit_files": true }
+      }
+    },
+    {
+      "session_id": "task12_evidence_replay_2",
+      "raw_model_output": {
+        "loaded_files": [
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md"
+        ],
+        "user_prompt": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+        "calls": [{
+          "tool_name": "diet_manager",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v2",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+            "semantic_proposal": {
+              "kind": "meal",
+              "subject": { "kind": "self", "basis": "explicit", "evidence_span": "我", "explicit_other_spans": [] },
+              "occurrence": "completed",
+              "meal_slot": "dinner",
+              "items": [
+                { "raw_name": "全麦面包", "normalized_hint": "bread", "amount": { "kind": "exact", "value": 2, "unit": "片", "evidence_span": "两片全麦面包" } },
+                { "raw_name": "苹果", "normalized_hint": "apple", "amount": { "kind": "exact", "value": 1, "unit": "个", "evidence_span": "一个苹果" } }
+              ],
+              "occurred_at": { "kind": "source_text", "evidence_span": "晚饭" }
+            }
+          }
+        }],
+        "tool_results": [{ "tool_name": "diet_manager", "result": { "action": "record_meal", "status": "committed", "committed": true, "operation_id": "task12-evidence-replay-2", "record_id": "task12-record-replay-2" } }],
+        "final_user_reply": "已记录。",
+        "evaluation_notes": { "call_count": 1, "used_v2_semantic_proposal": true, "source_text_preserved_verbatim": true, "subject_and_completion_supported_by_source": true, "item_order_preserved": true, "invented_host_context_fields": false, "retried_or_used_fallback_storage": false, "success_claim_matches_tool_result": true }
+      }
+    },
+    {
+      "session_id": "task12_evidence_replay_3",
+      "raw_model_output": {
+        "loaded_files": [
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\inventory-and-nutrition.md"
+        ],
+        "user_prompt": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+        "calls": [{
+          "tool_name": "diet_manager",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v2",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+            "semantic_proposal": {
+              "kind": "meal",
+              "subject": { "kind": "self", "basis": "explicit", "evidence_span": "我", "explicit_other_spans": [] },
+              "occurrence": "completed",
+              "meal_slot": "dinner",
+              "items": [
+                { "raw_name": "全麦面包", "normalized_hint": "bread", "amount": { "kind": "exact", "value": 2, "unit": "片", "evidence_span": "两片全麦面包" } },
+                { "raw_name": "苹果", "normalized_hint": "apple", "amount": { "kind": "exact", "value": 1, "unit": "个", "evidence_span": "一个苹果" } }
+              ],
+              "occurred_at": { "kind": "source_text", "evidence_span": "晚饭" }
+            }
+          }
+        }],
+        "tool_results": [{ "action": "record_meal", "status": "committed", "committed": true, "operation_id": "task12-evidence-replay-3", "record_id": "task12-record-replay-3" }],
+        "final_user_reply": "已记录。",
+        "evaluation_notes": { "business_call_count": 1, "selected_action": "record_meal", "used_v2_semantic_proposal": true, "source_text_preserved_verbatim": true, "invented_fields": false, "success_claim_matches_tool_result": true }
+      }
+    },
+    {
+      "session_id": "task12_evidence_replay_4",
+      "raw_model_output": {
+        "loaded_files": [
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md"
+        ],
+        "user_prompt": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+        "calls": [{
+          "tool_name": "diet_manager",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v2",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+            "semantic_proposal": {
+              "kind": "meal",
+              "subject": { "kind": "self", "basis": "explicit", "evidence_span": "我", "explicit_other_spans": [] },
+              "occurrence": "completed",
+              "meal_slot": "dinner",
+              "items": [
+                { "raw_name": "全麦面包", "normalized_hint": "bread", "amount": { "kind": "exact", "value": 2, "unit": "片", "evidence_span": "两片全麦面包" } },
+                { "raw_name": "苹果", "normalized_hint": "apple", "amount": { "kind": "exact", "value": 1, "unit": "个", "evidence_span": "一个苹果" } }
+              ],
+              "occurred_at": { "kind": "source_text", "evidence_span": "晚饭" }
+            }
+          }
+        }],
+        "tool_results": [{ "action": "record_meal", "status": "committed", "committed": true, "operation_id": "task12-evidence-replay-4", "record_id": "task12-record-replay-4" }],
+        "final_user_reply": "已记录。",
+        "evaluation_notes": { "call_count": 1, "selected_action": "record_meal", "schema_version": "diet-manager/agent-command/v2", "source_text_preserved_verbatim": true, "semantic_proposal_matches_request": true, "used_only_routed_references": true, "did_not_execute_product_commands": true, "did_not_edit_files": true }
+      }
+    },
+    {
+      "session_id": "task12_evidence_replay_5",
+      "raw_model_output": {
+        "loaded_files": [
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+          "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md"
+        ],
+        "user_prompt": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+        "calls": [{
+          "tool_name": "diet_manager",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v2",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+            "semantic_proposal": {
+              "kind": "meal",
+              "subject": { "kind": "self", "basis": "explicit", "evidence_span": "我", "explicit_other_spans": [] },
+              "occurrence": "completed",
+              "meal_slot": "dinner",
+              "items": [
+                { "raw_name": "全麦面包", "normalized_hint": "bread", "amount": { "kind": "exact", "value": 2, "unit": "片", "evidence_span": "两片全麦面包" } },
+                { "raw_name": "苹果", "normalized_hint": "apple", "amount": { "kind": "exact", "value": 1, "unit": "个", "evidence_span": "一个苹果" } }
+              ],
+              "occurred_at": { "kind": "source_text", "evidence_span": "晚饭" }
+            }
+          }
+        }],
+        "tool_results": [{ "tool_name": "diet_manager", "result": { "action": "record_meal", "status": "committed", "committed": true, "operation_id": "task12-evidence-replay-5", "record_id": "task12-record-replay-5" } }],
+        "final_user_reply": "已记录。",
+        "evaluation_notes": { "call_count": 1, "used_v2_semantic_proposal": true, "source_text_preserved_verbatim": true, "subject_and_completion_supported_by_source": true, "item_order_preserved": true, "invented_host_context_fields": false, "retried_or_used_fallback_storage": false, "success_claim_matches_tool_result": true }
+      }
+    }
+  ],
+  "weak_model": {
+    "session_id": "task12_evidence_weak",
+    "raw_model_output": {
+      "loaded_files": [
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\agent-command-v2.md",
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\natural-language-boundaries.md",
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md",
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\inventory-and-nutrition.md"
+      ],
+      "user_prompt": "中午吃了点鸡胸肉和一碗饭。",
+      "calls": [{
+        "tool_name": "diet_manager",
+        "arguments": {
+          "schema_version": "diet-manager/agent-command/v2",
+          "action": "record_meal",
+          "source_text": "中午吃了点鸡胸肉和一碗饭。",
+          "semantic_proposal": {
+            "kind": "meal",
+            "subject": { "kind": "self", "basis": "private_agent_default", "evidence_span": null, "explicit_other_spans": [] },
+            "occurrence": "completed",
+            "meal_slot": "lunch",
+            "items": [
+              { "raw_name": "鸡胸肉", "normalized_hint": "chicken breast", "amount": { "kind": "unknown" } },
+              { "raw_name": "饭", "normalized_hint": "rice", "amount": { "kind": "exact", "value": 1, "unit": "碗", "evidence_span": "一碗饭" } }
+            ],
+            "occurred_at": { "kind": "source_text", "evidence_span": "中午" }
+          }
+        }
+      }],
+      "tool_results": [{ "action": "record_meal", "status": "needs_clarification", "committed": false, "reason_code": "amount_ambiguous", "question": "鸡胸肉吃了多少？", "operation_id": "task12-evidence-weak-1" }],
+      "final_user_reply": "尚未记录。鸡胸肉吃了多少？",
+      "evaluation_notes": { "business_call_count": 1, "selected_action": "record_meal", "used_v2_semantic_proposal": true, "source_text_preserved_verbatim": true, "unknown_chicken_amount_preserved": true, "invented_chicken_amount": false, "known_rice_amount_preserved": true, "clarification_matches_tool_result": true, "false_success_claim": false }
+    }
+  },
+  "no_tool": {
+    "session_id": "task12_evidence_no_tool",
+    "raw_model_output": {
+      "loaded_files": [
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\SKILL.md",
+        "E:\\codx\\skill\\饮食管家\\.worktrees\\diet-manager-0.3\\0.3\\version-b-lite-plugin\\skills\\diet-manager-b\\references\\receipt-and-progress.md"
+      ],
+      "user_prompt": "我刚喝了500毫升白水，帮我记下。",
+      "calls": [],
+      "tool_results": [],
+      "final_user_reply": "这次未保存：当前没有可用的饮食管家适配器，也没有已配置、可运行的 diet-manager CLI。待提交内容为：已喝白水 500 毫升；原话为“我刚喝了500毫升白水，帮我记下。”",
+      "evaluation_notes": { "explicitly_not_saved": true, "used_alternative_storage": false, "claimed_success": false, "fabricated_record_id_or_progress": false }
+    }
+  }
+}

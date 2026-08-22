@@ -94,9 +94,9 @@ export const legacyOpenClawParametersSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const agentCommandParametersSchema = Type.Union([
-  legacyOpenClawParametersSchema,
-  agentCommandV1Schema,
   agentCommandV2Schema,
+  agentCommandV1Schema,
+  legacyOpenClawParametersSchema,
 ], {
   "x-diet-manager-contract": dietManagerContract,
 });

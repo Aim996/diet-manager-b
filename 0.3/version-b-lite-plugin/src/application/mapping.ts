@@ -273,6 +273,14 @@ function pantryEvidence(
           basis: "rule",
           rule_version: legacy.shelf_life_rule_version,
         }
+      : item.expiration.reliability === "explicit"
+        ? resolveExpiration({
+            reliability: "explicit",
+            explicit_at: item.expiration.explicit_at,
+            duration_days: null,
+            anchor_at: receivedAt,
+            rule_version: null,
+          })
       : item.opening !== null
         ? resolveExpiration({
             reliability: "reliable_rule",
@@ -287,6 +295,9 @@ function pantryEvidence(
           basis: "unknown",
           rule_version: null,
         },
+    ...(item.price === undefined ? {} : {
+      price: item.price === null ? null : Object.freeze({ ...item.price }),
+    }),
   };
 }
 

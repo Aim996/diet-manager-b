@@ -1809,6 +1809,9 @@ function readInventoryView(
       effective_status: batch.effective_status,
       expiration_at: batch.effective_expiration_at ?? null,
       location: batch.pantry_evidence?.location.value ?? "unknown",
+      ...(batch.pantry_evidence !== undefined && Object.hasOwn(batch.pantry_evidence, "price")
+        ? { price: batch.pantry_evidence.price ?? null }
+        : {}),
       ...(quantityBalance === undefined ? {} : { quantity_balance: quantityBalance }),
     });
     })),

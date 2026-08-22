@@ -158,6 +158,12 @@ export interface ExpirationEvidence {
   readonly rule_version: string | null;
 }
 
+export interface PurchasePriceEvidence {
+  readonly amount: number;
+  readonly currency: "CNY";
+  readonly evidence_span: string;
+}
+
 export interface PantryPurchaseEvidence {
   readonly schema_version: "diet-manager/pantry-evidence/v1";
   readonly product_identity: Readonly<ProductIdentityEvidence>;
@@ -165,6 +171,7 @@ export interface PantryPurchaseEvidence {
   readonly location: Readonly<StorageLocationEvidence>;
   readonly opening: Readonly<OpeningEvidence> | null;
   readonly expiration: Readonly<ExpirationEvidence>;
+  readonly price?: Readonly<PurchasePriceEvidence> | null;
 }
 
 export interface InventoryAllocation {

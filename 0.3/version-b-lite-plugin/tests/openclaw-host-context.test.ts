@@ -45,20 +45,32 @@ describe("OpenClaw trusted host context", () => {
   it("keeps host authority out of the model schema", () => {
     const metadata = getToolPluginMetadata(pluginEntry);
     const branches = metadata?.tools[0]?.parameters.anyOf as Array<{
-      properties: Record<string, unknown>;
+      properties: Record<string, { const?: string }>;
     }>;
 
     expect(Object.keys(branches[0]!.properties).sort()).toEqual([
       "action",
-      "items",
-      "occurred_at_text",
+      "schema_version",
+      "semantic_proposal",
+      "source_text",
+    ]);
+    expect(branches[0]!.properties.schema_version?.const).toBe(
+      "diet-manager/agent-command/v2",
+    );
+    expect(Object.keys(branches[1]!.properties).sort()).toEqual([
+      "action",
+      "schema_version",
       "semantic_candidate",
       "source_text",
     ]);
+    expect(branches[1]!.properties.schema_version?.const).toBe(
+      "diet-manager/agent-command/v1",
+    );
     expect(Object.keys(branches[2]!.properties).sort()).toEqual([
       "action",
-      "schema_version",
-      "semantic_proposal",
+      "items",
+      "occurred_at_text",
+      "semantic_candidate",
       "source_text",
     ]);
     for (const field of [

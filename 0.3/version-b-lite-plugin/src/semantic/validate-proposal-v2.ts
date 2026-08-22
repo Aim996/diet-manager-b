@@ -314,6 +314,66 @@ function validExactAmount(amount: ExactAmountEvidence): boolean {
   return exactAmountEvidenceAgrees(amount.evidence_span, amount.value, amount.unit);
 }
 
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1_000;
+const WEEKDAY_BY_TEXT = Object.freeze({
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  日: 7,
+  天: 7,
+});
+
+function shanghaiDateAt1600(year: number, month: number, day: number): OffsetIsoTimestamp | null {
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1_000 || year > 9_999 ||
+      calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 ||
+      calendar.getUTCDate() !== day) return null;
+  return new Date(Date.UTC(year, month - 1, day, 8)).toISOString() as OffsetIsoTimestamp;
+}
+
+function relativeExpirationAt(
+  receivedAt: OffsetIsoTimestamp,
+  evidenceSpan: string,
+): OffsetIsoTimestamp | null {
+  const receivedEpoch = Date.parse(receivedAt);
+  if (!Number.isFinite(receivedEpoch)) return null;
+  const anchor = new Date(receivedEpoch + SHANGHAI_OFFSET_MS);
+  const anchorYear = anchor.getUTCFullYear();
+  const anchorMonth = anchor.getUTCMonth() + 1;
+  const anchorDay = anchor.getUTCDate();
+  const anchorCalendar = Date.UTC(anchorYear, anchorMonth - 1, anchorDay);
+  const shiftedDate = (dayDelta: number): OffsetIsoTimestamp | null => {
+    const value = new Date(anchorCalendar + dayDelta * 86_400_000);
+    return shanghaiDateAt1600(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  };
+
+  if (evidenceSpan === "明天") return shiftedDate(1);
+  if (evidenceSpan === "后天") return shiftedDate(2);
+  const nextWeekday = /^(?:下周|下星期)([一二三四五六日天])$/u.exec(evidenceSpan);
+  if (nextWeekday !== null) {
+    const weekday = WEEKDAY_BY_TEXT[nextWeekday[1] as keyof typeof WEEKDAY_BY_TEXT];
+    const currentWeekday = anchor.getUTCDay() === 0 ? 7 : anchor.getUTCDay();
+    return shiftedDate(7 - currentWeekday + weekday);
+  }
+
+  const fullDate = /^(\d{4})(?:-|年)(\d{1,2})(?:-|月)(\d{1,2})(?:日)?$/u.exec(evidenceSpan);
+  if (fullDate !== null) {
+    return shanghaiDateAt1600(Number(fullDate[1]), Number(fullDate[2]), Number(fullDate[3]));
+  }
+  const monthDay = /^(\d{1,2})月(\d{1,2})日$/u.exec(evidenceSpan);
+  if (monthDay !== null) {
+    const month = Number(monthDay[1]);
+    const day = Number(monthDay[2]);
+    const current = shanghaiDateAt1600(anchorYear, month, day);
+    if (current === null) return null;
+    return Date.parse(current) > receivedEpoch ? current : shanghaiDateAt1600(anchorYear + 1, month, day);
+  }
+  return null;
+}
+
 function inventoryResult(
   input: SemanticProposalV2ValidationInput,
   proposal: InventoryProposalV2,
@@ -335,6 +395,25 @@ function inventoryResult(
     return rejected("SEMANTIC_PROPOSAL_INVALID");
   }
   const totalCapacity = capacity === null ? null : outerCount * capacity;
+  let expiration: Readonly<CorePurchaseItemCandidate["expiration"]>;
+  if (proposal.expires_at === null || proposal.expires_at.kind === "unspecified") {
+    expiration = frozen({ reliability: "unknown" as const, explicit_at: null, matched_span: null });
+  } else {
+    const explicitAt = relativeExpirationAt(input.received_at, proposal.expires_at.evidence_span);
+    if (explicitAt === null) {
+      return frozen({
+        disposition: "needs_clarification" as const,
+        action: "add_inventory" as const,
+        reason_code: "unsupported_command" as const,
+        question: "请用明确日期说明到期日，例如 2026-08-28。",
+      });
+    }
+    expiration = frozen({
+      reliability: "explicit" as const,
+      explicit_at: explicitAt,
+      matched_span: proposal.expires_at.evidence_span,
+    });
+  }
   const item: CorePurchaseItemCandidate = frozen({
     order: 0,
     raw_name: proposal.product.raw_name,
@@ -370,11 +449,8 @@ function inventoryResult(
           rule_version: null,
         }),
     opening: null,
-    expiration: frozen({
-      reliability: "unknown" as const,
-      explicit_at: null,
-      matched_span: proposal.expires_at?.evidence_span ?? null,
-    }),
+    expiration,
+    price: proposal.price === null ? null : frozen({ ...proposal.price }),
   });
   const command: CorePurchaseCommandCandidate = frozen({
     action: "add_inventory" as const,
@@ -475,14 +551,15 @@ function mutationResult(
   if (legacy.disposition === "candidate" && legacy.command.action === input.action) return legacy;
   if (legacy.disposition !== "candidate" && legacy.action === input.action) return legacy;
   if (proposal.operation === "undo" || proposal.operation === "restore") {
-    const command = frozen({
-      action: input.action,
-      operation_id: input.operation_id,
-      source_text: input.source_text,
-      parser_version: SEMANTIC_PARSER_VERSION,
-      target: frozen({ kind: "sole_active_meal_in_conversation" as const }),
-    }) as CoreCommandCandidate;
-    return frozen({ disposition: "candidate" as const, command });
+    const action = proposal.operation === "undo" ? "undo_record" as const : "restore_record" as const;
+    return frozen({
+      disposition: "needs_clarification" as const,
+      action,
+      reason_code: "target_ambiguous" as const,
+      question: proposal.operation === "undo"
+        ? "请补充要撤销的记录，或说明是最近哪一条。"
+        : "请补充要恢复的记录，或说明是最近哪一条。",
+    });
   }
   return frozen({
     disposition: "needs_clarification" as const,

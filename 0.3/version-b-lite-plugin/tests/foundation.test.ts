@@ -73,12 +73,25 @@ describe("diet manager B core plugin boundary", () => {
     expect(metadata?.tools.map((tool) => tool.name)).toEqual(["diet_manager"]);
 
     const parameterBranches = dietManagerParameters.anyOf;
-    const legacyParameters = parameterBranches[0]!;
-    const v2Parameters = parameterBranches[2]!;
-    const actionSchema = legacyParameters.properties.action as {
+    const v2Parameters = parameterBranches[0]!;
+    const v1Parameters = parameterBranches[1]!;
+    const legacyParameters = parameterBranches[2]!;
+    const actionSchema = v2Parameters.properties.action as {
       anyOf: Array<{ const: string }>;
     };
     expect(actionSchema.anyOf.map((item) => item.const)).toEqual(expectedActions);
+    expect(Object.keys(v2Parameters.properties).sort()).toEqual([
+      "action",
+      "schema_version",
+      "semantic_proposal",
+      "source_text",
+    ]);
+    expect(Object.keys(v1Parameters.properties).sort()).toEqual([
+      "action",
+      "schema_version",
+      "semantic_candidate",
+      "source_text",
+    ]);
     expect(Object.keys(legacyParameters.properties).sort()).toEqual([
       "action",
       "items",
@@ -86,15 +99,9 @@ describe("diet manager B core plugin boundary", () => {
       "semantic_candidate",
       "source_text",
     ]);
-    expect(Object.keys(v2Parameters.properties).sort()).toEqual([
-      "action",
-      "schema_version",
-      "semantic_proposal",
-      "source_text",
-    ]);
-    expect(legacyParameters.required).toEqual(["action"]);
-    expect(parameterBranches[1]!.required).toEqual(["schema_version", "action", "source_text"]);
     expect(v2Parameters.required).toEqual(["schema_version", "action", "source_text"]);
+    expect(v1Parameters.required).toEqual(["schema_version", "action", "source_text"]);
+    expect(legacyParameters.required).toEqual(["action"]);
     expect(parameterBranches.every((branch) => branch.additionalProperties === false)).toBe(true);
     for (const field of ["official_data_root", "secret", "token", "data_revision", "prior_context"]) {
       for (const branch of parameterBranches) expect(branch.properties).not.toHaveProperty(field);
