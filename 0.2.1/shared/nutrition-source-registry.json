@@ -1,0 +1,815 @@
+{
+  "schema_version": "nutrition-source-registry.schema-v1",
+  "registry_version": "2026-08-09.1",
+  "effective_at": "2026-08-09T00:00:00+08:00",
+  "status_source": "总功能开发计划0.2.md §22 唯一任务台账",
+  "upstream_contract": {
+    "path": "shared/business-contract.md",
+    "contract_id": "CONTRACT-v1",
+    "sha256": "CFECD8F825DB07E9283723D79A17C43CD41EEF42F01FB7083C22A14E5B7BC60D"
+  },
+  "governance": {
+    "default_network_access": "deny",
+    "network_source_must_match_effective_registry_entry": true,
+    "unverified_license_means_enabled": false,
+    "search_result_or_model_memory_is_source": false,
+    "robots_login_captcha_paywall_or_rate_limit_bypass": false,
+    "historical_snapshot_reinterpretation": "forbidden",
+    "change_effect": "registry or source updates affect future resolution only; committed NutritionSnapshot values require a correction event to change"
+  },
+  "priority_policy": {
+    "selection_rule": "choose the first applicable tier; a lower tier cannot override, impersonate, or fill conflicting fields from a higher applicable tier",
+    "exact_match_failure_rule": "preserve the food fact, mark the unavailable nutrition fields unknown, and continue only to an explicitly applicable lower tier with its own evidence label",
+    "unknown_is_zero": false,
+    "ordered_tiers": [
+      {
+        "rank": 1,
+        "tier_id": "current_exact_label",
+        "description": "当前精确包装标签",
+        "applicability": "label belongs to the consumed product version and the measurement basis is readable"
+      },
+      {
+        "rank": 2,
+        "tier_id": "manufacturer_or_exact_product",
+        "description": "生产商或精确商品资料",
+        "applicability": "manufacturer domain is separately allowlisted and brand, normalized name, variant, SKU/barcode or equivalent product version match"
+      },
+      {
+        "rank": 3,
+        "tier_id": "confirmed_same_product_history",
+        "description": "已确认同商品历史档案",
+        "applicability": "brand, normalized name, variant and package/label version all match without material conflict"
+      },
+      {
+        "rank": 4,
+        "tier_id": "authoritative_public_database",
+        "description": "权威公共数据库",
+        "applicability": "food category, raw/cooked/processing state, edible portion and measurement basis fit the consumed item"
+      },
+      {
+        "rank": 5,
+        "tier_id": "allowlisted_trusted_internet",
+        "description": "白名单可信互联网",
+        "applicability": "an enabled or conditional read-only registry entry is applicable and all source-specific restrictions are satisfied"
+      },
+      {
+        "rank": 6,
+        "tier_id": "versioned_common_dish_template",
+        "description": "版本化常见菜模板",
+        "applicability": "dish boundary is clear, template components are disclosed, and the item is not an unknown combo, platter or highly customized recipe"
+      },
+      {
+        "rank": 7,
+        "tier_id": "generic_estimate",
+        "description": "通用估算",
+        "applicability": "a bounded and documented conversion, density, edible portion, yield or plausible quantity range exists"
+      },
+      {
+        "rank": 8,
+        "tier_id": "unknown",
+        "description": "unknown",
+        "applicability": "no reliable applicable evidence remains"
+      }
+    ],
+    "special_boundaries": {
+      "common_raw_or_basic_food": "use confirmed local data, compliant unexpired cache, authoritative public database, then applicable trusted source without requiring a user label",
+      "packaged_processed_or_highly_custom_food": "prefer exact label, exact manufacturer/product record or user recipe; an inexact result must never be presented as exact",
+      "processed_beverage": "generic milk, juice or ingredient data must not be applied when the processed drink has materially different formulation",
+      "unknown_combo_or_platter": "store the identified consumption fact; do not infer components; nutrition remains unknown until reliable composition evidence exists"
+    }
+  },
+  "nutrition_field_policy": {
+    "required_fields": [
+      "energy",
+      "protein",
+      "fat",
+      "carbohydrate",
+      "fiber"
+    ],
+    "optional_if_source_provides": [
+      "sodium"
+    ],
+    "allowed_bases": [
+      "per_100g",
+      "per_100ml",
+      "per_serving",
+      "per_item",
+      "per_package",
+      "custom"
+    ],
+    "basis_metadata": [
+      "basis_amount",
+      "basis_unit",
+      "serving_name",
+      "servings_per_package",
+      "conversion_evidence"
+    ],
+    "missing_field": "unknown",
+    "missing_field_fill_value": null,
+    "calculation_precision": "stable internal precision; display rounding must not flow back into totals",
+    "quantity_evidence": {
+      "explicit_user_quantity": "explicit",
+      "exact_label_basis": "explicit",
+      "deterministic_conversion": "explicit",
+      "natural_unit_conversion": "inferred_field",
+      "edible_portion": "inferred_field",
+      "density": "inferred_field",
+      "yield": "inferred_field",
+      "generic_template_component": "inferred_field",
+      "inference_required_metadata": [
+        "adopted_value",
+        "basis",
+        "source_id",
+        "source_record_version",
+        "rule_version"
+      ]
+    },
+    "partial_inference_rule": "attach estimation evidence only to inferred fields; never label the whole item estimated when other fields are explicit or directly sourced"
+  },
+  "evidence_label_policy": {
+    "labels": [
+      {
+        "label_id": "explicit",
+        "display": "明确",
+        "applies_to": "user-stated quantity, exact current label or deterministic conversion"
+      },
+      {
+        "label_id": "confirmed_history",
+        "display": "沿用历史营养表",
+        "applies_to": "exact same product and product/label version only"
+      },
+      {
+        "label_id": "personal_template",
+        "display": "按个人模板",
+        "applies_to": "an activated, versioned personal template"
+      },
+      {
+        "label_id": "public_reference",
+        "display": "参考数据库",
+        "applies_to": "a compatible authoritative or allowlisted public record; a concise receipt may omit the label when quantity is explicit, but details must retain it"
+      },
+      {
+        "label_id": "field_inference",
+        "display": "逐字段推定",
+        "applies_to": "only the fields derived from a natural unit, edible portion, density, yield, template or bounded estimate"
+      },
+      {
+        "label_id": "unknown",
+        "display": "未知",
+        "applies_to": "a field with no reliable evidence; never rendered or stored as zero"
+      }
+    ],
+    "historical_profile_exact_match": {
+      "required_equal": [
+        "brand",
+        "normalized_food_name",
+        "variant",
+        "package_or_label_version"
+      ],
+      "any_material_conflict_result": "not_exact_match"
+    }
+  },
+  "external_request_policy": {
+    "global_allowlist": [
+      "normalized_food_name",
+      "brand",
+      "variant",
+      "package_specification",
+      "raw_cooked_or_processing_state",
+      "minimum_food_category"
+    ],
+    "global_denylist": [
+      "original_utterance",
+      "full_conversation",
+      "user_identifier",
+      "session_identifier",
+      "meal_date",
+      "meal_time",
+      "meal_type",
+      "inventory_quantity",
+      "storage_location",
+      "purchase_location",
+      "issue_or_exception",
+      "personal_template_history",
+      "database_row_or_dump",
+      "nutrition_image",
+      "api_key_or_token"
+    ],
+    "source_can_only_narrow_global_allowlist": true,
+    "free_text_or_life_context_allowed": false,
+    "request_construction": "build a new minimal request from allowlisted normalized fields; never forward an original message or conversation fragment"
+  },
+  "credential_policy": {
+    "storage": "runtime_secret_reference_only",
+    "forbidden_destinations": [
+      "JSONL",
+      "SQLite",
+      "fixture",
+      "log",
+      "registry",
+      "version_control"
+    ],
+    "real_secret_values_in_registry": false,
+    "missing_credential_result": "credential_missing",
+    "missing_credential_fact_effect": "nutrition may degrade; a recognizable occurred meal fact must still be committed"
+  },
+  "logging_policy": {
+    "default_allowlist": [
+      "error_code",
+      "event_id",
+      "registry_version",
+      "rule_version",
+      "source_id",
+      "http_status_class",
+      "attempt_number",
+      "duration_bucket"
+    ],
+    "forbidden": [
+      "original_utterance",
+      "conversation_text",
+      "database_dump",
+      "nutrition_image",
+      "api_key_or_token",
+      "request_payload_with_personal_context",
+      "raw_response_body"
+    ],
+    "redaction_required_before_write": true
+  },
+  "cache_policy": {
+    "lookup_order": {
+      "priority_scoped": true,
+      "tier_order_pointer": "/priority_policy/ordered_tiers",
+      "tier_traversal": "resolve ranks 1 through 8 in order and determine the current applicable tier before accepting any result",
+      "within_current_tier": [
+        "direct_local_evidence_for_current_tier",
+        "compliant_unexpired_cache_for_current_tier_and_source",
+        "enabled_network_query_for_current_tier_and_source"
+      ],
+      "advance_to_lower_tier_only_when": "the current tier has no applicable reliable result after its permitted local, cache and network paths are resolved or stably degraded",
+      "lower_tier_cache_cannot_preempt_applicable_higher_tier": true,
+      "confirmed_history_cannot_preempt_current_label_or_manufacturer_exact": true
+    },
+    "key_fields": [
+      "source_id",
+      "source_api_or_dataset_version",
+      "normalized_food_name_or_stable_product_id",
+      "brand",
+      "variant",
+      "package_specification",
+      "raw_cooked_or_processing_state",
+      "minimum_food_category",
+      "response_language"
+    ],
+    "forbidden_key_fields": [
+      "user_identifier",
+      "session_identifier",
+      "meal_date",
+      "meal_type",
+      "inventory_quantity",
+      "storage_location",
+      "purchase_location"
+    ],
+    "required_entry_fields": [
+      "source_id",
+      "source_stable_record_id",
+      "source_api_or_dataset_version",
+      "source_publication_date_if_available",
+      "retrieved_at",
+      "original_measurement_basis",
+      "normalized_match_input",
+      "match_strength",
+      "response_content_sha256",
+      "field_presence",
+      "license_policy_version",
+      "review_after"
+    ],
+    "integrity": "SHA-256 over canonicalized retained source response fields",
+    "ttl_rule": "each source declares a TTL or review interval; stale entries cannot be silently treated as current",
+    "offline_use": "allowed only when the source entry permits caching, integrity passes, review_after is not exceeded, and the applicable license conditions remain satisfied",
+    "history_rule": "refreshes and new source versions affect future resolution only; never silently rewrite committed NutritionSnapshot history",
+    "revocation_rule": "retain historical snapshot audit references, but block new matching when a source is revoked, its license changes, or integrity fails unless a separately recorded continued-use condition remains valid",
+    "source_isolation": "persistent community-database cache must remain source-isolated and must not be mixed into an external product database"
+  },
+  "failure_policy": {
+    "fact_first": true,
+    "fallback_order": [
+      "confirmed_local_profile",
+      "compliant_unexpired_cache",
+      "next_applicable_enabled_source",
+      "versioned_template_or_bounded_estimate",
+      "unknown"
+    ],
+    "stable_reasons": [
+      "source_unavailable",
+      "rate_limited",
+      "credential_missing",
+      "license_unverified",
+      "source_disabled",
+      "cache_miss",
+      "cache_stale",
+      "no_match",
+      "ambiguous_match",
+      "variant_mismatch",
+      "required_field_missing",
+      "integrity_failed"
+    ],
+    "timeout": "source_unavailable",
+    "http_429": "rate_limited",
+    "http_503": {
+      "default_reason": "source_unavailable",
+      "global_rate_limit_evidence_reason": "rate_limited",
+      "classification_rule": "classify as rate_limited only when the source response or registered source metadata explicitly identifies global rate limiting; otherwise classify as source_unavailable",
+      "retry_policy": "do not perform an immediate retry loop or retry storm; honor a valid Retry-After when present and use bounded backoff outside the current fact-first resolution",
+      "fallback": "try a compliant unexpired cache for the current tier and source, then continue by priority to the next applicable tier without failing the recognizable meal fact"
+    },
+    "no_credential": "credential_missing",
+    "license_unknown_or_expired_review": "license_unverified",
+    "disabled_entry": "source_disabled",
+    "no_result": "no_match",
+    "multiple_or_weak_result": "ambiguous_match",
+    "product_version_conflict": "variant_mismatch",
+    "missing_nutrition_field": "required_field_missing for that field only; preserve other supported fields",
+    "hash_mismatch": "integrity_failed",
+    "prohibited_result": "a degraded result must retain its actual source tier and evidence label; it may not impersonate a higher tier"
+  },
+  "sources": [
+    {
+      "source_id": "local.current_exact_label",
+      "source_type": "local_user_evidence",
+      "priority_tier": "current_exact_label",
+      "status": "local_non_network",
+      "official_name": "当前精确包装标签",
+      "official_urls": [],
+      "access_method": "user-provided or locally captured label evidence",
+      "license_basis": "user-supplied evidence for the user's own record; no public redistribution right is inferred",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "exact consumed product nutrition profile",
+        "immutable snapshot evidence"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": false,
+        "review_after_days": null,
+        "boundary": "store only within local product/profile evidence; do not publish label image by default"
+      },
+      "request_fields": [],
+      "match_scope": "consumed product and current packaging/label version",
+      "version_strategy": "barcode or SKU when available plus label version or content SHA-256 and captured_at",
+      "field_mapping": "all printed fields with original basis; absent fields stay unknown",
+      "quality_limitations": "OCR or manual transcription must retain capture evidence and confidence; unreadable values remain unknown",
+      "failure_fallback": "confirmed history, then the next applicable tier"
+    },
+    {
+      "source_id": "conditional.manufacturer_exact",
+      "source_type": "manufacturer_exact_category",
+      "priority_tier": "manufacturer_or_exact_product",
+      "status": "conditional_per_domain_allowlist",
+      "official_name": "逐域核验的生产商官方精确商品资料",
+      "official_urls": [],
+      "access_method": "read-only request to a separately approved canonical manufacturer domain; no open-web scraping",
+      "license_basis": "must be verified per domain and product page before activation; absence of terms never implies cache or redistribution permission",
+      "license_reviewed_at": "2026-08-09",
+      "activation_requirements": [
+        "canonical manufacturer-owned domain is allowlisted",
+        "robots and terms permit the intended read",
+        "brand, normalized name, variant and SKU/barcode or equivalent version match",
+        "request rate and attribution rules are recorded",
+        "license/cache review is current"
+      ],
+      "allowed_use": [
+        "future exact product resolution after per-domain activation"
+      ],
+      "cache": {
+        "persistent_cache": false,
+        "redistribution": false,
+        "review_after_days": 90,
+        "boundary": "default deny until the domain entry explicitly grants caching"
+      },
+      "request_fields": [
+        "normalized_food_name",
+        "brand",
+        "variant",
+        "package_specification"
+      ],
+      "match_scope": "exact official product page only",
+      "version_strategy": "SKU/barcode plus canonical URL plus explicit page update version when available, otherwise response content SHA-256; retrieved_at is not a source version",
+      "field_mapping": "printed nutrition fields and basis only",
+      "quality_limitations": "this category is not itself an enabled endpoint; each domain requires an effective child registration",
+      "failure_fallback": "confirmed same-product history, then the next applicable tier"
+    },
+    {
+      "source_id": "local.confirmed_same_product_history",
+      "source_type": "local_confirmed_profile",
+      "priority_tier": "confirmed_same_product_history",
+      "status": "local_non_network",
+      "official_name": "已确认同商品历史 NutritionProfile",
+      "official_urls": [],
+      "access_method": "local exact-identity lookup",
+      "license_basis": "inherits the historical profile's retained source and license evidence",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "exact same product and label version reuse"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": false,
+        "review_after_days": null,
+        "boundary": "profile remains versioned and auditable after inventory depletion"
+      },
+      "request_fields": [],
+      "match_scope": "brand, normalized name, variant and package/label version all equal",
+      "version_strategy": "immutable NutritionProfile version and original source version",
+      "field_mapping": "reuse stored known and unknown fields without filling gaps",
+      "quality_limitations": "any material identity or label-version conflict disables exact reuse",
+      "failure_fallback": "the next applicable public or trusted tier",
+      "evidence_label": "confirmed_history"
+    },
+    {
+      "source_id": "public.usda_fooddata_central",
+      "source_type": "authoritative_public_database",
+      "priority_tier": "authoritative_public_database",
+      "status": "enabled_authoritative_public",
+      "official_name": "USDA FoodData Central",
+      "official_urls": [
+        "https://fdc.nal.usda.gov/api-guide/",
+        "https://fdc.nal.usda.gov/download-datasets/"
+      ],
+      "access_method": "official API with runtime API key or versioned official JSON/CSV download",
+      "license_basis": "official API guide states FoodData Central data are public domain under CC0 1.0; users should acknowledge FoodData Central and the source data",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_reviewed_at": "2026-08-09",
+      "operational_limits": {
+        "api_key_required": true,
+        "default_rate_limit": "1000 requests per hour per IP; exceeding may produce HTTP 429",
+        "attribution": "retain and display FoodData Central plus source-data attribution where applicable"
+      },
+      "allowed_use": [
+        "common raw ingredients",
+        "basic foods",
+        "compatible cooked or processed public reference",
+        "offline official dataset lookup when the release version is retained"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": true,
+        "review_after_days": 180,
+        "boundary": "retain fdcId, dataType, publicationDate, dataset release and retrieval time; respect source-specific attribution embedded in records"
+      },
+      "request_fields": [
+        "normalized_food_name",
+        "raw_cooked_or_processing_state",
+        "minimum_food_category"
+      ],
+      "match_scope": "food category, processing state, edible portion and measurement basis must be compatible; not an exact packaged product unless the exact identity is independently proven",
+      "version_strategy": "fdcId plus dataType plus publicationDate and API/dataset release; retrieved_at is recorded separately",
+      "field_mapping": "energy, protein, fat, carbohydrate, fiber and sodium when present, with original per-100g or serving basis",
+      "quality_limitations": "record types and nutrient coverage vary; missing values remain unknown and branded records are not presumed to be a current exact label",
+      "failure_fallback": "compliant unexpired cache, then the next applicable enabled source",
+      "evidence_label": "public_reference"
+    },
+    {
+      "source_id": "public.china_cdc_phscience_food_composition",
+      "source_type": "authoritative_public_database",
+      "priority_tier": "authoritative_public_database",
+      "status": "disabled_pending_authorization",
+      "official_name": "中国疾病预防控制中心公共卫生科学数据中心—中国食物成分数据目录",
+      "official_urls": [
+        "https://www.chinacdc.cn/gzdt/zsdw/202509/t20250929_312801.html",
+        "https://www.phsciencedata.cn/Share/ky_sjml.jsp?id=577e0301-ab65-432a-9bb7-a8342302e589",
+        "https://www.phsciencedata.cn/Share/jsp/PublishManager/userGuide.jsp",
+        "https://www.phsciencedata.cn/Share/edtShare.jsp"
+      ],
+      "access_method": "manual application and agreement; no verified public machine API",
+      "license_basis": "official data-center guidance requires application/agreement for complete data and restricts unauthorized onward supply, external service products and commercial operation; no public API or general machine-use license has been verified",
+      "license_reviewed_at": "2026-08-09",
+      "activation_requirements": [
+        "documented authorization for this product and usage",
+        "verified machine access method",
+        "recorded cache and redistribution rights",
+        "privacy and request-field review"
+      ],
+      "allowed_use": [
+        "manual governance reference only until authorization is obtained"
+      ],
+      "cache": {
+        "persistent_cache": false,
+        "redistribution": false,
+        "review_after_days": 90,
+        "boundary": "do not cache nutrition records or automate access while disabled"
+      },
+      "request_fields": [],
+      "match_scope": "none while disabled",
+      "version_strategy": "not available until authorized machine access exposes a verifiable dataset version",
+      "field_mapping": "not active",
+      "quality_limitations": "the public pages prove a data network/catalog exists, not a generally licensed public API",
+      "failure_fallback": "source_disabled, then another applicable enabled source"
+    },
+    {
+      "source_id": "trusted.open_food_facts_read_only",
+      "source_type": "community_product_database",
+      "priority_tier": "allowlisted_trusted_internet",
+      "status": "conditional_read_only",
+      "official_name": "Open Food Facts Product Opener API",
+      "official_urls": [
+        "https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/",
+        "https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/license-be-on-the-legal-side/",
+        "https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/creating-a-local-cache-of-open-food-facts-data/"
+      ],
+      "access_method": "Product Opener API v3.6 read-only exact-barcode candidate lookup; no upload or edit operation",
+      "license_basis": "Open Food Facts documentation identifies community-contributed data with no guarantee of accuracy or completeness and database content under ODbL/DbCL conditions",
+      "license_url": "https://opendatacommons.org/licenses/odbl/1-0/",
+      "license_reviewed_at": "2026-08-09",
+      "operational_limits": {
+        "product_reads": "15 requests per minute per IP",
+        "search": "10 requests per minute per IP",
+        "user_agent": "a descriptive custom User-Agent is required",
+        "write_operations": false,
+        "photo_upload": false,
+        "send_app_uuid_or_user_id": false
+      },
+      "activation_requirements": [
+        "read-only client enforces published rate limits",
+        "custom User-Agent identifies the application without user identity",
+        "ODbL attribution and share-alike handling is implemented",
+        "response is treated as a candidate and exact identity is verified"
+      ],
+      "allowed_use": [
+        "exact barcode candidate retrieval for packaged products",
+        "field-level public reference after identity and quality checks"
+      ],
+      "cache": {
+        "persistent_cache": false,
+        "redistribution": false,
+        "review_after_days": 90,
+        "boundary": "persistent cache remains disabled until source-isolated ODbL compliance is implemented; never mix cached OFF data into an external product database"
+      },
+      "request_fields": [
+        "package_specification"
+      ],
+      "request_field_interpretation": "package_specification may supply a barcode only after local extraction; do not send original text, app_uuid, user_id, meal or inventory context",
+      "match_scope": "exact barcode candidate followed by brand, normalized name, variant and package/label-version checks; search matches alone are not exact",
+      "version_strategy": "product code plus rev, last_modified_t, last_updated_t, schema_version and API version when returned, plus response content SHA-256",
+      "field_mapping": "declared nutriments and original basis; absent or implausible fields remain unknown",
+      "quality_limitations": "community-maintained and self-reported; accuracy, completeness and current label identity are not guaranteed; never describe as manufacturer or government authority",
+      "failure_fallback": "ambiguous, rate-limited, incomplete or variant-mismatched results fall through with the actual reason",
+      "evidence_label": "public_reference"
+    },
+    {
+      "source_id": "local.personal_template",
+      "source_type": "local_personal_template",
+      "priority_tier": "versioned_common_dish_template",
+      "status": "local_non_network",
+      "official_name": "已激活个人模板",
+      "official_urls": [],
+      "access_method": "local versioned template lookup",
+      "license_basis": "local user-confirmed composition; not a public database or exact product label",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "same user's explicitly activated recurring composition"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": false,
+        "review_after_days": null,
+        "boundary": "must not be sent to an external source"
+      },
+      "request_fields": [],
+      "match_scope": "template activation rules and version must match",
+      "version_strategy": "immutable personal template version",
+      "field_mapping": "template components with each component's evidence",
+      "quality_limitations": "personal template cannot impersonate public data, a manufacturer source or a current label",
+      "failure_fallback": "versioned generic template, bounded estimate or unknown",
+      "evidence_label": "personal_template"
+    },
+    {
+      "source_id": "local.versioned_common_dish_template",
+      "source_type": "local_generic_template",
+      "priority_tier": "versioned_common_dish_template",
+      "status": "local_non_network",
+      "official_name": "版本化常见菜模板",
+      "official_urls": [],
+      "access_method": "local versioned rule lookup",
+      "license_basis": "each template must retain its component sources and rule provenance",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "boundary-clear common dishes with disclosed components and portions"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": false,
+        "review_after_days": 365,
+        "boundary": "local rule artifact only"
+      },
+      "request_fields": [],
+      "match_scope": "not for unknown combo, platter, substantially customized recipe or materially different processed beverage",
+      "version_strategy": "template_id and immutable rule_version",
+      "field_mapping": "component-level nutrient resolution without double counting whole dish and components",
+      "quality_limitations": "adopted component quantities are field-level inferences and must be disclosed",
+      "failure_fallback": "bounded generic estimate or unknown",
+      "evidence_label": "field_inference"
+    },
+    {
+      "source_id": "local.generic_estimate",
+      "source_type": "local_estimation_policy",
+      "priority_tier": "generic_estimate",
+      "status": "local_non_network",
+      "official_name": "有依据的通用估算",
+      "official_urls": [],
+      "access_method": "local versioned conversion and estimation rules",
+      "license_basis": "each adopted value inherits its specific rule/source evidence",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "natural-unit conversion",
+        "edible-portion conversion",
+        "density conversion",
+        "yield conversion",
+        "upper plausible bound from a reliable range"
+      ],
+      "cache": {
+        "persistent_cache": true,
+        "redistribution": false,
+        "review_after_days": 365,
+        "boundary": "store the rule and evidence, not invented source data"
+      },
+      "request_fields": [],
+      "match_scope": "only where a credible bounded rule applies",
+      "version_strategy": "rule_id and immutable rule_version",
+      "field_mapping": "only inferred fields receive estimation evidence",
+      "quality_limitations": "no credible range or conversion means unknown; never use a theoretical extreme",
+      "failure_fallback": "unknown",
+      "evidence_label": "field_inference"
+    },
+    {
+      "source_id": "terminal.unknown",
+      "source_type": "terminal_policy",
+      "priority_tier": "unknown",
+      "status": "local_non_network",
+      "official_name": "未知营养终态",
+      "official_urls": [],
+      "access_method": "no source call",
+      "license_basis": "not applicable",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "preserve recognizable meal fact while nutrition is absent or partial"
+      ],
+      "cache": {
+        "persistent_cache": false,
+        "redistribution": false,
+        "review_after_days": null,
+        "boundary": "unknown is a state, not numeric source data"
+      },
+      "request_fields": [],
+      "match_scope": "no reliable applicable evidence",
+      "version_strategy": "registry and rule version only",
+      "field_mapping": "all unsupported fields remain null/unknown, never zero",
+      "quality_limitations": "does not provide nutrition values",
+      "failure_fallback": "none",
+      "evidence_label": "unknown"
+    },
+    {
+      "source_id": "reference.ws_t_464_2015",
+      "source_type": "field_semantics_reference",
+      "priority_tier": "unknown",
+      "status": "reference_only_not_value_source",
+      "official_name": "WS/T 464—2015 食物成分数据表达规范",
+      "official_urls": [],
+      "access_method": "local standards reference only",
+      "license_basis": "used only for field and unknown-value expression semantics; not registered as a nutrient value provider",
+      "license_reviewed_at": "2026-08-09",
+      "allowed_use": [
+        "field naming and missing-value expression guidance"
+      ],
+      "cache": {
+        "persistent_cache": false,
+        "redistribution": false,
+        "review_after_days": 365,
+        "boundary": "must not supply nutrition numbers"
+      },
+      "request_fields": [],
+      "match_scope": "no food matching",
+      "version_strategy": "standard identifier only",
+      "field_mapping": "semantic reference only",
+      "quality_limitations": "not a nutrition data source",
+      "failure_fallback": "not applicable"
+    }
+  ],
+  "traceability": [
+    {
+      "requirement_id": "REQ-NUTR-001",
+      "paths": [
+        "/priority_policy/ordered_tiers",
+        "/priority_policy/selection_rule"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-002",
+      "paths": [
+        "/priority_policy/special_boundaries/common_raw_or_basic_food",
+        "/cache_policy/lookup_order"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-003",
+      "paths": [
+        "/priority_policy/special_boundaries/packaged_processed_or_highly_custom_food",
+        "/evidence_label_policy/historical_profile_exact_match"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-004",
+      "paths": [
+        "/priority_policy/special_boundaries/processed_beverage",
+        "/sources/7/match_scope"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-005",
+      "paths": [
+        "/priority_policy/unknown_is_zero",
+        "/nutrition_field_policy/missing_field",
+        "/nutrition_field_policy/missing_field_fill_value"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-006",
+      "paths": [
+        "/nutrition_field_policy/quantity_evidence/explicit_user_quantity",
+        "/nutrition_field_policy/quantity_evidence/exact_label_basis",
+        "/nutrition_field_policy/quantity_evidence/deterministic_conversion"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-007",
+      "paths": [
+        "/evidence_label_policy/historical_profile_exact_match",
+        "/sources/2/evidence_label"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-008",
+      "paths": [
+        "/sources/6/evidence_label",
+        "/sources/6/quality_limitations"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-009",
+      "paths": [
+        "/evidence_label_policy/labels/3",
+        "/sources/3/evidence_label"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-010",
+      "paths": [
+        "/nutrition_field_policy/quantity_evidence/inference_required_metadata",
+        "/sources/8/version_strategy"
+      ]
+    },
+    {
+      "requirement_id": "REQ-NUTR-011",
+      "paths": [
+        "/nutrition_field_policy/partial_inference_rule",
+        "/sources/8/field_mapping"
+      ]
+    },
+    {
+      "requirement_id": "REQ-PRIV-001",
+      "paths": [
+        "/external_request_policy/global_allowlist",
+        "/external_request_policy/source_can_only_narrow_global_allowlist"
+      ]
+    },
+    {
+      "requirement_id": "REQ-PRIV-002",
+      "paths": [
+        "/external_request_policy/global_denylist",
+        "/external_request_policy/free_text_or_life_context_allowed"
+      ]
+    },
+    {
+      "requirement_id": "REQ-PRIV-003",
+      "paths": [
+        "/governance/network_source_must_match_effective_registry_entry",
+        "/cache_policy/key_fields",
+        "/cache_policy/required_entry_fields"
+      ]
+    },
+    {
+      "requirement_id": "REQ-PRIV-004",
+      "paths": [
+        "/logging_policy/default_allowlist",
+        "/logging_policy/forbidden"
+      ]
+    },
+    {
+      "requirement_id": "REQ-PRIV-005",
+      "paths": [
+        "/credential_policy/storage",
+        "/credential_policy/forbidden_destinations",
+        "/credential_policy/missing_credential_fact_effect"
+      ]
+    }
+  ]
+}

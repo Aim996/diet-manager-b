@@ -1,0 +1,773 @@
+B-FAULT-001 STAGE A APPEND-ONLY GATE EVIDENCE
+schema_version=diet-manager/b-fault-stage-a-gates/v1
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+pinned_node=C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe
+pinned_node_version=v24.15.0
+formal_build_rerun=false
+formal_build_note=Candidate dist was already frozen by the sole Task 7 formal build; this evidence refreeze reruns noEmit only.
+capture_started_utc=2026-08-12T15:45:15.4407181+00:00
+sanitization=Complete stdout/stderr retained after deterministic replacement of worktree, TEMP, and user-profile absolute prefixes with <WORKTREE>, <TEMP>, and <USERPROFILE>; no output lines omitted.
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+===== COMMAND 001 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=001
+name=typescript_no_emit
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\node_modules\typescript\bin\tsc' '-p' '.\tsconfig.json' '--noEmit'
+start_utc=2026-08-12T15:45:15.5060167+00:00
+stdout_utf8_bytes=0
+stdout_begin
+
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:21.6698673+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 001 END =====
+
+===== COMMAND 002 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=002
+name=fault_matrix_vitest
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\node_modules\vitest\vitest.mjs' 'run' '.\tests\fault-matrix.test.ts' '--maxWorkers=1' '--minWorkers=1' '--no-file-parallelism'
+start_utc=2026-08-12T15:45:21.8740638+00:00
+stdout_utf8_bytes=439
+stdout_begin
+
+ RUN  v2.1.9 <WORKTREE>/version-b-lite-plugin
+
+ ✓ tests/fault-matrix.test.ts (73 tests) 3654ms
+   ✓ B-FAULT-001 storage and stale-preview matrix aggregation > CASE-STORAGE-005 keeps failed candidates unpublished and rejected files byte-exact 734ms
+
+ Test Files  1 passed (1)
+      Tests  73 passed (73)
+   Start at  23:45:22
+   Duration  4.88s (transform 403ms, setup 0ms, collect 866ms, tests 3.65s, environment 1ms, prepare 130ms)
+
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:27.3529696+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 002 END =====
+
+===== COMMAND 003 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=003
+name=full_plugin_vitest
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\node_modules\vitest\vitest.mjs' 'run' '--maxWorkers=1' '--minWorkers=1' '--no-file-parallelism'
+start_utc=2026-08-12T15:45:27.5424183+00:00
+stdout_utf8_bytes=905
+stdout_begin
+
+ RUN  v2.1.9 <WORKTREE>/version-b-lite-plugin
+
+ ✓ tests/vertical-slice.test.ts (69 tests) 4930ms
+ ✓ tests/fault-matrix.test.ts (73 tests) 3573ms
+   ✓ B-FAULT-001 storage and stale-preview matrix aggregation > CASE-STORAGE-005 keeps failed candidates unpublished and rejected files byte-exact 756ms
+ ✓ tests/repository.test.ts (31 tests) 1753ms
+ ✓ tests/server-authority.test.ts (27 tests) 421ms
+ ✓ tests/storage-bootstrap.test.ts (7 tests) 745ms
+   ✓ B-STOR-001 database bootstrap > rejects a drifted v1 schema without changing the rejected bytes 551ms
+ ✓ tests/foundation.test.ts (13 tests) 12ms
+ ✓ tests/domain-rules.test.ts (9 tests) 23ms
+ ✓ tests/sqlite-compatibility.test.ts (1 test) 26ms
+
+ Test Files  8 passed (8)
+      Tests  230 passed (230)
+   Start at  23:45:28
+   Duration  16.17s (transform 593ms, setup 0ms, collect 2.33s, tests 11.48s, environment 2ms, prepare 911ms)
+
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:44.2988073+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 003 END =====
+
+===== COMMAND 004 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=004
+name=repository_concurrency
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\repository-concurrency.mjs'
+start_utc=2026-08-12T15:45:44.4650302+00:00
+stdout_utf8_bytes=154
+stdout_begin
+B_STOR_002_CONCURRENCY|PASS|same_identity=2|conflict=1+1|effect=2|finalizer_failure=1|other_fact=1|crash_uncommitted=0_visible|business_rows=exactly_once
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:45.2431718+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 004 END =====
+
+===== COMMAND 005 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=005
+name=progress_reservation_concurrency
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\progress-reservation-concurrency.mjs'
+start_utc=2026-08-12T15:45:45.3976824+00:00
+stdout_utf8_bytes=230
+stdout_begin
+{"status":"ok","evidence":{"worker_error":"PROGRESS_RESERVATION_AUTHORITY_INVALID:base_changed","event_records":0,"meal_items":0,"effect_outbox":0,"effect_bundle_commits":0,"envelope_finalizations":0,"envelope_state":"received"}}
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:45.8068890+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 005 END =====
+
+===== COMMAND 006 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=006
+name=crash_harness_main
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:45.9578872+00:00
+stdout_utf8_bytes=88
+stdout_begin
+PASS B-SLICE-001 crash recovery: no surviving child, temporary database, or log residue
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:49.8314404+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 006 END =====
+
+===== COMMAND 007 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=007
+name=crash_harness_selftest_hang
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='hang'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:49.9779462+00:00
+stdout_utf8_bytes=54
+stdout_begin
+PASS B-SLICE-001 crash harness hang-timeout self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:50.2726712+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 007 END =====
+
+===== COMMAND 008 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=008
+name=crash_harness_selftest_root-replace
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='root-replace'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:50.4316640+00:00
+stdout_utf8_bytes=58
+stdout_begin
+PASS B-SLICE-001 crash harness root-replacement self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:50.5404068+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 008 END =====
+
+===== COMMAND 009 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=009
+name=crash_harness_selftest_snapshot-mutation
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='snapshot-mutation'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:50.6895850+00:00
+stdout_utf8_bytes=59
+stdout_begin
+PASS B-SLICE-001 crash harness snapshot-mutation self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:50.9895898+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 009 END =====
+
+===== COMMAND 010 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=010
+name=crash_harness_selftest_emergency-cleanup
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='emergency-cleanup'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:51.1434971+00:00
+stdout_utf8_bytes=59
+stdout_begin
+PASS B-SLICE-001 crash harness emergency-cleanup self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:51.4257413+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 010 END =====
+
+===== COMMAND 011 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=011
+name=crash_harness_selftest_allowed-mutation
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='allowed-mutation'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:51.5775867+00:00
+stdout_utf8_bytes=64
+stdout_begin
+PASS B-SLICE-001 crash harness allowed-table mutation self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:51.9642754+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 011 END =====
+
+===== COMMAND 012 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=012
+name=crash_harness_selftest_expanded-fact-mutation
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='expanded-fact-mutation'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:52.1248753+00:00
+stdout_utf8_bytes=60
+stdout_begin
+PASS B-SLICE-001 expanded Fact authority mutation self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:52.4256934+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 012 END =====
+
+===== COMMAND 013 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=013
+name=crash_harness_selftest_expanded-effect-mutation
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='expanded-effect-mutation'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:52.5785802+00:00
+stdout_utf8_bytes=62
+stdout_begin
+PASS B-SLICE-001 expanded Effect authority mutation self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:52.8937986+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 013 END =====
+
+===== COMMAND 014 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=014
+name=crash_harness_selftest_expanded-finalize-mutation
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='expanded-finalize-mutation'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:53.0565394+00:00
+stdout_utf8_bytes=64
+stdout_begin
+PASS B-SLICE-001 expanded Finalize authority mutation self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:53.3635152+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 014 END =====
+
+===== COMMAND 015 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=015
+name=crash_harness_selftest_canonical-order
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=$env:B_SLICE_CRASH_SELFTEST='canonical-order'; & 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\tests\b-slice-crash-harness.mjs'
+start_utc=2026-08-12T15:45:53.5250153+00:00
+stdout_utf8_bytes=55
+stdout_begin
+PASS B-SLICE-001 canonical snapshot ordering self-test
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:45:53.6130476+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 015 END =====
+
+===== COMMAND 016 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=016
+name=openclaw_plugin_build_check
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\node_modules\openclaw\openclaw.mjs' 'plugins' 'build' '--check' '--root' '.' '--entry' '.\dist\index.js'
+start_utc=2026-08-12T15:45:53.7732158+00:00
+stdout_utf8_bytes=31
+stdout_begin
+Plugin metadata is up to date.
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:01.7752282+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 016 END =====
+
+===== COMMAND 017 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=017
+name=openclaw_plugin_validate
+working_directory=<WORKTREE>/version-b-lite-plugin
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\node_modules\openclaw\openclaw.mjs' 'plugins' 'validate' '--root' '.' '--entry' '.\dist\index.js'
+start_utc=2026-08-12T15:46:01.9400682+00:00
+stdout_utf8_bytes=32
+stdout_begin
+Plugin diet-manager-b is valid.
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:09.3323480+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 017 END =====
+
+===== COMMAND 018 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=018
+name=shared_harness_protocol
+working_directory=<WORKTREE>
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '--experimental-strip-types' '--test' '--test-concurrency=1' '.\shared\acceptance-cases\tests\harness.test.ts'
+start_utc=2026-08-12T15:46:09.4905257+00:00
+stdout_utf8_bytes=1213
+stdout_begin
+✔ freezes the shared harness manifest (6.3828ms)
+✔ A is an honest read-only degradation adapter (1.2615ms)
+✔ B without a driver is backend pending and writes nothing (0.3486ms)
+✔ adapters reject Oracle fields before invoking dynamic getters (1.0441ms)
+✔ adapters reject Proxy input before invoking any Proxy trap (0.2567ms)
+✔ B gives the driver an isolated recursively frozen input (0.4442ms)
+✔ B rejects failed execution with any dietary business write (0.4745ms)
+✔ B rejects report-facing reason text that could contain a machine path (0.2968ms)
+✔ B rejects dynamic driver observations before invoking getters (0.4144ms)
+✔ kind compatibility mapping is one-way and leaves other values unchanged (0.281ms)
+✔ exact comparator rejects missing, extra, and reordered values (0.6492ms)
+✔ default runner is deterministic, backend-pending, and Oracle-free (24.3129ms)
+✔ runner resolves setup but never delivers Oracle authority to B (13.4726ms)
+✔ runner can compare exact observations without exposing them in report (13.112ms)
+✔ there is no independent C adapter (0.304ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 226.3905
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:09.7990698+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 018 END =====
+
+===== COMMAND 019 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=019
+name=shared_b_acceptance
+working_directory=<WORKTREE>
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '--experimental-strip-types' '--test' '--test-concurrency=1' '.\shared\acceptance-cases\tests\b-slice.test.ts'
+start_utc=2026-08-12T15:46:09.9710106+00:00
+stdout_utf8_bytes=702
+stdout_begin
+✔ freezes the exact G2 B slice matrix and ID order (1.9351ms)
+✔ rejects tampered B-slice authority before opening a runtime (5.3728ms)
+✔ binds a public case requirement and resolved fixture before opening a runtime (1.0593ms)
+✔ executes exactly the G2 B-only responsibility set (1315.7077ms)
+✔ CASE-PROGRESS-010 observes two child contributions but freezes one envelope aggregate (60.0428ms)
+✔ reads the unique real receipt progress block instead of top-level progress (0.5206ms)
+✔ the independent expectations reject mutations at the real observation boundary (715.2964ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2349.8374
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:12.4092579+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 019 END =====
+
+===== COMMAND 020 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=020
+name=shared_b_fault_authority
+working_directory=<WORKTREE>
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '--experimental-strip-types' '--test' '--test-concurrency=1' '.\shared\acceptance-cases\tests\b-fault-matrix.test.ts'
+start_utc=2026-08-12T15:46:12.5724350+00:00
+stdout_utf8_bytes=262
+stdout_begin
+✔ freezes the exact eighteen-row B fault authority and both manifest bindings (7.3334ms)
+✔ rejects exact B fault authority mutations (16.8173ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 182.5141
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:12.8406583+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 020 END =====
+
+===== COMMAND 021 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=021
+name=traceability_self_test
+working_directory=<WORKTREE>
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\shared\tests\validate-traceability.mjs' '--self-test'
+start_utc=2026-08-12T15:46:12.9966296+00:00
+stdout_utf8_bytes=105
+stdout_begin
+TRACEABILITY|PASS|mode=validate|requirements=71|cases=144|tasks=59|governance=64|evidence=31|mutations=7
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:13.2481720+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 021 END =====
+
+===== COMMAND 022 BEGIN =====
+candidate_sha=b8bdbf207e4eda52eb395989b42e159d554cb078
+evidence_run_head=15d2c541074a1f25bf6c7fa560201c3503f5ad18
+sequence=022
+name=x_gate_self_test
+working_directory=<WORKTREE>
+command=& 'C:\Users\10481\AppData\Local\Temp\diet-manager-validation-node-24.15.0\node-v24.15.0-win-x64\node.exe' '.\shared\tests\validate-x-gate-001.mjs' '--self-test'
+start_utc=2026-08-12T15:46:13.3924714+00:00
+stdout_utf8_bytes=69
+stdout_begin
+X_GATE_001|PASS|cases=13|checks=7|decision=pass_b_safety|mutations=6
+stdout_end
+stderr_utf8_bytes=0
+stderr_begin
+
+stderr_end
+end_utc=2026-08-12T15:46:14.0497979+00:00
+exit_code=0
+boundary_begin
+pinned_task_node_count=0
+pinned_task_nodes_json=[]
+temp_parent=<TEMP>
+temp_baseline_count=20
+temp_baseline_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_after_count=20
+temp_after_names_json=["diet-manager-b-slice-026d6abd16b241bda3d44f5b3771cc1a","diet-manager-b-slice-12aa178d8eb4411d8286b212526876c8","diet-manager-b-slice-39c8daeb03364332ae3b562d55e3438a","diet-manager-b-slice-456986c376954be494e79a3f41d94c8a","diet-manager-b-slice-49019497d71741a19b78607e4dfcf0da","diet-manager-b-slice-51834f6267d9470797ccdb23d4ee2dec","diet-manager-b-slice-85b32b88824245c6a585b539a8095c58","diet-manager-b-slice-8e264d15b1654b779462e60fa8f740b1","diet-manager-b-slice-99ec20949ded4da5bcb9f128afd3de19","diet-manager-b-slice-b9d462f003ad497dbef348fac6d28a8f","diet-manager-b-slice-c7ce35b13b474a24b4d254e3bbe74ab2","diet-manager-b-slice-c89ec88661ec4ed3b5aff38cb141d38b","diet-manager-b-slice-f188d4b5e7bf45c3af4370de1e03f4de","diet-manager-b-slice-fd11fbc2b9544f7ab1b928c59700d286","diet-manager-b-slice-fd722ac078be423aa437545a73f94db9","diet-manager-doc","diet-manager-node-v24.15.0","diet-manager-node-v24.15.0-retry","diet-manager-progress-reservation-619d5e18652241feac66e3d89983c4ed","diet-manager-shared"]
+temp_new_count=0
+temp_new_names_json=[]
+boundary_end
+===== COMMAND 022 END =====
+
+capture_completed_utc=2026-08-12T15:46:14.2092134+00:00
+command_count=22
+all_exit_codes_zero=true
+all_boundary_node_counts_zero=true
+all_boundary_new_temp_counts_zero=true

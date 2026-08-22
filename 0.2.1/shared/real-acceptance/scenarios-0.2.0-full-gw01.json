@@ -1,0 +1,333 @@
+{
+  "schema_version": "diet-manager/real-acceptance-scenarios/v1",
+  "description": "饮食管家 B 0.2.0 全量 16 场景自然对话验收（网关 01）。业务预期与数据库断言保持不变，仅使用贴近日常使用的多轮口语变体。",
+  "scenarios": [
+    {
+      "id": "REAL-0.2.0-profile-set",
+      "category": "profile",
+      "title": "个人档案 + 六项目标派生",
+      "input": "我最近想减脂，男，30岁，身高180，体重70公斤。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "user_profiles",
+          "where": {},
+          "expect_delta": 1
+        },
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-profile-default-state",
+      "category": "profile",
+      "title": "个人档案缺省状态维持",
+      "input": "先记下我的基础情况吧，我165高，55公斤。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "user_profiles",
+          "where": {},
+          "expect_delta": 1
+        },
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-goal-set-calorie",
+      "category": "goal",
+      "title": "显式覆盖热量目标",
+      "input": "我一天大概控制在1800大卡吧。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-goal-clear-protein",
+      "category": "goal",
+      "title": "清除单项目标维度",
+      "input": "蛋白质那项先别设了，帮我去掉吧。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "goal_versions",
+          "where": {
+            "user_id": "user:self"
+          },
+          "expect_delta": 1
+        }
+      ],
+      "setup": [
+        "先把我的情况补上，我180高70公斤。"
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-query-progress-bar",
+      "category": "query",
+      "title": "进度条查询快照一致（半格）",
+      "input": "我今天水喝到什么程度了？",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "expect_delta": 0
+        }
+      ],
+      "setup": [
+        "我每天水大概想喝1000毫升。",
+        "我刚喝了500毫升白水。"
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-restore-record",
+      "category": "correction",
+      "title": "撤销后恢复",
+      "input": "算了，苹果那条还是给我保留吧。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "restore_event"
+          },
+          "expect_delta": 1
+        }
+      ],
+      "setup": [
+        "我刚吃了一个苹果。",
+        "等等，前面那个先不算。"
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-restore-already-active",
+      "category": "correction",
+      "title": "恢复仍活跃记录幂等忽略",
+      "input": "刚才那个苹果还是算上吧。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {},
+          "expect_delta": 0
+        }
+      ],
+      "setup": [
+        "我刚吃了一个苹果。"
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-hit",
+      "category": "nutrition",
+      "title": "离线权威命中（牛奶）",
+      "input": "我刚喝了200毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-banana",
+      "category": "nutrition",
+      "title": "香蕉离线命中（词表 + USDA bundle）",
+      "input": "下午有点饿，我刚吃了两个香蕉。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-missing-key",
+      "category": "nutrition",
+      "title": "无 FDC_API_KEY 离线仍命中",
+      "input": "我刚喝了210毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-offline",
+      "category": "nutrition",
+      "title": "断网离线仍命中",
+      "input": "刚才那杯牛奶大概220毫升，我喝完了。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-nutrition-timeout",
+      "category": "nutrition",
+      "title": "无超时离线命中",
+      "input": "我刚刚喝了230毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "nutrition_snapshots",
+          "where": {
+            "source_type": "authoritative_public_database"
+          },
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-meal-single",
+      "category": "meal",
+      "title": "单食物餐食记录（回归）",
+      "input": "早上随手吃了一个苹果。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "diet_meal"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "meal_items",
+          "where": {},
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-inventory-unique",
+      "category": "inventory",
+      "title": "单商品采购（回归）",
+      "input": "我刚买回一瓶牛奶，放家里了。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {
+            "event_type": "inventory_stock"
+          },
+          "expect_delta": 1
+        },
+        {
+          "table": "products",
+          "where": {},
+          "expect_delta": 1
+        },
+        {
+          "table": "inventory_batches",
+          "where": {},
+          "expect_delta": 1
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-zero-write-plan",
+      "category": "zero_write",
+      "title": "计划性表述零写入（回归）",
+      "input": "我想着明天早餐吃个苹果。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        {
+          "table": "event_records",
+          "where": {},
+          "expect_delta": 0
+        }
+      ]
+    },
+    {
+      "id": "REAL-0.2.0-correction-undo",
+      "category": "correction",
+      "title": "撤销餐食记录（回归）",
+      "input": "刚才早餐那条不对，先取消掉。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        {
+          "table": "correction_events",
+          "where": {
+            "operation": "void_event"
+          },
+          "expect_delta": 1
+        }
+      ],
+      "setup": [
+        "我早上吃了一个苹果。"
+      ]
+    }
+  ]
+}

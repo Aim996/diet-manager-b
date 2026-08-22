@@ -1,0 +1,107 @@
+{
+  "schema_version": "diet-manager/skill-routing-baseline/v2",
+  "evaluated_at": "2026-08-22",
+  "control": "existing-skill-before-task-12",
+  "loaded_skill_commit": "84f320b",
+  "prompt": {
+    "user_message": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。",
+    "available_entry": "diet-manager execute",
+    "adapter_available": false,
+    "instruction": "Read the pre-Task-12 Skill and return the single business call you would make."
+  },
+  "capture_limit": "The five pre-change route repetitions retained each generated command and rationale, but not their final replies or tool-result payloads. Therefore they prove only the v1 routing gap. A separate fresh no-entry probe against the exact Skill at commit 84f320b supplies auditable false-success evidence; GREEN commands are replayed against the real runtime.",
+  "repetitions": [
+    {
+      "session_id": "task12_baseline_route_1",
+      "raw_model_output": {
+        "calls": [{
+          "tool": "diet-manager execute",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v1",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。"
+          }
+        }],
+        "rationale": "这是普通、可直接解析的餐食陈述"
+      }
+    },
+    {
+      "session_id": "task6_code_review",
+      "raw_model_output": {
+        "calls": [{
+          "tool": "diet-manager execute",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v1",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。"
+          }
+        }],
+        "rationale": "这是可直接解析的普通餐食陈述"
+      }
+    },
+    {
+      "session_id": "task9_independent_review",
+      "raw_model_output": {
+        "calls": [{
+          "tool": "diet-manager execute",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v1",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。"
+          }
+        }],
+        "rationale": "这是可直接解析的普通餐食陈述"
+      }
+    },
+    {
+      "session_id": "task12_baseline_route_4",
+      "raw_model_output": {
+        "calls": [{
+          "tool": "diet-manager execute",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v1",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。"
+          }
+        }],
+        "rationale": "陈述可直接解析，因此不添加可选的 semantic_candidate"
+      }
+    },
+    {
+      "session_id": "task12_baseline_route_5",
+      "raw_model_output": {
+        "calls": [{
+          "tool": "diet-manager execute",
+          "arguments": {
+            "schema_version": "diet-manager/agent-command/v1",
+            "action": "record_meal",
+            "source_text": "晚饭我刚吃完两片全麦面包和一个苹果，帮我记下。"
+          }
+        }],
+        "rationale": "这是普通、可直接解析的餐食陈述"
+      }
+    }
+  ],
+  "false_success_probe": {
+    "session_id": "task12_baseline_false_success_probe",
+    "loaded_source": {
+      "commit": "84f320b",
+      "path": "0.3/version-b-lite-plugin/skills/diet-manager-b/SKILL.md"
+    },
+    "user_prompt": "我刚喝了500毫升白水，帮我记下。",
+    "calls": [],
+    "tool_results": [],
+    "final_user_reply": "本次未记录：当前没有可用的饮食管家适配器，也没有已配置且可运行的 CLI 入口。",
+    "evaluation_notes": {
+      "explicitly_not_saved": true,
+      "claimed_success": false,
+      "alternative_storage": false
+    }
+  },
+  "observed_gap": {
+    "missing_v2_semantic_proposal": 5,
+    "missed_call": 0,
+    "duplicate_call": 0,
+    "false_success_observed": 0
+  }
+}

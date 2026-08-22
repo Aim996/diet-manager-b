@@ -1,0 +1,89 @@
+{
+  "harness_id": "diet-manager/shared-acceptance-harness-v1",
+  "version": "1.0.0",
+  "selected_route": "B",
+  "contracts": [
+    {
+      "contract_id": "diet-manager/contract-v3",
+      "path": "shared/business-contract.md",
+      "sha256": "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC"
+    },
+    {
+      "contract_id": "diet-manager/receipt-date-contract-v2",
+      "path": "shared/contracts/receipt-and-date-contract.md",
+      "sha256": "F33E34D6B9EA9B1212208D75C5025FA86BB07923248E3B4929A1EF0BB7A375DD"
+    },
+    {
+      "contract_id": "diet-manager/issue-correction-contract-v2",
+      "path": "shared/contracts/issue-correction-contract.md",
+      "sha256": "41E4A18D4D72644641D66A58F918616EBB0A6189E7F0BE1E836741E057298FDB"
+    },
+    {
+      "contract_id": "diet-manager/storage-mapping-v1",
+      "path": "shared/contracts/storage-mapping.md",
+      "sha256": "0F12923848FBDEE928F60A7191DCF9988C291FE632793F44231F9D94F379ED66"
+    },
+    {
+      "contract_id": "diet-manager/nutrition-source-capability-v1",
+      "path": "shared/contracts/source-capability-contract.md",
+      "sha256": "270C0E75181DB46707C39ACEC08CCBE8AE72CAD2C9269F24A46A1E9114585655"
+    }
+  ],
+  "case_catalog": {
+    "path": "shared/acceptance-cases/cases.json",
+    "case_set_id": "diet-manager/core-acceptance-cases-v1",
+    "version": "1.7.0",
+    "case_count": 73,
+    "sha256": "0F7E7DC6E26A49638F4E64B1DC26DE6800176C055D10A9754EFD790579EC2F28"
+  },
+  "fixture_catalog": {
+    "path": "shared/acceptance-cases/fixtures/core-v1.json",
+    "fixture_catalog_id": "diet-manager/core-fixtures-v1",
+    "version": "1.5.0",
+    "sha256": "5C189AB033DD12B9DDB6A5D87FA975EBD37F904CB5CF4FC51E4A3CF0B02B7DBA"
+  },
+  "b_slice_input_catalog": {
+    "path": "shared/acceptance-cases/b-slice-inputs.json",
+    "input_catalog_id": "diet-manager/b-slice-case-inputs/v1",
+    "version": "1.0.0",
+    "case_count": 9,
+    "sha256": "73228B1B718502BE486420AD68475CA2482C793E4CF44EF6ABF9ADB29DB1283C"
+  },
+  "g2_b_slice_matrix": {
+    "path": "shared/acceptance-cases/g2-b-slice-matrix.json",
+    "matrix_id": "diet-manager/g2-b-slice-matrix/v1",
+    "expected_count": 17,
+    "sha256": "C6FE8A220D30D0C4B21E53D172F578B545847692096F984B14F8C0C72B8B99AF"
+  },
+  "b_fault_matrix": {
+    "path": "shared/acceptance-cases/b-fault-matrix.json",
+    "matrix_id": "diet-manager/b-fault-matrix/v1",
+    "case_count": 7,
+    "fault_count": 18,
+    "sha256": "DEF9BA3477CE95E5DA591D4A1F988309FC7050CE8784471C49E8714D87B91423"
+  },
+  "route_policy": {
+    "b_mode": "selected_execution_adapter",
+    "a_mode": "read_only_no_writer",
+    "c_mode": "merged_into_b_no_adapter"
+  },
+  "required_case_ids": [
+    "CASE-STORAGE-001",
+    "CASE-STORAGE-007",
+    "CASE-EFFECT-001",
+    "CASE-EFFECT-003"
+  ],
+  "kind_mappings": [
+    {
+      "direction": "shared_fixture_to_b_storage",
+      "from": "nutritious_drink",
+      "to": "nutrition_drink"
+    }
+  ],
+  "report_policy": {
+    "adapters_receive_oracle": false,
+    "adapters_may_rewrite_oracle": false,
+    "backend_pending_is_product_pass": false,
+    "technical_log_counts_as_record": false
+  }
+}

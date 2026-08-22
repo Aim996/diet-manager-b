@@ -1,0 +1,53 @@
+{
+  "schema_version": "diet-manager/product-validation/v1",
+  "generated_at": "2026-08-16T21:35:38Z",
+  "environment": {
+    "schema_version": "diet-manager/product-validation/v1",
+    "node_major": 24,
+    "node_version": "v24.15.0",
+    "pnpm_version": "11.22.0",
+    "powershell_version": "7.6.5",
+    "powershell_security_module": true,
+    "git_available": true,
+    "openclaw_available": true,
+    "secret_value_count": 0
+  },
+  "gates": [
+    {
+      "gate": "typescript_noemit",
+      "command": "pnpm exec tsc -p tsconfig.json --noEmit",
+      "exit_code": 0
+    },
+    {
+      "gate": "vitest_full",
+      "command": "pnpm exec vitest run --maxWorkers=1 --minWorkers=1 --no-file-parallelism",
+      "exit_code": 0
+    },
+    {
+      "gate": "build",
+      "command": "pnpm run build",
+      "exit_code": 0
+    },
+    {
+      "gate": "openclaw_build_check",
+      "command": "pnpm exec openclaw plugins build --check --root . --entry ./dist/index.js",
+      "exit_code": 0
+    },
+    {
+      "gate": "openclaw_validate",
+      "command": "pnpm exec openclaw plugins validate --root . --entry ./dist/index.js",
+      "exit_code": 0
+    },
+    {
+      "gate": "governance",
+      "command": "node shared\\tests\\validate-product-0.1.1-governance.mjs",
+      "exit_code": 0
+    }
+  ],
+  "test_files": 32,
+  "tests": 960,
+  "protected_inventory_before_count": 0,
+  "protected_inventory_after_count": 0,
+  "protected_new_files": [],
+  "secret_value_count": 0
+}

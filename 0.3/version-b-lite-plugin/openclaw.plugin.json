@@ -1,0 +1,96 @@
+{
+  "id": "diet-manager-b",
+  "name": "Diet Manager B",
+  "description": "A deterministic meal and plain-water recording tool.",
+  "version": "0.3.0",
+  "skills": [
+    "./skills"
+  ],
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "official_data_root"
+    ],
+    "properties": {
+      "official_data_root": {
+        "type": "string",
+        "description": "Absolute existing runtime root owned and configured only by the Diet Manager backend.",
+        "x-diet-manager-root-semantics": "backend_owned_existing_absolute_runtime_root"
+      },
+      "nutrition": {
+        "type": "object",
+        "required": [
+          "policy_version",
+          "sources"
+        ],
+        "properties": {
+          "policy_version": {
+            "type": "string"
+          },
+          "resolution_deadline_ms": {
+            "type": "integer",
+            "minimum": 500,
+            "maximum": 5000
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "source_id",
+                "enabled",
+                "backend_id",
+                "backend_version"
+              ],
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "const": "public.usda_fooddata_central"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "backend_id": {
+                  "type": "string",
+                  "const": "fooddata-central"
+                },
+                "backend_version": {
+                  "type": "string",
+                  "const": "api-v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "maxItems": 32
+          },
+          "credential_refs": {
+            "type": "object",
+            "properties": {
+              "public.usda_fooddata_central": {
+                "type": "string",
+                "const": "env:FDC_API_KEY",
+                "description": "Private backend reference. The API key is read only from the FDC_API_KEY environment variable."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "x-diet-manager-contract": {
+      "id": "diet-manager/contract-v3",
+      "version": 3,
+      "sha256": "B4F475C389FA9A5EA5DD23F9E737A157B5B44B47311AB38AB16354F5C9556ADC"
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "diet_manager"
+    ]
+  }
+}

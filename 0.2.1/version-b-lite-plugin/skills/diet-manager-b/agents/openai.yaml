@@ -1,0 +1,4 @@
+interface:
+  display_name: "饮食管家 B"
+  short_description: "处理饮食、饮水、库存查询以及饮食记录更正与撤销等常见请求"
+  default_prompt: "Use $diet-manager-b 处理我的饮食记录、饮水、库存查询、更正或撤销请求。"

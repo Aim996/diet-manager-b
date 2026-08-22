@@ -1,0 +1,427 @@
+{
+  "schema_version": "diet-manager/real-acceptance-scenarios/v1",
+  "description": "饮食管家 B 0.1.1 真实环境验收场景集。每个场景在独立会话中执行；input 是受测消息，setup 是按序回放的同一会话前置消息。database_assertions 是执行后对官方数据根 SQLite 的只读白名单断言（expect_delta 为相对本场景开始前的净增量，expect_count 为绝对计数）。",
+  "scenarios": [
+    {
+      "id": "REAL-0.1.1-meal-single",
+      "category": "meal",
+      "title": "单食物餐食记录",
+      "input": "早餐吃了一个苹果。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "meal_items", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-meal-multi",
+      "category": "meal",
+      "title": "多食物餐食记录",
+      "input": "午饭吃了米饭和鸡胸肉。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "meal_items", "where": {}, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-meal-natural-unit",
+      "category": "meal",
+      "title": "自然单位（个）餐食记录",
+      "input": "吃了两个鸡蛋。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "meal_items", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-meal-gram",
+      "category": "meal",
+      "title": "克重餐食记录",
+      "input": "吃了150克米饭。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "meal_items", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-zero-write-plan",
+      "category": "zero_write",
+      "title": "计划性表述零写入",
+      "input": "我计划明天早餐吃一个苹果。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-zero-write-negation",
+      "category": "zero_write",
+      "title": "否定表述零写入",
+      "input": "今天没吃苹果。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-zero-write-non-self",
+      "category": "zero_write",
+      "title": "非本人表述零写入",
+      "input": "小明今天吃了一个苹果。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-zero-write-advice",
+      "category": "zero_write",
+      "title": "建议性表述零写入",
+      "input": "吃苹果对身体好。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-zero-write-not-occurred",
+      "category": "zero_write",
+      "title": "未发生条件表述零写入",
+      "input": "如果今天我吃了苹果，就记一笔。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-nutrition-hit",
+      "category": "nutrition",
+      "title": "离线权威命中（牛奶）",
+      "input": "吃了200毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-nutrition-no-result",
+      "category": "nutrition",
+      "title": "香蕉离线命中（词表 + USDA bundle）",
+      "input": "吃了两个香蕉。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-nutrition-missing-key",
+      "category": "nutrition",
+      "title": "无 FDC_API_KEY 离线仍命中",
+      "input": "吃了200毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-nutrition-offline",
+      "category": "nutrition",
+      "title": "断网离线仍命中",
+      "input": "吃了200毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-nutrition-timeout",
+      "category": "nutrition",
+      "title": "无超时离线命中（离线零网络零超时）",
+      "input": "吃了200毫升牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "nutrition_snapshots", "where": { "coverage_status": { "$neq": "unknown" } }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-unique",
+      "category": "inventory",
+      "title": "单商品采购",
+      "input": "买了一瓶牛奶。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
+        { "table": "products", "where": {}, "expect_delta": 1 },
+        { "table": "inventory_batches", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-multiple",
+      "category": "inventory",
+      "title": "多商品一次采购",
+      "input": "买了2盒鸡蛋和1个苹果。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 2 },
+        { "table": "products", "where": {}, "expect_delta": 2 },
+        { "table": "inventory_batches", "where": {}, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-package",
+      "category": "inventory",
+      "title": "带规格包装采购",
+      "input": "买了一瓶250毫升的牛奶。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
+        { "table": "products", "where": {}, "expect_delta": 1 },
+        { "table": "inventory_batches", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-multi-purchase",
+      "category": "inventory",
+      "title": "同商品再次采购复用产品",
+      "setup": ["买了一瓶牛奶，每瓶250ml。"],
+      "input": "又买了同品牌同口味同规格的250ml牛奶。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "inventory_stock" }, "expect_delta": 1 },
+        { "table": "products", "where": {}, "expect_delta": 0 },
+        { "table": "inventory_batches", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-insufficient",
+      "category": "inventory",
+      "title": "库存不足扣减并开 issue",
+      "setup": ["买了一瓶牛奶。"],
+      "input": "喝了三瓶牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "issues", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-inventory-location",
+      "category": "inventory",
+      "title": "库存位置纠正",
+      "setup": ["买了一瓶牛奶。"],
+      "input": "更正：这批牛奶放在常温柜，不是冷藏室。",
+      "expected_outcome_status": "needs_clarification",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "inventory_adjusted" }, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-correction-amount",
+      "category": "correction",
+      "title": "餐食数量纠正",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "把刚才苹果改成200克。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "correction_events", "where": { "operation": "change_amount" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-correction-time",
+      "category": "correction",
+      "title": "餐食发生时间纠正",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "刚才那顿其实是昨天晚饭。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "correction_events", "where": { "operation": "change_time" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-correction-water",
+      "category": "correction",
+      "title": "白水分类纠正为牛奶",
+      "setup": ["喝了500毫升白水。"],
+      "input": "刚才那杯不是白水，是牛奶。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "correction_events", "where": { "operation": "change_food_type" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-correction-undo",
+      "category": "correction",
+      "title": "撤销最近餐食记录",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "撤销刚才那条饮食记录。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "correction_events", "where": { "operation": "void_event" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-correction-repeat-undo",
+      "category": "correction",
+      "title": "重复撤销幂等为已撤销",
+      "setup": ["早餐吃了一个苹果。", "撤销刚才那条饮食记录。"],
+      "input": "撤销刚才那条饮食记录。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "correction_events", "where": { "operation": "void_event" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-query-meals",
+      "category": "query",
+      "title": "餐食查询快照一致",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "我今天吃了什么？",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-query-inventory",
+      "category": "query",
+      "title": "库存查询快照一致",
+      "setup": ["买了一瓶牛奶。"],
+      "input": "查一下我的库存。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-query-progress",
+      "category": "query",
+      "title": "六域进度查询快照一致",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "今天的饮食进度如何？",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reliability-duplicate",
+      "category": "reliability",
+      "title": "重复消息幂等",
+      "setup": ["早餐吃了一个苹果。"],
+      "input": "早餐吃了一个苹果。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reliability-gateway-restart",
+      "category": "reliability",
+      "title": "网关重启后数据持久",
+      "setup": ["早餐吃了一个苹果。"],
+      "restart_gateway": true,
+      "input": "午饭吃了米饭。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reliability-plugin-reload",
+      "category": "reliability",
+      "title": "插件重载后数据持久",
+      "setup": ["早餐吃了一个苹果。"],
+      "reload_plugin": true,
+      "input": "午饭吃了米饭。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reliability-same-root-restore",
+      "category": "reliability",
+      "title": "同根备份恢复",
+      "setup": ["早餐吃了一个苹果。"],
+      "restore_kind": "same_root",
+      "input": "午饭吃了米饭。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reliability-portable-restore",
+      "category": "reliability",
+      "title": "跨机便携加密恢复",
+      "setup": ["早餐吃了一个苹果。"],
+      "restore_kind": "portable",
+      "input": "午饭吃了米饭。",
+      "expected_outcome_status": "committed",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 2 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reply-committed",
+      "category": "reply",
+      "title": "回执真值：committed",
+      "input": "早餐吃了一个苹果。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reply-committed-with-issues",
+      "category": "reply",
+      "title": "回执真值：committed_with_issues",
+      "setup": ["买了一瓶牛奶。"],
+      "input": "喝了三瓶牛奶。",
+      "expected_outcome_status": "committed_with_issues",
+      "database_assertions": [
+        { "table": "event_records", "where": { "event_type": "diet_meal" }, "expect_delta": 1 },
+        { "table": "issues", "where": {}, "expect_delta": 1 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reply-clarification",
+      "category": "reply",
+      "title": "回执真值：needs_clarification",
+      "input": "买了牛奶和鸡蛋。",
+      "expected_outcome_status": "needs_clarification",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reply-ignored",
+      "category": "reply",
+      "title": "回执真值：ignored",
+      "input": "我计划明天早餐吃一个苹果。",
+      "expected_outcome_status": "ignored",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 }
+      ]
+    },
+    {
+      "id": "REAL-0.1.1-reply-failed",
+      "category": "reply",
+      "title": "回执真值：failed",
+      "input": "把刚才苹果改成200克。",
+      "expected_outcome_status": "failed",
+      "database_assertions": [
+        { "table": "event_records", "where": {}, "expect_delta": 0 },
+        { "table": "correction_events", "where": {}, "expect_delta": 0 }
+      ]
+    }
+  ]
+}

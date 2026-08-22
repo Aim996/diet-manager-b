@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diet-manager/real-acceptance-evidence/v1",
+  "title": "饮食管家 B 真实环境验收证据",
+  "description": "绑定不可变候选字节与真实验收结果的脱敏证据文档。secret_value_count 恒为 0，任何机密（FDC_API_KEY、authority secret、口令）不得进入本结构。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_zip_sha256",
+    "source_commit",
+    "package_version",
+    "node_version",
+    "openclaw_version",
+    "official_data_root",
+    "openclaw_state_root",
+    "started_at",
+    "completed_at",
+    "scenario_results",
+    "secret_value_count"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "diet-manager/real-acceptance-evidence/v1"
+    },
+    "candidate_zip_sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "package_version": {
+      "type": "string",
+      "const": "0.1.1"
+    },
+    "node_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "openclaw_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "official_data_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "openclaw_state_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fdc_api_key_present": {
+      "type": "boolean",
+      "description": "只记录 FDC_API_KEY 是否存在，绝不记录其值。"
+    },
+    "scenario_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario_id",
+          "category",
+          "expected_outcome_status",
+          "observed_outcome_status",
+          "passed",
+          "database_assertions"
+        ],
+        "properties": {
+          "scenario_id": { "type": "string" },
+          "category": { "type": "string" },
+          "expected_outcome_status": { "type": "string" },
+          "observed_outcome_status": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "skipped": { "type": "boolean" },
+          "skip_reason": { "type": "string" },
+          "before_inventory": { "type": "object" },
+          "after_inventory": { "type": "object" },
+          "final_reply": { "type": "string" },
+          "tool_outcome_summary": { "type": "string" },
+          "database_assertions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["table", "where", "passed", "before_count", "after_count", "expected"],
+              "properties": {
+                "table": { "type": "string" },
+                "where": { "type": "object" },
+                "passed": { "type": "boolean" },
+                "before_count": { "type": "integer" },
+                "after_count": { "type": "integer" },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "expect_delta": { "type": "integer" },
+                    "expect_count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "secret_value_count": {
+      "type": "integer",
+      "const": 0
+    }
+  }
+}

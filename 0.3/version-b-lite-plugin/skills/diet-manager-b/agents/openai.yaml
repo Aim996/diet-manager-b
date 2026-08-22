@@ -1,0 +1,6 @@
+interface:
+  display_name: "饮食管家"
+  short_description: "跨 Agent 处理饮食、饮水、库存、档案与目标请求"
+  default_prompt: "Use $diet-manager-b 记录或查询我的饮食、饮水、库存、档案与目标。"
+policy:
+  allow_implicit_invocation: true

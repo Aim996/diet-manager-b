@@ -1,0 +1,43 @@
+{
+  "matrix_id": "diet-manager/g2-b-slice-matrix/v1",
+  "case_ids": [
+    "CASE-MIXED-001",
+    "CASE-CORR-001",
+    "CASE-QUERY-001",
+    "CASE-EFFECT-001",
+    "CASE-MEAL-006",
+    "CASE-NUTR-008",
+    "CASE-MEAL-003",
+    "CASE-MEAL-004",
+    "CASE-INVENTORY-003",
+    "CASE-INVENTORY-004",
+    "CASE-NUTR-001",
+    "CASE-NUTR-002",
+    "CASE-NUTR-005",
+    "CASE-STORAGE-001",
+    "CASE-RECEIPT-001",
+    "CASE-RECEIPT-003",
+    "CASE-PROGRESS-010"
+  ],
+  "expected_count": 17,
+  "adapter_id": "diet-manager/b-slice-execution-adapter-v1",
+  "observation_keys": {
+    "CASE-MIXED-001": ["mixed", "inventory_sequence", "finalization"],
+    "CASE-CORR-001": ["fact_commit", "effect_bundle", "finalization", "idempotency"],
+    "CASE-QUERY-001": ["query"],
+    "CASE-EFFECT-001": ["failure", "state_after_restart", "same_key_retry"],
+    "CASE-MEAL-006": ["fact_commit", "nutrition"],
+    "CASE-NUTR-008": ["nutrition", "estimated_fields"],
+    "CASE-MEAL-003": ["fact_commit", "nutrition", "inventory"],
+    "CASE-MEAL-004": ["fact_commit", "inventory"],
+    "CASE-INVENTORY-003": ["fact_commit", "effect_bundle"],
+    "CASE-INVENTORY-004": ["fact_commit", "effect_bundle"],
+    "CASE-NUTR-001": ["effect_bundle"],
+    "CASE-NUTR-002": ["effect_bundle"],
+    "CASE-NUTR-005": ["history", "new_record"],
+    "CASE-STORAGE-001": ["idempotency"],
+    "CASE-RECEIPT-001": ["receipt"],
+    "CASE-RECEIPT-003": ["quick_options"],
+    "CASE-PROGRESS-010": ["progress"]
+  }
+}

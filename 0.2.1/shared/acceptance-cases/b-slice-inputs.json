@@ -1,0 +1,185 @@
+{
+  "input_catalog_id": "diet-manager/b-slice-case-inputs/v1",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "CASE-MEAL-006",
+      "requirement_ids": ["REQ-MEAL-002", "REQ-NUTR-005"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午餐吃了200克米饭和150克鸡胸肉。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-explicit-rice-chicken-v1",
+          "scenario_type": "explicit_multi_item_meal",
+          "items": [
+            {"normalized_name": "rice", "quantity_microunits": 200000000, "unit": "g"},
+            {"normalized_name": "chicken", "quantity_microunits": 150000000, "unit": "g"}
+          ]
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-NUTR-008",
+      "requirement_ids": ["REQ-NUTR-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个橙子。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-orange-edible-weight-v1",
+          "scenario_type": "estimated_edible_weight",
+          "normalized_name": "orange",
+          "observed_microunits": 1000000,
+          "observed_unit": "piece",
+          "adopted_microunits": 130000000,
+          "adopted_unit": "g"
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-MEAL-003",
+      "requirement_ids": ["REQ-MEAL-002", "REQ-NUTR-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "午饭吃了半碗米饭。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-rice-range-v1",
+          "scenario_type": "bounded_meal_estimate",
+          "normalized_name": "rice",
+          "reliable_range_microunits": {"minimum": 100000000, "maximum": 150000000, "unit": "g"},
+          "home_inventory_microunits": 3000000,
+          "inventory_unit": "bowl"
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-MEAL-004",
+      "requirement_ids": ["REQ-PANTRY-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "在公司吃了一个苹果。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-outside-apple-v1",
+          "scenario_type": "outside_meal_with_home_inventory",
+          "normalized_name": "apple",
+          "location": "outside",
+          "home_inventory_microunits": 5000000,
+          "inventory_unit": "piece"
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-INVENTORY-004",
+      "requirement_ids": ["REQ-CORE-001", "REQ-PANTRY-002"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐吃了三个鸡蛋，家里只剩两个。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-insufficient-eggs-v1",
+          "scenario_type": "insufficient_inventory",
+          "normalized_name": "egg",
+          "requested_microunits": 3000000,
+          "available_microunits": 2000000,
+          "unit": "piece"
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-NUTR-002",
+      "requirement_ids": ["REQ-NUTR-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "吃了一个梨，没有包装标签。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-public-pear-v1",
+          "scenario_type": "public_nutrition_without_label",
+          "normalized_name": "pear",
+          "public_source_ref": "fixture-public-pear-v1"
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-NUTR-005",
+      "requirement_ids": ["REQ-NUTR-001", "REQ-NUTR-003", "REQ-PRODUCT-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "又喝了一盒牛奶，这个商品的标签已经从v1更新到v2。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-milk-profile-v1-v2",
+          "scenario_type": "nutrition_profile_version_update",
+          "product_id": "product-nutr005-milk",
+          "historical_profile_version": 1,
+          "current_profile_version": 2
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-RECEIPT-003",
+      "requirement_ids": ["REQ-QUICK-001"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "早餐喝了一盒牛奶，家里有两个可能的商品。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-quick-options-v1",
+          "scenario_type": "ambiguous_inventory_quick_options",
+          "normalized_name": "milk",
+          "candidate_count": 2
+        },
+        "prior_context": []
+      }
+    },
+    {
+      "id": "CASE-PROGRESS-010",
+      "requirement_ids": ["REQ-PROGRESS-004"],
+      "stage": "PRODUCT-0.1",
+      "source_text": "同一请求先入库一袋米，又吃了100克米饭和100克鸡肉。",
+      "setup": {
+        "environment_fixture": "env-zh-cn-20260811",
+        "goals_fixture": "goals-six-metric-v1",
+        "query_view_fixture": null,
+        "domain_scenario": {
+          "fixture_id": "b-slice-multi-operation-progress-v1",
+          "scenario_type": "ordered_purchase_and_meal_progress",
+          "operations": [
+            {"sequence": 0, "kind": "add_inventory", "normalized_name": "rice", "quantity_microunits": 1000000000, "unit": "g"},
+            {"sequence": 1, "kind": "record_meal", "items": [
+              {"normalized_name": "rice", "quantity_microunits": 100000000, "unit": "g"},
+              {"normalized_name": "chicken", "quantity_microunits": 100000000, "unit": "g"}
+            ]}
+          ]
+        },
+        "prior_context": []
+      }
+    }
+  ]
+}
