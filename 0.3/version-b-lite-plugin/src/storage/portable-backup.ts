@@ -48,12 +48,13 @@ const SCRYPT_P = 1;
 const SCRYPT_MAXMEM = 67_108_864;
 const MIN_PASSPHRASE_BYTES = 12;
 const MAX_PASSPHRASE_BYTES = 1024;
+type PortableBackupProductVersion = "0.1.1" | "0.3.0";
 
 export interface CreatePortableBackupInput {
   readonly privateRuntimeRoot: string;
   readonly outputPath: string;
   readonly passphrase: Uint8Array;
-  readonly productVersion: "0.1.1";
+  readonly productVersion: PortableBackupProductVersion;
   readonly createdAt: string;
 }
 
@@ -70,13 +71,13 @@ export interface PortableBackupResult {
   readonly backup_path: string;
   readonly bytes: number;
   readonly sha256: string;
-  readonly product_version: "0.1.1";
+  readonly product_version: PortableBackupProductVersion;
   readonly sqlite_user_version: 2;
 }
 
 interface PortableBackupHeaderV1 {
   readonly format: "diet-manager/portable-backup/v1";
-  readonly product_version: "0.1.1";
+  readonly product_version: PortableBackupProductVersion;
   readonly sqlite_user_version: 2;
   readonly created_at: string;
   readonly kdf: Readonly<{
@@ -237,7 +238,9 @@ function parseEnvelope(text: string): Readonly<PortableBackupEnvelopeV1> {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return invalid("envelope");
   const envelope = parsed as Record<string, unknown>;
   if (envelope.format !== PORTABLE_BACKUP_FORMAT) return invalid("envelope");
-  if (envelope.product_version !== "0.1.1") return invalid("envelope");
+  if (envelope.product_version !== "0.1.1" && envelope.product_version !== "0.3.0") {
+    return invalid("envelope");
+  }
   if (envelope.sqlite_user_version !== 2) return invalid("envelope");
   if (typeof envelope.created_at !== "string" || envelope.created_at.length === 0) return invalid("envelope");
   if (typeof envelope.ciphertext_base64 !== "string" || envelope.ciphertext_base64.length === 0) {
@@ -258,7 +261,7 @@ function parseEnvelope(text: string): Readonly<PortableBackupEnvelopeV1> {
   }
   const result: PortableBackupEnvelopeV1 = {
     format: PORTABLE_BACKUP_FORMAT,
-    product_version: "0.1.1",
+    product_version: envelope.product_version,
     sqlite_user_version: 2,
     created_at: envelope.created_at as string,
     kdf: Object.freeze({
@@ -356,7 +359,9 @@ export async function createPortableBackup(
   const parent = existingParent(outputPath);
   if (existsSync(outputPath)) return invalid("output_exists");
   const passphrase = validatePassphrase(input.passphrase);
-  if (input.productVersion !== "0.1.1") return invalid("product_version");
+  if (input.productVersion !== "0.1.1" && input.productVersion !== "0.3.0") {
+    return invalid("product_version");
+  }
   if (typeof input.createdAt !== "string" || input.createdAt.length === 0) return invalid("created_at");
 
   const tempDbPath = join(parent, `.diet-manager-portable-db-${randomUUID()}`);
@@ -373,7 +378,7 @@ export async function createPortableBackup(
       key = deriveKey(passphrase, salt);
       const header: PortableBackupHeaderV1 = {
         format: PORTABLE_BACKUP_FORMAT,
-        product_version: "0.1.1",
+        product_version: input.productVersion,
         sqlite_user_version: 2,
         created_at: input.createdAt,
         kdf: Object.freeze({
@@ -425,7 +430,7 @@ export async function createPortableBackup(
       backup_path: outputPath,
       bytes: Number(stat.size),
       sha256: sha256File(outputPath),
-      product_version: "0.1.1",
+      product_version: input.productVersion,
       sqlite_user_version: 2,
     });
   } finally {
@@ -492,7 +497,7 @@ export function restorePortableBackup(
       backup_path: backupPath,
       bytes: Number(backupStat.size),
       sha256: expected,
-      product_version: "0.1.1",
+      product_version: envelope.product_version,
       sqlite_user_version: 2,
     });
   } catch (error) {

@@ -154,6 +154,7 @@ const distParser = "export const parseCommand = (s) => s;\n";
 const skillContent = "# Diet Manager B\n";
 const installScriptContent = "# install-diet-manager.ps1 stub\n";
 const installModuleContent = "# DietManagerInstall.psm1 stub\n";
+const releaseValidatorContent = "process.stdout.write('{}\\n');\n";
 const pluginReadmeContent = "# diet-manager-b\n";
 
 interface Fixture {
@@ -196,8 +197,8 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
     rmSync(join(acceptance, "scenarios.json"));
   }
 
-  writeFileSync(join(productRoot, "package.json"), packageJsonContent(options.packageVersion ?? "0.1.1"));
-  writeFileSync(join(productRoot, "openclaw.plugin.json"), pluginJsonContent(options.pluginVersion ?? "0.1.1"));
+  writeFileSync(join(productRoot, "package.json"), packageJsonContent(options.packageVersion ?? "0.3.0"));
+  writeFileSync(join(productRoot, "openclaw.plugin.json"), pluginJsonContent(options.pluginVersion ?? "0.3.0"));
   writeFileSync(join(productRoot, "pnpm-lock.yaml"), pnpmLockContent);
   writeFileSync(join(productRoot, "README.md"), pluginReadmeContent);
   writeFileSync(join(productRoot, "src", "index.ts"), srcIndex);
@@ -209,6 +210,7 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
   writeFileSync(join(distDir, "parse-command.js"), distParser);
   writeFileSync(join(productRoot, "skills", "diet-manager-b", "SKILL.md"), skillContent);
   writeFileSync(join(productRoot, "scripts", "install-diet-manager.ps1"), installScriptContent);
+  writeFileSync(join(productRoot, "scripts", "validate-0.3.mjs"), releaseValidatorContent);
   writeFileSync(join(productRoot, "scripts", "modules", "DietManagerInstall.psm1"), installModuleContent);
   // 复制真实模板文件，让夹具构建路径与生产完全一致。
   for (const name of ["release-manifest.template.json", "release-readme.template.md", "release-changelog.template.md"]) {
@@ -226,7 +228,7 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
   runGit(["commit", "-m", "fixture"], repoRoot);
 
   if (options.uncommitted) {
-    writeFileSync(join(productRoot, "package.json"), packageJsonContent("0.1.1") + "// dirty\n");
+    writeFileSync(join(productRoot, "package.json"), packageJsonContent("0.3.0") + "// dirty\n");
   }
 
   const commit = runGit(["rev-parse", "HEAD"], repoRoot);
@@ -359,14 +361,14 @@ test("a valid fixture produces lexically sorted paths, uppercase SHA-256 and a d
     for (const name of ["MANIFEST.json", "FILES.SHA256", "SBOM.json", "README.md", "CHANGELOG.md"]) {
       expect(existsSync(join(candidate, name))).toBe(true);
     }
-    const zipPath = join(candidate, "artifacts", "diet-manager-b-0.1.1.zip");
+    const zipPath = join(candidate, "artifacts", "diet-manager-b-0.3.0.zip");
     expect(existsSync(zipPath)).toBe(true);
 
     // MANIFEST 字段逐项核对。
     const manifest = JSON.parse(readFileSync(join(candidate, "MANIFEST.json"), "utf8"));
     expect(manifest.schema_version).toBe("diet-manager/release-manifest/v1");
-    expect(manifest.product_version).toBe("0.1.1");
-    expect(manifest.plugin_version).toBe("0.1.1");
+    expect(manifest.product_version).toBe("0.3.0");
+    expect(manifest.plugin_version).toBe("0.3.0");
     expect(manifest.source_commit).toBe(fx.sourceCommit);
     expect(manifest.node_version).toBe(process.version);
     expect(manifest.openclaw_version).toBe("2026.7.1");
@@ -389,7 +391,7 @@ test("a valid fixture produces lexically sorted paths, uppercase SHA-256 and a d
 
     // ZIP 条目按斜杠路径字典序，且两次构建字节完全一致（确定性）。
     expect(zipEntryNames(zipBytes)).toEqual(expectedZipEntries);
-    const zipBytesB = readFileSync(join(outputRootB, "candidate-001", "artifacts", "diet-manager-b-0.1.1.zip"));
+    const zipBytesB = readFileSync(join(outputRootB, "candidate-001", "artifacts", "diet-manager-b-0.3.0.zip"));
     expect(zipBytesB.equals(zipBytes)).toBe(true);
 
     // FILES.SHA256 覆盖除自身外的所有候选根文件，路径升序、大写 SHA。
@@ -399,7 +401,7 @@ test("a valid fixture produces lexically sorted paths, uppercase SHA-256 and a d
       "MANIFEST.json",
       "README.md",
       "SBOM.json",
-      "artifacts/diet-manager-b-0.1.1.zip",
+      "artifacts/diet-manager-b-0.3.0.zip",
     ];
     expect(lines).toHaveLength(expectedPaths.length);
     const recorded = lines.map((l) => {

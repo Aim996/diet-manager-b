@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const productionBuilder = join(projectRoot, "scripts", "build-portable.mjs");
+const productionValidator = join(projectRoot, "scripts", "validate-0.3.mjs");
 const expectedFilename = "diet-manager-b-0.3.0.tgz";
 const mandatoryFiles = [
   "dist/index.js",
@@ -28,6 +29,8 @@ const mandatoryFiles = [
   "dist/cli/agent.js",
   "dist/openclaw/index.js",
   "dist/openclaw/index.d.ts",
+  "dist/storage/migration-v1.js",
+  "dist/storage/migration-v2.js",
   "skills/diet-manager-b/SKILL.md",
   "skills/diet-manager-b/references/agent-command-v2.md",
   "skills/diet-manager-b/references/natural-language-boundaries.md",
@@ -96,8 +99,10 @@ function makeFixture(options: { version?: string; omit?: string; forbidden?: str
   const base = makeTemp("diet-portable-fixture-");
   const root = join(base, "package source");
   const builder = join(root, "scripts", "build-portable.mjs");
+  const validator = join(root, "scripts", "validate-0.3.mjs");
   mkdirSync(join(root, "scripts"), { recursive: true });
   if (existsSync(productionBuilder)) copyFileSync(productionBuilder, builder);
+  if (existsSync(productionValidator)) copyFileSync(productionValidator, validator);
   writeFileSync(join(root, "package.json"), `${JSON.stringify({
     name: "diet-manager-b",
     private: true,
@@ -105,17 +110,29 @@ function makeFixture(options: { version?: string; omit?: string; forbidden?: str
     type: "module",
     files: ["dist", "skills", "openclaw.plugin.json"],
   }, null, 2)}\n`);
-  writeFileSync(join(root, "openclaw.plugin.json"), "{}\n");
+  writeFileSync(join(root, "openclaw.plugin.json"), `${JSON.stringify({
+    id: "diet-manager-b",
+    version: options.version ?? "0.3.0",
+  })}\n`);
 
   const fixtureFiles = [
     ...mandatoryFiles,
     "skills/diet-manager-b/agents/openai.yaml",
+    "src/storage/migration-v1.ts",
+    "src/storage/migration-v2.ts",
+    "src/contracts/agent-command-v2.ts",
   ];
   for (const path of fixtureFiles) {
     if (path === options.omit) continue;
     const target = join(root, ...path.split("/"));
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, path.endsWith(".md") ? "# fixture\n" : "export {};\n");
+    const contents = path === "src/contracts/agent-command-v2.ts"
+      ? [
+        "export const AGENT_COMMAND_V1_SCHEMA_VERSION = 'diet-manager/agent-command/v1';",
+        "export const AGENT_COMMAND_V2_SCHEMA_VERSION = 'diet-manager/agent-command/v2';",
+      ].join("\n")
+      : path.endsWith(".md") ? "# fixture\n" : "export {};\n";
+    writeFileSync(target, contents);
   }
   if (options.forbidden !== undefined) {
     const target = join(root, ...options.forbidden.split("/"));
@@ -258,12 +275,22 @@ describe("portable npm package", () => {
       integrity: string;
       size: number;
       files: string[];
+      release_validation: {
+        schema_version: string;
+        product_version: string;
+        files: Array<{ path: string; sha256: string }>;
+      };
     };
     expect(result.stdout).toBe(`${JSON.stringify(receipt)}\n`);
     expect(receipt.filename).toBe(expectedFilename);
     expect(receipt.files).toEqual([...receipt.files].sort());
     expect(receipt.files).toEqual(expect.arrayContaining([...mandatoryFiles]));
     expect(receipt.files.some((path) => /(?:node_modules|tests?|\.sqlite|authority-secret|\.env|secret)/iu.test(path))).toBe(false);
+    expect(receipt.release_validation.schema_version).toBe("diet-manager/release-validation/v1");
+    expect(receipt.release_validation.product_version).toBe("0.3.0");
+    expect(receipt.release_validation.files.map((entry) => entry.path)).toEqual(
+      [...receipt.release_validation.files.map((entry) => entry.path)].sort(),
+    );
 
     const artifact = join(output, receipt.filename);
     const bytes = readFileSync(artifact);

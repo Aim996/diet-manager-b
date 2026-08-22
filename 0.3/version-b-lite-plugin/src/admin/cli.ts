@@ -1,8 +1,13 @@
 import { createCoreRuntime } from "../application/runtime.js";
 import { handleCoreRequest } from "../application/command-handler.js";
 import type { DietManagerOutcome, NonWritingOutcome } from "../contracts.js";
-import { backupDietDatabase, restoreDietDatabase } from "../storage/backup.js";
-import { DIET_DATABASE_USER_VERSION } from "../storage/database.js";
+import {
+  backupDietDatabase,
+  backupDietDatabaseForUpgrade,
+  restoreDietDatabase,
+  restoreDietDatabaseForUpgrade,
+} from "../storage/backup.js";
+import { DIET_DATABASE_USER_VERSION, openDietDatabase } from "../storage/database.js";
 import { createPortableBackup, restorePortableBackup } from "../storage/portable-backup.js";
 import { readPassphraseFromTty } from "./passphrase.js";
 
@@ -52,13 +57,38 @@ function initializeOfficialDataRoot(root: string): Record<string, unknown> {
   }
 }
 
+function upgradeOfficialDataRoot(root: string): Record<string, unknown> {
+  const runtime = openDietDatabase({ privateRuntimeRoot: root });
+  try {
+    const count = (table: string): number => Number((runtime.database.prepare(
+      `SELECT COUNT(*) AS count FROM ${table}`,
+    ).get() as { count: number }).count);
+    return {
+      official_data_root: root,
+      sqlite_user_version: DIET_DATABASE_USER_VERSION,
+      business_rows: {
+        meals: count("event_records"),
+        inventory: count("inventory_batches"),
+        nutrition: count("nutrition_snapshots"),
+        goals: count("goal_versions"),
+        corrections: count("correction_events"),
+        idempotency: count("idempotency_records"),
+      },
+    };
+  } finally {
+    runtime.close();
+  }
+}
+
 function usage(): never {
   process.stderr.write(
     "usage: backup <private-root> <backup-file> | " +
       "restore <private-root> <backup-file> <SHA256> | " +
-      "backup-portable <private-root> <backup-file> 0.1.1 | " +
+      "backup-upgrade <private-root> <backup-file> | " +
+      "restore-upgrade <private-root> <backup-file> <SHA256> | " +
+      "backup-portable <private-root> <backup-file> <0.1.1|0.3.0> | " +
       "restore-portable <private-root> <backup-file> <SHA256> [--replace-existing] | " +
-      "init-root <private-root>\n",
+      "init-root <private-root> | upgrade-root <private-root>\n",
   );
   throw new Error("DIET_ADMIN_USAGE");
 }
@@ -82,16 +112,29 @@ async function main(args: readonly string[]): Promise<void> {
     writeJson(restoreDietDatabase({ privateRuntimeRoot, backupPath, expectedSha256 }));
     return;
   }
+  if (operation === "backup-upgrade") {
+    const [privateRuntimeRoot, backupPath, ...extra] = rest;
+    if (extra.length !== 0 || privateRuntimeRoot === undefined || backupPath === undefined) usage();
+    writeJson(await backupDietDatabaseForUpgrade({ privateRuntimeRoot, backupPath }));
+    return;
+  }
+  if (operation === "restore-upgrade") {
+    const [privateRuntimeRoot, backupPath, expectedSha256, ...extra] = rest;
+    if (extra.length !== 0 || privateRuntimeRoot === undefined ||
+        backupPath === undefined || expectedSha256 === undefined) usage();
+    writeJson(restoreDietDatabaseForUpgrade({ privateRuntimeRoot, backupPath, expectedSha256 }));
+    return;
+  }
   if (operation === "backup-portable") {
     const [privateRuntimeRoot, backupPath, productVersion, ...extra] = rest;
     if (extra.length !== 0 || privateRuntimeRoot === undefined || backupPath === undefined) usage();
-    if (productVersion !== "0.1.1") usage();
+    if (productVersion !== "0.1.1" && productVersion !== "0.3.0") usage();
     const passphrase = await readPassphraseFromTty({ confirm: true });
     writeJson(await createPortableBackup({
       privateRuntimeRoot,
       outputPath: backupPath,
       passphrase,
-      productVersion: "0.1.1",
+      productVersion,
       createdAt: new Date().toISOString(),
     }));
     return;
@@ -100,6 +143,12 @@ async function main(args: readonly string[]): Promise<void> {
     const [privateRuntimeRoot, ...extra] = rest;
     if (extra.length !== 0 || privateRuntimeRoot === undefined) usage();
     writeJson(initializeOfficialDataRoot(privateRuntimeRoot));
+    return;
+  }
+  if (operation === "upgrade-root") {
+    const [privateRuntimeRoot, ...extra] = rest;
+    if (extra.length !== 0 || privateRuntimeRoot === undefined) usage();
+    writeJson(upgradeOfficialDataRoot(privateRuntimeRoot));
     return;
   }
   if (operation === "restore-portable") {

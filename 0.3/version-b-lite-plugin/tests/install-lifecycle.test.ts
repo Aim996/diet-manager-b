@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -15,12 +17,16 @@ import { expect, test } from "vitest";
 
 import { createCoreRuntime } from "../src/application/runtime.js";
 import { handleCoreRequest } from "../src/application/command-handler.js";
+import { executeAgentCommand } from "../src/public/execute.js";
+import { DIET_DATABASE_FILENAME } from "../src/storage/database.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectDir = resolve(here, "..");
 const installer = join(projectDir, "scripts", "install-diet-manager.ps1");
 const fakeOpenClaw = join(projectDir, "tests", "fixtures", "install", "fake-openclaw.ps1");
 const nodePath = process.execPath;
+const requireNode = createRequire(import.meta.url);
+const { DatabaseSync } = requireNode("node:sqlite") as typeof import("node:sqlite");
 
 function resolvePwsh(): string {
   const probe = spawnSync("pwsh", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.Major"], {
@@ -101,53 +107,126 @@ function nextOperationId(): string {
   return `install-lifecycle-op-${opCounter}`;
 }
 
-function recordMeal(root: string, sourceText: string): void {
+async function seedExactV1Data(world: ReturnType<typeof makeWorld>): Promise<Record<string, number>> {
+  mkdirSync(world.officialRoot, { recursive: true });
   const runtime = createCoreRuntime({
-    officialDataRoot: root,
+    officialDataRoot: world.officialRoot,
     now: () => "2026-08-18T04:00:01.000Z",
   });
+  const context = (suffix: string) => ({
+    received_at: "2026-08-18T12:00:00+08:00",
+    timezone: "Asia/Shanghai" as const,
+    operation_id: `upgrade-v1-${suffix}`,
+    source_message_id: `upgrade-v1-message-${suffix}`,
+    conversation_id: "upgrade-v1-conversation",
+  });
   try {
-    const outcome = handleCoreRequest(runtime, {
-      action: "record_meal",
-      source_text: sourceText,
-      received_at: "2026-08-18T12:00:00+08:00",
+    const inventory = await executeAgentCommand(runtime, {
+      schema_version: "diet-manager/agent-command/v2",
+      action: "add_inventory",
+      source_text: "买了两个苹果，放在冰箱里。",
+      semantic_proposal: {
+        kind: "inventory",
+        product: { raw_name: "苹果", normalized_hint: "apple", evidence_span: "苹果" },
+        package_amount: { kind: "exact", value: 2, unit: "个", evidence_span: "两个苹果" },
+        per_package_content: null,
+        location: { value: "冰箱", evidence_span: "冰箱" },
+        expires_at: { kind: "unspecified", evidence_span: null },
+        price: null,
+      },
+    }, context("inventory"));
+    expect(inventory.committed).toBe(true);
+
+    const mealCommand = {
+      schema_version: "diet-manager/agent-command/v2" as const,
+      action: "record_meal" as const,
+      source_text: "午饭我吃了一个苹果。",
+      semantic_proposal: {
+        kind: "meal" as const,
+        subject: { kind: "self" as const, basis: "explicit" as const, evidence_span: "我", explicit_other_spans: [] },
+        occurrence: "completed" as const,
+        meal_slot: "lunch" as const,
+        items: [{
+          raw_name: "苹果",
+          normalized_hint: "apple",
+          amount: { kind: "exact" as const, value: 1, unit: "个", evidence_span: "一个苹果" },
+        }],
+        occurred_at: { kind: "source_text" as const, evidence_span: "午饭" },
+      },
+    };
+    const meal = await executeAgentCommand(runtime, mealCommand, context("meal"));
+    expect(meal.committed).toBe(true);
+    const replay = await executeAgentCommand(runtime, mealCommand, context("meal"));
+    expect(replay.record_id).toBe(meal.record_id);
+
+    const goal = await executeAgentCommand(runtime, {
+      schema_version: "diet-manager/agent-command/v2",
+      action: "set_goal",
+      source_text: "热量目标改成每天2100千卡。",
+      semantic_proposal: {
+        kind: "goal",
+        operation: "update",
+        values: { energy_kcal: { value: 2100, evidence_span: "2100千卡" } },
+      },
+    }, context("goal"));
+    expect(goal.committed).toBe(true);
+
+    const correction = handleCoreRequest(runtime, {
+      action: "correct_record",
+      source_text: "把刚才苹果改成200克",
+      received_at: "2026-08-18T12:05:00+08:00",
       timezone: "Asia/Shanghai",
-      operation_id: nextOperationId(),
-      source_message_id: "m-install-lifecycle",
-      conversation_id: "c-install-lifecycle",
+      operation_id: "upgrade-v1-correction",
+      source_message_id: "upgrade-v1-message-correction",
+      conversation_id: "upgrade-v1-conversation",
       prior_context: [],
     });
-    if (outcome.committed !== true) {
-      throw new Error(`record_meal not committed (${outcome.status}): ${JSON.stringify(outcome)}`);
-    }
+    expect(correction.committed, JSON.stringify(correction)).toBe(true);
   } finally {
     runtime.close();
+  }
+
+  const databasePath = join(world.officialRoot, DIET_DATABASE_FILENAME);
+  const database = new DatabaseSync(databasePath);
+  try {
+    const count = (table: string): number => Number((database.prepare(
+      `SELECT COUNT(*) AS count FROM ${table}`,
+    ).get() as { count: number }).count);
+    const snapshot = {
+      meals: count("event_records"),
+      inventory: count("inventory_batches"),
+      nutrition: count("nutrition_snapshots"),
+      goals: count("goal_versions"),
+      corrections: count("correction_events"),
+      idempotency: count("idempotency_records"),
+    };
+    expect(Object.values(snapshot).every((value) => value > 0)).toBe(true);
+    database.exec("PRAGMA foreign_keys = OFF");
+    for (const table of [
+      "pending_candidates",
+      "inventory_quantity_models",
+      "nutrition_search_audit",
+      "goal_recommendations",
+    ]) database.exec(`DROP TABLE ${table}`);
+    database.exec("DELETE FROM schema_migrations WHERE version = 2");
+    database.exec("PRAGMA user_version = 1");
+    return snapshot;
+  } finally {
+    database.close();
   }
 }
 
-function queryMealCount(root: string): number {
-  const runtime = createCoreRuntime({
-    officialDataRoot: root,
-    now: () => "2026-08-18T04:00:01.000Z",
-  });
-  try {
-    const outcome = handleCoreRequest(runtime, {
-      action: "query_meals",
-      source_text: "查询",
-      received_at: "2026-08-18T12:00:00+08:00",
-      timezone: "Asia/Shanghai",
-      operation_id: nextOperationId(),
-      source_message_id: "m-install-lifecycle",
-      conversation_id: "c-install-lifecycle",
-      prior_context: [],
-    });
-    if (outcome.status !== "ignored") {
-      throw new Error(`query_meals failed: ${outcome.status}`);
-    }
-    return outcome.meal_history?.meals.length ?? 0;
-  } finally {
-    runtime.close();
-  }
+function seedLegacyProgram(world: ReturnType<typeof makeWorld>): string {
+  const legacy = join(world.programRoot, "versions", "0.2.2");
+  mkdirSync(join(legacy, "dist"), { recursive: true });
+  writeFileSync(join(legacy, "dist", "index.js"), "export {};\n");
+  writeFileSync(join(world.programRoot, "current.json"), `${JSON.stringify({
+    schema_version: "diet-manager/current/v1",
+    product_version: "0.2.2",
+    installed_version_path: legacy,
+    official_data_root: world.officialRoot,
+  })}\n`);
+  return legacy;
 }
 
 test("preflight failure makes zero files", () => {
@@ -184,7 +263,7 @@ test("fresh install creates empty schema, secret and zero business rows", () => 
     expect(receipt.action).toBe("install");
     expect(receipt.business_rows).toBe(0);
 
-    expect(existsSync(join(world.programRoot, "versions", "0.1.1", "dist", "index.js"))).toBe(true);
+    expect(existsSync(join(world.programRoot, "versions", "0.3.0", "dist", "index.js"))).toBe(true);
     expect(existsSync(join(world.programRoot, "current.json"))).toBe(true);
     expect(existsSync(join(world.officialRoot, "diet-manager-b.sqlite3"))).toBe(true);
     expect(existsSync(join(world.officialRoot, ".diet-manager-b.authority-secret"))).toBe(true);
@@ -194,14 +273,11 @@ test("fresh install creates empty schema, secret and zero business rows", () => 
   }
 });
 
-test("compatible upgrade creates and verifies a backup before switch", () => {
+test("0.2.2 v1 backup upgrades in place without losing any legacy business domain", async () => {
   const world = makeWorld();
   try {
-    const install = runInstaller(installArgs(world), { FAKE_OPENCLAW_STATE: world.fakeState });
-    expect(install.code).toBe(0);
-
-    recordMeal(world.officialRoot, "吃了一个苹果。");
-    expect(queryMealCount(world.officialRoot)).toBe(1);
+    const expected = await seedExactV1Data(world);
+    const legacyPath = seedLegacyProgram(world);
 
     const upgrade = runInstaller(
       [
@@ -220,11 +296,34 @@ test("compatible upgrade creates and verifies a backup before switch", () => {
     expect(upgrade.code).toBe(0);
     const receipt = JSON.parse(upgrade.stdout.trim());
     expect(receipt.action).toBe("upgrade");
+    expect(receipt.product_version).toBe("0.3.0");
     expect(existsSync(receipt.backup_path)).toBe(true);
+    expect(existsSync(join(world.programRoot, "versions", "0.3.0", "dist", "index.js"))).toBe(true);
+    expect(existsSync(legacyPath)).toBe(true);
 
-    // 升级后数据仍保留。
-    expect(queryMealCount(world.officialRoot)).toBe(1);
-    // 升级前备份目录里确实落了备份文件。
+    const backup = new DatabaseSync(receipt.backup_path, { readOnly: true });
+    try {
+      expect((backup.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(1);
+    } finally {
+      backup.close();
+    }
+    const upgraded = new DatabaseSync(join(world.officialRoot, DIET_DATABASE_FILENAME), { readOnly: true });
+    try {
+      const count = (table: string): number => Number((upgraded.prepare(
+        `SELECT COUNT(*) AS count FROM ${table}`,
+      ).get() as { count: number }).count);
+      expect({
+        meals: count("event_records"),
+        inventory: count("inventory_batches"),
+        nutrition: count("nutrition_snapshots"),
+        goals: count("goal_versions"),
+        corrections: count("correction_events"),
+        idempotency: count("idempotency_records"),
+      }).toEqual(expected);
+      expect((upgraded.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(2);
+    } finally {
+      upgraded.close();
+    }
     const backups = readdirSync(world.backupRoot).filter((name) => name.endsWith(".sqlite3"));
     expect(backups.length).toBeGreaterThanOrEqual(1);
   } finally {
@@ -232,15 +331,12 @@ test("compatible upgrade creates and verifies a backup before switch", () => {
   }
 });
 
-test("injected gateway failure rolls back old program and config", () => {
+test("injected gateway failure restores the exact 0.2.2 program, v1 database, and current config", async () => {
   const world = makeWorld();
   try {
-    const install = runInstaller(installArgs(world), { FAKE_OPENCLAW_STATE: world.fakeState });
-    expect(install.code).toBe(0);
+    const expected = await seedExactV1Data(world);
+    const legacyPath = seedLegacyProgram(world);
     const currentBefore = readFileSync(join(world.programRoot, "current.json"), "utf8");
-
-    recordMeal(world.officialRoot, "吃了一个苹果。");
-    expect(queryMealCount(world.officialRoot)).toBe(1);
 
     const upgrade = runInstaller(
       [
@@ -261,7 +357,26 @@ test("injected gateway failure rolls back old program and config", () => {
     // 回滚：current.json 未被切换到新版本，数据仍在。
     const currentAfter = readFileSync(join(world.programRoot, "current.json"), "utf8");
     expect(currentAfter).toBe(currentBefore);
-    expect(queryMealCount(world.officialRoot)).toBe(1);
+    expect(existsSync(legacyPath)).toBe(true);
+    expect(existsSync(join(world.programRoot, "versions", "0.3.0"))).toBe(false);
+
+    const restored = new DatabaseSync(join(world.officialRoot, DIET_DATABASE_FILENAME), { readOnly: true });
+    try {
+      const count = (table: string): number => Number((restored.prepare(
+        `SELECT COUNT(*) AS count FROM ${table}`,
+      ).get() as { count: number }).count);
+      expect({
+        meals: count("event_records"),
+        inventory: count("inventory_batches"),
+        nutrition: count("nutrition_snapshots"),
+        goals: count("goal_versions"),
+        corrections: count("correction_events"),
+        idempotency: count("idempotency_records"),
+      }).toEqual(expected);
+      expect((restored.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(1);
+    } finally {
+      restored.close();
+    }
   } finally {
     world.cleanup();
   }

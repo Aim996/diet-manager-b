@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { validateRelease03 } from "./validate-0.3.mjs";
+
 const EXPECTED_NAME = "diet-manager-b";
 const EXPECTED_VERSION = "0.3.0";
 const EXPECTED_FILENAME = `${EXPECTED_NAME}-${EXPECTED_VERSION}.tgz`;
@@ -26,6 +28,8 @@ const REQUIRED_FILES = Object.freeze([
   "dist/cli/agent.js",
   "dist/openclaw/index.js",
   "dist/openclaw/index.d.ts",
+  "dist/storage/migration-v1.js",
+  "dist/storage/migration-v2.js",
   "skills/diet-manager-b/SKILL.md",
   "skills/diet-manager-b/references/agent-command-v2.md",
   "skills/diet-manager-b/references/natural-language-boundaries.md",
@@ -318,6 +322,15 @@ function main() {
   if (process.argv.length !== 3) fail("DIET_PORTABLE_BUILD_ARGUMENTS_INVALID");
   loadPackage();
   requireFiles();
+  let releaseValidation;
+  try {
+    releaseValidation = validateRelease03(projectRoot);
+  } catch (error) {
+    if (error instanceof Error && error.message === "DIET_RELEASE_0_3_FORBIDDEN_FILE") {
+      fail("DIET_PORTABLE_BUILD_FORBIDDEN_FILE");
+    }
+    fail("DIET_PORTABLE_BUILD_VALIDATION_FAILED");
+  }
   const npmCli = resolveNpmCli();
   const output = validateOutputDirectory(process.argv[2]);
   const privateRoot = mkdtempSync(join(tmpdir(), "diet-portable-build-"));
@@ -350,6 +363,7 @@ function main() {
       integrity: verified.integrity,
       size: verified.size,
       files: dryFiles,
+      release_validation: releaseValidation,
     };
   } catch (error) {
     buildFailure = error;

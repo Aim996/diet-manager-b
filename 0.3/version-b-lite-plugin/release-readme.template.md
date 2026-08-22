@@ -21,4 +21,14 @@ Get-FileHash -Algorithm SHA256 .\artifacts\diet-manager-b-{{product_version}}.zi
 
 ## 安装与升级
 
-通用 Agent 安装使用 npm tarball 中的 Skill、JSON CLI 和公开 Node.js API，不要求 OpenClaw。OpenClaw 安装、升级、卸载仍可由 `scripts/install-diet-manager.ps1` 以事务方式完成（预检 → 备份 → 切换 → 失败回滚）。详情见仓库内 `docs/` 与 `shared/` 下的安装/验收文档。
+通用 Agent 安装使用 npm tarball 中的 Skill、JSON CLI 和公开 Node.js API，不要求 OpenClaw。OpenClaw 安装、升级、卸载仍由 `scripts/install-diet-manager.ps1` 执行。
+
+只支持从 `0.2.2` 原地升级到 `0.3.0`。升级器先创建并校验迁移前 SQLite 备份，随后执行 v1 → v2 迁移；餐食、库存、营养、目标、更正和幂等结果必须保持可读。程序链接、配置或网关健康检查任一失败时，升级器会重新链接原 `0.2.2` 路径、逐字恢复旧 `current.json`，并用已校验备份恢复迁移前数据库。备份文件不会自动删除，人工清理前请保留其路径与 SHA-256。
+
+在源码候选根构建发布包前运行：
+
+```powershell
+node .\scripts\validate-0.3.mjs (Resolve-Path .)
+```
+
+校验必须返回 `diet-manager/release-validation/v1` 文件哈希清单；任一必需 Skill/reference、旧契约、迁移文件缺失，版本不一致或包含数据库、密钥、`.env`、测试产物时均失败闭合。

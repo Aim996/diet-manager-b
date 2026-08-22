@@ -107,7 +107,7 @@ it("round-trips an authenticated portable backup into an empty target", async ()
       privateRuntimeRoot: source,
       outputPath: backupPath,
       passphrase: PASSPHRASE,
-      productVersion: "0.1.1",
+      productVersion: "0.3.0",
       createdAt: "2026-08-14T12:10:00.000Z",
     });
     expect(result).toEqual({
@@ -115,7 +115,7 @@ it("round-trips an authenticated portable backup into an empty target", async ()
       backup_path: backupPath,
       bytes: expect.any(Number),
       sha256: expect.stringMatching(/^[A-F0-9]{64}$/u),
-      product_version: "0.1.1",
+      product_version: "0.3.0",
       sqlite_user_version: 2,
     });
 

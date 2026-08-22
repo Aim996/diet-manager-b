@@ -7,8 +7,8 @@
 
 Set-StrictMode -Version Latest
 
-$script:ProductVersion = '0.1.1'
-$script:VersionDirName = '0.1.1'
+$script:ProductVersion = '0.3.0'
+$script:VersionDirName = '0.3.0'
 
 function Invoke-OpenClawCommand {
     param(
@@ -40,6 +40,10 @@ function Invoke-NodeCommand {
     $output = & $script:NodeExecutable @Arguments 2>&1
     $exit = $LASTEXITCODE
     if ($exit -ne 0) {
+        $detail = ($output | Out-String).Trim()
+        if ($detail -match '^[A-Z0-9_]+(?::[A-Za-z0-9_:-]+)?$') {
+            throw "${FailureCode}:$detail"
+        }
         throw "${FailureCode}:exit_$exit"
     }
     return ($output | Out-String).Trim()
@@ -156,15 +160,33 @@ function Backup-OfficialDatabase {
         New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
     }
     $cli = Join-Path $PayloadRoot 'dist\admin\cli.js'
-    $backupPath = Join-Path $BackupRoot "diet-manager-b-$($script:ProductVersion)-$([guid]::NewGuid().ToString('N')).sqlite3"
-    $json = Invoke-NodeCommand @($cli, 'backup', $OfficialDataRoot, $backupPath) 'DIET_INSTALL_BACKUP_FAILED'
-    return ($json | ConvertFrom-Json)
+    $backupPath = Join-Path $BackupRoot "diet-manager-b-pre-$($script:ProductVersion)-$([guid]::NewGuid().ToString('N')).sqlite3"
+    $json = Invoke-NodeCommand @($cli, 'backup-upgrade', $OfficialDataRoot, $backupPath) 'DIET_INSTALL_BACKUP_FAILED'
+    $result = $json | ConvertFrom-Json
+    if ([int]$result.source_user_version -notin @(1, 2)) {
+        throw 'DIET_INSTALL_BACKUP_FAILED:source_version'
+    }
+    return $result
 }
 
 function Restore-OfficialDatabase {
     param([string]$PayloadRoot, [string]$OfficialDataRoot, [string]$BackupPath, [string]$Sha256)
     $cli = Join-Path $PayloadRoot 'dist\admin\cli.js'
-    Invoke-NodeCommand @($cli, 'restore', $OfficialDataRoot, $BackupPath, $Sha256) 'DIET_INSTALL_RESTORE_FAILED' | Out-Null
+    Invoke-NodeCommand @($cli, 'restore-upgrade', $OfficialDataRoot, $BackupPath, $Sha256) 'DIET_INSTALL_RESTORE_FAILED' | Out-Null
+}
+
+function Upgrade-OfficialDataRoot {
+    param([string]$PayloadRoot, [string]$OfficialDataRoot)
+    $cli = Join-Path $PayloadRoot 'dist\admin\cli.js'
+    if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+        throw "DIET_INSTALL_MIGRATION_MISSING:$cli"
+    }
+    $json = Invoke-NodeCommand @($cli, 'upgrade-root', $OfficialDataRoot) 'DIET_INSTALL_MIGRATION_FAILED'
+    $result = $json | ConvertFrom-Json
+    if ([int]$result.sqlite_user_version -ne 2) {
+        throw 'DIET_INSTALL_MIGRATION_FAILED:user_version'
+    }
+    return $result
 }
 
 function Copy-Payload {
@@ -224,7 +246,7 @@ function Invoke-Install {
         throw "DIET_INSTALL_ALREADY_INSTALLED:$versionPath"
     }
 
-    # 2) 暂存并原子改名到 versions\0.1.1
+    # 2) 暂存并原子改名到 versions\0.3.0
     $staging = Join-Path $versionsRoot ".staging-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     try {
@@ -277,26 +299,41 @@ function Invoke-Install {
 }
 
 function Invoke-Upgrade {
-    # 必须已存在安装
+    # 只接受计划确认的 0.2.2 -> 0.3.0 原地升级；预检阶段不写文件。
     $versionsRoot = Join-Path $script:ProgramRoot 'versions'
     $versionPath = Join-Path $versionsRoot $script:VersionDirName
-    if (-not (Test-Path -LiteralPath $versionPath)) {
-        throw "DIET_INSTALL_NOT_INSTALLED:$versionPath"
+    $currentPath = Join-Path $script:ProgramRoot 'current.json'
+    if (-not (Test-Path -LiteralPath $currentPath -PathType Leaf)) {
+        throw 'DIET_INSTALL_NOT_INSTALLED:current'
+    }
+    $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+    if ([string]$current.schema_version -ne 'diet-manager/current/v1' -or
+        [string]$current.product_version -ne '0.2.2') {
+        throw 'DIET_INSTALL_UPGRADE_SOURCE_UNSUPPORTED'
+    }
+    $oldVersionPath = [System.IO.Path]::GetFullPath([string]$current.installed_version_path)
+    $expectedOldVersionPath = [System.IO.Path]::GetFullPath((Join-Path $versionsRoot '0.2.2'))
+    if ($oldVersionPath -ne $expectedOldVersionPath -or
+        -not (Test-Path -LiteralPath (Join-Path $oldVersionPath 'dist\index.js') -PathType Leaf)) {
+        throw 'DIET_INSTALL_UPGRADE_SOURCE_INVALID'
+    }
+    if ([System.IO.Path]::GetFullPath([string]$current.official_data_root) -ne $script:OfficialDataRoot) {
+        throw 'DIET_INSTALL_UPGRADE_DATA_ROOT_MISMATCH'
+    }
+    if (Test-Path -LiteralPath $versionPath) {
+        throw "DIET_INSTALL_ALREADY_INSTALLED:$versionPath"
+    }
+    if (-not $script:BackupRoot) {
+        throw 'DIET_INSTALL_BACKUP_REQUIRED'
     }
 
-    # 1) 升级前先做并校验备份
+    # 1) 迁移前先保存 user_version 1/2 原始备份并校验摘要。
     $backup = Backup-OfficialDatabase -PayloadRoot $script:SourcePayload -OfficialDataRoot $script:OfficialDataRoot -BackupRoot $script:BackupRoot
+    $oldCurrent = [System.IO.File]::ReadAllText($currentPath)
 
-    # 2) 保留旧路径、旧配置、旧 current.json
-    $oldVersionPath = Join-Path $versionsRoot ".0.1.1-old-$([guid]::NewGuid().ToString('N'))"
-    $oldCurrentPath = Join-Path $script:ProgramRoot 'current.json'
-    $oldCurrent = $null
-    if (Test-Path -LiteralPath $oldCurrentPath -PathType Leaf) {
-        $oldCurrent = [System.IO.File]::ReadAllText($oldCurrentPath)
-    }
-
-    # 3) 暂存新版本到旧版本旁边（不覆盖）
+    # 2) 新程序先进入独立暂存目录；旧 0.2.2 目录始终原地保留。
     $staging = Join-Path $versionsRoot ".staging-$([guid]::NewGuid().ToString('N'))"
+    $newVersionCreated = $false
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     try {
         Copy-Payload -Source $script:SourcePayload -Destination $staging
@@ -306,56 +343,49 @@ function Invoke-Upgrade {
             throw "DIET_INSTALL_PAYLOAD_INVALID:$entry"
         }
 
-        # 4) 重链接新版本并切换 current.json；任何失败回滚
-        try {
-            Invoke-OpenClawCommand @('plugins', 'install', '--link', $staging) 'DIET_INSTALL_LINK_FAILED' | Out-Null
-            $configJson = @{ plugins = @{ entries = @{ 'diet-manager-b' = @{ config = @{ official_data_root = $script:OfficialDataRoot } } } } } | ConvertTo-Json -Depth 8 -Compress
-            Invoke-OpenClawCommand @('config', 'set', '--strict-json', $configJson) 'DIET_INSTALL_CONFIG_FAILED' | Out-Null
-            Invoke-OpenClawCommand @('gateway', 'restart') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
-            Invoke-OpenClawCommand @('gateway', 'status') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
-            Invoke-OpenClawCommand @('gateway', 'health') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
+        # 3) 只在备份完成后执行 v1 -> v2 迁移并核验六类业务行。
+        $migration = Upgrade-OfficialDataRoot -PayloadRoot $staging -OfficialDataRoot $script:OfficialDataRoot
+        Move-Item -LiteralPath $staging -Destination $versionPath
+        $newVersionCreated = $true
 
-            # 切换到新版本：旧版本改名保留，暂存原子改名成正式版本目录
-            Move-Item -LiteralPath $versionPath -Destination $oldVersionPath
-            try {
-                Move-Item -LiteralPath $staging -Destination $versionPath
-            }
-            catch {
-                # 新版本目录改名失败，把旧版本搬回去
-                Move-Item -LiteralPath $oldVersionPath -Destination $versionPath -ErrorAction SilentlyContinue
-                throw
-            }
-            $currentJson = @{
-                schema_version = 'diet-manager/current/v1'
-                product_version = $script:ProductVersion
-                installed_version_path = $versionPath
-                official_data_root = $script:OfficialDataRoot
-            }
-            $tmpCurrent = "$oldCurrentPath.tmp-$([guid]::NewGuid().ToString('N'))"
-            $currentJson | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $tmpCurrent -Encoding utf8
-            Move-Item -LiteralPath $tmpCurrent -Destination $oldCurrentPath -Force
+        # 4) 链接正式 0.3.0 路径，健康检查通过后才切 current.json。
+        Invoke-OpenClawCommand @('plugins', 'install', '--link', $versionPath) 'DIET_INSTALL_LINK_FAILED' | Out-Null
+        Invoke-OpenClawCommand @('plugins', 'enable', 'diet-manager-b') 'DIET_INSTALL_ENABLE_FAILED' | Out-Null
+        $configJson = @{ plugins = @{ entries = @{ 'diet-manager-b' = @{ config = @{ official_data_root = $script:OfficialDataRoot } } } } } | ConvertTo-Json -Depth 8 -Compress
+        Invoke-OpenClawCommand @('config', 'set', '--strict-json', $configJson) 'DIET_INSTALL_CONFIG_FAILED' | Out-Null
+        Invoke-OpenClawCommand @('gateway', 'restart') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
+        Invoke-OpenClawCommand @('gateway', 'status') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
+        Invoke-OpenClawCommand @('gateway', 'health') 'DIET_INSTALL_GATEWAY_FAILED' | Out-Null
+
+        $currentJson = @{
+            schema_version = 'diet-manager/current/v1'
+            product_version = $script:ProductVersion
+            installed_version_path = $versionPath
+            official_data_root = $script:OfficialDataRoot
         }
-        catch {
-            # 回滚：重链接旧版本、恢复旧配置/current.json、恢复数据库备份
-            if (Test-Path -LiteralPath $oldVersionPath) {
-                Invoke-OpenClawCommand @('plugins', 'install', '--link', $oldVersionPath) 'DIET_INSTALL_ROLLBACK_FAILED' | Out-Null
-            }
-            elseif (Test-Path -LiteralPath $versionPath) {
-                Invoke-OpenClawCommand @('plugins', 'install', '--link', $versionPath) 'DIET_INSTALL_ROLLBACK_FAILED' | Out-Null
-            }
-            if ($null -ne $oldCurrent) {
-                [System.IO.File]::WriteAllText($oldCurrentPath, $oldCurrent)
-            }
-            Restore-OfficialDatabase -PayloadRoot $script:SourcePayload -OfficialDataRoot $script:OfficialDataRoot -BackupPath $backup.backup_path -Sha256 $backup.sha256
-            Invoke-OpenClawCommand @('gateway', 'restart') 'DIET_INSTALL_ROLLBACK_FAILED' | Out-Null
-            throw
-        }
+        $tmpCurrent = "$currentPath.tmp-$([guid]::NewGuid().ToString('N'))"
+        $currentJson | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $tmpCurrent -Encoding utf8
+        Move-Item -LiteralPath $tmpCurrent -Destination $currentPath -Force
     }
     catch {
+        $upgradeError = $_
+        # 失败回滚：旧程序重链接、旧 current 原样恢复、原始 v1/v2 数据库恢复。
+        try {
+            Invoke-OpenClawCommand @('plugins', 'install', '--link', $oldVersionPath) 'DIET_INSTALL_ROLLBACK_FAILED' | Out-Null
+            [System.IO.File]::WriteAllText($currentPath, $oldCurrent)
+            Restore-OfficialDatabase -PayloadRoot $script:SourcePayload -OfficialDataRoot $script:OfficialDataRoot -BackupPath $backup.backup_path -Sha256 $backup.sha256
+            Invoke-OpenClawCommand @('gateway', 'restart') 'DIET_INSTALL_ROLLBACK_FAILED' | Out-Null
+            if ($newVersionCreated -and (Test-Path -LiteralPath $versionPath)) {
+                Remove-Item -LiteralPath $versionPath -Recurse -Force
+            }
+        }
+        catch {
+            throw 'DIET_INSTALL_ROLLBACK_FAILED'
+        }
         if (Test-Path -LiteralPath $staging) {
             Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
         }
-        throw
+        throw $upgradeError
     }
 
     return (Write-Receipt @{
@@ -363,8 +393,11 @@ function Invoke-Upgrade {
         program_root = $script:ProgramRoot
         official_data_root = $script:OfficialDataRoot
         installed_version_path = $versionPath
+        previous_version = '0.2.2'
         backup_path = $backup.backup_path
         backup_sha256 = $backup.sha256
+        backup_source_user_version = [int]$backup.source_user_version
+        sqlite_user_version = [int]$migration.sqlite_user_version
     })
 }
 

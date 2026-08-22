@@ -19,6 +19,7 @@ import { CORE_RUNTIME_SECRET_FILENAME } from "../application/core-runtime.js";
 import {
   assertDietDatabaseIdentity,
   assertPrivateRuntimeRoot,
+  DIET_DATABASE_APPLICATION_ID,
   DIET_DATABASE_FILENAME,
   openDietDatabase,
 } from "./database.js";
@@ -82,6 +83,35 @@ function validateBackupDatabase(path: string): void {
   try { assertDietDatabaseIdentity(database); } finally { database.close(); }
 }
 
+function validateUpgradeableDatabase(path: string): number {
+  const database: DatabaseSyncType = new DatabaseSync(path, {
+    readOnly: true,
+    timeout: 5_000,
+    enableForeignKeyConstraints: true,
+    enableDoubleQuotedStringLiterals: false,
+    allowExtension: false,
+    defensive: true,
+  });
+  try {
+    const scalar = (sql: string): number | string => {
+      const row = database.prepare(sql).get() as Record<string, number | string>;
+      return Object.values(row)[0]!;
+    };
+    if (scalar("PRAGMA integrity_check") !== "ok" ||
+        scalar("PRAGMA application_id") !== DIET_DATABASE_APPLICATION_ID) {
+      return invalid("upgrade_identity");
+    }
+    const version = Number(scalar("PRAGMA user_version"));
+    if (version !== 1 && version !== 2) return invalid("upgrade_version");
+    if (database.prepare("PRAGMA foreign_key_check").all().length !== 0) {
+      return invalid("upgrade_foreign_keys");
+    }
+    return version;
+  } finally {
+    database.close();
+  }
+}
+
 function removeOwned(path: string, identity: BigIntStats | undefined): void {
   if (identity === undefined || !existsSync(path)) return;
   const current = lstatSync(path, { bigint: true });
@@ -121,11 +151,51 @@ export async function backupDietDatabase(value: Readonly<{
   }
 }
 
-export function restoreDietDatabase(value: Readonly<{
+export async function backupDietDatabaseForUpgrade(value: Readonly<{
   privateRuntimeRoot: string;
   backupPath: string;
-  expectedSha256: string;
-}>): Readonly<DietDatabaseBackupResult> {
+}>): Promise<Readonly<DietDatabaseBackupResult & { source_user_version: number }>> {
+  const input = exactInput(value, ["backupPath", "privateRuntimeRoot"]);
+  const root = assertPrivateRuntimeRoot(absolutePath(input.privateRuntimeRoot, "runtime_root"));
+  const backupPath = absolutePath(input.backupPath, "backup_path");
+  const parent = existingParent(backupPath);
+  const databasePath = join(root, DIET_DATABASE_FILENAME);
+  const sourceVersion = validateUpgradeableDatabase(databasePath);
+  if (existsSync(backupPath)) return invalid("backup_exists");
+  const candidate = join(parent, `.${DIET_DATABASE_FILENAME}.upgrade-backup-${randomUUID()}`);
+  let candidateIdentity: BigIntStats | undefined;
+  const database: DatabaseSyncType = new DatabaseSync(databasePath, {
+    readOnly: true,
+    timeout: 5_000,
+    enableForeignKeyConstraints: true,
+    enableDoubleQuotedStringLiterals: false,
+    allowExtension: false,
+    defensive: true,
+  });
+  try {
+    await backup(database, candidate);
+    candidateIdentity = ordinaryFile(candidate, "candidate");
+    if (validateUpgradeableDatabase(candidate) !== sourceVersion) return invalid("upgrade_version");
+    renameSync(candidate, backupPath);
+    candidateIdentity = undefined;
+    const stat = ordinaryFile(backupPath, "backup_file");
+    if (stat.size > BigInt(Number.MAX_SAFE_INTEGER)) return invalid("backup_size");
+    return Object.freeze({
+      backup_path: backupPath,
+      bytes: Number(stat.size),
+      sha256: sha256(backupPath),
+      source_user_version: sourceVersion,
+    });
+  } finally {
+    database.close();
+    removeOwned(candidate, candidateIdentity);
+  }
+}
+
+function restoreDatabase(
+  value: Readonly<{ privateRuntimeRoot: string; backupPath: string; expectedSha256: string }>,
+  validateDatabase: (path: string) => unknown,
+): Readonly<DietDatabaseBackupResult> {
   const input = exactInput(value, ["backupPath", "expectedSha256", "privateRuntimeRoot"]);
   const root = assertPrivateRuntimeRoot(absolutePath(input.privateRuntimeRoot, "runtime_root"));
   const backupPath = absolutePath(input.backupPath, "backup_path");
@@ -133,7 +203,7 @@ export function restoreDietDatabase(value: Readonly<{
   if (typeof expected !== "string" || !/^[A-F0-9]{64}$/u.test(expected)) return invalid("expected_sha256");
   const backupStat = ordinaryFile(backupPath, "backup_file");
   if (sha256(backupPath) !== expected) return invalid("backup_digest");
-  validateBackupDatabase(backupPath);
+  validateDatabase(backupPath);
 
   const secretPath = join(root, CORE_RUNTIME_SECRET_FILENAME);
   const secretStat = ordinaryFile(secretPath, "authority_secret");
@@ -151,7 +221,7 @@ export function restoreDietDatabase(value: Readonly<{
   try {
     copyFileSync(backupPath, candidate, constants.COPYFILE_EXCL);
     candidateIdentity = ordinaryFile(candidate, "restore_candidate");
-    validateBackupDatabase(candidate);
+    validateDatabase(candidate);
     if (previousExists) {
       renameSync(databasePath, previous);
       movedPrevious = true;
@@ -159,9 +229,8 @@ export function restoreDietDatabase(value: Readonly<{
     renameSync(candidate, databasePath);
     candidateIdentity = undefined;
     installed = true;
-    validateBackupDatabase(databasePath);
+    validateDatabase(databasePath);
     if (movedPrevious) unlinkSync(previous);
-    const restoredStat = ordinaryFile(databasePath, "database_file");
     return Object.freeze({
       backup_path: backupPath,
       bytes: Number(backupStat.size),
@@ -174,4 +243,20 @@ export function restoreDietDatabase(value: Readonly<{
   } finally {
     removeOwned(candidate, candidateIdentity);
   }
+}
+
+export function restoreDietDatabase(value: Readonly<{
+  privateRuntimeRoot: string;
+  backupPath: string;
+  expectedSha256: string;
+}>): Readonly<DietDatabaseBackupResult> {
+  return restoreDatabase(value, validateBackupDatabase);
+}
+
+export function restoreDietDatabaseForUpgrade(value: Readonly<{
+  privateRuntimeRoot: string;
+  backupPath: string;
+  expectedSha256: string;
+}>): Readonly<DietDatabaseBackupResult> {
+  return restoreDatabase(value, validateUpgradeableDatabase);
 }
